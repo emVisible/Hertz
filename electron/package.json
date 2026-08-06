@@ -1,0 +1,74 @@
+{
+  "name": "hertz-electron",
+  "private": true,
+  "version": "0.1.0",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "dev": "esbuild src/main.ts src/preload.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:electron-updater --out-extension:.js=.cjs && ./scripts/set-dock-name.sh && electron .",
+    "build": "esbuild src/main.ts src/preload.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:electron-updater --out-extension:.js=.cjs && electron-builder",
+    "build:dir": "esbuild src/main.ts src/preload.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:electron-updater --out-extension:.js=.cjs && electron-builder --dir",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^37.0.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  },
+  "build": {
+    "appId": "ai.hertz.app",
+    "productName": "Hertz",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "renderer",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://example.com/hertz/updates"
+      }
+    ]
+  }
+}

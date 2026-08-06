@@ -1,0 +1,151 @@
+"""Unified configuration for Hertz.
+
+Single source of truth for all backend settings (AXIOM §1.2).
+Env vars use the HERTZ_ prefix; values may also live in a root .env file.
+
+Config layering (AXIOM §22.3):
+  1. pydantic defaults below (version controlled)
+  2. .env / environment variables (secrets, deployment differences)
+  3. data/runtime.yaml (RuntimeConfig: user-modifiable runtime overrides)
+"""
+
+import os
+from pathlib import Path
+
+import yaml
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="HERTZ_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # Database
+    database_url: str = "postgresql+asyncpg://hertz:hertz@localhost:5432/hertz"
+
+    # Ports
+    backend_port: int = 8787
+    frontend_port: int = 3000
+
+    # Paths
+    data_dir: Path = Path("data")
+    output_dir: Path = Path("output")
+    log_dir: Path = Path("logs")
+    # 素材根目录：素材页浏览根（面包屑根），留空 = 当前项目目录（data_dir）
+    assets_root: Path | None = None
+
+    # Security
+    secret_key: str | None = None  # set via HERTZ_SECRET_KEY; None → auth disabled/fails fast
+    access_token_expire_minutes: int = 60
+
+    # AI: LLM（v2.0 起由 Provider 注册表管理；以下字段仅用于首次启动
+    # 从环境变量导入默认 DeepSeek Provider，之后以 DB 为准）
+    deepseek_api_key: str = ""  # legacy alias — 新配置走 llm_api_key
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    deepseek_model: str = "deepseek-chat"
+    # 通用 OpenAI 兼容配置（provider 无关）；留空则用 provider 默认值
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    llm_model: str = ""
+
+    # AI: Image generation（仅首次种子用；运行期配置以 ai_providers 表为准）
+    comfyui_base_url: str = "http://127.0.0.1:8188"
+
+    # Execution pipeline
+    pipeline_publish_target: str = "noop"  # noop | bilibili
+    pipeline_min_score: float = 6.0
+    pipeline_collect_limit: int = 25
+    # Test/dev escape hatch: allow http(s) non-public URLs in the pipeline
+    # download step (SSRF guard stays on by default — AXIOM §8.1).
+    pipeline_allow_loopback_urls: bool = False
+
+    # AI 底座 v2.0：角色 → 模型分配（provider:model），如
+    #   ai_roles = {"main": "deepseek:deepseek-chat", "fast": "ollama:qwen2.5:7b"}
+    # 未配置角色时 TaskRouter 回退：fast/embedding/image/tts → main → 首个可用 chat
+    ai_roles: dict[str, str] = {}
+
+    @property
+    def runtime_config_path(self) -> Path:
+        return self.data_dir / "runtime.yaml"
+
+
+class RuntimeConfig:
+    """Runtime overrides stored in data/runtime.yaml.
+
+    Layered on top of Settings at read time (AXIOM §22.3); written by the
+    config UI. Never holds secrets (AXIOM §8.2). Cached by file mtime so
+    attribute reads stay cheap.
+    """
+
+    def __init__(self, path: Path | None = None) -> None:
+        self._path = path or settings_base.runtime_config_path
+        self._cached: dict | None = None
+        self._cached_mtime: float | None = None
+
+    def load(self) -> dict:
+        if not self._path.exists():
+            self._cached = None
+            self._cached_mtime = None
+            return {}
+        try:
+            mtime = self._path.stat().st_mtime
+        except OSError:
+            return {}
+        if self._cached is not None and mtime == self._cached_mtime:
+            return self._cached
+        try:
+            data = yaml.safe_load(self._path.read_text(encoding="utf-8"))
+            self._cached = data if isinstance(data, dict) else {}
+        except (OSError, yaml.YAMLError):
+            self._cached = {}
+        self._cached_mtime = mtime
+        return self._cached
+
+    def save(self, data: dict) -> None:
+        # Atomic write (tmp + fsync + os.replace): a crash mid-write must not
+        # leave a half-written runtime.yaml (AXIOM §17.11).
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        payload = yaml.safe_dump(data, allow_unicode=True)
+        tmp = self._path.with_suffix(".yaml.tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, self._path)
+        self._cached = data
+        try:
+            self._cached_mtime = self._path.stat().st_mtime
+        except OSError:
+            self._cached_mtime = None
+
+    def get(self, name: str, default=None):
+        return self.load().get(name, default)
+
+
+settings_base = Settings()
+runtime_config = RuntimeConfig()
+
+
+class _EffectiveSettings:
+    """Read-through proxy: runtime.yaml overrides shadow Settings (AXIOM §22.3).
+
+    Services keep reading ``settings.xxx``; user-modified values from the
+    config UI now actually take effect at read time.
+    """
+
+    _MISSING = object()
+
+    def __getattr__(self, name: str):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        value = runtime_config.get(name, self._MISSING)
+        if value is not self._MISSING:
+            return value
+        return getattr(settings_base, name)
+
+
+settings: Settings = _EffectiveSettings()  # type: ignore[assignment]

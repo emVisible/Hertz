@@ -1,0 +1,12 @@
+{
+  "name": "hertz",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.8.1",
+  "scripts": {
+    "dev:frontend": "pnpm --filter hertz-frontend dev",
+    "dev:electron": "pnpm --filter hertz-electron dev",
+    "build:frontend": "pnpm --filter hertz-frontend build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

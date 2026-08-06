@@ -1,0 +1,41 @@
+"""FastAPI router aggregation — thin layer: declares what exists, no logic."""
+
+from fastapi import APIRouter
+
+from backend.routers import (
+    ai,
+    briefs,
+    buffs,
+    canvas,
+    config,
+    crews,
+    docs,
+    downloads,
+    health,
+    library,
+    logs,
+    phases,
+    pipeline,
+    plans,
+    roles,
+    studio,
+)
+
+api_router = APIRouter(prefix="/api")
+
+api_router.include_router(health.router)
+api_router.include_router(ai.router)
+api_router.include_router(config.router)
+api_router.include_router(downloads.router)
+api_router.include_router(library.router)
+api_router.include_router(crews.router)
+api_router.include_router(buffs.router)
+api_router.include_router(roles.router)
+api_router.include_router(briefs.router)
+api_router.include_router(plans.router)
+api_router.include_router(studio.router)
+api_router.include_router(pipeline.router)
+api_router.include_router(logs.router)
+api_router.include_router(docs.router)
+api_router.include_router(canvas.router)
+api_router.include_router(phases.router)

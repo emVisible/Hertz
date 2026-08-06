@@ -1,0 +1,16 @@
+# Dev-only PostgreSQL for Hertz. Start with:
+#   docker compose -f docker-compose.dev.yml up -d postgres
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hertz
+      POSTGRES_PASSWORD: hertz
+      POSTGRES_DB: hertz
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

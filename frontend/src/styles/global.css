@@ -1,0 +1,234 @@
+@import 'tailwindcss';
+
+/* ============ Design tokens (AXIOM §27: single source) ============ */
+:root {
+  /* Light theme — 单色中性系统：深灰强调 */
+  --hz-bg: #fafafa;
+  --hz-surface-1: #ffffff;
+  --hz-surface-2: #f4f4f5;
+  --hz-text-primary: #18181b;
+  --hz-text-secondary: #52525b;
+  --hz-text-disabled: #a1a1aa;
+  --hz-primary: #27272a;
+  --hz-primary-hover: #18181b;
+  --hz-on-primary: #ffffff;
+  --hz-border: #e4e4e7;
+  --hz-success: #10b981;
+  --hz-warning: #d97706;
+  --hz-error: #ef4444;
+}
+
+.dark {
+  /* Dark theme — 冰白强调（浅色，暗色下舒适） */
+  --hz-bg: #0a0a0b;
+  --hz-surface-1: #131316;
+  --hz-surface-2: #1c1c21;
+  --hz-text-primary: #f4f4f5;
+  --hz-text-secondary: #a1a1aa;
+  --hz-text-disabled: #52525b;
+  --hz-primary: #e4e4e7;
+  --hz-primary-hover: #fafafa;
+  --hz-on-primary: #1c1917;
+  --hz-border: #27272a;
+  --hz-success: #34d399;
+  --hz-warning: #fbbf24;
+  --hz-error: #f87171;
+}
+
+/* Map semantic variables into Tailwind utilities: bg-surface-1, text-primary, ... */
+@theme inline {
+  --color-bg: var(--hz-bg);
+  --color-surface-1: var(--hz-surface-1);
+  --color-surface-2: var(--hz-surface-2);
+  --color-text-primary: var(--hz-text-primary);
+  --color-text-secondary: var(--hz-text-secondary);
+  --color-text-disabled: var(--hz-text-disabled);
+  --color-primary: var(--hz-primary);
+  --color-primary-hover: var(--hz-primary-hover);
+  --color-on-primary: var(--hz-on-primary);
+  --color-border: var(--hz-border);
+  --color-success: var(--hz-success);
+  --color-warning: var(--hz-warning);
+  --color-error: var(--hz-error);
+  --color-chalk: #e8d8a8; /* Revel heritage: chalk yellow */
+  --font-kai: 'KaiTi', 'STKaiti', 'Noto Serif SC', 'Kaiti SC', serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--hz-bg);
+  color: var(--hz-text-primary);
+  font-family:
+    -apple-system, 'SF Pro Text', 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Toast entrance */
+@keyframes hz-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.hz-toast-in {
+  animation: hz-toast-in 180ms cubic-bezier(0.21, 1.02, 0.73, 1);
+}
+
+/* ============ Markdown 预览（react-markdown 单一渲染器，AXIOM §1.2） ============ */
+.md-body {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: var(--hz-text-primary);
+  overflow-wrap: break-word;
+}
+
+.md-body > :first-child {
+  margin-top: 0;
+}
+
+.md-body > :last-child {
+  margin-bottom: 0;
+}
+
+.md-body p {
+  margin: 0.5rem 0;
+}
+
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  margin: 0.9rem 0 0.45rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.md-body h1 {
+  font-size: 1.25rem;
+}
+
+.md-body h2 {
+  font-size: 1.1rem;
+}
+
+.md-body h3 {
+  font-size: 1rem;
+}
+
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  font-size: 0.9rem;
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.md-body ul {
+  list-style: disc;
+}
+
+.md-body ol {
+  list-style: decimal;
+}
+
+.md-body li {
+  margin: 0.2rem 0;
+}
+
+.md-body li > ul,
+.md-body li > ol {
+  margin: 0.15rem 0;
+}
+
+.md-body blockquote {
+  margin: 0.5rem 0;
+  border-left: 3px solid var(--hz-primary);
+  padding-left: 0.75rem;
+  color: var(--hz-text-secondary);
+}
+
+.md-body code {
+  border-radius: 3px;
+  background: var(--hz-surface-2);
+  padding: 0.1rem 0.3rem;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.md-body pre {
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--hz-surface-2);
+  padding: 0.75rem;
+}
+
+.md-body pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.8em;
+}
+
+.md-body a {
+  color: var(--hz-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md-body hr {
+  margin: 0.9rem 0;
+  border: none;
+  border-top: 1px solid var(--hz-border);
+}
+
+.md-body table {
+  margin: 0.5rem 0;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+
+.md-body th,
+.md-body td {
+  border: 1px solid var(--hz-border);
+  padding: 0.35rem 0.55rem;
+  text-align: left;
+}
+
+.md-body th {
+  background: var(--hz-surface-2);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hz-toast-in {
+    animation: none;
+  }
+}
+
+/* 隐藏滚动条但保留滚动（横向阶段条等场景，避免滚动条压住下方产物区） */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+

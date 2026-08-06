@@ -1,0 +1,37 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# ---- Node ----
+node_modules/
+frontend/dist/
+electron/dist/
+electron/release/
+frontend/.vite/
+
+# ---- Runtime data ----
+data/
+output/
+logs/
+*.db
+*.sqlite3
+
+# ---- Secrets ----
+.env
+.env.local
+
+# ---- Reference / vendored ----
+reference_repo/
+
+# ---- IDE / OS ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---- Logs / misc ----
+*.log
