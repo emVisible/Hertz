@@ -182,6 +182,8 @@ class LibraryBrowser:
         return [e.__dict__ for e in out[:limit]]
 
     def info(self, path: Path) -> dict | None:
+        if not path.exists():
+            return None
         st = path.stat()
         return {
             "name": path.name,

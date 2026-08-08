@@ -344,6 +344,7 @@ class PipelineService:
 
         日历不引入新表（AXIOM §1.2 单一真相源）——直接查现有
         scheduled_at / published_at / status 字段，前端负责渲染。
+        未排期列表有界（200）：大库不整页拖垮（§7.4 列表与缓存）。
         """
         async with session_factory() as session:
             result = await session.execute(
@@ -355,13 +356,13 @@ class PipelineService:
                 ).order_by(Item.scheduled_at.asc().nulls_last(), Item.created_at.desc())
             )
             items = [self._serialize(i) for i in result.scalars().all()]
-            # 未排期待办：approved（待发布）与 queued（待审核）且无排期
+            # 未排期待办：approved（待发布）与 queued（待审核）且无排期，最多 200 条
             unscheduled = (
                 await session.execute(
                     select(Item).where(
                         Item.status.in_((ItemStatus.APPROVED, ItemStatus.QUEUED)),
                         Item.scheduled_at.is_(None),
-                    ).order_by(Item.created_at.desc())
+                    ).order_by(Item.created_at.desc()).limit(200)
                 )
             ).scalars().all()
         return {"items": items, "unscheduled": [self._serialize(i) for i in unscheduled]}

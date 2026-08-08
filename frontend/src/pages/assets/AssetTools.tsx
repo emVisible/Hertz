@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { api, thumbnailUrl, type ApiError } from '../../api'
+import { api, thumbnailUrl } from '../../api'
 import type { LibraryEntry } from '../../api/library'
 import { Button, Icon, Modal, Spinner, useToast } from '../../components/ui'
 interface OrganizeSuggestion {
@@ -77,10 +77,11 @@ export function OrganizeModal({
         try {
           if (mode === 'tags' && s.tags.length > 0) {
             await api.post('/api/library/tags', { path: s.path, tags: s.tags })
+            ok += 1
           } else if (mode === 'rename' && s.suggested_name && s.suggested_name !== s.path.split('/').pop()) {
             await api.post('/api/library/rename', { path: s.path, new_name: s.suggested_name })
+            ok += 1
           }
-          ok += 1
         } catch {
           failed += 1
         }
@@ -111,9 +112,7 @@ export function OrganizeModal({
               {t(`assets.organizeMode.${m}`)}
             </button>
           ))}
-          <span className="ml-auto text-[10px] text-text-disabled">
-            {batch.length > MAX_BATCH ? t('assets.organizeBatch', { n: MAX_BATCH }) : `${batch.length}`}
-          </span>
+          <span className="ml-auto text-[10px] text-text-disabled">{batch.length}</span>
         </div>
 
         {!suggestions ? (
@@ -288,5 +287,3 @@ export function DuplicatesModal({
     </Modal>
   )
 }
-
-export type { ApiError }

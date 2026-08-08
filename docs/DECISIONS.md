@@ -189,3 +189,17 @@
   - `POST /library/rename`：重命名原子迁移 meta/thumb sidecar（§33 状态文件完整）；路径分隔符/隐藏名前缀拒绝（§8.1）
   - `GET /library/duplicates`：复用 pipeline.phash（ffmpeg 抽帧平均哈希，图片经时长探测 0 → 不 seek 天然兼容）；纯色内容 phash 退化（全 0/全 1）为已知边界，测试用有纹理源
   - 前端 OrganizeModal（打标/改名双模式、逐条勾选应用）+ DuplicatesModal（相似组缩略图并排、保留/删除）；素材页分类行右侧入口；delete 复用既有 /library/file
+- **D-135 Wave A 查漏补缺（v0.2.3 审计）**：子代理新鲜视角审计 Wave A 三波次（15 条问题）后修复——
+  - **日历拖拽竞态**：PUT 未 await 即 refetch（GET 可能读到旧数据）→ onSaveSchedule 返回 Promise 先落库再刷新；refresh() 补 pipeline-calendar 失效（§7.5）
+  - **⌘K 双重触发**：AppShell 补输入框守卫（素材页 ⌘K 聚焦搜索框为既有行为，互不干扰）
+  - **深链同路由无效**：/assets?path= 与 /config?section= 的 useState 初始化器不重跑 → 改 useEffect 响应 searchParams（§35）
+  - **calendar 非法日期 500→422**（§8.1）
+  - **rename 原子性**：sidecar 失败时回滚主文件改名（§33）；错误文案统一中文（§22.2）
+  - **duplicates 同步 IO→to_thread**（§7.2）；limit 改为「最多计算媒体数」（媒体优先再截断，目录不占额度）
+  - **ai-organize 防批次外路径**：忽略 LLM 幻造 path，按输入顺序 index 映射回真实路径
+  - **日历查询范围**：from/to 对齐 42 格网格首末格——拖到上月/下月补位格不消失
+  - **CommandPalette 搜索竞态**：序号守卫（旧响应不覆盖新结果）
+  - **OrganizeModal ok 计数虚增/死分支**：仅实际调用 API 才计数；删除恒假的批上限分支与死 i18n key
+  - **browser.info 契约**：恢复 exists 守卫（此前误删，dict|None 契约回归）
+  - **unscheduled 有界**：limit 200（§7.4 列表与缓存）
+  - 接受项：calendar 时区依赖服务器本地时区（写入侧同语义，两端一致；桌面单机 OK，远程部署时需前端传偏移——记录在案）

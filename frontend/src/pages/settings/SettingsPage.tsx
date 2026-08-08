@@ -78,14 +78,16 @@ export function SettingsPage() {
 
   const [form, setForm] = useState<Record<string, string>>({})
   const [dirty, setDirty] = useState(false)
-  // ⌘K 命令面板深链：?section=ai 直达对应设置分区（v0.2.3）
+  // ⌘K 命令面板深链：?section=ai 直达对应设置分区（v0.2.3）。
+  // 同路由重复导航不重挂载 → 用 effect 响应参数变化（§35 数据驱动）
   const [searchParams] = useSearchParams()
-  const initialSection = searchParams.get('section')
-  const [sectionId, setSectionId] = useState<SectionId>(
-    (SECTION_IDS as readonly string[]).includes(initialSection ?? '')
-      ? (initialSection as SectionId)
-      : 'general',
-  )
+  const [sectionId, setSectionId] = useState<SectionId>('general')
+  useEffect(() => {
+    const section = searchParams.get('section')
+    if (section && (SECTION_IDS as readonly string[]).includes(section)) {
+      setSectionId(section as SectionId)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (!cfg) return

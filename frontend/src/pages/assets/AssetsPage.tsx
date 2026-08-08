@@ -57,11 +57,13 @@ export function AssetsPage() {
 
   // ---- 素材根目录（tag 系统：素材空间 = data_dir 根）----
   const [searchParams] = useSearchParams()
-  // 支持 /assets?path=... 深链（Studio 运行完成后跳转到这里查看产物）
-  const [currentPath, setCurrentPath] = useState<string | null>(() => {
+  // 支持 /assets?path=... 深链（Studio 运行完成后跳转到这里查看产物）。
+  // 同路由重复导航不重挂载 → 参数变化用 effect 响应（§35 数据驱动）
+  const [currentPath, setCurrentPath] = useState<string | null>(null)
+  useEffect(() => {
     const initial = searchParams.get('path')
-    return initial && initial.trim() ? initial.trim() : null
-  })
+    if (initial && initial.trim()) setCurrentPath(initial.trim())
+  }, [searchParams])
   const roots = useQuery({ queryKey: ['library-roots'], queryFn: () => api.get<RootsTree>('/api/library/roots') })
   const scan = useQuery({
     queryKey: ['library-scan', currentPath],

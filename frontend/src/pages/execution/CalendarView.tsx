@@ -31,7 +31,7 @@ function itemTime(item: PipelineItem): string | null {
 export function CalendarView({
   onSaveSchedule,
 }: {
-  onSaveSchedule: (item: PipelineItem, value: string) => void
+  onSaveSchedule: (item: PipelineItem, value: string) => Promise<unknown>
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -40,13 +40,15 @@ export function CalendarView({
   const [dragId, setDragId] = useState<string | null>(null)
 
   const { year, month } = cursor
-  const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
   const cells = useMemo(() => monthGrid(year, month), [year, month])
-  const lastDay = cells[cells.length - 1].iso
+  // 查询范围覆盖整个 42 格网格（含上月前导格/下月尾随格）——
+  // 拖到月外补位格设的排期不会因窗口外而「消失」（§35 数据完整）
+  const from = cells[0].iso
+  const to = cells[cells.length - 1].iso
 
   const { data, refetch } = useQuery({
-    queryKey: ['pipeline-calendar', from, lastDay],
-    queryFn: () => pipelineApi.calendar(from, lastDay),
+    queryKey: ['pipeline-calendar', from, to],
+    queryFn: () => pipelineApi.calendar(from, to),
   })
   const items = data?.items ?? []
   const unscheduled = data?.unscheduled ?? []
@@ -65,7 +67,8 @@ export function CalendarView({
 
   async function setSchedule(item: PipelineItem, dateIso: string | null) {
     try {
-      onSaveSchedule(item, dateIso ? `${dateIso}T10:00` : '')
+      // 先等 PUT 落库再 refetch——避免 GET 在提交前打到旧数据（§35 数据驱动）
+      await onSaveSchedule(item, dateIso ? `${dateIso}T10:00` : '')
       await refetch()
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')

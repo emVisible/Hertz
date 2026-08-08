@@ -39,6 +39,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const [cursor, setCursor] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const seqRef = useRef(0)
 
   useEffect(() => {
     if (open) {
@@ -48,7 +49,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     }
   }, [open])
 
-  // 素材搜索：防抖 200ms，≥2 字符才请求（§7.2 性能预算）
+  // 素材搜索：防抖 200ms + 序号守卫（慢的旧响应不覆盖新结果，§7.2/§20.3）
   useEffect(() => {
     if (!open) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -57,10 +58,12 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       setItems([])
       return
     }
+    const seq = ++seqRef.current
     debounceRef.current = setTimeout(() => {
       void api
         .get<{ entries: LibraryEntry[] }>(`/api/library/search?q=${encodeURIComponent(q)}&limit=8`)
         .then(({ entries }) => {
+          if (seq !== seqRef.current) return
           setItems(
             entries.map((e) => ({
               id: `asset:${e.path}`,
@@ -72,7 +75,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             })),
           )
         })
-        .catch(() => setItems([]))
+        .catch(() => {
+          if (seq === seqRef.current) setItems([])
+        })
     }, 200)
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -114,6 +119,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         id: 'action:board',
         group: t('command.actions'),
         label: t('command.newBoard'),
+        hint: t('command.newBoardHint'),
         icon: 'canvas',
         run: () => {
           useBoardStore.getState().addBoard()
@@ -200,6 +206,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            aria-label={t('command.placeholder')}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') {
                 e.preventDefault()

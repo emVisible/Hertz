@@ -5,6 +5,7 @@ so <video>/<audio> tags can stream directly from /api/library/file.
 """
 
 import asyncio
+import logging
 from pathlib import Path
 
 from anyio import Path as APath
@@ -18,6 +19,8 @@ from backend.library.metadata import probe_media
 from backend.library.thumbnails import generate_thumbnail
 from backend.models.download import Project
 from backend.models.session import session_factory
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/library", tags=["library"])
 
@@ -166,29 +169,29 @@ async def ai_organize(body: dict):
     """
     paths = body.get("paths") or []
     if not isinstance(paths, list) or not paths:
-        raise HTTPException(status_code=422, detail="paths[] required")
+        raise HTTPException(status_code=422, detail="paths 列表必填")
     if len(paths) > _MAX_ORGANIZE_BATCH:
-        raise HTTPException(status_code=422, detail=f"batch limited to {_MAX_ORGANIZE_BATCH}")
+        raise HTTPException(status_code=422, detail=f"单批最多 {_MAX_ORGANIZE_BATCH} 条")
 
     targets: list[Path] = []
     for p in paths:
         target = await _ensure_allowed(str(p))
         if not target.is_file():
-            raise HTTPException(status_code=422, detail=f"not a file: {p}")
+            raise HTTPException(status_code=422, detail=f"不是文件：{p}")
         targets.append(target)
 
     from backend.factory.registry import ServiceRegistry
 
     ai = ServiceRegistry.get().ai
     if ai is None or not ai.llm_available:
-        raise HTTPException(status_code=502, detail="LLM provider not configured")
+        raise HTTPException(status_code=502, detail="LLM 未配置，无法整理")
 
     listing = "\n".join(f"- {t.name}（{t.suffix or '无扩展名'}）" for t in targets)
     system = (
         "你是素材库整理助手。根据文件名与常见约定推断内容主题，给出整理建议。\n"
-        "只输出 JSON，格式：{\"items\":[{\"path\":\"<原始完整路径>\","
-        "\"tags\":[\"标签1\",\"标签2\"],\"suggested_name\":\"建议文件名（含扩展名）\"}]}\n"
-        "规则：\n"
+        '只输出 JSON，格式：{"items":[{"tags":["标签1","标签2"],'
+        '"suggested_name":"建议文件名（含扩展名）"}]}\n'
+        "数组顺序与输入一致，不要包含路径字段。规则：\n"
         "① tags 2-5 个、用中文、概括内容主题与类型；无法判断的给空数组；\n"
         "② suggested_name 简洁可读、保留扩展名；无法判断的给原文件名；\n"
         "③ 只输出 JSON，不要解释。"
@@ -197,54 +200,67 @@ async def ai_organize(body: dict):
 
     messages = [
         ChatMessage(role="system", content=system),
-        ChatMessage(role="user", content=f"以下文件需要整理：\n{listing}"),
+        ChatMessage(role="user", content=f"以下文件需要整理（按顺序对应输出）：\n{listing}"),
     ]
     try:
         text = await ai.chat_messages(messages, role="fast", max_tokens=1200)
     except Exception as exc:  # noqa: BLE001 — 可读失败（§4.2 快速失败）
-        raise HTTPException(status_code=502, detail=f"AI 整理失败：{exc}") from exc
+        logger.error("ai-organize failed: %s", exc)
+        raise HTTPException(status_code=502, detail="AI 整理失败，请稍后重试") from exc
 
     data = _extract_json(text)
     raw_items = (data or {}).get("items") if data else None
     if not isinstance(raw_items, list):
         raise HTTPException(status_code=502, detail="AI 返回格式无法解析")
 
+    # 按输入顺序映射回真实路径（忽略 LLM 可能幻造的 path 字段——批次内围栏兜底）
     results = []
-    for item in raw_items[: _MAX_ORGANIZE_BATCH]:
-        if not isinstance(item, dict):
+    for i, item in enumerate(raw_items[: _MAX_ORGANIZE_BATCH]):
+        if i >= len(targets) or not isinstance(item, dict):
             continue
-        path = str(item.get("path") or "")
         tags = [str(x).strip() for x in item.get("tags") or [] if str(x).strip()][:8]
         name = str(item.get("suggested_name") or "").strip()
-        results.append({"path": path, "tags": tags, "suggested_name": name})
+        results.append({"path": str(targets[i]), "tags": tags, "suggested_name": name})
     return {"results": results}
 
 
 @router.post("/rename")
 async def rename_file(body: dict):
-    """重命名素材（AI 整理确认后执行）：同步迁移 meta/thumb sidecar（§33 原子性）。"""
+    """重命名素材（AI 整理确认后执行）：sidecar 同步迁移 + 失败回滚（§33 原子性）。"""
     path = str(body.get("path") or "")
     new_name = str(body.get("new_name") or "").strip()
     if not path or not new_name:
-        raise HTTPException(status_code=422, detail="path and new_name required")
+        raise HTTPException(status_code=422, detail="path 与 new_name 必填")
     if "/" in new_name or "\\" in new_name or new_name.startswith("."):
-        raise HTTPException(status_code=422, detail="invalid file name")
+        raise HTTPException(status_code=422, detail="文件名不合法")
     target = await _ensure_allowed(path)
     if not target.is_file():
-        raise HTTPException(status_code=404, detail="file not found")
+        raise HTTPException(status_code=404, detail="文件不存在")
 
     dest = target.with_name(new_name)
-    if dest.exists():
-        raise HTTPException(status_code=409, detail=f"target exists: {new_name}")
+    if await asyncio.to_thread(dest.exists):
+        raise HTTPException(status_code=409, detail=f"目标已存在：{new_name}")
+
+    moved: list[tuple[Path, Path]] = []
     try:
         await asyncio.to_thread(target.rename, dest)
+        moved.append((target, dest))
         # sidecar 同步迁移（meta/thumb 丢失会破坏标签与缩略图）
         for suffix in (".meta.json", ".thumb.jpg"):
             src_side = Path(f"{target}{suffix}")
             if await asyncio.to_thread(src_side.exists):
-                await asyncio.to_thread(src_side.rename, Path(f"{dest}{suffix}"))
+                dest_side = Path(f"{dest}{suffix}")
+                await asyncio.to_thread(src_side.rename, dest_side)
+                moved.append((src_side, dest_side))
     except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"rename failed: {exc}") from exc
+        # 回滚：主文件或 sidecar 已动 → 全部还原，保证幂等重试（§4.2 就近失败）
+        for src, dst in reversed(moved):
+            try:
+                if await asyncio.to_thread(dst.exists):
+                    await asyncio.to_thread(dst.rename, src)
+            except OSError:
+                logger.error("rename rollback failed for %s", dst)
+        raise HTTPException(status_code=500, detail="重命名失败，已回滚") from exc
     return {"path": str(dest)}
 
 
@@ -252,12 +268,17 @@ async def rename_file(body: dict):
 async def find_duplicates(path: str = Query(...), limit: int = Query(120, ge=1, le=300)):
     """phash 素材查重（v0.2.3，参考 Eagle Find Duplicates）：目录内图片/视频
     按平均哈希聚类，返回相似组（仅 >1 文件的组）。ffmpeg 逐文件抽帧计算。
+    limit 为「最多计算的媒体数」——先过滤媒体再截断，目录/文档不占额度。
     """
     target = await _ensure_allowed(path)
     if not target.is_dir():
-        raise HTTPException(status_code=404, detail="directory not found")
+        raise HTTPException(status_code=404, detail="目录不存在")
 
-    entries = [e for e in browser.scan(target, limit=limit) if e["kind"] in ("video", "image")]
+    # 扫描走线程池（§7.2 文件 IO 不阻塞事件循环）；媒体优先再截断
+    entries = [
+        e for e in await asyncio.to_thread(browser.scan, target, False, limit * 2)
+        if e["kind"] in ("video", "image")
+    ][:limit]
     from backend.pipeline.phash import compute_phash
 
     groups: dict[str, list[dict]] = {}

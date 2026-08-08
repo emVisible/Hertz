@@ -56,8 +56,13 @@ async def calendar_items(
     from datetime import UTC, datetime, timedelta
 
     def _local_day(raw: str) -> datetime:
-        # 本地日期 → 本地零点（naive）；再统一转 UTC 与 scheduled_at 落库同语义
-        return datetime.fromisoformat(raw.strip()) if raw.strip() else datetime.now()
+        # 本地日期 → 本地零点（naive）；再统一转 UTC 与 scheduled_at 落库同语义。
+        # 非法日期 → 422（§8.1 输入校验，不落 500）
+        try:
+            parsed = datetime.fromisoformat(raw.strip())
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"invalid date: {raw}") from exc
+        return parsed
 
     if from_.strip():
         start_local = _local_day(from_)

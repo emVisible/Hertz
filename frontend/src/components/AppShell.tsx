@@ -23,11 +23,12 @@ export function AppShell() {
   const toggleTheme = useThemeStore((s) => s.toggle)
   const location = useLocation()
   const navigate = useNavigate()
-  // ⌘K 全局命令面板（v0.2.3）：输入框聚焦时不劫持
+  // ⌘K 全局命令面板（v0.2.3）：输入框聚焦时不劫持（素材页 ⌘K 聚焦搜索框是既有行为）
   const [paletteOpen, setPaletteOpen] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
         e.preventDefault()
         setPaletteOpen((v) => !v)
       }

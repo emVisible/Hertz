@@ -64,7 +64,7 @@ interface PipelineViewProps {
   run: () => void
   stop: () => void
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
-  saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
+  saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
   publishItem: (item: PipelineItem, selfmade?: boolean) => void
   retryClass: (cls: string, n: number) => void
   modelSwitch: ReturnType<typeof useModelSwitch>
@@ -347,8 +347,7 @@ export function PipelineView(p: PipelineViewProps) {
               <CalendarView
                 onSaveSchedule={(item, value) => p.saveMeta(item, { scheduled_at: value })}
               />
-            ) : (
-              <>
+            ) : (              <>
             {/* 审核后：approved（发布操作） */}
             <PipelineStage
               title={t('console.stagePublish')}
