@@ -52,6 +52,7 @@ class BilibiliPublisher(Publisher):
         video = Path(item.video_path)
         if not await asyncio.to_thread(video.exists):
             raise PublisherError(f"video missing: {video}")
+        # 发布元数据单一真相源：script_json.bili_*（审核/发布环节经 update_meta 写入）
         script = item.script_json or {}
         title = script.get("bili_title") or item.title[:80]
         desc = script.get("bili_desc") or item.title[:200]
@@ -61,6 +62,15 @@ class BilibiliPublisher(Publisher):
             "--title", title[:80],
             "--desc", desc,
         ]
+        tags = script.get("bili_tags")
+        if tags:
+            cmd += ["--tag", str(tags)]
+        copyright_ = script.get("bili_copyright")
+        if copyright_ in (1, "1"):
+            cmd += ["--copyright", "1"]
+        # 排期发布：scheduled_at 存在 → biliup 定时上传（v5.10）
+        if item.scheduled_at:
+            cmd += ["--timedpublish", item.scheduled_at.strftime("%Y-%m-%d %H:%M")]
         out = await _run_cmd(cmd)
         ctx.log(f"[publish] biliup ok: {title}")
         tail = out.decode(errors="replace")[-200:]

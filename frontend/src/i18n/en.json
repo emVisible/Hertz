@@ -28,7 +28,8 @@
     "bytes": "{{size}}",
     "showInFolder": "Show in folder",
     "copy": "Copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    "copyFailed": "Copy failed"
   },
   "error": {
     "title": "Something went wrong",
@@ -103,7 +104,9 @@
     "aiTraceMore": "Show more",
     "aiTraceLess": "Collapse",
     "aiModels": "Models ({{count}})",
-    "aiFetchModels": "Fetch model list",
+    "aiFetchModels": "Fetch model list (manual cache update)",
+    "aiFetchAt": "Fetched at {{time}}",
+    "aiFetchNever": "Never fetched",
     "aiAddModel": "Add model",
     "aiModelKey": "Model ID",
     "aiCapability": "Capability",
@@ -144,11 +147,8 @@
     "duration": "{{ms}}ms",
     "error": "Error",
     "noArtifacts": "No standalone artifact for this phase",
-    "phaseDetailHint": "Click any phase node to view details; auto-refreshes every 2s while running"
-  },
-  "placeholder": {
-    "title": "Module in progress",
-    "description": "This module arrives in a later wave."
+    "phaseDetailHint": "Click any phase node to view details; auto-refreshes every 2s while running",
+    "jumpToRunning": "Jump back to the running job"
   },
   "assets": {
     "title": "Assets",
@@ -158,10 +158,10 @@
     "tasks": "Tasks",
     "noTasks": "No download history yet",
     "noActive": "No active downloads",
-    "empty": "Nothing here yet",
+    "empty": "Select or create a project document on the left",
     "emptyHint": "Paste a link to download, or pick a project on the left",
     "emptyArtifacts": "No artifacts in this directory",
-    "deleted": "Deleted",
+    "deleted": "Document deleted",
     "copyPath": "Copy path",
     "downloadsDir": "Downloads",
     "tabAssets": "Assets",
@@ -175,9 +175,7 @@
     "cancel": "Cancel",
     "delete": "Delete",
     "deleteConfirm": "Delete this document?",
-    "deleted": "Document deleted",
     "created": "Document created",
-    "empty": "Select or create a project document on the left",
     "emptyList": "No project documents yet — click \"New document\" to create one",
     "namePlaceholder": "Document name (e.g. README.md)",
     "editPlaceholder": "Write Markdown content here…",
@@ -221,25 +219,9 @@
     "deleted": "Task deleted"
   },
   "library": {
-    "title": "Library",
-    "currentPath": "Current directory",
-    "folder": "Folder",
-    "noEntries": "This directory is empty",
-    "projectsEmpty": "data/projects is empty",
-    "preview": "Preview",
     "metadata": "Metadata",
-    "meta": {
-      "name": "Name",
-      "size": "Size",
-      "modified": "Modified",
-      "codec": "Codec",
-      "resolution": "Resolution",
-      "duration": "Duration",
-      "bitrate": "Bitrate"
-    },
     "openInFolder": "Show in folder",
     "noPreview": "Preview not supported for this type",
-    "view": "Toggle view",
     "tabs": {
       "all": "All",
       "image": "Images",
@@ -248,12 +230,15 @@
       "document": "Documents",
       "other": "Other"
     },
-    "sort": {
+    "meta": {
       "name": "Name",
       "size": "Size",
-      "date": "Date"
-    },
-    "sortDir": "Toggle sort direction"
+      "modified": "Modified",
+      "codec": "Codec",
+      "resolution": "Resolution",
+      "duration": "Duration",
+      "bitrate": "Bitrate"
+    }
   },
   "briefs": {
     "title": "Briefs",
@@ -371,8 +356,8 @@
     "topic": "Topic",
     "topicPlaceholder": "Enter a creation topic, then press Enter or hit run…",
     "plan": "Plan",
-    "model": "Model",
-    "modelDefault": "Default (main model from settings)",
+    "model": "Global model",
+    "modelDefault": "Default (main model from settings; phases without their own model follow)",
     "buffs": "Buffs",
     "buffRandom": "Wild card",
     "buffRandomHint": "Draws 2 buffs from the random pool — different result every run",
@@ -420,27 +405,61 @@
     "step": "Step",
     "chain": "Full chain (to review)",
     "limit": "Limit",
-    "run": "Run",
-    "stop": "Stop",
-    "idle": "Idle",
-    "running": "Running",
-    "reviewQueue": "Review queue",
-    "title": "Title",
-    "source": "Source",
-    "score": "Score",
-    "status": "Status",
-    "actions": "Actions",
     "approve": "Approve",
     "reject": "Reject",
     "logs": "Live events",
     "jobs": "Recent jobs",
     "sources": "Sources",
-    "noItems": "Nothing to review yet",
     "noJobs": "No jobs recorded",
     "noSources": "No sources recorded",
     "collected": "collected {{n}}",
     "processed": "processed {{n}}",
-    "item": "item"
+    "item": "item",
+    "stageAudit": "Review",
+    "stagePublish": "Publish",
+    "emptyAudit": "Review queue is empty",
+    "emptyPublish": "Nothing to publish",
+    "script": "Script",
+    "exceptions": "Exceptions (failed / rejected)",
+    "noExceptions": "No exceptions",
+    "publishHint": "Publish via the Run section → select publish",
+    "restore": "Restore to review",
+    "shownLimit": "Showing first {{shown}} of {{total}}",
+    "publishTimed": "Scheduled publish",
+    "publishNow": "Publish now",
+    "publishSelfmade": "Publish as original",
+    "publishSelfmadeHint": "Publish with copyright=original",
+    "schedule": "Schedule",
+    "scheduleSave": "Save schedule",
+    "scheduleSet": "Scheduled",
+    "scheduleFirst": "Set a schedule first",
+    "backToReview": "Back to review",
+    "published": "Published",
+    "metaSaved": "Metadata saved",
+    "biliTags": "Bilibili tags",
+    "editTags": "Click to edit tags",
+    "noTags": "No tags",
+    "tagsPlaceholder": "Comma separated, e.g. animals,high-energy",
+    "originalLink": "Reddit post",
+    "approvedHint": "Approved — handle it in the Publish tab",
+    "recentPublishes": "Recent publishes",
+    "noPublishes": "No publish history yet",
+    "republish": "Republish",
+    "republishHint": "Upload again as a new post",
+    "rejectedHint": "Rejected",
+    "requeuedHint": "Back to review",
+    "retriedHint": "Reset for retry",
+    "defaultAi": "Default AI (scoring)",
+    "aiFollowDefault": "Follow default (main → first available)",
+    "lowScore": "Low score (reusable)",
+    "stagePreReview": "Pre-process",
+    "downloaded": "Downloaded",
+    "pendingDownload": "Pending download",
+    "pendingScore": "Pending scoring",
+    "produced": "Produced",
+    "pendingProduce": "Pending produce",
+    "hasCover": "Has cover",
+    "emptyPreReview": "Nothing in pre-process"
   },
   "canvas": {
     "tool": {
@@ -546,8 +565,9 @@
     "role": "Role",
     "roleHint": "Who plays this phase (Role)",
     "model": "Model",
+    "modelDefault": "Follow global default (Studio main model)",
     "method": "Method",
-    "methodHint": "The concrete workflow/methodology injected into the LLM prompt",
+    "methodHint": "One step per line; injected into the LLM prompt verbatim",
     "style": "Style tags (one per line)",
     "styleHint": "猎奇 / 冷峻 / 果断 …",
     "retries": "Retries",
@@ -564,5 +584,8 @@
     "distribute": "Distribution",
     "research": "Research",
     "custom": "Custom"
+  },
+  "audit": {
+    "noMedia": "No video"
   }
 }

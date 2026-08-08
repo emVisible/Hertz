@@ -10,11 +10,12 @@ export interface ModelChoice {
 }
 
 /**
- * 运行时模型切换（使用层）：在编排/执行页快速切换「当前主模型」。
- * 原理：写入 ai_roles.main（runtime.yaml），TaskRouter 下次调用即生效——
+ * 运行时模型切换（使用层）：在编排/执行页快速切换「指定角色」的模型。
+ * 原理：写入 ai_roles.<role>（runtime.yaml），TaskRouter 下次调用即生效——
  * 与应用层（engine）零耦合，符合 AXIOM §2.2。
+ * Studio 用 main；流水线评分消费 fast（v0.2.0 参数化）。
  */
-export function useModelSwitch() {
+export function useModelSwitch(role: 'main' | 'fast' = 'main') {
   const { t } = useTranslation()
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -41,11 +42,11 @@ export function useModelSwitch() {
     }
   }
 
-  const current = roles?.main ?? ''
+  const current = roles?.[role] ?? ''
 
   async function switchModel(value: string) {
     try {
-      await aiRegistryApi.saveRoles({ ...(roles ?? {}), main: value })
+      await aiRegistryApi.saveRoles({ ...(roles ?? {}), [role]: value })
       await queryClient.invalidateQueries({ queryKey: ['ai-roles'] })
       toast(value ? t('settings.roleSwitched') : t('settings.roleReset'), 'success')
     } catch (err) {

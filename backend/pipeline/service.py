@@ -11,11 +11,12 @@ import uuid
 from sqlalchemy import select
 
 from backend.infrastructure.events import EventHub
-from backend.models.item import Item
+from backend.models.item import Item, ItemStatus
 from backend.models.pipeline import SourceState
 from backend.models.session import session_factory
 from backend.models.system import JobRun
 from backend.pipeline.engine import StepEngine
+from backend.pipeline.errors import ItemNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -82,19 +83,112 @@ class PipelineService:
     async def retry(self, item_id: uuid.UUID) -> dict:
         return await self.engine.retry(item_id)
 
+    async def requeue(self, item_id: uuid.UUID) -> dict:
+        return await self.engine.requeue(item_id)
+
+    # ---------- publish (独立人工环节，v5.10) ----------
+
+    async def update_meta(
+        self,
+        item_id: uuid.UUID,
+        *,
+        bili_title: str | None = None,
+        bili_tags: str | None = None,
+        bili_tid: int | None = None,
+        bili_copyright: int | None = None,
+        scheduled_at: str | None = None,
+    ) -> dict:
+        """更新发布元数据（B站标题/标签/分区/版权/排期），单一真相源 script_json。"""
+        from datetime import UTC, datetime
+
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+            if item is None:
+                raise ItemNotFoundError(item_id)
+            script = dict(item.script_json or {})
+            if bili_title is not None:
+                script["bili_title"] = bili_title.strip()
+            if bili_tags is not None:
+                script["bili_tags"] = bili_tags.strip()
+            if bili_tid is not None:
+                script["bili_tid"] = int(bili_tid)
+            if bili_copyright is not None:
+                script["bili_copyright"] = int(bili_copyright)
+            item.script_json = script or None
+            if scheduled_at is not None:
+                raw = scheduled_at.strip()
+                item.scheduled_at = (
+                    datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(UTC)
+                    if raw
+                    else None
+                )
+            await session.merge(item)
+            await session.commit()
+        return {"id": str(item_id), "ok": True}
+
+    async def publish_one(self, item_id: uuid.UUID, *, selfmade: bool = False) -> dict:
+        """单条发布（审核通过后的人工操作）：执行 publisher 并落发布结果。
+
+        定时由 item.scheduled_at 驱动（biliup --timedpublish）；自制由
+        bili_copyright=1 驱动。target 仍来自 pipeline_publish_target（发布安全）。
+        approved（首次发布）与 published（重新发布）均可。
+        """
+        from datetime import UTC, datetime
+
+        from backend.pipeline.base import StepContext
+        from backend.pipeline.errors import InvalidItemStateError
+        from backend.pipeline.publishers.router import PUBLISHERS
+
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+            if item is None:
+                raise ItemNotFoundError(item_id)
+            if item.status not in (ItemStatus.APPROVED, ItemStatus.PUBLISHED):
+                raise InvalidItemStateError(
+                    f"cannot publish item in state {item.status}"
+                )
+            if selfmade:
+                script = dict(item.script_json or {})
+                script["bili_copyright"] = 1
+                item.script_json = script
+            await session.commit()
+
+        ctx = StepContext(
+            run_id=str(item_id), settings=self.engine.settings, ai=None,
+            emit=lambda e: self.hub.publish("pipeline", e),
+        )
+        target = getattr(self.engine.settings, "pipeline_publish_target", "noop")
+        publisher = PUBLISHERS.get(target)
+        if publisher is None:
+            raise RuntimeError(f"unknown publish target '{target}'")
+        result = await publisher.publish(ctx, item)
+
+        async with session_factory() as session:
+            row = await session.get(Item, item_id)
+            row.status = ItemStatus.PUBLISHED
+            row.publish_json = {"target": target, **result}
+            row.published_at = datetime.now(UTC)
+            await session.merge(row)
+            await session.commit()
+        self.hub.publish(
+            "pipeline",
+            {"type": "item", "item_id": str(item_id), "status": "published"},
+        )
+        return {"id": str(item_id), "status": "published", "result": result}
+
     # ---------- queries ----------
 
     async def list_items(
         self, status: str | None = None, limit: int = 50, source: str | None = None
     ) -> list[dict]:
+        """条目列表；status 支持逗号分隔多状态（wave13：前端单查询聚合阶段队列）。"""
+        statuses = [s.strip() for s in (status or "").split(",") if s.strip()] or None
         async with session_factory() as session:
             order = Item.created_at.desc()
-            # Combine filters instead of overwriting: status+source must not
-            # silently drop one of them (AXIOM §7.4 / §1.2).
             stmt = select(Item).order_by(order).limit(limit)
             conditions = []
-            if status:
-                conditions.append(Item.status == status)
+            if statuses:
+                conditions.append(Item.status.in_(statuses))
             if source:
                 conditions.append(Item.source == source)
             if conditions:
@@ -153,6 +247,7 @@ class PipelineService:
             "item_type": item.item_type,
             "source": item.source,
             "source_url": item.source_url,
+            "media_url": item.media_url,
             "source_id": item.source_id,
             "title": item.title,
             "subreddit": item.subreddit,
@@ -160,7 +255,9 @@ class PipelineService:
             "reddit_score": item.reddit_score,
             "upvote_ratio": item.upvote_ratio,
             "score_total": item.score_total,
+            "score_dimensions": item.score_dimensions,
             "score_reasons": item.score_reasons or [],
+            "is_lowscore": item.is_lowscore,
             "raw_path": item.raw_path,
             "video_path": item.video_path,
             "cover_path": item.cover_path,
@@ -170,5 +267,6 @@ class PipelineService:
             "retry_count": item.retry_count,
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "approved_at": item.approved_at.isoformat() if item.approved_at else None,
+            "scheduled_at": item.scheduled_at.isoformat() if item.scheduled_at else None,
             "published_at": item.published_at.isoformat() if item.published_at else None,
         }

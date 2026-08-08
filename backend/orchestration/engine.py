@@ -268,15 +268,16 @@ class PhaseEngine:
         if self.ai is None or not self.ai.llm_available:
             raise RuntimeError("LLM provider not configured — agent phases unavailable")
         agent = agents.get(key, {})
-        # 配置解析链：crew 优先 → 工序库（phase）→ 默认常量（DEFAULT_AGENT_CONFIG
-        # 已 seed 进工序库）。timeout/retries 同样走这条链，声明与执行一致（AXIOM §1.2）。
+        # 配置解析链：crew 优先 → 工序库（phase）→ 出厂默认（PHASES 已 seed 进
+        # 工序库）。timeout/retries 同样走这条链，声明与执行一致（AXIOM §1.2）。
         timeout_s = int(agent.get("timeout") or getattr(phase, "timeout", 0) or 300)
         prior = await self._prior_excerpt(run_dir)
-        role = agent.get("role") or getattr(phase, "role", "") or phase.crew_role
+        role = agent.get("role") or getattr(phase, "role", "") or phase.name
         method = agent.get("method") or getattr(phase, "method", "") or "直接交付成品"
         style = agent.get("style") or list(getattr(phase, "style", None) or [])
-        # v2.4：工序/团队显式指定的模型（crew 优先 → 工序库）→ TaskRouter 精确匹配；
-        # 未配置则按角色回退（main）。空串视为未配置。
+        # 模型解析：crew/工序显式指定（model 非空）→ TaskRouter 精确匹配；
+        # 未配置（内置工序出厂 model 为空）→ 按角色回退（main=Studio 全局选择）。
+        # 空串视为未配置——这正是 Studio 模型下拉真正生效的路径。
         configured_model = (agent.get("model") or getattr(phase, "model", "") or "").strip()
         self._emit("log", None, message=f"[{index}/{total}] → Agent: {key} ({role})")
         messages = build_agent_messages(

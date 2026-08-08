@@ -150,6 +150,7 @@ function ModelsPanel({ provider, models }: { provider: AIProviderDTO; models: AI
     try {
       await aiRegistryApi.fetchModels(provider.id)
       await queryClient.invalidateQueries({ queryKey: ['ai-models'] })
+      await queryClient.invalidateQueries({ queryKey: ['ai-providers'] })
       toast(t('settings.aiModelsFetched'), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
@@ -194,9 +195,16 @@ function ModelsPanel({ provider, models }: { provider: AIProviderDTO; models: AI
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-text-secondary">{t('settings.aiModels', { count: models.length })}</p>
-        <div className="flex gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 text-xs font-medium text-text-secondary">
+          {t('settings.aiModels', { count: models.length })}
+          <span className="ml-2 truncate font-normal text-text-disabled">
+            {provider.last_fetch_at
+              ? t('settings.aiFetchAt', { time: new Date(provider.last_fetch_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })
+              : t('settings.aiFetchNever')}
+          </span>
+        </p>
+        <div className="flex shrink-0 gap-2">
           <Button size="sm" variant="ghost" onClick={() => void fetchRemote()} loading={fetching}>
             <Icon name="refresh" size={12} />
             {t('settings.aiFetchModels')}

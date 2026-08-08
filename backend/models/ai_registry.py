@@ -4,10 +4,11 @@
 Provider 与模型解耦、密钥加密存储（§8.2）、每次调用可追踪（§9.1）。
 """
 
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -51,6 +52,8 @@ class AIProvider(BaseModel):
     encrypted_keys: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # 模型列表上次拉取时间（缓存元数据；模型列表只手动拉取，防限流）
+    last_fetch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AIModel(BaseModel):

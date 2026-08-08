@@ -29,7 +29,7 @@ class PhaseStore(BaseModel):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     # 软删除：内置工序可归档（不再出现在工序库，可用 restore_defaults 恢复）
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Agent 工序的 LLM 配置（内置可编辑内容、不可删除；种子/回退到 DEFAULT_AGENTS）
+    # Agent 工序的 LLM 配置（内置可编辑内容、不可删除；seed/回退到 PHASES 出厂值）
     role: Mapped[str] = mapped_column(String(120), default="")
     method: Mapped[str] = mapped_column(Text, default="")
     style: Mapped[list] = mapped_column(JSONB, default=list)

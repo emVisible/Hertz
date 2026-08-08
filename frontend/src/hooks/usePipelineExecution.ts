@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
@@ -36,11 +36,27 @@ export function usePipelineExecution() {
     queryFn: pipelineApi.counts,
     refetchInterval: pollingInterval,
   })
-  const { data: items = [], isError: itemsError, refetch: refetchItems } = useQuery({
-    queryKey: ['pipeline-items'],
-    queryFn: () => pipelineApi.items(undefined, 50),
+  // 阶段队列：单查询拉取全部状态（wave13 多状态合并，轮询 7→1 个请求），
+  // 前端按状态分组派生各阶段列表
+  const { data: stageAll = [], isError: stageError, refetch: refetchStage } = useQuery({
+    queryKey: ['pipeline-stage'],
+    queryFn: () =>
+      pipelineApi.items('discovered,downloaded,scored,queued,approved,failed,rejected', 200),
     refetchInterval: pollingInterval,
   })
+  // 最近发布历史（发布页独立查询）
+  const { data: stagePublished = [] } = useQuery({
+    queryKey: ['pipeline-stage', 'published'],
+    queryFn: () => pipelineApi.items('published', 10),
+    refetchInterval: pollingInterval,
+  })
+  const stageGroups = useMemo(() => {
+    const g: Record<string, PipelineItem[]> = {}
+    for (const it of stageAll) {
+      ;(g[it.status] ??= []).push(it)
+    }
+    return g
+  }, [stageAll])
   const { data: jobs = [] } = useQuery({
     queryKey: ['pipeline-jobs'],
     queryFn: () => pipelineApi.jobs(8),
@@ -52,7 +68,7 @@ export function usePipelineExecution() {
   })
 
   const store = useExecutionStore()
-  const { step, limit, logs, logSeq } = store.pipeline
+  const { step, limit, logs, logSeq, tab } = store.pipeline
   const setPipeline = store.setPipeline
 
   const runningRef = useRef(false)
@@ -63,7 +79,7 @@ export function usePipelineExecution() {
   })
 
   useEffect(() => {
-    void queryClient.invalidateQueries({ queryKey: ['pipeline-items'] })
+    void queryClient.invalidateQueries({ queryKey: ['pipeline-stage'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] })
   }, [status?.running, queryClient])
 
@@ -91,7 +107,7 @@ export function usePipelineExecution() {
   }
 
   function refresh() {
-    void queryClient.invalidateQueries({ queryKey: ['pipeline-items'] })
+    void queryClient.invalidateQueries({ queryKey: ['pipeline-stage'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-sources'] })
@@ -125,12 +141,42 @@ export function usePipelineExecution() {
     }
   }
 
-  async function act(item: PipelineItem, action: 'approve' | 'reject' | 'retry') {
+  async function act(item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') {
     try {
-      if (action === 'approve') await pipelineApi.approve(item.id)
-      else if (action === 'reject') await pipelineApi.reject(item.id)
-      else await pipelineApi.retry(item.id)
+      if (action === 'approve') {
+        await pipelineApi.approve(item.id)
+        toast(t('console.approvedHint'), 'success')
+      } else if (action === 'reject') {
+        await pipelineApi.reject(item.id)
+        toast(t('console.rejectedHint'), 'success')
+      } else if (action === 'requeue') {
+        await pipelineApi.requeue(item.id)
+        toast(t('console.requeuedHint'), 'success')
+      } else {
+        await pipelineApi.retry(item.id)
+        toast(t('console.retriedHint'), 'success')
+      }
       refresh()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  async function saveMeta(item: PipelineItem, meta: Record<string, string | number | null>) {
+    try {
+      await pipelineApi.updateMeta(item.id, meta)
+      refresh()
+      toast(t('console.metaSaved'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  async function publishItem(item: PipelineItem, selfmade = false) {
+    try {
+      await pipelineApi.publish(item.id, selfmade)
+      refresh()
+      toast(t('console.published'), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }
@@ -142,9 +188,18 @@ export function usePipelineExecution() {
     status,
     steps,
     counts,
-    items,
-    itemsError,
-    refetchItems,
+    stageError,
+    refetchStage,
+    stageDiscovered: stageGroups.discovered ?? [],
+    stageDownloaded: stageGroups.downloaded ?? [],
+    stageScored: stageGroups.scored ?? [],
+    stageQueued: stageGroups.queued ?? [],
+    stageApproved: stageGroups.approved ?? [],
+    stageFailed: stageGroups.failed ?? [],
+    stageRejected: stageGroups.rejected ?? [],
+    stagePublished,
+    tab,
+    setTab: (v: string) => setPipeline({ tab: v }),
     jobs,
     sources,
     step,
@@ -157,6 +212,8 @@ export function usePipelineExecution() {
     run,
     stop,
     act,
+    saveMeta,
+    publishItem,
     refresh,
   }
 }

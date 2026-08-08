@@ -147,6 +147,7 @@ class ProviderRegistry:
             "enabled": row.enabled,
             "sort_order": row.sort_order,
             "created_at": row.created_at.isoformat() if row.created_at else None,
+            "last_fetch_at": row.last_fetch_at.isoformat() if row.last_fetch_at else None,
             "keys_count": len(self._decrypt_keys(row.encrypted_keys)),
             "keys_set": bool(self._decrypt_keys(row.encrypted_keys)),
         }
@@ -329,11 +330,22 @@ class ProviderRegistry:
     # ---------- model list fetch / test ----------
 
     async def fetch_models(self, provider_id: UUID) -> list[dict]:
-        """拉取 /v1/models 并合并进模型库（不删已存在项）。"""
+        """拉取 /v1/models 并合并进模型库（不删已存在项）。
+
+        防限流（v5.8）：模型列表只允许手动拉取，且带 60s 冷却窗口——
+        窗口内的重复请求直接拒绝（ValueError → 前端可读提示）。
+        """
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
         async with session_factory() as session:
             row = await session.get(AIProvider, provider_id)
             if row is None:
                 raise KeyError(f"provider not found: {provider_id}")
+            if row.last_fetch_at is not None:
+                elapsed = (now - row.last_fetch_at).total_seconds()
+                if elapsed < 60:
+                    raise ValueError("模型列表刚刚拉取过，60 秒内请勿重复请求（防限流）")
             keys = self._decrypt_keys(row.encrypted_keys)
             tpl = TEMPLATE_INDEX.get(row.template)
         client = OpenAICompatProvider(
@@ -350,6 +362,10 @@ class ProviderRegistry:
         added = [m for m in remote if m not in existing_keys]
         for key in added:
             await self.add_model(provider_id=provider_id, key=key, name=key)
+        async with session_factory() as session:
+            row = await session.get(AIProvider, provider_id)
+            row.last_fetch_at = datetime.now(UTC)
+            await session.commit()
         return await self.list_models(provider_id)
 
     async def test_provider(

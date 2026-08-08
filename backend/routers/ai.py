@@ -171,6 +171,9 @@ async def fetch_models(provider_id: uuid.UUID) -> list[dict]:
         return await _registry().fetch_models(provider_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        # 冷却窗口（60s）内重复拉取 → 429，避免被远程 API 限流
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — 远端拉取失败返回可读错误
         raise HTTPException(status_code=502, detail=f"获取模型列表失败：{exc}") from exc
 

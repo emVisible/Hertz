@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from backend.models.phase import PhaseStore, new_phase_key
 from backend.models.session import session_factory
-from backend.orchestration.phases import DEFAULT_AGENT_CONFIG, PHASES, PhaseDef
+from backend.orchestration.phases import PHASES, PhaseDef, phase_agent_config
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,9 @@ class PhasesService:
                 if row is not None and row.builtin and not row.archived:
                     row.archived = True
             for order, p in enumerate(PHASES):
-                conf = DEFAULT_AGENT_CONFIG.get(p.key, {})
                 if p.key in existing:
                     continue
+                conf = phase_agent_config(p)
                 session.add(
                     PhaseStore(
                         key=p.key,
@@ -65,29 +65,30 @@ class PhasesService:
                         timeout=getattr(p, "timeout", 300),
                         builtin=True,
                         sort_order=order,
-                        role=conf.get("role", ""),
-                        method=conf.get("method", ""),
-                        style=conf.get("style", []),
-                        model=conf.get("model", ""),
-                        retries=conf.get("retries", 0),
+                        role=conf["role"],
+                        method=conf["method"],
+                        style=conf["style"],
+                        model=conf["model"],
+                        retries=conf["retries"],
                     )
                 )
             # 存量内置工序补齐 role/method/style（升级时 seed 已存在行；归档的不复活）
             for key in existing:
-                conf = DEFAULT_AGENT_CONFIG.get(key, {})
-                if not conf:
+                phase = next((x for x in PHASES if x.key == key), None)
+                if phase is None:
                     continue
+                conf = phase_agent_config(phase)
                 row = (await session.execute(
                     select(PhaseStore).where(PhaseStore.key == key)
                 )).scalar_one_or_none()
                 if row is None or row.archived:
                     continue
                 if not row.method:
-                    row.role = conf.get("role", row.role)
-                    row.method = conf.get("method", "")
-                    row.style = conf.get("style", [])
-                    row.model = conf.get("model", row.model)
-                    row.retries = conf.get("retries", row.retries)
+                    row.role = conf["role"]
+                    row.method = conf["method"]
+                    row.style = conf["style"]
+                    row.model = conf["model"]
+                    row.retries = conf["retries"]
                 elif row.role in _LEGACY_EN_ROLES:
                     # 语言统一：旧英文 role 迁移为中文（用户已自定义的跳过）
                     row.role = _LEGACY_EN_ROLES[row.role]
@@ -147,7 +148,6 @@ class PhasesService:
                 agent_key=r.agent_key or r.key,
                 description=r.description,
                 output_file=r.output_file,
-                crew_role=r.name,
                 timeout=r.timeout,
                 role=r.role,
                 method=r.method,
@@ -274,7 +274,7 @@ class PhasesService:
                         # 已从出厂清单移除的内置工序（preflight/image_gen/quality_gate）
                         # 保持归档，恢复默认不复活
                         continue
-                    conf = DEFAULT_AGENT_CONFIG.get(r.key, {})
+                    conf = phase_agent_config(p)
                     r.archived = False
                     r.name = p.name
                     r.description = getattr(p, "description", "")
@@ -283,11 +283,11 @@ class PhasesService:
                     r.output_file = getattr(p, "output_file", "")
                     r.phase_group = getattr(p, "phase_group", "infrastructure")
                     r.timeout = getattr(p, "timeout", 300)
-                    r.role = conf.get("role", "")
-                    r.method = conf.get("method", "")
-                    r.style = conf.get("style", [])
-                    r.model = ""
-                    r.retries = 0
+                    r.role = conf["role"]
+                    r.method = conf["method"]
+                    r.style = conf["style"]
+                    r.model = conf["model"]
+                    r.retries = conf["retries"]
                     r.sort_order = 0
                     restored += 1
                 else:

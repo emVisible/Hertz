@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 
 from backend.ai.router import AIRouter
 from backend.factory.registry import ServiceRegistry
+from backend.models.session import session_factory
 from backend.pipeline.collectors.base import RawPost
 from backend.pipeline.collectors.reddit import FakeRedditCollector
 
@@ -193,10 +194,17 @@ async def test_chain_to_review_gate(client, pipeline_env) -> None:
     assert queued[0]["cover_path"] is not None
     assert queued[0]["score_total"] == 7.5
 
-    rejected = await client.get("/api/pipeline/items", params={"status": "rejected"})
-    rejected = rejected.json()
-    assert len(rejected) == 1
-    assert rejected[0]["source_id"] == "low-1"
+    # v0.2.0 低分不再 reject：low-1 → 低分标记 + 继续流程进入审核队列（人工决定）
+    queued = await _wait_items(client, "queued", 2)
+    good = next(q for q in queued if q["source_id"] == "good-1")
+    assert good["status"] == "queued"
+    assert good["title"].startswith("一个很棒")
+    assert good["script_json"] is not None
+    assert good["raw_path"] is not None
+    assert good["cover_path"] is not None
+    assert good["score_total"] == 7.5
+    low = next(q for q in queued if q["source_id"] == "low-1")
+    assert low["is_lowscore"] is True
 
     failed = await client.get("/api/pipeline/items", params={"status": "failed"})
     failed = failed.json()
@@ -204,8 +212,7 @@ async def test_chain_to_review_gate(client, pipeline_env) -> None:
     assert "download" in (failed[0]["error"] or "").lower()
 
     counts = (await client.get("/api/pipeline/items/counts")).json()
-    assert counts.get("queued") == 1
-    assert counts.get("rejected") == 1
+    assert counts.get("queued") == 2
     assert counts.get("failed") == 1
 
 
@@ -214,8 +221,7 @@ async def test_approve_reject_publish(client, pipeline_env) -> None:
     await client.post("/api/pipeline/chain", params={"limit": 10})
     queued = await _wait_items(client, "queued", 1)
     good = queued[0]
-
-    rejected = (await client.get("/api/pipeline/items", params={"status": "rejected"})).json()[0]
+    rejected_id = await _mk_item(status="rejected")
 
     resp = await client.post(f"/api/pipeline/items/{good['id']}/approve")
     assert resp.status_code == 200
@@ -232,7 +238,7 @@ async def test_approve_reject_publish(client, pipeline_env) -> None:
     resp = await client.post(f"/api/pipeline/items/{good['id']}/reject")
     assert resp.status_code == 409  # published items cannot be rejected
 
-    resp = await client.post(f"/api/pipeline/items/{rejected['id']}/retry")
+    resp = await client.post(f"/api/pipeline/items/{rejected_id}/retry")
     assert resp.status_code == 409  # rejected is not retryable
 
     resp = await client.post(f"/api/pipeline/items/{good['id']}/approve")
@@ -245,11 +251,35 @@ async def test_retry_failed_item(client, pipeline_env) -> None:
     failed = await _wait_items(client, "failed", 1)
     item = failed[0]
 
+    # v5.9 回退：下载失败（无 raw_path）→ discovered 重新走 download→score 链
     resp = await client.post(f"/api/pipeline/items/{item['id']}/retry")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "downloaded"
-    detail = (await client.get("/api/pipeline/items", params={"status": "downloaded"})).json()
+    assert resp.json()["status"] == "discovered"
+    detail = (await client.get("/api/pipeline/items", params={"status": "discovered"})).json()
     assert any(i["id"] == item["id"] for i in detail)
+
+
+@pytest.mark.asyncio
+async def test_requeue_rejected_item(client, pipeline_env) -> None:
+    rejected_id = await _mk_item(status="rejected")
+
+    resp = await client.post(f"/api/pipeline/items/{rejected_id}/requeue")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "queued"
+
+    # 重复 requeue 非法（409）
+    resp = await client.post(f"/api/pipeline/items/{rejected_id}/requeue")
+    assert resp.status_code == 409
+
+    queued = (await client.get("/api/pipeline/items", params={"status": "queued"})).json()
+    assert any(i["id"] == rejected_id for i in queued)
+
+
+@pytest.mark.asyncio
+async def test_step_order(client, pipeline_env) -> None:
+    """v5.9 流程顺序：download → score → produce → publish（collect 前置除外）。"""
+    steps = (await client.get("/api/pipeline/steps")).json()["steps"]
+    assert steps == ["download", "score", "produce", "publish"]
 
 
 @pytest.mark.asyncio
@@ -275,3 +305,83 @@ async def test_single_flight_guard(client, pipeline_env) -> None:
     responses = await asyncio.gather(first, second)
     codes = sorted(r.status_code for r in responses)
     assert codes == [200, 409]
+
+
+async def _mk_item(**kw) -> str:
+    """独立造一条流水线条目（不依赖共享 chain 状态，测试自包含）。"""
+    import uuid as _uuid
+
+    from backend.models.item import Item
+
+    item = Item(
+        status=kw.pop("status", "queued"),
+        source="test",
+        source_id=f"t-{_uuid.uuid4().hex[:8]}",
+        title=kw.pop("title", "测试条目"),
+        subreddit="r/test",
+        author="tester",
+        source_url="https://example.com/post",
+        **kw,
+    )
+    async with session_factory() as session:
+        session.add(item)
+        await session.commit()
+        await session.refresh(item)
+    return str(item.id)
+
+
+@pytest.mark.asyncio
+async def test_meta_and_publish_one(client, pipeline_env) -> None:
+    """v5.10 独立发布环节：meta 更新（标题/标签/排期）+ 单条发布（noop）+ 自制发布。"""
+    good_id = await _mk_item()
+
+    # 审核通过 → approved
+    resp = await client.post(f"/api/pipeline/items/{good_id}/approve")
+    assert resp.json()["status"] == "approved"
+
+    # 更新发布元数据（B站标题/标签/排期）
+    resp = await client.put(
+        f"/api/pipeline/items/{good_id}/meta",
+        json={
+            "bili_title": "我的定制标题",
+            "bili_tags": "动物,高能",
+            "scheduled_at": "2026-09-01T10:00:00",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    items = (await client.get("/api/pipeline/items", params={"status": "approved"})).json()
+    target = next(i for i in items if i["id"] == good_id)
+    assert target["script_json"]["bili_title"] == "我的定制标题"
+    assert target["scheduled_at"] is not None
+
+    # 单条发布（pipeline_publish_target=noop，安全）
+    resp = await client.post(f"/api/pipeline/items/{good_id}/publish")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "published"
+
+    # 已发布条目可重新发布（v5.11：published → 再次上传新稿件）
+    resp = await client.post(f"/api/pipeline/items/{good_id}/publish")
+    assert resp.status_code == 200, resp.text
+
+    # 自制发布（selfmade=1）
+    second_id = await _mk_item()
+    await client.post(f"/api/pipeline/items/{second_id}/approve")
+    resp = await client.post(f"/api/pipeline/items/{second_id}/publish", params={"selfmade": 1})
+    assert resp.status_code == 200, resp.text
+    published = (await client.get("/api/pipeline/items", params={"status": "published"})).json()
+    assert any(i["id"] == second_id for i in published)
+
+    # 未审核条目不可发布（409）
+    third_id = await _mk_item(status="queued")
+    resp = await client.post(f"/api/pipeline/items/{third_id}/publish")
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_requeue_approved(client, pipeline_env) -> None:
+    """审核通过后可改回待审（v5.10 requeue 扩展：approved → queued）。"""
+    item_id = await _mk_item(status="approved")
+    resp = await client.post(f"/api/pipeline/items/{item_id}/requeue")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "queued"

@@ -14,6 +14,7 @@ export interface AIProviderDTO {
   keys_count: number
   keys_set: boolean
   created_at: string | null
+  last_fetch_at: string | null
 }
 
 export interface AIModelDTO {

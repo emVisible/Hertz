@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class DownloadStep(Pipe):
     name = "download"
-    input_statuses: tuple[str, ...] = ("scored",)
+    input_statuses: tuple[str, ...] = ("discovered",)
 
     async def process(self, ctx: StepContext, item) -> ProcessResult:
         url = item.media_url or item.source_url

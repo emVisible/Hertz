@@ -1138,7 +1138,7 @@ export function PlansPage() {
                         label={t('phases.model')}
                         value={phaseModel}
                         onChange={(e) => { setPhaseModel(e.target.value); setPhaseDirty(true) }}
-                        options={modelOptions(phaseModel)}
+                        options={[{ value: '', label: t('phases.modelDefault') }, ...modelOptions(phaseModel)]}
                       />
                       <div className="md:col-span-2">
                         <label className="mb-1 block text-xs font-medium text-text-secondary">
@@ -1149,7 +1149,7 @@ export function PlansPage() {
                           value={phaseMethod}
                           onChange={(e) => { setPhaseMethod(e.target.value); setPhaseDirty(true) }}
                           spellCheck={false}
-                          rows={5}
+                          rows={8}
                           className="w-full resize-y border border-border bg-surface-2/60 px-3 py-2 font-mono text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
                           placeholder={t('phases.methodHint')}
                         />

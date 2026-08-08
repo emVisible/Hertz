@@ -27,6 +27,8 @@ export interface PipelineExecState {
   limit: number
   logs: LogLine[]
   logSeq: number
+  /** 流水线平铺菜单当前部分（wave13：跨模式切换保持上下文） */
+  tab: string
 }
 
 interface ExecutionState {
@@ -56,6 +58,7 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
     limit: 10,
     logs: [],
     logSeq: 0,
+    tab: 'inReview',
   },
   setStudio: (patch) => set((s) => ({ studio: { ...s.studio, ...patch } })),
   setPipeline: (patch) => set((s) => ({ pipeline: { ...s.pipeline, ...patch } })),

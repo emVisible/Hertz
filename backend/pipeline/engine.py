@@ -1,9 +1,10 @@
 """StepEngine — batch executor for the content pipeline.
 
-Drives Items through the five steps: collect → score → download → produce →
-publish. The engine owns status transitions; each step only declares what it
-consumes and produces. Progress is broadcast via EventHub on the ``pipeline``
-topic; batch runs are recorded in job_runs for audit.
+Drives Items through the five steps: collect → download → score → produce →
+publish (v5.9: 下载在评分之前，审核为人工 gate)。The engine owns status
+transitions; each step only declares what it consumes and produces. Progress
+is broadcast via EventHub on the ``pipeline`` topic; batch runs are recorded
+in job_runs for audit.
 """
 
 import asyncio
@@ -24,7 +25,8 @@ from backend.pipeline.steps.collect import run_collect
 logger = logging.getLogger(__name__)
 
 # Steps that consume items in status order; collect is batch-only.
-STEP_ORDER = ("collect", "score", "download", "produce", "publish")
+# v5.9 流程：download → score → produce → (audit 人工) → publish
+STEP_ORDER = ("collect", "download", "score", "produce", "publish")
 
 
 class StepEngine:
@@ -76,7 +78,7 @@ class StepEngine:
         return {"job_id": str(job.id), "job": job_name, "status": job.status, "summary": summary}
 
     async def run_chain(self, *, limit: int = 10, channel: str = "") -> dict:
-        """Run collect → score → download → produce in sequence (review gate before publish)."""
+        """Run collect → download → score → produce in sequence (review gate before publish)."""
         results: dict[str, dict] = {}
         for step in STEP_ORDER:
             if step == "publish":
@@ -117,20 +119,44 @@ class StepEngine:
         return {"id": str(item_id), "status": "rejected"}
 
     async def retry(self, item_id: uuid.UUID) -> dict:
-        """Reset a failed item back to its previous state so a run picks it up again."""
+        """Reset a failed item back to its previous state so a run picks it up again.
+
+        v5.9 流程回退：有成片 → scored（重制）；已下载 → downloaded（重评分）；
+        否则 → discovered（重下载）。
+        """
         async with session_factory() as session:
             item = await session.get(Item, item_id)
             if item is None:
                 raise ItemNotFoundError(item_id)
             if item.status != ItemStatus.FAILED:
                 raise InvalidItemStateError(f"cannot retry item in state {item.status}")
-            back = "scored" if item.raw_path else "downloaded"
+            back = (
+                "scored" if item.video_path
+                else ("downloaded" if item.raw_path else "discovered")
+            )
             item.status = back
             item.error = None
             item.retry_count += 1
             await session.merge(item)
             await session.commit()
         return {"id": str(item_id), "status": item.status}
+
+    async def requeue(self, item_id: uuid.UUID) -> dict:
+        """Restore an item back to review (queued): rejected or approved both work."""
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+            if item is None:
+                raise ItemNotFoundError(item_id)
+            if item.status not in (ItemStatus.REJECTED, ItemStatus.APPROVED):
+                raise InvalidItemStateError(f"cannot requeue item in state {item.status}")
+            item.status = ItemStatus.QUEUED
+            item.error = None
+            await session.merge(item)
+            await session.commit()
+        self._emit(
+            "item:" + item_id.hex, {"type": "item", "item_id": str(item_id), "status": "queued"}
+        )
+        return {"id": str(item_id), "status": "queued"}
 
     # ---------- internals ----------
 

@@ -18,7 +18,9 @@ def get_step(key: str) -> type[Pipe]:
 
 
 def step_keys() -> list[str]:
-    return list(_STEP_INDEX)
+    """按流程顺序返回可运行步骤（v5.9：download → score → produce → publish）。"""
+    order = ("download", "score", "produce", "publish")
+    return [k for k in order if k in _STEP_INDEX]
 
 
 from backend.pipeline.steps.download import DownloadStep  # noqa: E402

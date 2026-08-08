@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class ProduceStep(Pipe):
     name = "produce"
-    input_statuses: tuple[str, ...] = ("downloaded",)
+    input_statuses: tuple[str, ...] = ("scored",)
 
     async def process(self, ctx: StepContext, item) -> ProcessResult:
         from backend.factory.registry import ServiceRegistry  # deferred import

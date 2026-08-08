@@ -18,6 +18,7 @@ export interface PipelineItem {
   item_type: string
   source: string
   source_url: string
+  media_url: string | null
   source_id: string
   title: string
   subreddit: string
@@ -25,7 +26,9 @@ export interface PipelineItem {
   reddit_score: number
   upvote_ratio: number
   score_total: number | null
+  score_dimensions: Record<string, number> | null
   score_reasons: string[]
+  is_lowscore: boolean
   raw_path: string | null
   video_path: string | null
   cover_path: string | null
@@ -35,6 +38,7 @@ export interface PipelineItem {
   retry_count: number
   created_at: string | null
   approved_at: string | null
+  scheduled_at: string | null
   published_at: string | null
 }
 
@@ -98,6 +102,11 @@ export const pipelineApi = {
   reject: (id: string, reason = '') =>
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/reject?reason=${encodeURIComponent(reason)}`),
   retry: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/retry`),
+  requeue: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/requeue`),
+  updateMeta: (id: string, meta: Record<string, string | number | null>) =>
+    api.put<{ id: string; ok: boolean }>(`/api/pipeline/items/${id}/meta`, meta),
+  publish: (id: string, selfmade = false) =>
+    api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/publish?selfmade=${selfmade ? 1 : 0}`),
   run: (step: string, limit = 10) =>
     api.post<PipelineJob>(`/api/pipeline/run?step=${step}&limit=${limit}`),
   chain: (limit = 10) => api.post<Record<string, PipelineJob>>(`/api/pipeline/chain?limit=${limit}`),

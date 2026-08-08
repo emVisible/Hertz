@@ -5,6 +5,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from backend.factory.registry import ServiceRegistry
 from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError
@@ -71,6 +72,51 @@ async def retry_item(item_id: uuid.UUID):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InvalidItemStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/items/{item_id}/requeue")
+async def requeue_item(item_id: uuid.UUID):
+    try:
+        return await _pipe().requeue(item_id)
+    except ItemNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidItemStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+class ItemMetaBody(BaseModel):
+    bili_title: str | None = None
+    bili_tags: str | None = None
+    bili_tid: int | None = None
+    bili_copyright: int | None = None
+    scheduled_at: str | None = None
+
+
+@router.put("/items/{item_id}/meta")
+async def update_item_meta(item_id: uuid.UUID, body: ItemMetaBody):
+    try:
+        return await _pipe().update_meta(
+            item_id,
+            bili_title=body.bili_title,
+            bili_tags=body.bili_tags,
+            bili_tid=body.bili_tid,
+            bili_copyright=body.bili_copyright,
+            scheduled_at=body.scheduled_at,
+        )
+    except ItemNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/items/{item_id}/publish")
+async def publish_item(item_id: uuid.UUID, selfmade: int = 0):
+    try:
+        return await _pipe().publish_one(item_id, selfmade=bool(selfmade))
+    except ItemNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidItemStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — 发布失败（缺 cookie/文件等）返回可读错误
+        raise HTTPException(status_code=502, detail=f"发布失败：{exc}") from exc
 
 
 @router.post("/run")

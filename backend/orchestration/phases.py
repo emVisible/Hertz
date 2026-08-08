@@ -16,12 +16,12 @@ class PhaseDef:
     description: str
     phase_type: str  # "system" | "agent"
     agent_key: str = ""
-    crew_role: str = ""
     phase_group: str = "infrastructure"
     # File this phase produces in the run directory ("" = none)
     output_file: str = ""
     timeout: int = 300
-    # Agent 工序的 LLM 配置（工序库可查看/编辑，回退到 DEFAULT_AGENTS）
+    # Agent 工序的 LLM 配置（工序库可查看/编辑；单一真相源，seed 进 phases 表）。
+    # model 为空 = 跟随全局默认（Studio 主模型/角色解析），填了才是显式覆盖。
     role: str = ""
     method: str = ""
     style: list[str] = field(default_factory=list)
@@ -45,9 +45,18 @@ PHASES: tuple[PhaseDef, ...] = (
         description="核心主张(≤7字)、视觉母题、论证链",
         phase_type="agent",
         agent_key="director",
-        crew_role="创意总监",
         phase_group="create",
         output_file="director.md",
+        timeout=300,
+        role="创意总监",
+        method=(
+            "1. 输入消化：通读策略 brief 与素材，提炼核心主张候选（≤7字，宁锋利勿平淡）\n"
+            "2. 定调：确定视觉母题（3 个语义转换）与论证链（5 步证明）\n"
+            "3. 减法：杀掉 80% 的平庸创意，只留最锋利的一个方向\n"
+            "4. 产出：director.md 交付「核心主张 + 母题 + 论证链」，供后续阶段引用"
+        ),
+        style=["果断", "高概念"],
+        retries=2,
     ),
     PhaseDef(
         key="writer",
@@ -55,9 +64,19 @@ PHASES: tuple[PhaseDef, ...] = (
         description="展示而非说教、感官质感、节奏留白",
         phase_type="agent",
         agent_key="writer",
-        crew_role="内容作家",
         phase_group="create",
         output_file="writer.md",
+        timeout=420,
+        role="内容作家",
+        method=(
+            "1. 先列骨架：按 brief 的论证链展开章节，再落笔\n"
+            "2. Show don't tell：每段给出质感细节（冷金属/暖木/粗石），不抽象概括\n"
+            "3. 节奏留白：长短句交替，段间留呼吸感\n"
+            "4. 纪律：不照搬素材原文，只取素材的洞察\n"
+            "5. 产出：writer.md 即完整正文草稿，可直接成稿"
+        ),
+        style=["感官", "节奏"],
+        retries=2,
     ),
     PhaseDef(
         key="visual_director",
@@ -65,9 +84,18 @@ PHASES: tuple[PhaseDef, ...] = (
         description="构图、光影、材质意识；依据 Style 块自动渲染配图",
         phase_type="agent",
         agent_key="visual_director",
-        crew_role="视觉导演",
         phase_group="create",
         output_file="visual_director.md",
+        timeout=300,
+        role="视觉导演",
+        method=(
+            "1. 通读正文与母题，确定整体视觉基调（光/色/材质）\n"
+            "2. 拆解关键场景，为每个场景写一段视觉描述\n"
+            "3. 输出 Style 块（## Style N 开头）：每块一段可执行的图像提示词——光从哪来、主色调、材质、构图\n"
+            "4. 检查：每个 Style 块都能独立生成配图，不依赖上下文"
+        ),
+        style=["光影", "材质"],
+        retries=2,
     ),
     PhaseDef(
         key="editor",
@@ -75,9 +103,18 @@ PHASES: tuple[PhaseDef, ...] = (
         description="事前验尸，删掉不值得留下的内容",
         phase_type="agent",
         agent_key="editor",
-        crew_role="内容编辑",
         phase_group="create",
         output_file="editor.md",
+        timeout=300,
+        role="内容编辑",
+        method=(
+            "1. Premortem：假设成品已经失败，列出 3 个最可能的失败原因\n"
+            "2. 对照检查：主张是否清晰、正文有无废话、视觉是否匹配\n"
+            "3. 删减：不配存在的句子就删，宁短勿长\n"
+            "4. 产出：editor.md 给出「问题清单 + 修改建议」，不直接重写正文"
+        ),
+        style=["锋利", "减法"],
+        retries=2,
     ),
     PhaseDef(
         key="distribution",
@@ -85,9 +122,19 @@ PHASES: tuple[PhaseDef, ...] = (
         description="分发/转化/关系延续：适配平台节奏、钩子位置、克制收尾（禁止评论引导话术）",
         phase_type="agent",
         agent_key="distribution",
-        crew_role="分发策略师",
         phase_group="distribute",
         output_file="distribution.md",
+        timeout=300,
+        role="分发策略师",
+        method=(
+            "1. 识别平台与发布节奏，确定钩子位置（前 3 句内）\n"
+            "2. 设计克制收尾：留白大于号召\n"
+            "3. 纪律：禁止任何评论/点赞/关注/转发引导话术\n"
+            "4. 关系延续：给出 1 条后续内容线索\n"
+            "5. 产出：distribution.md 交付平台策略 + 文案要点"
+        ),
+        style=["平台感", "克制"],
+        retries=2,
     ),
     PhaseDef(
         key="package",
@@ -132,62 +179,17 @@ DEFAULT_PHASE_ORDER: list[dict] = [
 ]
 
 
-# 内置 agent 工序的默认 LLM 配置（seed 到 phases 表；工序库可编辑）
-DEFAULT_AGENTS: list[dict] = [
-    {
-        "key": "director",
-        "role": "创意总监",
-        "method": "核心主张(≤7字) + 视觉母题(3 语义转换) + 论证链(5 步证明)，杀掉 80% 的创意；先吃透策略与素材再定调",
-        "model": "deepseek-chat",
-        "style": ["果断", "高概念"],
-        "timeout": 300,
-        "retries": 2,
-    },
-    {
-        "key": "writer",
-        "role": "内容作家",
-        "method": "Show don't tell: 每段有质感(冷金属/暖木/粗石)，留白是节奏的一部分；先列骨架再落笔，不照搬素材原文",
-        "model": "deepseek-chat",
-        "style": ["感官", "节奏"],
-        "timeout": 420,
-        "retries": 2,
-    },
-    {
-        "key": "visual_director",
-        "role": "视觉导演",
-        "method": "每帧都是照片: 光从哪来、主色调、材质；理解模型如雕塑家理解大理石",
-        "model": "deepseek-chat",
-        "style": ["光影", "材质"],
-        "timeout": 300,
-        "retries": 2,
-    },
-    {
-        "key": "editor",
-        "role": "内容编辑",
-        "method": "Premortem 事前验尸: 假设已经失败，找出弱点；不配存在的句子就删",
-        "model": "deepseek-chat",
-        "style": ["锋利", "减法"],
-        "timeout": 300,
-        "retries": 2,
-    },
-    {
-        "key": "distribution",
-        "role": "分发策略师",
-        "method": "分发是创作的一部分: 平台节奏、钩子位置、克制收尾；禁止任何评论/点赞/关注/转发引导话术",
-        "model": "deepseek-chat",
-        "style": ["平台感", "克制"],
-        "timeout": 300,
-        "retries": 2,
-    },
-]
-
-# 内置 agent 工序的默认 LLM 配置（seed 到 phases 表；工序库可编辑）。
-# 由 DEFAULT_AGENTS 派生——role/method/style/model/timeout/retries 全量，
-# 声明与执行必须一致（AXIOM §1.2：engine 回退到同一来源）。
-DEFAULT_AGENT_CONFIG: dict[str, dict] = {
-    a["key"]: {k: a.get(k, "") for k in ("role", "method", "style", "model", "timeout", "retries")}
-    for a in DEFAULT_AGENTS
-}
+# 内置 agent 工序的出厂 LLM 配置——直接从 PHASES 派生（单一真相源，AXIOM §1.2）。
+# seed/恢复默认/角色库全部消费同一份 PhaseDef，杜绝两处维护。
+def phase_agent_config(p: PhaseDef) -> dict:
+    return {
+        "role": p.role,
+        "method": p.method,
+        "style": list(p.style),
+        "model": p.model,
+        "timeout": p.timeout,
+        "retries": p.retries,
+    }
 
 
 DEFAULT_BRIEF_CONTENT = """# 创意策略模板

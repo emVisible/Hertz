@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from backend.models.role import Role
 from backend.models.session import session_factory
-from backend.orchestration.phases import DEFAULT_AGENTS
+from backend.orchestration.phases import PHASES
 
 logger = logging.getLogger(__name__)
 
@@ -20,24 +20,25 @@ class RoleService:
     async def _seed(self) -> None:
         """首次访问：种入默认 5 角色（幂等，已存在跳过）。
 
-        默认角色的 MD description 由 DEFAULT_AGENTS 的 method/style 组合生成。
+        默认角色的 MD description 由内置 agent 工序（PHASES）的 method/style 组合生成。
         """
         async with session_factory() as session:
             existing = set((await session.execute(select(Role.key))).scalars().all())
-            missing = [a for a in DEFAULT_AGENTS if a["key"] not in existing]
+            agents = [p for p in PHASES if p.phase_type == "agent"]
+            missing = [a for a in agents if a.key not in existing]
             if not missing:
                 return
             for i, agent in enumerate(missing):
-                parts = [f"# {agent.get('role', agent['key'])}"]
-                if agent.get("method"):
-                    parts.append(f"## 方法论\n\n{agent['method']}")
-                if agent.get("style"):
-                    parts.append(f"## 风格\n\n{', '.join(str(s) for s in agent['style'])}")
+                parts = [f"# {agent.role or agent.name}"]
+                if agent.method:
+                    parts.append(f"## 方法论\n\n{agent.method}")
+                if agent.style:
+                    parts.append(f"## 风格\n\n{', '.join(agent.style)}")
                 session.add(
                     Role(
-                        key=agent["key"],
-                        name=agent["key"],
-                        role_name=agent.get("role", agent["key"]),
+                        key=agent.key,
+                        name=agent.key,
+                        role_name=agent.role or agent.name,
                         description="\n\n".join(parts),
                         sort_order=i,
                     )

@@ -218,6 +218,7 @@ async def test_phase_editing_archive_and_restore(client, fake_ai) -> None:
 
     writer = next(p for p in palette if p["key"] == "writer")
     assert writer["role"] and writer["method"] and writer["style"]
+    assert writer["model"] == ""  # 内置工序不锁模型：跟随全局默认（Studio 主模型）
 
     updated = await client.put(
         "/api/phases/writer",
@@ -245,7 +246,8 @@ async def test_phase_editing_archive_and_restore(client, fake_ai) -> None:
     palette_restored = (await client.get("/api/phases")).json()
     assert any(p["key"] == "writer" for p in palette_restored)
     writer_back = next(p for p in palette_restored if p["key"] == "writer")
-    assert writer_back["method"] == "Show don't tell: 每段有质感(冷金属/暖木/粗石)，留白是节奏的一部分；先列骨架再落笔，不照搬素材原文"
+    assert writer_back["method"].startswith("1. 先列骨架")  # 出厂 method 为结构化多行步骤
+    assert writer_back["model"] == ""  # 恢复默认同样不锁模型
 
 
 @pytest.mark.asyncio

@@ -1,9 +1,10 @@
-"""score step — AI-rubric scoring with prefilter and rejection threshold.
+"""score step — AI-rubric scoring with prefilter and low-score marking.
 
 Items are scored via AIRouter.score(); scores below the configured minimum
-(settings.pipeline_min_score, or with an unsuitable verdict) move to REJECTED
-instead of SCORED. Failed scoring calls fail the item (retryable via the
-engine's retry affordance).
+(settings.pipeline_min_score) are marked is_lowscore instead of being
+rejected — 低分可复用（参考原项目 Autarkeia），进入审核由人工决定。
+只有硬性预过滤（reddit_score / upvote_ratio）会直接拒绝。
+Failed scoring calls fail the item (retryable via the engine's retry).
 """
 
 import logging
@@ -19,7 +20,7 @@ MIN_UPVOTE_RATIO = 0.0
 
 class ScoreStep(Pipe):
     name = "score"
-    input_statuses: tuple[str, ...] = ("discovered",)
+    input_statuses: tuple[str, ...] = ("downloaded",)
 
     async def process(self, ctx: StepContext, item) -> ProcessResult:
         if item.reddit_score < MIN_REDDIT_SCORE:
@@ -40,16 +41,7 @@ class ScoreStep(Pipe):
         )
         threshold = float(getattr(ctx.settings, "pipeline_min_score", 6.0))
         suitable = result.total >= threshold
-        if not suitable:
-            return ProcessResult(
-                status="rejected",
-                data={
-                    "score_total": result.total,
-                    "score_dimensions": result.dimensions,
-                    "score_reasons": result.reasons,
-                    "reason": "below_min_score",
-                },
-            )
+        # 低分不丢弃：标记 is_lowscore 继续流程（人工审核决定），参考原项目「低分可复用」
         return ProcessResult(
             status="scored",
             data={
@@ -57,5 +49,6 @@ class ScoreStep(Pipe):
                 "score_dimensions": result.dimensions,
                 "score_reasons": result.reasons,
                 "score_fallback": result.fallback,
+                "is_lowscore": not suitable,
             },
         )

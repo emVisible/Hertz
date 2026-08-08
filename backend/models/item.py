@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,6 +54,8 @@ class Item(BaseModel):
     score_total: Mapped[float | None] = mapped_column(Float, nullable=True)
     score_dimensions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     score_reasons: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # 低分标记（v0.2.0）：低于阈值不自动丢弃，进审核人工决定（参考原项目）
+    is_lowscore: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Production artifacts (paths relative to data_dir)
     raw_path: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -71,6 +73,8 @@ class Item(BaseModel):
 
     # Review / publish
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 排期发布（独立发布环节，v5.10）：定时上传用
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Failure diagnostics
