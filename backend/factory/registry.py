@@ -97,7 +97,23 @@ class ServiceRegistry:
 
         self.pipeline.engine.ai = self.ai
         self.pipeline.engine.collector = RedditCollector()
+        # 周期性任务（v0.2.1，参考原项目 scheduler）：自动过审默认关闭，
+        # 开启后每 5 分钟扫描超时未审条目（auto_approve 内部自查开关）
+        self.scheduler.add_job(
+            "auto_approve",
+            self._auto_approve_tick,
+            trigger="interval",
+            minutes=5,
+        )
         self.log.get().info("ServiceRegistry initialized (AI via ProviderRegistry)")
+
+    async def _auto_approve_tick(self) -> None:
+        try:
+            result = await self.pipeline.auto_approve()
+            if result.get("approved", 0) > 0:
+                self.log.get().info("auto_approve approved %d item(s)", result["approved"])
+        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+            self.log.get().exception("auto_approve tick failed (best effort)")
 
     async def shutdown(self) -> None:
         # Cancel in-flight background work before releasing resources

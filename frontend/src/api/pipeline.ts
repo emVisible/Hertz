@@ -71,7 +71,11 @@ export interface SourceState {
   cursor: Record<string, unknown> | null
   ok_count: number
   fail_count: number
+  consecutive_fails: number
+  last_error: string | null
+  last_error_at: string | null
   last_run_at: string | null
+  health: 'healthy' | 'degraded' | 'dead'
 }
 
 export type PipelineEventType = 'job_step' | 'item' | 'job_done' | 'log'
@@ -113,5 +117,9 @@ export const pipelineApi = {
   cancel: () => api.post<{ ok: boolean; cancelling: boolean }>('/api/pipeline/cancel'),
   jobs: (limit = 10) => api.get<PipelineJob[]>(`/api/pipeline/jobs?limit=${limit}`),
   sources: () => api.get<SourceState[]>('/api/pipeline/sources'),
+  supply: () => api.get<{ warnings: string[] }>('/api/pipeline/supply'),
+  failures: () => api.get<Record<string, number>>('/api/pipeline/failures'),
+  retryClass: (cls: string) => api.post<{ cls: string; requeued: number }>('/api/pipeline/retry-class', { cls }),
+  nextScheduleSlot: () => api.get<{ recommended_at: string }>('/api/pipeline/schedule/next'),
   eventsUrl: () => `${API_BASE}/api/pipeline/events`,
 }

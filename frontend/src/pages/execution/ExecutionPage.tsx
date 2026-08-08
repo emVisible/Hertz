@@ -96,12 +96,15 @@ export function ExecutionPage() {
           setTab={pipeline.setTab}
           jobs={pipeline.jobs}
           sources={pipeline.sources}
+          failures={pipeline.failures}
+          supplyWarnings={pipeline.supplyWarnings}
           logs={pipeline.logs}
           run={pipeline.run}
           stop={pipeline.stop}
           act={pipeline.act}
           saveMeta={pipeline.saveMeta}
           publishItem={pipeline.publishItem}
+          retryClass={pipeline.retryClass}
           modelSwitch={pipelineModelSwitch}
         />
       )}

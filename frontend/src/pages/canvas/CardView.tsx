@@ -11,6 +11,7 @@ export function CardView({
   clustersVisible,
   clusterColor,
   editing,
+  pan,
   onEditDone,
   onSelect,
 }: {
@@ -20,11 +21,14 @@ export function CardView({
   clustersVisible: boolean
   clusterColor: string | undefined
   editing: boolean
+  /** 画布平移（世界坐标 → 屏幕）：拖拽换算时减去 */
+  pan: { x: number; y: number }
   onEditDone: () => void
   onSelect: () => void
 }) {
   const moveCard = useBoardStore((s) => s.moveCard)
   const setContent = useBoardStore((s) => s.setContent)
+  const setCardImage = useBoardStore((s) => s.setCardImage)
   const togglePin = useBoardStore((s) => s.togglePin)
   const deleteCard = useBoardStore((s) => s.deleteCard)
   const pinned = useBoardStore((s) => s.pinned.includes(card.id))
@@ -57,13 +61,34 @@ export function CardView({
     onEditDone()
   }
 
+  /** 输入态粘贴剪贴板图片 → 本卡转换为图片卡（Revel 同款交互）。 */
+  function onPaste(e: React.ClipboardEvent) {
+    const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
+    if (!file) return
+    e.preventDefault()
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = String(reader.result ?? '')
+      const img = new Image()
+      img.onload = () => {
+        const maxW = 320
+        const maxH = 240
+        const scale = Math.min(maxW / img.width, maxH / img.height, 1)
+        setCardImage(card.id, dataUrl, Math.round(img.width * scale), Math.round(img.height * scale))
+      }
+      img.src = dataUrl
+      finishEditing()
+    }
+    reader.readAsDataURL(file)
+  }
+
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return
     // 编辑态下不拦截指针：让 textarea 正常聚焦/定位光标
     if (editing) return
     e.preventDefault()
     onSelect()
-    drag.current = { dx: e.clientX - card.x, dy: e.clientY - card.y, moved: false }
+    drag.current = { dx: e.clientX - card.x - pan.x, dy: e.clientY - card.y - pan.y, moved: false }
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
@@ -73,15 +98,15 @@ export function CardView({
     const dx = e.clientX - card.x - drag.current.dx
     const dy = e.clientY - card.y - drag.current.dy
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.current.moved = true
-    if (drag.current.moved) moveCard(card.id, e.clientX - drag.current.dx, e.clientY - drag.current.dy)
+    if (drag.current.moved) moveCard(card.id, e.clientX - pan.x - drag.current.dx, e.clientY - pan.y - drag.current.dy)
   }
 
   function onPointerUp() {
     if (!drag.current) return
     const wasClick = !drag.current.moved
     drag.current = null
-    // 单击（write 工具下）= 立即进入编辑
-    if (wasClick && useBoardStore.getState().tool === 'write') {
+    // 单击（write 工具下）= 立即进入编辑（图片卡跳过）
+    if (wasClick && useBoardStore.getState().tool === 'write' && card.type !== 'image') {
       useBoardStore.getState().setEditing(card.id)
     }
   }
@@ -93,6 +118,7 @@ export function CardView({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPaste={onPaste}
       style={{
         left: card.x,
         top: card.y,
@@ -143,12 +169,28 @@ export function CardView({
         </div>
       </div>
 
-      {isEditing ? (
+      {card.type === 'image' && card.imageData ? (
+        <div className="pointer-events-none">
+          <img
+            src={card.imageData}
+            alt=""
+            draggable={false}
+            className="max-w-full select-none object-contain"
+            style={{ maxHeight: card.height }}
+          />
+          {card.content && (
+            <p className="font-kai mt-1 whitespace-pre-wrap text-xs leading-snug text-text-primary">
+              {card.content}
+            </p>
+          )}
+        </div>
+      ) : isEditing ? (
         <textarea
           ref={taRef}
           value={card.content}
           onChange={(e) => setContent(card.id, e.target.value)}
           onBlur={finishEditing}
+          onPaste={onPaste}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               // 回车提交并结束编辑（Shift+Enter 换行）

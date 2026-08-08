@@ -5,6 +5,7 @@ keeps the target table so future platforms plug in with one entry.
 """
 
 import asyncio
+import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -32,6 +33,72 @@ class NoopPublisher(Publisher):
     async def publish(self, ctx: StepContext, item) -> dict:
         ctx.log(f"[publish] (noop) would publish {item.title}")
         return {"target": "noop", "dry_run": True}
+
+
+class ExportPublisher(Publisher):
+    """Export-first 模式（v0.2.1，参考原项目 localize 导出包）：
+
+    不直传平台（tiktok/youtube 等无自动上传凭据时），把成片 + 字幕 +
+    标题/描述/来源整理成发布包写到 data/exports/<item_id>/，人工/半自动上传。
+    同一产物目录可反复导出（幂等覆盖）。
+    """
+
+    name = "export"
+
+    async def publish(self, ctx: StepContext, item) -> dict:
+        from datetime import UTC, datetime
+
+        if not item.video_path:
+            raise PublisherError("item has no finished video to export")
+        root = Path(ctx.settings.data_dir) / "exports"
+        out_dir = root / str(item.id)
+        await asyncio.to_thread(out_dir.mkdir, parents=True, exist_ok=True)
+
+        def _copy(src: str | None, name: str) -> bool:
+            if not src:
+                return False
+            src_path = Path(src)
+            if not src_path.exists():
+                return False
+            shutil.copy2(str(src_path), str(out_dir / name))
+            return True
+
+        video_copied = _copy(item.video_path, "video.mp4")
+        if not video_copied:
+            raise PublisherError(f"video missing: {item.video_path}")
+        _copy(item.subtitle_path, "subs.srt")
+        _copy(item.cover_path, "cover.jpg")
+
+        script = item.script_json or {}
+        meta_lines = [
+            f"# {script.get('bili_title') or item.title}",
+            "",
+            f"- 来源: {item.source_url}",
+            f"- 作者: u/{item.author}",
+            f"- AI 评分: {item.score_total}",
+            f"- 导出时间: {datetime.now(UTC).isoformat()}",
+            f"- 排期: {item.scheduled_at.isoformat() if item.scheduled_at else '无（人工定）'}",
+            "",
+            "## 描述",
+            script.get("bili_desc") or item.title,
+            "",
+            "## 标签",
+            script.get("bili_tags") or "(无)",
+            "",
+            "## 字幕",
+            "subs.srt（如有）",
+            "",
+        ]
+        await asyncio.to_thread(
+            (out_dir / "README.md").write_text, "\n".join(meta_lines), encoding="utf-8"
+        )
+        files = sorted(p.name for p in out_dir.iterdir() if p.is_file())
+        ctx.log(f"[publish] export package ready: {out_dir} ({len(files)} files)")
+        return {
+            "target": "export",
+            "export_dir": str(out_dir),
+            "files": files,
+        }
 
 
 class BilibiliPublisher(Publisher):
@@ -79,6 +146,7 @@ class BilibiliPublisher(Publisher):
 
 PUBLISHERS: dict[str, Publisher] = {
     "bilibili": BilibiliPublisher(),
+    "export": ExportPublisher(),  # 导出包模式（tiktok/youtube 等人工/半自动上传）
     "noop": NoopPublisher(),
 }
 

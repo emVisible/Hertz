@@ -66,6 +66,18 @@ export function usePipelineExecution() {
     queryKey: ['pipeline-sources'],
     queryFn: pipelineApi.sources,
   })
+  // 失败分类看板（v0.2.1）：failed 按类聚合，同类批量重试
+  const { data: failures = {} } = useQuery({
+    queryKey: ['pipeline-failures'],
+    queryFn: pipelineApi.failures,
+    refetchInterval: pollingInterval,
+  })
+  // 供给告警（漏斗空 / 供给偏紧 / 采集源失联）
+  const { data: supply = { warnings: [] } } = useQuery({
+    queryKey: ['pipeline-supply'],
+    queryFn: pipelineApi.supply,
+    refetchInterval: pollingInterval,
+  })
 
   const store = useExecutionStore()
   const { step, limit, logs, logSeq, tab } = store.pipeline
@@ -182,6 +194,17 @@ export function usePipelineExecution() {
     }
   }
 
+  /** 同类批量重试（失败分类看板）。 */
+  async function retryClass(cls: string) {
+    try {
+      const res = await pipelineApi.retryClass(cls)
+      refresh()
+      toast(t('console.retriedClass', { n: res.requeued }), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   const running = (status as { running?: boolean } | undefined)?.running ?? false
 
   return {
@@ -202,6 +225,8 @@ export function usePipelineExecution() {
     setTab: (v: string) => setPipeline({ tab: v }),
     jobs,
     sources,
+    failures,
+    supplyWarnings: supply.warnings,
     step,
     setStep,
     limit,
@@ -214,6 +239,7 @@ export function usePipelineExecution() {
     act,
     saveMeta,
     publishItem,
+    retryClass,
     refresh,
   }
 }

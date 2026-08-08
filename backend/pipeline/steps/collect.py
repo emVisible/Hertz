@@ -85,6 +85,7 @@ async def run_collect(ctx: StepContext, channel: str, limit: int, collector) -> 
             state.last_strategy = collector.name
             state.last_run_at = datetime.now(UTC)
             state.ok_count += 1
+            state.consecutive_fails = 0  # 数据源健康度：成功即清零连续失败
         await session.commit()
 
     return {"channel": channel, "collected": len(posts), "inserted": inserted, "skipped": skipped}

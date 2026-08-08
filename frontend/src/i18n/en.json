@@ -422,6 +422,18 @@
     "script": "Script",
     "exceptions": "Exceptions (failed / rejected)",
     "noExceptions": "No exceptions",
+    "retryClassHint": "Retry all failures of this class",
+    "retriedClass": "Reset {{n}} item(s) — ready to re-process",
+    "sourceHealth": {
+      "healthy": "Healthy",
+      "degraded": "Partial failures",
+      "dead": "Unreachable"
+    },
+    "supply": {
+      "funnel_empty": "Funnel empty: nothing collected yet",
+      "supply_tight": "Supply tight: fewer than 5 items pending",
+      "source_unreachable": "Collector failing repeatedly — check network/proxy"
+    },
     "publishHint": "Publish via the Run section → select publish",
     "restore": "Restore to review",
     "shownLimit": "Showing first {{shown}} of {{total}}",
@@ -432,6 +444,8 @@
     "schedule": "Schedule",
     "scheduleSave": "Save schedule",
     "scheduleSet": "Scheduled",
+    "scheduleSuggest": "Suggest",
+    "scheduleSuggestHint": "Local schedule engine: window + min interval + jitter, suggests the next publish slot",
     "scheduleFirst": "Set a schedule first",
     "backToReview": "Back to review",
     "published": "Published",
@@ -489,13 +503,23 @@
     "import": "Import board",
     "imported": "Board imported",
     "importFailed": "Import failed: invalid file",
+    "importBadType": "Only .revel.json files are supported",
+    "importDrop": "Drop to import board",
+    "boardNew": "New board",
+    "boardRemove": "Remove board \"{{name}}\"?",
+    "boardRemoveTitle": "Remove board",
     "clear": "Clear board",
     "clearConfirm": "Clear the whole board? All cards and strokes will be deleted.",
     "clusters": "Show clusters (⌘G)",
     "runInStudio": "Create in Studio",
     "layers": {
       "title": "Layers",
-      "new": "New layer"
+      "new": "New layer",
+      "hide": "Hide",
+      "show": "Show",
+      "up": "Move up",
+      "down": "Move down",
+      "empty": "No layers yet"
     },
     "emptyBoard": "The blank board is waiting for you.",
     "emptyHint": "Double-click the “+” on the left to write a first idea",

@@ -79,6 +79,8 @@ class Item(BaseModel):
 
     # Failure diagnostics
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 失败分类（v0.2.1）：blocked/rate_limit/timeout/llm/tts/ffmpeg/download/publish/internal/other
+    error_class: Mapped[str] = mapped_column(String(32), default="", index=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
 
     # Optional ownership link to an orchestration run

@@ -6,6 +6,7 @@ the oldest ``created_utc`` seen, so each run only scans newer posts.
 """
 
 import logging
+import random
 import time
 import urllib.request
 
@@ -65,9 +66,11 @@ class RedditCollector(SourceCollector):
         await self._client.aclose()
 
     async def collect(self, ctx, channel: str, limit: int) -> list[RawPost]:
-        sort = channel.split(":", 1)[1] if ":" in channel else "hot"
+        sort = channel.split(":", 1)[1] if ":" in channel else ""
         if sort not in _SORTS:
-            sort = "hot"
+            # 排序轮换（v0.2.1，参考原项目随机化）：未显式指定时随机挑选，
+            # 避免每次都打固定 hot 首页（反 429 熔断 + 供给多样化）
+            sort = random.choice(_SORTS)
         sub = channel.split(":", 1)[0].strip("/") or "all"
         url = f"https://www.reddit.com/r/{sub}/{sort}.json"
         try:

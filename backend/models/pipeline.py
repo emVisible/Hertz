@@ -28,6 +28,10 @@ class SourceState(BaseModel):
     cooldowns_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     ok_count: Mapped[int] = mapped_column(Integer, default=0)
     fail_count: Mapped[int] = mapped_column(Integer, default=0)
+    # 数据源健康度（v0.2.1，参考原项目）：连续失败 + 最后错误 → dead/degraded/healthy
+    consecutive_fails: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_strategy: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

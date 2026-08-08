@@ -4,6 +4,7 @@ import type { PipelineItem } from '../../api'
 import {
   Badge,
   Button,
+  Icon,
   QueryErrorState,
   Select,
   TabBar,
@@ -55,12 +56,15 @@ interface PipelineViewProps {
   setTab: (v: string) => void
   jobs: ReturnType<typeof usePipelineExecution>['jobs']
   sources: ReturnType<typeof usePipelineExecution>['sources']
+  failures: Record<string, number>
+  supplyWarnings: string[]
   logs: ReturnType<typeof usePipelineExecution>['logs']
   run: () => void
   stop: () => void
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
   publishItem: (item: PipelineItem, selfmade?: boolean) => void
+  retryClass: (cls: string) => void
   modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
@@ -161,15 +165,36 @@ export function PipelineView(p: PipelineViewProps) {
                 }
               />
               <div className="flex min-h-0 flex-col gap-4">
+                {/* 供给告警（参考原项目漏斗水位）：源头出问题时一眼可见 */}
+                {p.supplyWarnings.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 border border-warning/30 bg-warning/10 px-2.5 py-1.5">
+                    {p.supplyWarnings.map((w) => (
+                      <span key={w} className="text-[11px] text-warning">{t(`console.supply.${w}`)}</span>
+                    ))}
+                  </div>
+                )}
                 <SectionCard title={t('console.sources')} padded={false} className="shrink-0">
                   <ul className="max-h-40 space-y-1 overflow-y-auto p-3 text-xs">
                     {p.sources.length === 0 && <p className="text-text-disabled">{t('console.noSources')}</p>}
                     {p.sources.map((s) => (
                       <li key={`${s.source}:${s.channel}`} className="flex items-center justify-between gap-2">
-                        <span>
-                          {s.source}:{s.channel}
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span
+                            title={t(`console.sourceHealth.${s.health}`)}
+                            className={`h-2 w-2 shrink-0 rounded-full ${
+                              s.health === 'healthy'
+                                ? 'bg-emerald-400'
+                                : s.health === 'degraded'
+                                  ? 'bg-warning'
+                                  : 'bg-error'
+                            }`}
+                          />
+                          <span className="truncate">{s.source}:{s.channel}</span>
                         </span>
-                        <span className="text-text-secondary">
+                        <span
+                          className="shrink-0 text-text-secondary"
+                          title={s.last_error ?? undefined}
+                        >
                           ok {s.ok_count} / fail {s.fail_count}
                         </span>
                       </li>
@@ -237,28 +262,49 @@ export function PipelineView(p: PipelineViewProps) {
                 ) : p.stageFailed.length + p.stageRejected.length === 0 ? (
                   <p className="p-3 text-sm text-text-disabled">{t('console.noExceptions')}</p>
                 ) : (
-                  <StageList
-                    items={[...p.stageRejected, ...p.stageFailed]}
-                    emptyText={t('console.noExceptions')}
-                    total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)}
-                    renderRow={(item) => (
-                      <StageItemRow
-                        item={item}
-                        badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
-                        right={
-                          item.status === 'failed' ? (
-                            <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'retry')}>
-                              {t('common.retry')}
-                            </Button>
-                          ) : (
-                            <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
-                              {t('console.restore')}
-                            </Button>
-                          )
-                        }
-                      />
+                  <>
+                    {/* 失败分类看板（v0.2.1）：按类统计 + 同类批量重试 */}
+                    {Object.keys(p.failures).length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
+                        {Object.entries(p.failures).map(([cls, n]) => (
+                          <span key={cls} className="inline-flex items-center gap-1.5 border border-border bg-surface-2/60 px-2 py-0.5 text-[11px] text-text-secondary">
+                            <span className="font-mono">{cls}</span>
+                            <span className="text-text-disabled">{n}</span>
+                            <button
+                              type="button"
+                              onClick={() => void p.retryClass(cls)}
+                              title={t('console.retryClassHint', { cls })}
+                              className=" p-0.5 text-text-disabled transition-colors hover:text-primary"
+                            >
+                              <Icon name="refresh" size={11} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
                     )}
-                  />
+                    <StageList
+                      items={[...p.stageRejected, ...p.stageFailed]}
+                      emptyText={t('console.noExceptions')}
+                      total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)}
+                      renderRow={(item) => (
+                        <StageItemRow
+                          item={item}
+                          badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
+                          right={
+                            item.status === 'failed' ? (
+                              <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'retry')}>
+                                {t('common.retry')}
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
+                                {t('console.restore')}
+                              </Button>
+                            )
+                          }
+                        />
+                      )}
+                    />
+                  </>
                 )}
               </SectionCard>
             </div>

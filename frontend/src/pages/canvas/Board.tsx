@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useBoardStore } from '../../stores/board'
@@ -14,6 +14,8 @@ import { CardView } from './CardView'
 
 const SUGGESTION_THRESHOLD = 0.12
 const SUGGESTION_LIMIT = 4
+/** 画布平移边界（Revel heritage：单轴 ±260px 有界，弹性阻尼） */
+const PAN_BOUND = 260
 
 export function Board() {
   const { t } = useTranslation()
@@ -34,6 +36,82 @@ export function Board() {
   const shapeDraft = useRef<{ shape: 'rect' | 'ellipse' | 'line'; from: { x: number; y: number }; to: { x: number; y: number } } | null>(null)
   const linkFrom = useRef<string | null>(null)
   const seedRef = useRef(chalkSeed(Date.now() % 233280))
+
+  // ---- 画布平移（Space+拖拽，Revel heritage） ----
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [spaceHeld, setSpaceHeld] = useState(false)
+  const panning = useRef<{ startX: number; startY: number } | null>(null)
+  const lastPointer = useRef({ x: 0, y: 0 })
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return
+      e.preventDefault()
+      setSpaceHeld(true)
+    }
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setSpaceHeld(false)
+    }
+    const blur = () => {
+      setSpaceHeld(false)
+      panning.current = null
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', blur)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', blur)
+    }
+  }, [])
+
+  const clampPan = (v: number) => Math.max(-PAN_BOUND, Math.min(PAN_BOUND, v))
+
+  function onWrapPointerDown(e: React.PointerEvent) {
+    if (!spaceHeld) return
+    e.preventDefault()
+    e.stopPropagation()
+    panning.current = { startX: e.clientX - pan.x, startY: e.clientY - pan.y }
+    wrapRef.current?.setPointerCapture(e.pointerId)
+  }
+
+  function onWrapPointerMove(e: React.PointerEvent) {
+    lastPointer.current = { x: e.clientX, y: e.clientY }
+    if (!panning.current) return
+    setPan({
+      x: clampPan(e.clientX - panning.current.startX),
+      y: clampPan(e.clientY - panning.current.startY),
+    })
+  }
+
+  function onWrapPointerUp() {
+    panning.current = null
+  }
+
+  /** 背景粘贴剪贴板图片 → 图片卡（Revel 同款交互；输入态粘贴由 CardView 处理）。 */
+  function onWrapPaste(e: React.ClipboardEvent) {
+    const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
+    if (!file) return
+    e.preventDefault()
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(320 / img.width, 240 / img.height, 1)
+        const w = Math.round(img.width * scale)
+        const h = Math.round(img.height * scale)
+        // 贴在最近一次指针位置的可见区中心（世界坐标 = 屏幕坐标 - pan）
+        const rect = wrapRef.current?.getBoundingClientRect()
+        const x = rect ? lastPointer.current.x - rect.left - pan.x - w / 2 : undefined
+        const y = rect ? lastPointer.current.y - rect.top - pan.y - h / 2 : undefined
+        useBoardStore.getState().addImageCard(String(reader.result ?? ''), x, y)
+      }
+      img.src = String(reader.result ?? '')
+    }
+    reader.readAsDataURL(file)
+  }
 
   const clusters = useBoardClusters()
   const addCard = useBoardStore((s) => s.addCard)
@@ -153,9 +231,10 @@ export function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clusters, suggestions, ghostPairs])
 
+  /** 屏幕坐标 → 世界坐标（减去平移偏移） */
   function boardPoint(e: React.PointerEvent): { x: number; y: number } {
     const rect = wrapRef.current!.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    return { x: e.clientX - rect.left - pan.x, y: e.clientY - rect.top - pan.y }
   }
 
   function onPointerDown(e: React.PointerEvent) {
@@ -208,6 +287,7 @@ export function Board() {
   }
 
   function onPointerMove(e: React.PointerEvent) {
+    lastPointer.current = { x: e.clientX, y: e.clientY }
     const p = boardPoint(e)
     if (activeStroke.current) {
       activeStroke.current = { ...activeStroke.current, points: [...activeStroke.current.points, p] }
@@ -231,6 +311,8 @@ export function Board() {
       activeStroke.current = null
       useBoardStore.setState({
         board: { ...state.board, strokes: [...state.board.strokes, stroke], updatedAt: Date.now() },
+        boards: state.boards.map((b) => (b.id === state.activeBoardId ? { ...b, strokes: [...b.strokes, stroke], updatedAt: Date.now() } : b)),
+        lastTouchAt: Date.now(),
       })
       return
     }
@@ -247,30 +329,40 @@ export function Board() {
   })
 
   return (
-    <div ref={wrapRef} className="relative min-h-0 flex-1 overflow-hidden ">
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 h-full w-full cursor-crosshair"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-      />
-      {visibleCards.map((card) => (
-        <CardView
-          key={card.id}
-          card={card}
-          selected={selectedId === card.id}
-          focused={!!selectedId && selectedId !== card.id}
-          clustersVisible={showClusters}
-          clusterColor={clusters.get(card.id) as string | undefined}
-          editing={editingId === card.id}
-          onEditDone={() => setEditing(null)}
-          onSelect={() => {
-            selectCard(card.id)
-            touch()
-          }}
+    <div
+      ref={wrapRef}
+      onPointerDownCapture={onWrapPointerDown}
+      onPointerMove={onWrapPointerMove}
+      onPointerUp={onWrapPointerUp}
+      onPaste={onWrapPaste}
+      className="relative min-h-0 flex-1 overflow-hidden "
+    >
+      <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }} className="absolute inset-0">
+        <canvas
+          ref={canvasRef}
+          className={`absolute inset-0 h-full w-full ${spaceHeld ? 'cursor-grab' : 'cursor-crosshair'}`}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
         />
-      ))}
+        {visibleCards.map((card) => (
+          <CardView
+            key={card.id}
+            card={card}
+            selected={selectedId === card.id}
+            focused={!!selectedId && selectedId !== card.id}
+            clustersVisible={showClusters}
+            clusterColor={clusters.get(card.id) as string | undefined}
+            editing={editingId === card.id}
+            pan={pan}
+            onEditDone={() => setEditing(null)}
+            onSelect={() => {
+              selectCard(card.id)
+              touch()
+            }}
+          />
+        ))}
+      </div>
       {tool === 'write' && visibleCards.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-text-secondary">
           <p className="font-kai text-lg opacity-80">{t('canvas.emptyBoard')}</p>

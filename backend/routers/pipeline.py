@@ -162,6 +162,44 @@ async def sources():
     return await _pipe().sources()
 
 
+@router.get("/supply")
+async def supply_warnings():
+    """供给告警（漏斗空 / 供给偏紧 / 采集源失联）。"""
+    return {"warnings": await _pipe().supply_warnings()}
+
+
+@router.get("/failures")
+async def failure_classes():
+    """failed 条目按失败分类聚合（v0.2.1 失败分类看板）。"""
+    return await _pipe().failure_classes()
+
+
+class RetryClassBody(BaseModel):
+    cls: str
+
+
+@router.post("/retry-class")
+async def retry_failure_class(body: RetryClassBody):
+    """同类批量重试：该失败分类的所有 failed 条目复位回可继续状态。"""
+    try:
+        count = await _pipe().retry_class(body.cls)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"cls": body.cls, "requeued": count}
+
+
+@router.get("/schedule/next")
+async def next_schedule_slot():
+    """下一个发布槽位（本地排期引擎）：窗口内 + 最小间隔 + 抖动。"""
+    return {"recommended_at": await _pipe().next_schedule_slot()}
+
+
+@router.post("/auto-approve")
+async def auto_approve():
+    """手动触发自动过审（配置 pipeline_auto_approve 开启才生效）。"""
+    return await _pipe().auto_approve()
+
+
 @router.get("/events")
 async def pipeline_events():
     """SSE stream of pipeline events (log / job_step / item / job_done)."""

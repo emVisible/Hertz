@@ -56,9 +56,22 @@ class Settings(BaseSettings):
     comfyui_base_url: str = "http://127.0.0.1:8188"
 
     # Execution pipeline
-    pipeline_publish_target: str = "noop"  # noop | bilibili
+    pipeline_publish_target: str = "noop"  # noop | bilibili | export
     pipeline_min_score: float = 6.0
     pipeline_collect_limit: int = 25
+    # 评分成本闸门（v0.2.1，参考原项目 Autarkeia）：单次运行 / 单日 LLM 评分硬限额，
+    # 超限跳过评分（条目保持 downloaded，下轮或次日再评）——防 API 费用失控
+    pipeline_score_max_per_run: int = 50
+    pipeline_score_max_per_day: int = 100
+    # 本地排期引擎（v0.2.1，参考原项目 scheduler_utils）：每日发布窗口 + 最小间隔 + 抖动
+    pipeline_publish_windows: str = "10:00-12:00,18:00-20:00"
+    pipeline_publish_min_interval_min: int = 30
+    pipeline_publish_jitter_min: int = 5
+    pipeline_publish_lookahead_days: int = 3
+    # 自动过审（v0.2.1，参考原项目 auto_approve）：默认关闭；
+    # 开启后停留审核队列超过 N 小时的条目自动 approve（人工审核仍是默认路径）
+    pipeline_auto_approve: bool = False
+    pipeline_auto_approve_after_hours: int = 12
     # Test/dev escape hatch: allow http(s) non-public URLs in the pipeline
     # download step (SSRF guard stays on by default — AXIOM §8.1).
     pipeline_allow_loopback_urls: bool = False

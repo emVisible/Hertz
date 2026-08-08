@@ -40,5 +40,6 @@ class ProduceStep(Pipe):
                 "cover_path": cover["path"] if cover else None,
                 "audio_path": audio["path"] if audio else None,
                 "subtitle_path": subtitle["path"] if subtitle else None,
+                "phash": artifacts.get("phash"),
             },
         )

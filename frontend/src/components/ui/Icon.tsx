@@ -9,6 +9,7 @@ const PATHS = {
   studio: 'M8 5v14l11-7z',
   console: 'M22 12h-4l-3 9L9 3l-3 9H2',
   downloads: 'M12 3v10m0 0l-4-4m4 4l4-4M5 21h14',
+  upload: 'M12 21V11m0 0l-4 4m4-4l4 4M5 5h14',
   library: 'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z',
   briefs: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M16 13H8M16 17H8M10 9H8',
   plans: 'M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM9 3v18',

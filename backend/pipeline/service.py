@@ -8,7 +8,7 @@ import asyncio
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from backend.infrastructure.events import EventHub
 from backend.models.item import Item, ItemStatus
@@ -147,6 +147,23 @@ class PipelineService:
                 raise InvalidItemStateError(
                     f"cannot publish item in state {item.status}"
                 )
+            # phash 去重闸门（v0.2.1，参考原项目 block_publish_duplicates）：
+            # 同源成片已被发布过 → 拒绝发布，避免重复投稿
+            if item.phash:
+                dup = (
+                    await session.execute(
+                        select(Item.id).where(
+                            Item.phash == item.phash,
+                            Item.status == ItemStatus.PUBLISHED,
+                            Item.id != item.id,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if dup is not None:
+                    raise ValueError(
+                        f"duplicate detected: phash {item.phash} already published "
+                        f"(item {dup}) — 同源内容已发布，禁止重复投稿"
+                    )
             if selfmade:
                 script = dict(item.script_json or {})
                 script["bili_copyright"] = 1
@@ -175,6 +192,40 @@ class PipelineService:
             {"type": "item", "item_id": str(item_id), "status": "published"},
         )
         return {"id": str(item_id), "status": "published", "result": result}
+
+    # ---------- 自动过审（v0.2.1，参考原项目 auto_approve） ----------
+
+    async def auto_approve(self) -> dict:
+        """停留审核队列超过阈值的条目自动 approve（默认关闭，由配置开启）。"""
+        from datetime import UTC, datetime, timedelta
+
+        enabled = bool(getattr(self.engine.settings, "pipeline_auto_approve", False))
+        if not enabled:
+            return {"enabled": False, "approved": 0}
+        hours = float(getattr(self.engine.settings, "pipeline_auto_approve_after_hours", 12))
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.QUEUED,
+                        Item.updated_at < cutoff,
+                    )
+                )
+            ).scalars().all()
+            for item in rows:
+                item.status = ItemStatus.APPROVED
+                item.approved_at = datetime.now(UTC)
+                item.error = None
+                self.hub.publish(
+                    "pipeline",
+                    {
+                        "type": "item", "item_id": str(item.id),
+                        "status": "approved", "step": "auto_approve",
+                    },
+                )
+            await session.commit()
+            return {"enabled": True, "approved": len(rows)}
 
     # ---------- queries ----------
 
@@ -223,21 +274,127 @@ class PipelineService:
             ]
 
     async def sources(self) -> list[dict]:
+        """采集源健康度（v0.2.1，参考原项目三态）：dead / degraded / healthy。"""
         async with session_factory() as session:
             result = await session.execute(
                 select(SourceState).order_by(SourceState.channel)
             )
-            return [
-                {
+            rows = result.scalars().all()
+            out = []
+            for s in rows:
+                total = s.ok_count + s.fail_count
+                if s.ok_count == 0 and s.fail_count > 0:
+                    health = "dead"
+                elif s.consecutive_fails >= 3 or (total > 0 and s.fail_count / total > 0.6):
+                    health = "degraded"
+                else:
+                    health = "healthy"
+                out.append({
                     "source": s.source,
                     "channel": s.channel,
                     "cursor": s.get_cursor(),
                     "ok_count": s.ok_count,
                     "fail_count": s.fail_count,
+                    "consecutive_fails": s.consecutive_fails,
+                    "last_error": s.last_error,
+                    "last_error_at": s.last_error_at.isoformat() if s.last_error_at else None,
                     "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
-                }
-                for s in result.scalars().all()
-            ]
+                    "health": health,
+                })
+            return out
+
+    async def supply_warnings(self) -> list[str]:
+        """供给告警（参考原项目漏斗水位）：空漏斗 / 供给偏紧 / 采集源失联。"""
+        warnings: list[str] = []
+        async with session_factory() as session:
+            total_items = (
+                await session.execute(select(func.count(Item.id)))
+            ).scalar_one()
+            if total_items == 0:
+                warnings.append("funnel_empty")
+                return warnings
+            pre = (
+                await session.execute(
+                    select(func.count(Item.id)).where(
+                        Item.status.in_(
+                            (ItemStatus.DISCOVERED, ItemStatus.DOWNLOADED, ItemStatus.SCORED)
+                        )
+                    )
+                )
+            ).scalar_one()
+            if pre < 5:
+                warnings.append("supply_tight")
+            sources = (
+                await session.execute(
+                    select(SourceState).where(SourceState.fail_count > 0)
+                )
+            ).scalars().all()
+            if any(s.consecutive_fails >= 3 for s in sources):
+                warnings.append("source_unreachable")
+        return warnings
+
+    # ---------- 失败分类看板（v0.2.1，参考原项目 Autarkeia） ----------
+
+    async def failure_classes(self) -> dict[str, int]:
+        """failed 条目按 error_class 聚合统计（空类 = 旧数据/未分类）。"""
+        async with session_factory() as session:
+            result = await session.execute(
+                select(Item.error_class, Item.id).where(Item.status == ItemStatus.FAILED)
+            )
+            counts: dict[str, int] = {}
+            for cls, _ in result:
+                counts[cls or "other"] = counts.get(cls or "other", 0) + 1
+            return counts
+
+    async def retry_class(self, cls: str) -> int:
+        """同类批量重试：把该失败分类的所有 failed 条目复位回可继续的状态。"""
+        from backend.pipeline.errors import FAILURE_CLASSES
+
+        if cls not in FAILURE_CLASSES:
+            raise ValueError(f"unknown failure class '{cls}'")
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.FAILED,
+                        Item.error_class == cls,
+                    )
+                )
+            ).scalars().all()
+            for item in rows:
+                item.status = (
+                    ItemStatus.SCORED
+                    if item.video_path
+                    else (ItemStatus.DOWNLOADED if item.raw_path else ItemStatus.DISCOVERED)
+                )
+                item.error = None
+                item.error_class = ""
+                item.retry_count += 1
+            await session.commit()
+            return len(rows)
+
+    # ---------- 本地排期引擎（v0.2.1，参考原项目 scheduler_utils） ----------
+
+    async def next_schedule_slot(self) -> str:
+        """下一个发布槽位：窗口内 + 与已排期条目的最小间隔 + 抖动。"""
+        from backend.pipeline.schedule import next_slot
+
+        async with session_factory() as session:
+            result = await session.execute(
+                select(Item.scheduled_at).where(Item.scheduled_at.isnot(None))
+            )
+            existing = [t for t in result.scalars().all() if t is not None]
+        return next_slot(
+            existing,
+            windows_raw=getattr(self.engine.settings, "pipeline_publish_windows", ""),
+            min_interval_min=int(
+                getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
+            ),
+            jitter_min=int(getattr(self.engine.settings, "pipeline_publish_jitter_min", 5)),
+            lookahead_days=int(
+                getattr(self.engine.settings, "pipeline_publish_lookahead_days", 3)
+            ),
+        ).isoformat()
 
     @staticmethod
     def _serialize(item: Item) -> dict:
@@ -264,6 +421,7 @@ class PipelineService:
             "script_json": item.script_json,
             "publish_json": item.publish_json,
             "error": item.error,
+            "error_class": item.error_class,
             "retry_count": item.retry_count,
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "approved_at": item.approved_at.isoformat() if item.approved_at else None,

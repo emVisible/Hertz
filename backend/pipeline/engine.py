@@ -165,7 +165,19 @@ class StepEngine:
             if self.collector is None:
                 raise RuntimeError("no collector configured")
             ctx.log(f"[collect] channel={channel or 'hot'} limit={limit}")
-            summary = await run_collect(ctx, channel or "hot", limit, self.collector)
+            # 采集韧性（v0.2.1，参考原项目冷却/熔断）：失败后进入冷却期，冷却中跳过
+            cooldown_s = await self._collect_cooldown_left(self.collector.name, channel or "hot")
+            if cooldown_s > 0:
+                ctx.log(f"[collect] {channel or 'hot'} cooling down ({cooldown_s}s left)")
+                summary = {"channel": channel or "hot", "cooldown_s": cooldown_s}
+                self._emit(ctx.run_id, {"type": "job_step", "step": "collect", **summary})
+                return summary
+            try:
+                summary = await run_collect(ctx, channel or "hot", limit, self.collector)
+            except Exception as exc:  # noqa: BLE001 — 记录失败到数据源健康度后重抛
+                await self._record_collect_failure(self.collector.name, channel or "hot", str(exc))
+                raise
+            await self._clear_collect_cooldown(self.collector.name, channel or "hot")
             self._emit(ctx.run_id, {"type": "job_step", "step": "collect", **summary})
             return summary
 
@@ -220,8 +232,15 @@ class StepEngine:
             row.status = new_status
             if new_status == ItemStatus.FAILED:
                 row.error = error or (result.error if result else None)
+                # 失败分类（v0.2.1）：同类批量重试的数据基础
+                from backend.pipeline.errors import classify_error
+
+                row.error_class = classify_error(
+                    row.error or "", step.name
+                )
             else:
                 row.error = None
+                row.error_class = ""
             for field, value in (result.data if result else {}).items():
                 setattr(row, field, value)
             await session.merge(row)
@@ -238,6 +257,85 @@ class StepEngine:
             },
         )
         return outcome
+
+    async def _record_collect_failure(self, source: str, channel: str, error: str) -> None:
+        """采集失败记账（数据源健康度 v0.2.1）：连续失败 + 失败计数 + 最后错误 + 冷却。
+
+        冷却/熔断：基础 30 分钟；连续失败 ≥3（熔断）翻倍到 2 小时。
+        """
+        from backend.models.pipeline import SourceState
+
+        try:
+            async with session_factory() as session:
+                state = (
+                    await session.execute(
+                        select(SourceState).where(
+                            SourceState.source == source,
+                            SourceState.channel == channel,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if state is None:
+                    state = SourceState(source=source, channel=channel)
+                    session.add(state)
+                state.fail_count += 1
+                state.consecutive_fails += 1
+                state.last_error = str(error)[:500]
+                state.last_error_at = datetime.now(UTC)
+                cooldown_s = 3600 * 2 if state.consecutive_fails >= 3 else 1800
+                cooldowns = state.get_cooldowns()
+                cooldowns["default"] = datetime.now(UTC).timestamp() + cooldown_s
+                state.set_cooldowns(cooldowns)
+                await session.commit()
+                logger.warning(
+                    "collect %s:%s failed — cooldown %ds (consecutive %d)",
+                    source, channel, cooldown_s, state.consecutive_fails,
+                )
+        except Exception:  # noqa: BLE001 — 健康度记账失败不阻塞采集主流程
+            logger.exception("failed to record collect failure for %s:%s", source, channel)
+
+    async def _collect_cooldown_left(self, source: str, channel: str) -> int:
+        """冷却剩余秒数（>0 = 冷却中，跳过本轮采集）。"""
+        from backend.models.pipeline import SourceState
+
+        try:
+            async with session_factory() as session:
+                state = (
+                    await session.execute(
+                        select(SourceState).where(
+                            SourceState.source == source,
+                            SourceState.channel == channel,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if state is None:
+                    return 0
+                until = state.get_cooldowns().get("default", 0.0)
+                left = int(until - datetime.now(UTC).timestamp())
+                return max(left, 0)
+        except Exception:  # noqa: BLE001 — 冷却查询失败按无冷却处理
+            return 0
+
+    async def _clear_collect_cooldown(self, source: str, channel: str) -> None:
+        """采集成功 → 清除冷却（恢复即清零）。"""
+        from backend.models.pipeline import SourceState
+
+        try:
+            async with session_factory() as session:
+                state = (
+                    await session.execute(
+                        select(SourceState).where(
+                            SourceState.source == source,
+                            SourceState.channel == channel,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if state is None or not state.get_cooldowns():
+                    return
+                state.set_cooldowns({})
+                await session.commit()
+        except Exception:  # noqa: BLE001 — 清除失败不影响主流程
+            logger.exception("failed to clear cooldown for %s:%s", source, channel)
 
     def _emit(self, topic: str, event: dict) -> None:
         if self.hub is not None:

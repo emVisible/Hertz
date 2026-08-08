@@ -320,6 +320,17 @@ async def produce_item(ai: AIRouter, files: FileStore, item) -> dict:
         logger.warning("video composition failed: %s", exc)
         artifacts["video"] = None
 
+    # phash 去重（v0.2.1，参考原项目 Autarkeia block_publish_duplicates）：
+    # 成片平均哈希 → 发布闸门比对已发布条目
+    if artifacts.get("video") is not None:
+        from backend.pipeline.phash import compute_phash
+
+        artifacts["phash"] = await compute_phash(str(video_path))
+        if artifacts["phash"]:
+            logger.debug("item phash=%s", artifacts["phash"])
+    else:
+        artifacts["phash"] = None
+
     cover_path = directory / "cover.jpg"
     try:
         artifacts["cover"] = await generate_cover(raw_path, cover_path)

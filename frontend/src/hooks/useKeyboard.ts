@@ -6,7 +6,7 @@ import { useBoardStore } from '../stores/board'
 /**
  * 画布快捷键（Revel heritage，AXIOM §7.2 键盘优先）：
  * P 粉笔 / E 板擦 / U 矩形 / O 椭圆 / L 连线 / R 随机重排 /
- * 1·2·3 粉笔色 / Backspace·Delete 删选中卡 / 方向键微调 / ⌘E 导出 / ⌘G 聚类 / Esc 取消。
+ * 1·2·3 粉笔色 / Backspace·Delete 删选中卡 / 方向键微调 / ⌘E 导出 / ⌘N 新板 / ⌘G 聚类 / Esc 取消。
  */
 export function useKeyboard() {
   useEffect(() => {
@@ -16,6 +16,16 @@ export function useKeyboard() {
       if (meta && e.key.toLowerCase() === 'g') {
         e.preventDefault()
         s.toggleClusters()
+        return
+      }
+      if (meta && e.key.toLowerCase() === 'e') {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('board:export'))
+        return
+      }
+      if (meta && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        s.addBoard()
         return
       }
       if (meta) return
