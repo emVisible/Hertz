@@ -207,7 +207,7 @@ class PhasesService:
         style: list | None = None,
         model: str | None = None,
         retries: int | None = None,
-        timeout: int | None = None,
+        timeout_s: int | None = None,
     ) -> dict:
         async with session_factory() as session:
             row = (await session.execute(
@@ -229,8 +229,8 @@ class PhasesService:
                 row.model = model.strip()
             if retries is not None:
                 row.retries = int(retries)
-            if timeout is not None:
-                row.timeout = int(timeout)
+            if timeout_s is not None:
+                row.timeout = int(timeout_s)
             await session.commit()
         self._index = None
         return {

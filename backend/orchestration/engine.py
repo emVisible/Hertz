@@ -344,7 +344,10 @@ class PhaseEngine:
         if key == "build_brief":
             await self._build_brief(run_dir, topic, brief_excerpt, platform_id, result)
         elif key == "package":
-            await self._package(run_dir, topic, brief_excerpt, platform_id, result, mode=plan.mode, phase_order=plan.phase_order)
+            await self._package(
+                run_dir, topic, brief_excerpt, platform_id, result,
+                mode=plan.mode, phase_order=plan.phase_order,
+            )
         elif key == "content_pipeline":
             await self._content_pipeline(run_dir, result)
         else:  # pragma: no cover — unknown system key
@@ -357,7 +360,8 @@ class PhaseEngine:
         llm = bool(self.ai is not None and self.ai.llm_available)
         image = bool(self.ai is not None and self.ai.image_available)
         env_line = (
-            f"- 环境: LLM {'可用' if llm else '未配置'} / 图像生成 {'可用' if image else '未配置'}\n"
+            f"- 环境: LLM {'可用' if llm else '未配置'}"
+            f" / 图像生成 {'可用' if image else '未配置'}\n"
         )
         # 策略分析是"理解"环节：LLM 可用时对输入做真实分析，而不是把主题复述一遍
         text = ""
@@ -484,7 +488,9 @@ class PhaseEngine:
             except Exception:  # noqa: BLE001 — fall back to concatenation
                 logger.exception("package synthesis failed, falling back")
         if not final_text:
-            final_text = await self._assemble(title, topic, body, visual, distribution, run_dir, mode)
+            final_text = await self._assemble(
+                title, topic, body, visual, distribution, run_dir, mode
+            )
 
         await self.files.atomic_write(run_dir / "final.md", final_text)
         summary = self._summary(run_dir)

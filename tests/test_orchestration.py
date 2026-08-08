@@ -169,7 +169,9 @@ async def test_plan_crud_and_validation(client, fake_ai) -> None:
     ]
     resp = await client.post("/api/plans", json={"name": "二次精简迁移", "phase_order": legacy2})
     assert resp.status_code == 200, resp.text
-    assert [p["key"] for p in resp.json()["phase_order"]] == ["build_brief", "visual_director", "package"]
+    assert [p["key"] for p in resp.json()["phase_order"]] == [
+        "build_brief", "visual_director", "package",
+    ]
 
     # 旧计划中别名项与显式项并存（preflight + build_brief）不得报重复
     legacy3 = [
@@ -614,7 +616,10 @@ async def test_role_library_crud(client, fake_ai) -> None:
     # 自定义角色（纯 MD）
     resp = await client.post(
         "/api/roles",
-        json={"key": "translator", "name": "翻译", "role_name": "译者", "description": "# 译者\n\n直译优先，保持原意。"},
+        json={
+            "key": "translator", "name": "翻译", "role_name": "译者",
+            "description": "# 译者\n\n直译优先，保持原意。",
+        },
     )
     assert resp.status_code == 200, resp.text
     role = resp.json()
@@ -622,7 +627,9 @@ async def test_role_library_crud(client, fake_ai) -> None:
     assert "直译优先" in role["description"]
 
     # 更新角色
-    resp = await client.put(f"/api/roles/{role['id']}", json={"description": "# 译者\n\n意译优先。"})
+    resp = await client.put(
+        f"/api/roles/{role['id']}", json={"description": "# 译者\n\n意译优先。"}
+    )
     assert resp.status_code == 200
     assert "意译优先" in resp.json()["description"]
 
@@ -660,7 +667,10 @@ async def test_buff_system(client, fake_ai) -> None:
     # 自定义 buff
     resp = await client.post(
         "/api/buffs",
-        json={"key": "my_tone", "name": "我的语气", "kind": "lightweight", "effect": "每段先给结论。"},
+        json={
+            "key": "my_tone", "name": "我的语气", "kind": "lightweight",
+            "effect": "每段先给结论。",
+        },
     )
     assert resp.status_code == 200, resp.text
     buff = resp.json()
