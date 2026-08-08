@@ -118,15 +118,17 @@ export function StudioView(p: StudioViewProps) {
                 />
               </div>
             </div>
-            {/* Buff / Debuff 多选（v5.2）：Buff 一行、Debuff 一行，无框纯文字，过长横向滑动 */}
+            {/* Buff / Debuff 多选（v5.2）：Buff 一行、Debuff 一行。
+               标签列固定宽度（w-11）保证两行选项区起点对齐（上下不歪）；
+               选中项为 pill 底色（与可选项的纯文字形成分度，一眼可区分）。 */}
             {p.buffs.length > 0 && (
               <div className="flex flex-col gap-1 border-t border-border pt-2">
                 {/* 第一行：Buff（正向） */}
-                <div className="flex items-baseline gap-2">
-                  <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">
+                <div className="flex items-center gap-2">
+                  <span className="w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">
                     {t('studio.buffs')}
                   </span>
-                  <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-3 overflow-x-auto">
+                  <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
                     {p.buffs.filter((b) => b.category === 'stable' && b.enabled && b.polarity === 'buff').map((buff) => {
                       const active = p.buffKeys.includes(buff.key)
                       return (
@@ -141,10 +143,10 @@ export function StudioView(p: StudioViewProps) {
                             )
                           }}
                           title={buff.effect}
-                          className={`shrink-0 whitespace-nowrap text-[11px] transition-colors ${
+                          className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
                             active
-                              ? 'font-medium text-text-primary'
-                              : 'text-text-disabled hover:text-text-secondary'
+                              ? 'border-primary/40 bg-primary/15 font-medium text-primary'
+                              : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
                           }`}
                         >
                           {buff.name}
@@ -161,10 +163,10 @@ export function StudioView(p: StudioViewProps) {
                           )
                         }}
                         title={t('studio.buffRandomHint')}
-                        className={`shrink-0 whitespace-nowrap text-[11px] transition-colors ${
+                        className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
                           p.buffKeys.includes('random')
-                            ? 'font-medium text-warning'
-                            : 'text-text-disabled hover:text-text-secondary'
+                            ? 'border-warning/50 bg-warning/15 font-medium text-warning'
+                            : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
                         }`}
                       >
                         🎲 {t('studio.buffRandom')}
@@ -174,11 +176,11 @@ export function StudioView(p: StudioViewProps) {
                 </div>
                 {/* 第二行：Debuff（反向禁忌，中性色与 Buff 对齐） */}
                 {p.buffs.some((b) => b.polarity === 'debuff' && b.enabled) && (
-                  <div className="flex items-baseline gap-2">
-                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">
+                  <div className="flex items-center gap-2">
+                    <span className="w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">
                       {t('studio.debuffs')}
                     </span>
-                    <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-3 overflow-x-auto">
+                    <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
                       {p.buffs.filter((b) => b.polarity === 'debuff' && b.enabled).map((buff) => {
                         const active = p.buffKeys.includes(buff.key)
                         return (
@@ -193,10 +195,10 @@ export function StudioView(p: StudioViewProps) {
                               )
                             }}
                             title={buff.effect}
-                            className={`shrink-0 whitespace-nowrap text-[11px] transition-colors ${
+                            className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
                               active
-                                ? 'font-medium text-text-primary'
-                                : 'text-text-disabled hover:text-text-secondary'
+                                ? 'border-primary/40 bg-primary/15 font-medium text-primary'
+                                : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
                             }`}
                           >
                             {buff.name}

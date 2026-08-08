@@ -169,8 +169,11 @@ export function AssetsPage() {
   }, [])
 
   const openEntry = (entry: LibraryEntry) => {
-    if (entry.kind === 'directory') setCurrentPath(entry.path)
-    else setDetail({ ...entry })
+    if (entry.kind === 'directory') {
+      // 浏览目录即退出标签过滤（产物入口/标签互斥：同一时间只激活一个）
+      setTagFilter(null)
+      setCurrentPath(entry.path)
+    } else setDetail({ ...entry })
   }
 
   async function saveTags(entry: LibraryEntry, tags: string[]) {
@@ -275,7 +278,10 @@ export function AssetsPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setCurrentPath(`${roots.data!.output}/studio`)}
+                  onClick={() => {
+                    setTagFilter(null)
+                    setCurrentPath(`${roots.data!.output}/studio`)
+                  }}
                   className={`flex w-full items-center gap-1.5 border-l-2 px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-2 ${
                     currentPath?.startsWith(`${roots.data.output}/studio`)
                       ? 'border-primary bg-surface-2 text-text-primary'
@@ -287,7 +293,10 @@ export function AssetsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setCurrentPath(`${roots.data!.output}/pipeline`)}
+                  onClick={() => {
+                    setTagFilter(null)
+                    setCurrentPath(`${roots.data!.output}/pipeline`)
+                  }}
                   className={`flex w-full items-center gap-1.5 border-l-2 px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-2 ${
                     currentPath?.startsWith(`${roots.data.output}/pipeline`)
                       ? 'border-primary bg-surface-2 text-text-primary'
@@ -300,12 +309,17 @@ export function AssetsPage() {
               </>
             )}
             <div className="my-2 h-px bg-border" />
-            {/* Tag 系统：素材根目录文件的标签 */}
+            {/* Tag 系统：素材根目录文件的标签；点击切换（再点移除），
+                激活标签时回到根目录并退出产物入口（同一时间只激活一个） */}
             {tagCounts.map(([tag, count]) => (
               <button
                 key={tag}
                 type="button"
-                onClick={() => setTagFilter(tag)}
+                onClick={() => {
+                  const activating = tagFilter !== tag
+                  setTagFilter(activating ? tag : null)
+                  if (activating) setCurrentPath(roots.data?.root ?? null)
+                }}
                 className={`flex w-full items-center gap-1.5 border-l-2 px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-2 ${
                   tagFilter === tag
                     ? 'border-primary bg-surface-2 text-text-primary'
@@ -314,7 +328,9 @@ export function AssetsPage() {
               >
                 <Icon name="tag" size={13} className="shrink-0" />
                 <span className="truncate">{tag}</span>
-                <span className="ml-auto text-[10px] text-text-disabled">{count}</span>
+                <span className="ml-auto text-[10px] text-text-disabled">
+                  {tagFilter === tag ? t('assets.removeTag') : count}
+                </span>
               </button>
             ))}
             {tagCounts.length === 0 && (

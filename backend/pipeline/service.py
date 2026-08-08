@@ -110,8 +110,11 @@ class PipelineService:
                 script["bili_title"] = bili_title.strip()
             if bili_tags is not None:
                 script["bili_tags"] = bili_tags.strip()
-            if bili_tid is not None:
+            if bili_tid:
                 script["bili_tid"] = int(bili_tid)
+            elif bili_tid is not None:
+                # 显式清空（0 = 回默认分区）
+                script.pop("bili_tid", None)
             if bili_copyright is not None:
                 script["bili_copyright"] = int(bili_copyright)
             item.script_json = script or None

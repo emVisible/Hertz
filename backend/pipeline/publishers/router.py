@@ -136,6 +136,10 @@ class BilibiliPublisher(Publisher):
         copyright_ = script.get("bili_copyright")
         if copyright_ in (1, "1"):
             cmd += ["--copyright", "1"]
+        # 分区 tid：条目显式设置优先，否则用配置默认（审核未设分区时兜底）
+        tid = script.get("bili_tid") or getattr(ctx.settings, "pipeline_bili_default_tid", 0)
+        if tid:
+            cmd += ["--tid", str(tid)]
         # 排期发布：scheduled_at 存在 → biliup 定时上传（v5.10）
         if item.scheduled_at:
             cmd += ["--timedpublish", item.scheduled_at.strftime("%Y-%m-%d %H:%M")]

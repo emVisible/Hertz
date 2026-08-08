@@ -25,9 +25,11 @@ export function AuditCard({
   const [open, setOpen] = useState(false)
   const [titleDraft, setTitleDraft] = useState<string | null>(null)
   const [tagsDraft, setTagsDraft] = useState<string | null>(null)
+  const [tidDraft, setTidDraft] = useState<string | null>(null)
   const script = item.script_json
   const biliTitle = (script?.bili_title as string | undefined) ?? item.title
   const biliTags = (script?.bili_tags as string | undefined) ?? ''
+  const biliTid = script?.bili_tid != null ? String(script.bili_tid) : ''
 
   return (
     <li className="flex gap-3 px-3 py-3">
@@ -127,6 +129,43 @@ export function AuditCard({
             scheduledAt={item.scheduled_at}
             onSave={(v) => onSaveMeta(item, { scheduled_at: v })}
           />
+        </div>
+
+        {/* B站分区（tid）：留空 = 发布时用默认分区 */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.biliTid')}</span>
+          {tidDraft !== null ? (
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <input
+                autoFocus
+                type="number"
+                min={0}
+                value={tidDraft}
+                onChange={(e) => setTidDraft(e.target.value)}
+                placeholder={t('console.tidPlaceholder')}
+                className="h-7 w-24 border border-border bg-surface-1 px-2 text-xs text-text-primary outline-none focus:border-primary"
+              />
+              <Button size="sm" onClick={() => { onSaveMeta(item, { bili_tid: tidDraft ? Number(tidDraft) : null }); setTidDraft(null) }}>
+                {t('common.save')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setTidDraft(null)}>
+                {t('docs.cancel')}
+              </Button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setTidDraft(biliTid)}
+              className="text-left"
+              title={t('console.editTid')}
+            >
+              {biliTid ? (
+                <span className="border border-border px-1.5 py-0.5 text-[10px] text-text-secondary">{biliTid}</span>
+              ) : (
+                <span className="text-[10px] text-text-disabled">{t('console.tidDefault')}</span>
+              )}
+            </button>
+          )}
         </div>
 
         {script && (

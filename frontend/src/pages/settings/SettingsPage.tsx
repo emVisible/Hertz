@@ -32,6 +32,34 @@ const section = 'border border-border bg-surface-1/60 p-4'
 const heading = 'mb-1 flex items-center gap-2 text-sm font-semibold text-text-primary'
 const sub = 'mb-3 text-xs leading-relaxed text-text-disabled'
 
+/** 路径输入 + 系统目录选择按钮（桌面端经 Electron 呼出 Finder/资源管理器）。 */
+function PathField({
+  label,
+  value,
+  onChange,
+  onBrowse,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  onBrowse: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-end gap-1.5">
+      <div className="min-w-0 flex-1">
+        <Input label={label} value={value} onChange={(e) => onChange(e.target.value)} />
+      </div>
+      {window.electron?.pickDirectory ? (
+        <Button size="sm" variant="secondary" onClick={onBrowse} title={t('settings.browse')}>
+          <Icon name="folder" size={13} />
+          {t('settings.browse')}
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 export function SettingsPage() {
   const { t, i18n } = useTranslation()
   const toast = useToast()
@@ -89,6 +117,14 @@ export function SettingsPage() {
     }
   }
 
+  /** 系统目录选择（Electron 桌面场景）；浏览器降级为手动输入提示。 */
+  async function pickPath(key: keyof typeof form) {
+    if (!window.electron?.pickDirectory) return
+    const current = (form[key] ?? '') as string
+    const picked = await window.electron.pickDirectory(current)
+    if (picked) set(key, picked)
+  }
+
   if (isError) {
     return <QueryErrorState message={t('error.queryFailed', { detail: 'config' })} onRetry={() => void refetch()} />
   }
@@ -144,12 +180,12 @@ export function SettingsPage() {
                     {t('settings.paths')}
                   </h2>
                   <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    <Input label={t('settings.dataDir')} value={form.data_dir ?? ''} onChange={(e) => set('data_dir', e.target.value)} />
-                    <Input label={t('settings.outputDir')} value={form.output_dir ?? ''} onChange={(e) => set('output_dir', e.target.value)} />
-                    <Input label={t('settings.logDir')} value={form.log_dir ?? ''} onChange={(e) => set('log_dir', e.target.value)} />
+                    <PathField label={t('settings.dataDir')} value={form.data_dir ?? ''} onChange={(v) => set('data_dir', v)} onBrowse={() => void pickPath('data_dir')} />
+                    <PathField label={t('settings.outputDir')} value={form.output_dir ?? ''} onChange={(v) => set('output_dir', v)} onBrowse={() => void pickPath('output_dir')} />
+                    <PathField label={t('settings.logDir')} value={form.log_dir ?? ''} onChange={(v) => set('log_dir', v)} onBrowse={() => void pickPath('log_dir')} />
                   </div>
                   <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                    <Input label={t('settings.assetsRoot')} value={form.assets_root ?? ''} onChange={(e) => set('assets_root', e.target.value)} />
+                    <PathField label={t('settings.assetsRoot')} value={form.assets_root ?? ''} onChange={(v) => set('assets_root', v)} onBrowse={() => void pickPath('assets_root')} />
                   </div>
                   <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">{t('settings.assetsRootHint')}</p>
                 </section>

@@ -91,6 +91,62 @@ BUILTIN_DEBUFFS: list[dict] = [
         "category": "stable",
         "polarity": "debuff",
     },
+    {
+        "key": "no_preaching",
+        "name": "禁止说教",
+        "kind": "lightweight",
+        "effect": (
+            "禁止居高临下地教育读者：\n"
+            "① 禁止'你应该''你必须''希望你能明白''记住，人生就是…'式训导句式；\n"
+            "② 禁止把自己放在'过来人/老师'的位置对读者指手画脚；\n"
+            "③ 禁止用'年轻人''现在的孩子'等群体标签做开头。\n"
+            "让读者自己得出结论——给出事实与视角，而不是替他们做判断。"
+        ),
+        "category": "stable",
+        "polarity": "debuff",
+    },
+    {
+        "key": "no_memes",
+        "name": "禁用网络梗",
+        "kind": "lightweight",
+        "effect": (
+            "禁止使用时效性网络梗与流行语：\n"
+            "① 禁止'破防''绝绝子''YYDS''6''栓Q''泰酷辣'等网络热词；\n"
+            "② 禁止表情符号堆砌与'哈哈哈''呜呜呜'式拟声填充；\n"
+            "③ 禁止网络缩写（'emo''yyds'）与玩梗式引用。\n"
+            "梗会过期，文章要经得起时间——用清晰的白话表达同样意思。"
+        ),
+        "category": "stable",
+        "polarity": "debuff",
+    },
+    {
+        "key": "no_slogan",
+        "name": "禁止口号式结尾",
+        "kind": "lightweight",
+        "effect": (
+            "禁止用空洞口号收尾：\n"
+            "① 禁止'让我们一起努力''未来可期''加油'式结尾；\n"
+            "② 禁止用升华式总结代替落点（'这告诉我们，人生处处是风景'）；\n"
+            "③ 禁止'最后，我想说…'式的宣言腔。\n"
+            "结尾要么给一个具体行动、要么留一个真实的问题，让文章自然结束而不是喊完口号。"
+        ),
+        "category": "stable",
+        "polarity": "debuff",
+    },
+    {
+        "key": "no_chinglish",
+        "name": "禁用中英夹生",
+        "kind": "lightweight",
+        "effect": (
+            "禁止中英文夹杂的翻译腔表达：\n"
+            "① 禁止'这个 idea 很不错''保持 update''做一下 review'式夹生；\n"
+            "② 禁止英文词汇直接嵌入中文句子（专业术语除外且需首次出现时说明）；\n"
+            "③ 禁止'你是对的''我非常 agree'的直译句式。\n"
+            "中文能表达的用中文，需要英文术语时前后文保持流畅，不把句子切成中英混合。"
+        ),
+        "category": "stable",
+        "polarity": "debuff",
+    },
 ]
 
 # 内置 buff 单一真相源（AXIOM §1.2）：迁移 wave10 也种同一份。
@@ -272,7 +328,7 @@ BUILTIN_BUFFS: list[dict] = [
         "key": "wild_card",
         "name": "随机应变",
         "kind": "lightweight",
-        "effect": "启用后每次运行从随机池抽取 2 个 buff 注入——同一主题每次跑出不同味道。",
+        "effect": "启用后每次运行从随机池抽取 3 个 buff 注入——同一主题每次跑出不同味道。",
         "category": "stable",
     },
 ]
@@ -505,9 +561,9 @@ class BuffService:
             index = {r.key: r for r in rows}
         for key in buff_keys:
             if key in ("random", "wild_card"):
-                # 从 random 池随机抽 2 个（每次运行不同——肉鸽感）
+                # 从 random 池随机抽 3 个（每次运行不同——肉鸽感，至少 3 个）
                 pool = [r for r in index.values() if r.category == "random"]
-                picks = random.sample(pool, min(2, len(pool)))
+                picks = random.sample(pool, min(3, len(pool)))
                 for p in picks:
                     if p.key in seen:
                         continue

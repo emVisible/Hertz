@@ -18,7 +18,9 @@ export interface StudioExecState {
   activeFile: string
   fileContent: string
   logSeq: number
-  /** 运行时 buff 选择（v5.0）；空数组 = 跟随计划配置 */
+  /** 运行时 buff/debuff 选择（v5.0）。
+   *  默认 = 随机应变（每次运行抽 3 个随机 buff）+ 禁用 AI 套话 debuff；
+   *  用户取消全部选择后为空数组 = 跟随计划持久配置。 */
   buffKeys: string[]
 }
 
@@ -51,7 +53,7 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
     activeFile: 'final.md',
     fileContent: '',
     logSeq: 0,
-    buffKeys: [],
+    buffKeys: ['random', 'no_ai_phrases'],
   },
   pipeline: {
     step: 'chain',

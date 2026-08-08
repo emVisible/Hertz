@@ -22,6 +22,18 @@ function registerWindowIpc(): void {
     if (typeof filePath !== 'string' || !filePath) return
     shell.showItemInFolder(filePath)
   })
+  // 目录选择（设置页路径配置）：返回用户选择的绝对路径，取消返回 null
+  ipcMain.handle('dialog:pick-directory', async (e, currentPath: string) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: '选择目录',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: typeof currentPath === 'string' && currentPath ? currentPath : undefined,
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
 }
 
 function startBackend(): void {

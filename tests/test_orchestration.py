@@ -693,7 +693,7 @@ async def test_buff_system(client, fake_ai) -> None:
     fx = await svc.resolve_effects(["human_touch", "my_tone"])
     assert [b["key"] for b in fx] == ["human_touch", "my_tone"]
     fx_random = await svc.resolve_effects(["random"])
-    assert len(fx_random) == 2  # random 池抽 2 个
+    assert len(fx_random) == 3  # random 池抽 3 个（v0.2.1 至少三个）
     assert all(b["category"] == "random" for b in fx_random)
     # 每次随机不同（大概率）
     fx_random2 = await svc.resolve_effects(["random"])

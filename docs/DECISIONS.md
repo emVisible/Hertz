@@ -170,3 +170,11 @@
   - **§5.1 意图承载**：StepContext 显式声明 scores_used 字段（替代动态属性）；engine 循环内 import 上移模块级
   - **§4.6 韧性（既有 Bug）**：下载引擎 `_persist_progress` 固定临时名被并发 worker 互相 replace → ENOENT（偶发炸 verify 门禁）——改唯一临时名 + 尽力而为容错，5/5 连续通过
   - **§15.2 视图字段对齐**：前端 PipelineItem 补 error_class 字段声明
+- **D-130 UI/UX 细节批（v0.2.2）**：
+  - **组件对齐修复**：Select/Input 的 className 从内部控件移到外层容器（控件固定 w-full）——根因：flex/grid 布局中以容器为尺寸基准，此前 select 按最长选项自宽、input 保持内在宽度，导致同排控件长短不一（典型：AI 服务里 embedding 下拉比其他两个短）
+  - **路径配置呼出系统选择器**：Electron 新增 `dialog:pick-directory` IPC（preload `pickDirectory`），设置-通用四个路径（data/output/log/assets_root）各配「浏览…」按钮，浏览器环境自动隐藏
+  - **Studio 运行时默认注入**：默认 buffKeys = `['random', 'no_ai_phrases']`（随机应变 + 禁用 AI 套话）；随机池抽取 2→3 个（buff 文案同步）
+  - **拓展 4 个内置 debuff**：禁止说教 / 禁用网络梗 / 禁止口号式结尾 / 禁用中英夹生（seed 自动同步内置版本）
+  - **Buff/Debuff 布局**：标签列固定宽度（w-11）使两行选项区起点对齐；选中项改 pill 样式（描边+底色+主色文字），与纯文字可选项形成分度
+  - **素材页互斥**：产物入口（Studio/Pipeline）与标签互斥——点标签回根目录并退出产物入口、点产物清标签、浏览目录清标签；标签可再点移除（激活态显示「点击移除」）
+  - **审核默认分区**：config `pipeline_bili_default_tid`（默认 201 知识）；BilibiliPublisher 显式 tid 优先、否则用默认；审核卡新增分区字段（留空=默认，0 清空）

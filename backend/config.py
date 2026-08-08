@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     # 开启后停留审核队列超过 N 小时的条目自动 approve（人工审核仍是默认路径）
     pipeline_auto_approve: bool = False
     pipeline_auto_approve_after_hours: int = 12
+    # B站默认分区 tid（审核未显式设置时使用；0 = 不传，用账号默认）
+    pipeline_bili_default_tid: int = 201  # 201 = 知识
     # Test/dev escape hatch: allow http(s) non-public URLs in the pipeline
     # download step (SSRF guard stays on by default — AXIOM §8.1).
     pipeline_allow_loopback_urls: bool = False
