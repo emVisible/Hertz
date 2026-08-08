@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
@@ -5,6 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { BrandName, Sidebar, WindowControls } from '../components/layout'
 import type { NavItem } from '../components/layout'
 import { Icon } from '../components/ui'
+import { CommandPalette } from './CommandPalette'
 import { useThemeStore } from '../stores/theme'
 import { useExecutionStore } from '../stores/execution'
 import { pipelineApi } from '../api'
@@ -21,6 +23,18 @@ export function AppShell() {
   const toggleTheme = useThemeStore((s) => s.toggle)
   const location = useLocation()
   const navigate = useNavigate()
+  // ⌘K 全局命令面板（v0.2.3）：输入框聚焦时不劫持
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   // 全局运行状态（wave13）：与执行页共享 query 缓存；AppShell 常驻使轮询持续
   const studioRunning = useExecutionStore((s) => s.studio.running)
   const { data: pipelineStatus } = useQuery({
@@ -98,6 +112,7 @@ export function AppShell() {
           </PageTransition>
         </main>
       </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   )
 }

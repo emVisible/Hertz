@@ -37,7 +37,22 @@
     "reload": "Reload",
     "back": "Go back",
     "queryFailed": "Failed to load: {{detail}}",
-    "requestFailed": "Request failed — rolled back to the latest state"
+    "requestFailed": "Request failed — rolled back to last state"
+  },
+  "command": {
+    "placeholder": "Search assets, plans, settings…",
+    "empty": "No matches",
+    "assets": "Assets",
+    "plans": "Plans",
+    "settings": "Settings",
+    "actions": "Actions",
+    "plan": "Plan",
+    "runStudio": "Create in Studio",
+    "runStudioHint": "Open the execution page",
+    "runPipeline": "Run content pipeline",
+    "runPipelineHint": "Open the pipeline run page",
+    "newBoard": "New canvas board",
+    "newBoardHint": "Add a new board on the canvas"
   },
   "theme": {
     "toggle": "Toggle theme",

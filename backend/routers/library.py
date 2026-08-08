@@ -127,6 +127,16 @@ async def scan(path: str = Query(...), limit: int = Query(500, ge=1, le=2000)):
     return {"path": str(target), "entries": browser.scan(target, limit=limit)}
 
 
+@router.get("/search")
+async def search_assets(
+    q: str = Query(..., min_length=1, max_length=100),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """素材全局搜索（v0.2.3 ⌘K 命令面板）：允许根内按文件名/标签模糊匹配。"""
+    roots = await _allowed_roots()
+    return {"entries": await asyncio.to_thread(browser.search, roots, q, limit)}
+
+
 @router.get("/info")
 async def info(path: str = Query(...)):
     target = await _ensure_allowed(path)

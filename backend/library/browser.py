@@ -112,9 +112,76 @@ class LibraryBrowser:
                 break
         return [e.__dict__ for e in entries]
 
+    def search(
+        self, roots: list[Path], query: str, limit: int = 20, max_depth: int = 4
+    ) -> list[dict]:
+        """素材全局搜索（v0.2.3 ⌘K）：递归遍历允许根，按文件名/标签模糊匹配。
+
+        路径匹配不做（命中目录即命中全部子文件，噪音大）；仅 name + tags，
+        大小写不敏感。遍历在调用方线程池执行（文件 IO，AXIOM §7.2）。
+        """
+        q = query.strip().lower()
+        if not q:
+            return []
+        out: list[LibraryEntry] = []
+
+        def walk(p: Path, depth: int) -> None:
+            if len(out) >= limit or depth > max_depth:
+                return
+            try:
+                children = sorted(
+                    p.iterdir(), key=lambda c: (not c.is_dir(), c.name.lower())
+                )
+            except OSError:
+                return
+            for child in children:
+                if len(out) >= limit:
+                    return
+                if (
+                    child.name.startswith(".")
+                    or child.name in RUNTIME_FILES
+                    or child.name.endswith(THUMB_SUFFIX)
+                    or child.name.endswith(META_SUFFIX)
+                ):
+                    continue
+                try:
+                    st = child.stat()
+                except OSError:
+                    continue
+                if child.is_dir():
+                    if q in child.name.lower():
+                        out.append(
+                            LibraryEntry(
+                                name=child.name + "/",
+                                path=str(child),
+                                kind="directory",
+                                size=0,
+                                mtime=st.st_mtime,
+                            )
+                        )
+                    walk(child, depth + 1)
+                elif child.is_file():
+                    meta = Path(f"{child}{META_SUFFIX}")
+                    tags = _read_tags(meta) if meta.exists() else []
+                    if q in child.name.lower() or any(q in t.lower() for t in tags):
+                        thumb = Path(f"{child}{THUMB_SUFFIX}")
+                        out.append(
+                            LibraryEntry(
+                                name=child.name,
+                                path=str(child),
+                                kind=classify(child.name),
+                                size=st.st_size,
+                                mtime=st.st_mtime,
+                                thumb=str(thumb) if thumb.exists() else None,
+                                mime=mimetypes.guess_type(child.name)[0],
+                                tags=tags or None,
+                            )
+                        )
+        for root in roots:
+            walk(root, 0)
+        return [e.__dict__ for e in out[:limit]]
+
     def info(self, path: Path) -> dict | None:
-        if not path.exists():
-            return None
         st = path.stat()
         return {
             "name": path.name,

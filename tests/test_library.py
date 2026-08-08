@@ -8,6 +8,8 @@ from backend.library.browser import LibraryBrowser, classify
 from backend.library.metadata import probe_media
 from backend.library.thumbnails import find_ffmpeg, generate_thumbnail
 
+browser = LibraryBrowser()
+
 
 def test_classify_extensions():
     assert classify("a.mp4") == "video"
@@ -108,3 +110,30 @@ async def test_probe_media(tmp_path):
     assert info["height"] == 90
     assert info["duration"] is not None and info["duration"] > 0.5
     assert info["codec"] in ("h264", "mpeg4", "h265", "hevc")
+
+
+def test_search_matches_name_and_tags(tmp_path):
+    """素材全局搜索（⌘K）：文件名/标签模糊匹配、大小写不敏感、限制条数。"""
+    from backend.library.browser import write_tags
+
+    (tmp_path / "outdoors.mp4").write_bytes(b"x")
+    (tmp_path / "city_night.jpg").write_bytes(b"x")
+    (tmp_path / "notes.md").write_bytes(b"x")
+    write_tags(tmp_path / "outdoors.mp4", ["风景", "慢跑"])
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "deep_clip.webm").write_bytes(b"x")
+
+    hits = browser.search([tmp_path], "OUTDOORS")
+    assert [h["name"] for h in hits] == ["outdoors.mp4"]
+    assert hits[0]["tags"] == ["风景", "慢跑"]
+
+    hits = browser.search([tmp_path], "风景")
+    assert [h["name"] for h in hits] == ["outdoors.mp4"]
+
+    # 递归子目录命中 + limit 截断
+    hits = browser.search([tmp_path], "clip", limit=1)
+    assert len(hits) == 1 and hits[0]["name"] == "deep_clip.webm"
+
+    # 空查询/无匹配
+    assert browser.search([tmp_path], "") == []
+    assert browser.search([tmp_path], "不存在") == []

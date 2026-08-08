@@ -39,6 +39,21 @@
     "queryFailed": "加载失败：{{detail}}",
     "requestFailed": "请求失败，已回滚到最近状态"
   },
+  "command": {
+    "placeholder": "搜索素材、计划、设置…",
+    "empty": "没有匹配结果",
+    "assets": "素材",
+    "plans": "计划",
+    "settings": "设置",
+    "actions": "快捷动作",
+    "plan": "计划",
+    "runStudio": "在 Studio 创作",
+    "runStudioHint": "打开执行页",
+    "runPipeline": "运行内容流水线",
+    "runPipelineHint": "打开流水线运行页",
+    "newBoard": "新建画布板",
+    "newBoardHint": "在画布上新建一块黑板"
+  },
   "docs": {
     "title": "文档",
     "select": "选择左侧文档开始阅读"
