@@ -5,6 +5,7 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -328,3 +329,136 @@ async def test_calendar_endpoint(client) -> None:
     assert resp2.status_code == 200
     keys2 = {i["source_id"] for i in resp2.json()["items"]}
     assert keys2 == {"cal-1", "cal-2"}
+
+
+# ---------- 素材 AI 整理 / 查重 / 重命名（v0.2.3 Wave A3） ----------
+
+def _read_text(p: str) -> str:
+    """测试辅助：读文件文本（同步，供 to_thread 用）。"""
+    return Path(p).read_text(encoding="utf-8")
+
+
+def _exists(p: str) -> bool:
+    """测试辅助：文件存在性（同步，供 to_thread 用）。"""
+    return Path(p).exists()
+
+
+class _OrganizeLLM:
+    """组织接口 fake：返回固定 JSON 建议。"""
+
+    async def chat_stream(self, messages, *, temperature=0.7, max_tokens=4096):
+        payload = (
+            '{"items":[{"path":"/tmp/org/a.mp4","tags":["测试","风景"],'
+            '"suggested_name":"b.mp4"}]}'
+        )
+        for ch in payload:
+            yield ch
+
+    async def aclose(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_ai_organize_and_rename(client, tmp_path, monkeypatch) -> None:
+    """AI 整理：建议生成（fake LLM）→ 确认后打标/重命名（sidecar 同步迁移）。"""
+    from backend.ai.router import AIRouter
+
+    # 素材根指向临时目录（_allowed_roots 读 assets_root）
+    from backend.config import runtime_config
+    from backend.factory.registry import ServiceRegistry
+
+    real_load = runtime_config.load
+
+    def fake_load():
+        data = dict(real_load())
+        data["assets_root"] = str(tmp_path)
+        return data
+
+    monkeypatch.setattr(runtime_config, "load", fake_load)
+
+    video = tmp_path / "a.mp4"
+    video.write_bytes(b"fake-video")
+    # 带标签 sidecar（验证重命名迁移）
+    from backend.library.browser import write_tags
+
+    write_tags(video, ["旧标签"])
+
+    registry = ServiceRegistry.get()
+    original_ai = registry.ai
+    registry.ai = AIRouter(llm=_OrganizeLLM(), image=None, tts=None)
+    try:
+        resp = await client.post("/api/library/ai-organize", json={"paths": [str(video)]})
+        assert resp.status_code == 200, resp.text
+        results = resp.json()["results"]
+        assert len(results) == 1
+        assert results[0]["tags"] == ["测试", "风景"]
+        assert results[0]["suggested_name"] == "b.mp4"
+
+        # 确认后应用：打标（tags sidecar 合并）
+        resp = await client.post(
+            "/api/library/tags", json={"path": str(video), "tags": results[0]["tags"]}
+        )
+        assert resp.status_code == 200, resp.text
+
+        # 确认后应用：重命名（sidecar 同步迁移）
+        resp = await client.post(
+            "/api/library/rename", json={"path": str(video), "new_name": "b.mp4"}
+        )
+        assert resp.status_code == 200, resp.text
+        renamed = tmp_path / "b.mp4"
+        assert renamed.exists() and not video.exists()
+        assert await asyncio.to_thread(_exists, f"{renamed}.meta.json")  # 标签 sidecar 随行
+        meta_text = await asyncio.to_thread(_read_text, f"{renamed}.meta.json")
+        assert "测试" in meta_text
+
+        # 越界重命名（含路径分隔符）→ 422
+        resp = await client.post(
+            "/api/library/rename", json={"path": str(renamed), "new_name": "../evil.mp4"}
+        )
+        assert resp.status_code == 422
+
+        # 批上限 → 422
+        many = [str(video)] * 21
+        resp = await client.post("/api/library/ai-organize", json={"paths": many})
+        assert resp.status_code == 422
+    finally:
+        registry.ai = original_ai
+
+
+@pytest.mark.asyncio
+async def test_duplicates_endpoint(tmp_path, monkeypatch) -> None:
+    """查重：同内容视频聚为一组，不同内容不误报。"""
+    from backend.library.thumbnails import find_ffmpeg
+
+    if find_ffmpeg() is None:
+        pytest.skip("ffmpeg unavailable")
+    import subprocess
+
+    ffmpeg = str(find_ffmpeg())
+
+    # 注：纯色视频的 phash 退化（全 0/全 1）——用有纹理的测试源区分内容
+    def make(path, source):
+        subprocess.run(
+            [ffmpeg, "-v", "error", "-f", "lavfi", "-i", source,
+             "-pix_fmt", "yuv420p", "-y", str(path)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
+    a = tmp_path / "a.mp4"
+    b = tmp_path / "b.mp4"
+    c = tmp_path / "c.mp4"
+    make(a, "testsrc=duration=1:size=64x64:rate=10")
+    make(b, "testsrc=duration=1:size=64x64:rate=10")  # 与 a 相同 → 重复组
+    make(c, "smptebars=duration=1:size=64x64:rate=10")  # 不同 → 独立
+
+    from backend.routers import library as lib
+
+    async def fake_roots():
+        return [tmp_path]
+
+    monkeypatch.setattr(lib, "_allowed_roots", fake_roots)
+    resp = await lib.find_duplicates(str(tmp_path), limit=120)
+    assert resp["scanned"] == 3
+    groups = resp["groups"]
+    assert len(groups) == 1  # 只有 red 组
+    assert {f["name"] for f in groups[0]["files"]} == {"a.mp4", "b.mp4"}

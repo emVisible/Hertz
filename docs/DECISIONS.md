@@ -184,3 +184,8 @@
   - **§7.5 缓存症状**：批量重试/审核操作后失败分类与供给告警查询未失效（靠轮询兜底）→ refresh() 补 pipeline-failures / pipeline-supply 失效
 - **D-132 内容日历（Wave A1，v0.2.3）**：横向对标 Buffer/新榜——发布 tab 新增「列表/日历」视图切换；`GET /pipeline/calendar`（from/to 本地日期语义、含端点整天，缺省 to = 所在月；排期/已发布区间查询 + 未排期待办两段返回，不建新表，单一真相源）；前端 CalendarView 月网格（周一起始 42 格稳定布局，纯函数 monthGrid/toLocalDate 独立可测），拖拽改期（拖到日期=设排期 10:00，拖回「未排期」区=清空，复用 meta 清空语义），拖放用 HTML5 DnD；单条「推荐排期」不重复实现（列表视图 ScheduleField 已有，AXIOM §2.3 接口存在理由）。
 - **D-133 ⌘K 全局命令面板（Wave A2，v0.2.3）**：对标 Eagle 快速搜索/Notion——`GET /library/search`（允许根内递归按文件名/标签模糊匹配，线程池执行，路径围栏沿用 §8.1）；前端 CommandPalette（AppShell 挂载，⌘K 开关，Esc 关闭，防抖 200ms，≥2 字符才请求，↑↓+Enter 键盘导航）；分组：素材/计划/设置/快捷动作；设置支持 `?section=` 深链直达分区；计划选中直达 Studio 运行（store setStudio + navigate）；§35 数据驱动——计划列表走 react-query 单一数据源，memo 内不发请求。
+- **D-134 素材 AI 整理 + phash 查重（Wave A3，v0.2.3）**：对标 Eagle AI Action / Find Duplicates——
+  - `POST /library/ai-organize`：LLM 按文件名/类型生成标签与建议名（fast 角色低费用，每批 ≤20 条 + 仅人工触发 = 成本防护，§4.3）；`_extract_json` 宽松解析（代码块/纯 JSON）；建议先展示后确认
+  - `POST /library/rename`：重命名原子迁移 meta/thumb sidecar（§33 状态文件完整）；路径分隔符/隐藏名前缀拒绝（§8.1）
+  - `GET /library/duplicates`：复用 pipeline.phash（ffmpeg 抽帧平均哈希，图片经时长探测 0 → 不 seek 天然兼容）；纯色内容 phash 退化（全 0/全 1）为已知边界，测试用有纹理源
+  - 前端 OrganizeModal（打标/改名双模式、逐条勾选应用）+ DuplicatesModal（相似组缩略图并排、保留/删除）；素材页分类行右侧入口；delete 复用既有 /library/file

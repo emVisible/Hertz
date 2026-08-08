@@ -27,6 +27,7 @@ import {
   PreviewOverlay,
   formatBytes,
 } from './AssetViews'
+import { DuplicatesModal, OrganizeModal } from './AssetTools'
 
 const STATUS_TONE: Record<DownloadStatus, 'neutral' | 'success' | 'warning' | 'error' | 'primary'> = {
   pending: 'neutral',
@@ -150,6 +151,15 @@ export function AssetsPage() {
   }, [entries, kind, query, tagFilter])
 
   const kindCount = (k: string) => (k === 'all' ? entries.length : entries.filter((e) => e.kind === k).length)
+
+  // ---- 素材智能整理 / 查重（v0.2.3，参考 Eagle AI Action / Find Duplicates）----
+  const [organizeOpen, setOrganizeOpen] = useState(false)
+  const [dupOpen, setDupOpen] = useState(false)
+  const organizePaths = filtered.filter((e) => e.kind !== 'directory').map((e) => e.path)
+  const refreshAssets = () => {
+    void scan.refetch()
+    void rootScan.refetch()
+  }
 
   // ---- ⌘K 聚焦搜索 / ⌘N 新下载 / Esc 关浮层 ----
   useEffect(() => {
@@ -492,6 +502,29 @@ export function AssetsPage() {
               </span>
             </button>
           ))}
+          {/* AI 整理 / 查重（v0.2.3）：作用于当前视图的文件 */}
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setOrganizeOpen(true)}
+              disabled={organizePaths.length === 0}
+              title={t('assets.organize')}
+              className="flex items-center gap-1 border border-border px-2 py-0.5 text-xs text-text-secondary transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon name="wand" size={12} />
+              {t('assets.organize')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDupOpen(true)}
+              disabled={!currentPath}
+              title={t('assets.duplicates')}
+              className="flex items-center gap-1 border border-border px-2 py-0.5 text-xs text-text-secondary transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon name="copy" size={12} />
+              {t('assets.duplicates')}
+            </button>
+          </div>
         </div>
 
         {/* 路径面包屑 + 返回上一级 */}
@@ -809,6 +842,18 @@ export function AssetsPage() {
 
       {/* 快速预览（点图像区直达媒体） */}
       <QuickPreview entry={quickPreview} onClose={() => setQuickPreview(null)} />
+      <OrganizeModal
+        open={organizeOpen}
+        onClose={() => setOrganizeOpen(false)}
+        paths={organizePaths}
+        onDone={refreshAssets}
+      />
+      <DuplicatesModal
+        open={dupOpen}
+        onClose={() => setDupOpen(false)}
+        path={currentPath}
+        onDone={refreshAssets}
+      />
 
       {/* 详情浮层（点名称：元数据 / 管理） */}
       <PreviewOverlay
