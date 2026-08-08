@@ -103,6 +103,10 @@ export const pipelineApi = {
       `/api/pipeline/items?limit=${limit}${status ? `&status=${status}` : ''}`,
     ),
   counts: () => api.get<Record<string, number>>('/api/pipeline/items/counts'),
+  calendar: (from: string, to: string) =>
+    api.get<{ items: PipelineItem[]; unscheduled: PipelineItem[] }>(
+      `/api/pipeline/calendar?from=${from}&to=${to}`,
+    ),
   approve: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/approve`),
   reject: (id: string, reason = '') =>
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/reject?reason=${encodeURIComponent(reason)}`),

@@ -44,6 +44,37 @@ async def counts():
     return await _pipe().counts()
 
 
+@router.get("/calendar")
+async def calendar_items(
+    from_: str = Query("", alias="from"),
+    to: str = Query(""),
+):
+    """内容日历（v0.2.3）：区间内排期/已发布的条目 + 未排期待办。
+
+    from/to 为 YYYY-MM-DD（本地日期语义，含端点整天）；缺省 to = from 所在月。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    def _local_day(raw: str) -> datetime:
+        # 本地日期 → 本地零点（naive）；再统一转 UTC 与 scheduled_at 落库同语义
+        return datetime.fromisoformat(raw.strip()) if raw.strip() else datetime.now()
+
+    if from_.strip():
+        start_local = _local_day(from_)
+    else:
+        start_local = datetime.now()
+    if to.strip():
+        # 含 to 当天整天：end = to 次日零点 - 1us
+        end_local = _local_day(to) + timedelta(days=1) - timedelta(microseconds=1)
+    else:
+        # 缺省 to → from 所在月（默认视图 = 当月日历）
+        first = start_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end_local = (first + timedelta(days=32)).replace(day=1) - timedelta(microseconds=1)
+    return await _pipe().calendar_items(
+        start_local.astimezone(UTC), end_local.astimezone(UTC)
+    )
+
+
 @router.post("/items/{item_id}/approve")
 async def approve_item(item_id: uuid.UUID):
     try:

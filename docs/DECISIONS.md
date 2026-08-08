@@ -182,3 +182,4 @@
   - **元数据清空失效（两处同源缺陷）**：审核卡分区/排期保存发 `null`，而后端 Pydantic 无法区分「未传」与「显式清空」→ 旧值永远残留。修复：分区清空发 `0`（后端 `elif is not None` 分支 pop）、排期清空发 `''`（服务端 strip 后 falsy → None）；补 HTTP 测试（tid 设/清、scheduled_at 清）
   - **§4.4 pickPath 无异常捕获**：目录选择 IPC 失败静默 → try/catch + toast
   - **§7.5 缓存症状**：批量重试/审核操作后失败分类与供给告警查询未失效（靠轮询兜底）→ refresh() 补 pipeline-failures / pipeline-supply 失效
+- **D-132 内容日历（Wave A1，v0.2.3）**：横向对标 Buffer/新榜——发布 tab 新增「列表/日历」视图切换；`GET /pipeline/calendar`（from/to 本地日期语义、含端点整天，缺省 to = 所在月；排期/已发布区间查询 + 未排期待办两段返回，不建新表，单一真相源）；前端 CalendarView 月网格（周一起始 42 格稳定布局，纯函数 monthGrid/toLocalDate 独立可测），拖拽改期（拖到日期=设排期 10:00，拖回「未排期」区=清空，复用 meta 清空语义），拖放用 HTML5 DnD；单条「推荐排期」不重复实现（列表视图 ScheduleField 已有，AXIOM §2.3 接口存在理由）。

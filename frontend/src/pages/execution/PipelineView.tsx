@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
@@ -22,6 +23,7 @@ import {
   StageList,
   Terminal,
 } from '../../components/execution'
+import { CalendarView } from './CalendarView'
 import { usePipelineExecution } from '../../hooks/usePipelineExecution'
 import { useModelSwitch } from '../../hooks/useModelSwitch'
 
@@ -86,6 +88,8 @@ const PIPELINE_TABS = [
 
 export function PipelineView(p: PipelineViewProps) {
   const { t } = useTranslation()
+  // 发布 tab 视图：列表（默认）｜内容日历（v0.2.3）
+  const [calendarView, setCalendarView] = useState(false)
   const pTab: PipelineTabId = PIPELINE_TABS.some((tb) => tb.id === p.tab)
     ? (p.tab as PipelineTabId)
     : 'inReview'
@@ -313,6 +317,38 @@ export function PipelineView(p: PipelineViewProps) {
 
         {pTab === 'postReview' && (
           <div className="flex flex-col gap-4 p-4">
+            {/* 视图切换：列表（默认）｜内容日历（v0.2.3，Buffer/新榜同款） */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCalendarView(false)}
+                className={`px-2.5 py-1 text-xs transition-colors ${
+                  !calendarView
+                    ? 'bg-surface-2 font-medium text-text-primary'
+                    : 'text-text-secondary hover:bg-surface-2/60'
+                }`}
+              >
+                {t('console.calendarList')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCalendarView(true)}
+                className={`px-2.5 py-1 text-xs transition-colors ${
+                  calendarView
+                    ? 'bg-surface-2 font-medium text-text-primary'
+                    : 'text-text-secondary hover:bg-surface-2/60'
+                }`}
+              >
+                {t('console.calendar')}
+              </button>
+            </div>
+
+            {calendarView ? (
+              <CalendarView
+                onSaveSchedule={(item, value) => p.saveMeta(item, { scheduled_at: value })}
+              />
+            ) : (
+              <>
             {/* 审核后：approved（发布操作） */}
             <PipelineStage
               title={t('console.stagePublish')}
@@ -364,6 +400,8 @@ export function PipelineView(p: PipelineViewProps) {
                 )}
               </SectionCard>
             </div>
+              </>
+            )}
           </div>
         )}
       </div>

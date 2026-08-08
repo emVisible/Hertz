@@ -7,8 +7,9 @@ review API and event wiring. The heavy lifting is delegated to StepEngine.
 import asyncio
 import logging
 import uuid
+from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from backend.infrastructure.events import EventHub
 from backend.models.item import Item, ItemStatus
@@ -335,6 +336,35 @@ class PipelineService:
             if any(s.consecutive_fails >= 3 for s in sources):
                 warnings.append("source_unreachable")
         return warnings
+
+    # ---------- 内容日历（v0.2.3，参考 Buffer/新榜） ----------
+
+    async def calendar_items(self, from_dt: datetime, to_dt: datetime) -> dict:
+        """月视图聚合：区间内有排期/已发布日期的条目 + 未排期的待审/待发条目。
+
+        日历不引入新表（AXIOM §1.2 单一真相源）——直接查现有
+        scheduled_at / published_at / status 字段，前端负责渲染。
+        """
+        async with session_factory() as session:
+            result = await session.execute(
+                select(Item).where(
+                    or_(
+                        Item.scheduled_at.between(from_dt, to_dt),
+                        Item.published_at.between(from_dt, to_dt),
+                    )
+                ).order_by(Item.scheduled_at.asc().nulls_last(), Item.created_at.desc())
+            )
+            items = [self._serialize(i) for i in result.scalars().all()]
+            # 未排期待办：approved（待发布）与 queued（待审核）且无排期
+            unscheduled = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status.in_((ItemStatus.APPROVED, ItemStatus.QUEUED)),
+                        Item.scheduled_at.is_(None),
+                    ).order_by(Item.created_at.desc())
+                )
+            ).scalars().all()
+        return {"items": items, "unscheduled": [self._serialize(i) for i in unscheduled]}
 
     # ---------- 失败分类看板（v0.2.1，参考原项目 Autarkeia） ----------
 

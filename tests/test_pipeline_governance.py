@@ -286,3 +286,45 @@ async def test_auto_approve_endpoint(client) -> None:
     resp = await client.post("/api/pipeline/auto-approve")
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"enabled": False, "approved": 0}
+
+
+# ---------- 内容日历（v0.2.3） ----------
+
+@pytest.mark.asyncio
+async def test_calendar_endpoint(client) -> None:
+    """/pipeline/calendar：区间内排期/已发布 + 未排期待办，跨月范围过滤。"""
+    from datetime import UTC, datetime
+
+    async with session_factory() as session:
+        in_month = Item(
+            status=ItemStatus.APPROVED, source="reddit", source_id="cal-1",
+            title="排期中", scheduled_at=datetime(2026, 8, 10, 10, 0, tzinfo=UTC),
+        )
+        published = Item(
+            status=ItemStatus.PUBLISHED, source="reddit", source_id="cal-2",
+            title="已发布", published_at=datetime(2026, 8, 5, 18, 30, tzinfo=UTC),
+        )
+        outside = Item(
+            status=ItemStatus.APPROVED, source="reddit", source_id="cal-3",
+            title="下月排期", scheduled_at=datetime(2026, 9, 1, 10, 0, tzinfo=UTC),
+        )
+        unscheduled = Item(
+            status=ItemStatus.QUEUED, source="reddit", source_id="cal-4", title="待排期"
+        )
+        session.add_all([in_month, published, outside, unscheduled])
+        await session.commit()
+
+    resp = await client.get(
+        "/api/pipeline/calendar", params={"from": "2026-08-01", "to": "2026-08-31"}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    keys = {i["source_id"] for i in body["items"]}
+    assert keys == {"cal-1", "cal-2"}  # 下月排期被过滤
+    assert {i["source_id"] for i in body["unscheduled"]} == {"cal-4"}
+
+    # 缺省参数：缺省 to → 从 from 起的当月
+    resp2 = await client.get("/api/pipeline/calendar", params={"from": "2026-08-01"})
+    assert resp2.status_code == 200
+    keys2 = {i["source_id"] for i in resp2.json()["items"]}
+    assert keys2 == {"cal-1", "cal-2"}
