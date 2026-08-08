@@ -178,3 +178,7 @@
   - **Buff/Debuff 布局**：标签列固定宽度（w-11）使两行选项区起点对齐；选中项改 pill 样式（描边+底色+主色文字），与纯文字可选项形成分度
   - **素材页互斥**：产物入口（Studio/Pipeline）与标签互斥——点标签回根目录并退出产物入口、点产物清标签、浏览目录清标签；标签可再点移除（激活态显示「点击移除」）
   - **审核默认分区**：config `pipeline_bili_default_tid`（默认 201 知识）；BilibiliPublisher 显式 tid 优先、否则用默认；审核卡新增分区字段（留空=默认，0 清空）
+- **D-131 v0.2.2 查漏补缺（审计）**：细节批落地后的二轮审计修复——
+  - **元数据清空失效（两处同源缺陷）**：审核卡分区/排期保存发 `null`，而后端 Pydantic 无法区分「未传」与「显式清空」→ 旧值永远残留。修复：分区清空发 `0`（后端 `elif is not None` 分支 pop）、排期清空发 `''`（服务端 strip 后 falsy → None）；补 HTTP 测试（tid 设/清、scheduled_at 清）
+  - **§4.4 pickPath 无异常捕获**：目录选择 IPC 失败静默 → try/catch + toast
+  - **§7.5 缓存症状**：批量重试/审核操作后失败分类与供给告警查询未失效（靠轮询兜底）→ refresh() 补 pipeline-failures / pipeline-supply 失效

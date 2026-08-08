@@ -355,6 +355,30 @@ async def test_meta_and_publish_one(client, pipeline_env) -> None:
     assert target["script_json"]["bili_title"] == "我的定制标题"
     assert target["scheduled_at"] is not None
 
+    # 分区/tid：设置后显式清空（0 = 回默认，v0.2.2）
+    resp = await client.put(
+        f"/api/pipeline/items/{good_id}/meta",
+        json={"bili_tid": 201},
+    )
+    assert resp.status_code == 200, resp.text
+    items = (await client.get("/api/pipeline/items", params={"status": "approved"})).json()
+    assert next(i for i in items if i["id"] == good_id)["script_json"]["bili_tid"] == 201
+    resp = await client.put(
+        f"/api/pipeline/items/{good_id}/meta",
+        json={"bili_tid": 0},
+    )
+    assert resp.status_code == 200, resp.text
+    items = (await client.get("/api/pipeline/items", params={"status": "approved"})).json()
+    assert "bili_tid" not in next(i for i in items if i["id"] == good_id)["script_json"]
+    # 排期显式清空（'' → None，v0.2.2 修复：此前 null 无法清除）
+    resp = await client.put(
+        f"/api/pipeline/items/{good_id}/meta",
+        json={"scheduled_at": ""},
+    )
+    assert resp.status_code == 200, resp.text
+    items = (await client.get("/api/pipeline/items", params={"status": "approved"})).json()
+    assert next(i for i in items if i["id"] == good_id)["scheduled_at"] is None
+
     # 单条发布（pipeline_publish_target=noop，安全）
     resp = await client.post(f"/api/pipeline/items/{good_id}/publish")
     assert resp.status_code == 200, resp.text

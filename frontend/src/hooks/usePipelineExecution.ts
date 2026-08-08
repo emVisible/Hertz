@@ -123,6 +123,9 @@ export function usePipelineExecution() {
     void queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-sources'] })
+    // 失败分类看板 / 供给告警：批量重试/审核操作后即时刷新（§7.5 缓存症状）
+    void queryClient.invalidateQueries({ queryKey: ['pipeline-failures'] })
+    void queryClient.invalidateQueries({ queryKey: ['pipeline-supply'] })
   }
 
   const setStep = (v: string) => setPipeline({ step: v })

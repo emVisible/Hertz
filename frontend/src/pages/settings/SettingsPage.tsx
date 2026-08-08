@@ -121,8 +121,13 @@ export function SettingsPage() {
   async function pickPath(key: keyof typeof form) {
     if (!window.electron?.pickDirectory) return
     const current = (form[key] ?? '') as string
-    const picked = await window.electron.pickDirectory(current)
-    if (picked) set(key, picked)
+    try {
+      const picked = await window.electron.pickDirectory(current)
+      if (picked) set(key, picked)
+    } catch (err) {
+      // §4.4 异步失败不沉默：IPC 异常给出可读提示，手动输入仍可用
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
   }
 
   if (isError) {

@@ -51,7 +51,7 @@ export function ScheduleField({
       <Button size="sm" variant="ghost" disabled={suggesting} onClick={() => void suggest()} title={t('console.scheduleSuggestHint')}>
         {t('console.scheduleSuggest')}
       </Button>
-      <Button size="sm" variant="ghost" onClick={() => { onSave(draft || null); setDraft(null) }}>
+      <Button size="sm" variant="ghost" onClick={() => { onSave(draft ?? ''); setDraft(null) }}>
         {t('console.scheduleSave')}
       </Button>
       {scheduled && !draft && (

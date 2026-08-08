@@ -145,7 +145,7 @@ export function AuditCard({
                 placeholder={t('console.tidPlaceholder')}
                 className="h-7 w-24 border border-border bg-surface-1 px-2 text-xs text-text-primary outline-none focus:border-primary"
               />
-              <Button size="sm" onClick={() => { onSaveMeta(item, { bili_tid: tidDraft ? Number(tidDraft) : null }); setTidDraft(null) }}>
+              <Button size="sm" onClick={() => { onSaveMeta(item, { bili_tid: tidDraft ? Number(tidDraft) : 0 }); setTidDraft(null) }}>
                 {t('common.save')}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setTidDraft(null)}>
