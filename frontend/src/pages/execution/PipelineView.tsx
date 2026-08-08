@@ -64,7 +64,7 @@ interface PipelineViewProps {
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
   publishItem: (item: PipelineItem, selfmade?: boolean) => void
-  retryClass: (cls: string) => void
+  retryClass: (cls: string, n: number) => void
   modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
@@ -272,7 +272,7 @@ export function PipelineView(p: PipelineViewProps) {
                             <span className="text-text-disabled">{n}</span>
                             <button
                               type="button"
-                              onClick={() => void p.retryClass(cls)}
+                              onClick={() => void p.retryClass(cls, n)}
                               title={t('console.retryClassHint', { cls })}
                               className=" p-0.5 text-text-disabled transition-colors hover:text-primary"
                             >

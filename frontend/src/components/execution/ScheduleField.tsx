@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '../ui'
+import { Button, useToast } from '../ui'
 import { pipelineApi } from '../../api'
 
 /** 排期设置字段（审核/发布卡片共用，AXIOM §1.2 单一真相源）：
@@ -15,6 +15,7 @@ export function ScheduleField({
   onSave: (value: string | null) => void
 }) {
   const { t } = useTranslation()
+  const toast = useToast()
   const [draft, setDraft] = useState<string | null>(null)
   const [suggesting, setSuggesting] = useState(false)
   const scheduled = scheduledAt ? scheduledAt.slice(0, 16) : null
@@ -29,8 +30,9 @@ export function ScheduleField({
       setDraft(
         `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}T${pad(local.getHours())}:${pad(local.getMinutes())}`,
       )
-    } catch {
-      /* 推荐失败静默——手动输入仍可用 */
+    } catch (err) {
+      // §4.4 异步加载失败不永久沉默：推荐失败给出可读提示，手动输入仍可用
+      toast(err instanceof Error ? err.message : String(err), 'error')
     } finally {
       setSuggesting(false)
     }

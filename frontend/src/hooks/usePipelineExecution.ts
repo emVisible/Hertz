@@ -194,8 +194,9 @@ export function usePipelineExecution() {
     }
   }
 
-  /** 同类批量重试（失败分类看板）。 */
-  async function retryClass(cls: string) {
+  /** 同类批量重试（失败分类看板）：批量副作用，先确认（AXIOM §13.1）。 */
+  async function retryClass(cls: string, n: number) {
+    if (!window.confirm(t('console.retryClassConfirm', { cls, n }))) return
     try {
       const res = await pipelineApi.retryClass(cls)
       refresh()

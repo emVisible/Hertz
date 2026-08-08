@@ -18,7 +18,7 @@ from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.models.system import JobRun, JobStatus
 from backend.pipeline.base import Pipe, ProcessResult, StepContext, StepError
-from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError
+from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError, classify_error
 from backend.pipeline.steps import get_step
 from backend.pipeline.steps.collect import run_collect
 
@@ -233,11 +233,7 @@ class StepEngine:
             if new_status == ItemStatus.FAILED:
                 row.error = error or (result.error if result else None)
                 # 失败分类（v0.2.1）：同类批量重试的数据基础
-                from backend.pipeline.errors import classify_error
-
-                row.error_class = classify_error(
-                    row.error or "", step.name
-                )
+                row.error_class = classify_error(row.error or "", step.name)
             else:
                 row.error = None
                 row.error_class = ""

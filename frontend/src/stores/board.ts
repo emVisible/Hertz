@@ -426,6 +426,47 @@ export const useBoardStore = create<BoardState>()(
         }
         return persisted as Partial<BoardState>
       },
+      // 防御性加载（AXIOM §17.11）：持久化数据可能损坏/手改——
+      // boards 非数组、空数组、缺字段或 activeBoardId 悬空时回退出厂，不白屏
+      merge: (persisted, current) => {
+        const p = persisted as Partial<BoardState>
+        if (!Array.isArray(p.boards) || p.boards.length === 0) {
+          return { ...current, boards: current.boards, board: current.board, activeBoardId: current.activeBoardId }
+        }
+        const boards = p.boards.map((b) => {
+          const safe = (Array.isArray(b.cards) ? b.cards : []).map((c) => ({
+            ...c,
+            layerId: typeof c.layerId === 'string' ? c.layerId : b.layers?.[0]?.id ?? 'l-default',
+            connections: Array.isArray(c.connections) ? c.connections : [],
+            draft: false,
+          }))
+          const layers = Array.isArray(b.layers) && b.layers.length > 0
+            ? b.layers
+            : [{ id: 'l-default', name: 'Layer 1', visible: true, order: 0 }]
+          return {
+            ...b,
+            id: typeof b.id === 'string' ? b.id : randomId('b'),
+            name: typeof b.name === 'string' && b.name ? b.name : 'Untitled Board',
+            layers,
+            activeLayerId: layers.some((l) => l.id === b.activeLayerId) ? b.activeLayerId : layers[0].id,
+            cards: safe,
+            strokes: Array.isArray(b.strokes) ? b.strokes : [],
+            createdAt: typeof b.createdAt === 'number' ? b.createdAt : Date.now(),
+            updatedAt: typeof b.updatedAt === 'number' ? b.updatedAt : Date.now(),
+          }
+        })
+        const activeId =
+          typeof p.activeBoardId === 'string' && boards.some((b) => b.id === p.activeBoardId)
+            ? p.activeBoardId
+            : boards[0].id
+        return {
+          ...current,
+          boards,
+          board: boards.find((b) => b.id === activeId) ?? boards[0],
+          activeBoardId: activeId,
+          pinned: Array.isArray(p.pinned) ? p.pinned : [],
+        }
+      },
       // 拖拽/笔迹每帧触发 setState，写 localStorage 会拖慢指针事件；
       // 节流到 500ms 合并一次，页面隐藏时强制落盘（AXIOM §7.2 性能预算）。
       storage: createJSONStorage(() => throttledLocalStorage),

@@ -13,16 +13,20 @@ Layout on disk for `dest`:
 import asyncio
 import ipaddress
 import json
+import logging
 import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
+from uuid import uuid4
 
 import aiofiles
 import httpx
 
 from backend.download.errors import HTTPStatusError, NoRangesError, SSRFBlockedError
+
+logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 MAX_REDIRECTS = 5
@@ -287,9 +291,15 @@ class ChunkedDownloader:
 
     async def _persist_progress(self, progress: dict) -> None:
         data = {"total": progress["total"], "starts": sorted(progress["starts"])}
-        tmp = self._meta.with_suffix(".json.tmp")
-        await asyncio.to_thread(tmp.write_text, json.dumps(data), "utf-8")
-        await asyncio.to_thread(tmp.replace, self._meta)
+        # 唯一临时名：并发 worker 各自写自己的 tmp 再原子替换——
+        # 固定 tmp 名会互相竞争（A replace 后 B 的 tmp 已不存在 → ENOENT）。
+        # 进度持久化是尽力而为（resume 时 _load_progress 兜底），失败不致命（AXIOM §4.6）。
+        tmp = self._meta.with_name(f".{self._meta.name}.{uuid4().hex[:8]}.tmp")
+        try:
+            await asyncio.to_thread(tmp.write_text, json.dumps(data), "utf-8")
+            await asyncio.to_thread(tmp.replace, self._meta)
+        except OSError:
+            logger.debug("progress persist failed (best effort)")
 
 
 async def fh_sync(src: Path, dest: Path) -> None:

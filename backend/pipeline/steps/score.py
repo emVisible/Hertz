@@ -72,7 +72,7 @@ class ScoreStep(Pipe):
             content=f"subreddit: {item.subreddit}\nscore: {item.reddit_score}",
             source=item.source_url,
         )
-        ctx.scores_used = int(getattr(ctx, "scores_used", 0)) + 1
+        ctx.scores_used += 1
         threshold = float(getattr(ctx.settings, "pipeline_min_score", 6.0))
         suitable = result.total >= threshold
         # 低分不丢弃：标记 is_lowscore 继续流程（人工审核决定），参考原项目「低分可复用」

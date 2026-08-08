@@ -54,20 +54,21 @@ class ExportPublisher(Publisher):
         out_dir = root / str(item.id)
         await asyncio.to_thread(out_dir.mkdir, parents=True, exist_ok=True)
 
-        def _copy(src: str | None, name: str) -> bool:
+        async def _copy(src: str | None, name: str) -> bool:
             if not src:
                 return False
             src_path = Path(src)
-            if not src_path.exists():
+            if not await asyncio.to_thread(src_path.exists):
                 return False
-            shutil.copy2(str(src_path), str(out_dir / name))
+            # 视频可达数百 MB：拷贝走线程池，避免阻塞事件循环（AXIOM §7.2）
+            await asyncio.to_thread(shutil.copy2, str(src_path), str(out_dir / name))
             return True
 
-        video_copied = _copy(item.video_path, "video.mp4")
+        video_copied = await _copy(item.video_path, "video.mp4")
         if not video_copied:
             raise PublisherError(f"video missing: {item.video_path}")
-        _copy(item.subtitle_path, "subs.srt")
-        _copy(item.cover_path, "cover.jpg")
+        await _copy(item.subtitle_path, "subs.srt")
+        await _copy(item.cover_path, "cover.jpg")
 
         script = item.script_json or {}
         meta_lines = [

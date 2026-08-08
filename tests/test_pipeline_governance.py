@@ -7,6 +7,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
@@ -218,3 +219,70 @@ async def test_export_publisher_package(tmp_path) -> None:
     assert "video.mp4" in files and "subs.srt" in files and "README.md" in files
     assert result["target"] == "export"
     assert "README.md" in result["files"]
+
+
+# ---------- 新端点 HTTP 测试（§28 核心路径自动化验证） ----------
+
+@pytest.mark.asyncio
+async def test_failure_endpoints(client) -> None:
+    """/failures 聚合 + /retry-class 批量重试 + 非法类 422（§8.1 输入校验）。"""
+    async with session_factory() as session:
+        session.add_all([
+            Item(status=ItemStatus.FAILED, source="reddit", source_id="f-1",
+                 title="t1", error="download failed: HTTP 403 Forbidden",
+                 error_class="blocked", video_path=None),
+            Item(status=ItemStatus.FAILED, source="reddit", source_id="f-2",
+                 title="t2", error="LLM provider not configured",
+                 error_class="llm", video_path=None),
+        ])
+        await session.commit()
+
+    failures = (await client.get("/api/pipeline/failures")).json()
+    assert failures.get("blocked") == 1
+    assert failures.get("llm") == 1
+
+    resp = await client.post("/api/pipeline/retry-class", json={"cls": "blocked"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["requeued"] == 1
+    async with session_factory() as session:
+        rows = (await session.execute(
+            select(Item).where(Item.source_id.in_(["f-1", "f-2"]))
+        )).scalars().all()
+        by_id = {r.source_id: r for r in rows}
+    assert by_id["f-1"].status == "discovered"  # 无成片 → 回到 discovered
+    assert by_id["f-1"].error is None and by_id["f-1"].error_class == ""
+    assert by_id["f-2"].status == "failed"  # 其他类不受影响
+
+    bad = await client.post("/api/pipeline/retry-class", json={"cls": "nope"})
+    assert bad.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_schedule_next_endpoint(client) -> None:
+    """/schedule/next 返回下一个发布槽位（本地排期引擎）。"""
+    resp = await client.get("/api/pipeline/schedule/next")
+    assert resp.status_code == 200, resp.text
+    slot = resp.json()["recommended_at"]
+    parsed = datetime.fromisoformat(slot)
+    assert parsed.tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_supply_warnings_endpoint(client) -> None:
+    """/supply 供给告警：清空后 → funnel_empty。"""
+    async with session_factory() as session:
+        rows = (await session.execute(select(Item))).scalars().all()
+        for r in rows:
+            await session.delete(r)
+        await session.commit()
+    resp = await client.get("/api/pipeline/supply")
+    assert resp.status_code == 200, resp.text
+    assert "funnel_empty" in resp.json()["warnings"]
+
+
+@pytest.mark.asyncio
+async def test_auto_approve_endpoint(client) -> None:
+    """/auto-approve 手动触发：配置关闭时幂等 no-op。"""
+    resp = await client.post("/api/pipeline/auto-approve")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"enabled": False, "approved": 0}

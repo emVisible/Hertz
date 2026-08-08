@@ -35,6 +35,7 @@ export interface PipelineItem {
   script_json: Record<string, unknown> | null
   publish_json: Record<string, unknown> | null
   error: string | null
+  error_class: string
   retry_count: number
   created_at: string | null
   approved_at: string | null

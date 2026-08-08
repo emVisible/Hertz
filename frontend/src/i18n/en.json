@@ -423,6 +423,7 @@
     "exceptions": "Exceptions (failed / rejected)",
     "noExceptions": "No exceptions",
     "retryClassHint": "Retry all failures of this class",
+    "retryClassConfirm": "Reset {{n}} \"{{cls}}\" failure(s) and re-process?",
     "retriedClass": "Reset {{n}} item(s) — ready to re-process",
     "sourceHealth": {
       "healthy": "Healthy",

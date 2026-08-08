@@ -30,7 +30,6 @@ export function CanvasPage() {
   const toggleClusters = useBoardStore((s) => s.toggleClusters)
   const clearBoard = useBoardStore((s) => s.clearBoard)
   const shuffleCards = useBoardStore((s) => s.shuffleCards)
-  const exportBoardJson = useBoardStore((s) => s.exportBoardJson)
   const importBoardJson = useBoardStore((s) => s.importBoardJson)
 
   useKeyboard()
@@ -61,23 +60,27 @@ export function CanvasPage() {
     }
   }
 
-  /** ⌘E 导出当前板为 .revel.json（与 Revel 原项目互通，AXIOM §1.2）。 */
+  /** ⌘E 导出当前板为 .revel.json（与 Revel 原项目互通，AXIOM §1.2）。
+   * 从 store 读最新状态（§35 数据驱动）——闭包不捕获旧 board。 */
   function exportBoard() {
-    const json = exportBoardJson()
+    const state = useBoardStore.getState()
+    const json = state.exportBoardJson()
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${board.name.replace(/\s+/g, '_')}.revel.json`
+    a.download = `${state.board.name.replace(/\s+/g, '_')}.revel.json`
     a.click()
     URL.revokeObjectURL(url)
   }
 
-  // ⌘E 快捷键 → 导出（useKeyboard 派发自定义事件，避免跨模块循环依赖）
+  // ⌘E 快捷键 → 导出（useKeyboard 派发自定义事件，避免跨模块循环依赖）。
+  // 依赖 []：listener 只绑定一次（§18.2 框架托管事件优先），数据走 getState
   useEffect(() => {
     window.addEventListener('board:export', exportBoard)
     return () => window.removeEventListener('board:export', exportBoard)
-  })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useKeyboard()
 

@@ -427,6 +427,7 @@
     "exceptions": "异常内容（failed / rejected）",
     "noExceptions": "没有异常内容",
     "retryClassHint": "批量重试该类失败",
+    "retryClassConfirm": "重置 {{n}} 条「{{cls}}」失败并重新处理？",
     "retriedClass": "已复位 {{n}} 条，可重新处理",
     "sourceHealth": {
       "healthy": "健康",

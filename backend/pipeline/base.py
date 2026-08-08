@@ -27,12 +27,14 @@ class StepContext:
     ``emit`` broadcasts a JSON event to the pipeline topic (EventHub);
     ``settings`` is the app config for feature flags / thresholds;
     ``ai`` is the AIRouter for LLM/score/tts tasks.
+    ``scores_used`` 运行内已消费的评分预算（成本闸门，同批共享）。
     """
 
     run_id: str
     settings: Any
     ai: Any = None
     emit: Any = None
+    scores_used: int = 0
 
     def log(self, message: str, level: str = "info") -> None:
         if self.emit is not None:

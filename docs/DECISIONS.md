@@ -160,3 +160,13 @@
   - **Canvas 域（Revel）**：多板（board store 扩展为数组 + 板签栏，persist v2 迁移，Revel 同款新建/切换/双击重命名/删除保留最后一块）；图层面板 UI（新建/重命名/显隐/排序，数据层早已存在）；图片卡片（输入态/背景粘贴剪贴板图片 → 图片卡，Revel 同款 dataURL 持久化）；导入导出（⌘E 导出 .revel.json、拖入导入，与 Revel 原项目格式互通——Board/Card/Layer 字段同构）；画布平移（Space+拖拽 ±260px 有界，capture 阶段拦截与卡片拖拽互斥）
   - **流水线治理（Autarkeia）**：失败分类看板（items.error_class + classify_error 十类，wave15 迁移，同类批量重试 /retry-class）；phash 去重（成片平均哈希 8×8 灰度 64bit，生产步骤落库 + 发布闸门 block_publish_duplicates + backfill_phash.py 回填存量，ffmpeg 7 不支持 -ss 25% 需先探测时长）；评分成本闸门（单次/单日 LLM 评分硬限额，超限跳过保持 downloaded，运行内计数挂 StepContext）；本地排期引擎（每日窗口 + 最小间隔 + 抖动，next_slot 纯函数，发布卡「推荐」按钮回填）；自动过审（pipeline_auto_approve 默认关闭，APScheduler 5 分钟 tick，超时未审自动 approve）；数据源健康度（source_state 连续失败/最后错误 wave16 迁移，dead/degraded/healthy 三态 + 供给告警 漏斗空/偏紧/源失联）；多平台导出包（publish target 新增 export——成片+字幕+封面+README 发布包到 data/exports/，人工/半自动上传）；采集韧性（失败冷却 30min / 连续 3 次熔断 2h，成功清零，Reddit 排序随机轮换反 429）
   - 决策原则：只同步「现状确实缺失」的功能（剪贴板监听/BGM/敏感词/定时发布/图层数据层等已有则跳过）；「已被替代设计覆盖」的（创作视角→Buff 随机池、平台语法→策略正文）不同步
+- **D-129 AXIOM 查漏补缺（v0.2.1 审计）**：v0.2.1 功能对照 AXIOM 逐条审计后的修复——
+  - **§7.2 阻塞事件循环**：ExportPublisher 视频拷贝（可达数百 MB）原为同步 shutil.copy2 → asyncio.to_thread
+  - **§18.2/§35 事件与闭包**：CanvasPage ⌘E 导出监听每次渲染重绑 + 闭包捕获旧 board → 改 getState 读最新 + deps []（防 stale export）
+  - **§17.11 持久化防御性加载**：board store 补 persist merge——boards 非数组/空/缺字段/activeBoardId 悬空时回退出厂，损坏 localStorage 不白屏
+  - **§4.4 失败不沉默**：ScheduleField 排期推荐失败静默 → toast 可读错误
+  - **§13.1 副作用可见性**：失败分类批量重试加 window.confirm（批量副作用先确认）
+  - **§28 核心路径验证**：新增 4 个 HTTP 端点测试（/failures、/retry-class 含 422、/schedule/next、/supply、/auto-approve）
+  - **§5.1 意图承载**：StepContext 显式声明 scores_used 字段（替代动态属性）；engine 循环内 import 上移模块级
+  - **§4.6 韧性（既有 Bug）**：下载引擎 `_persist_progress` 固定临时名被并发 worker 互相 replace → ENOENT（偶发炸 verify 门禁）——改唯一临时名 + 尽力而为容错，5/5 连续通过
+  - **§15.2 视图字段对齐**：前端 PipelineItem 补 error_class 字段声明
