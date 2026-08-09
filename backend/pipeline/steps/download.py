@@ -36,6 +36,7 @@ class DownloadStep(Pipe):
             cdn_circuit_remaining,
             download_headers,
             download_pacing,
+            looks_like_manifest,
             media_candidates,
             reset_cdn_circuit,
             trip_cdn_circuit,
@@ -105,6 +106,13 @@ class DownloadStep(Pipe):
                     continue
                 reset_cdn_circuit()
                 size = dest.stat().st_size if dest.exists() else 0
+                # 内容嗅探（v0.2.9 查漏补缺）：误下 MPD/HLS 清单文本 → 丢弃继续下一候选
+                if size > 0:
+                    head = dest.read_bytes()[:512]
+                    if looks_like_manifest(head):
+                        last_error = f"{cand[:48]}: manifest text, not media"
+                        dest.unlink(missing_ok=True)
+                        continue
                 if is_still and (size < STILL_MIN_BYTES or size > STILL_MAX_BYTES):
                     last_error = (
                         f"{cand[:48]}: still size {size} out of "

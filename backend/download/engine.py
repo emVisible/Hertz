@@ -59,7 +59,8 @@ _TRUSTED_MEDIA_SUFFIXES = (
 )
 
 
-def _host_trusted(host: str) -> bool:
+def host_trusted(host: str) -> bool:
+    """域名是否命中可信媒体域后缀（公开导出——download 韧性模块复用，§5.1）。"""
     h = (host or "").lower().rstrip(".")
     return any(h == s or h.endswith("." + s) for s in _TRUSTED_MEDIA_SUFFIXES)
 
@@ -78,7 +79,7 @@ def is_safe_media_url(url: str) -> bool:
     host = p.hostname
     if not host:
         return False
-    if _host_trusted(host):
+    if host_trusted(host):
         return True
     try:
         infos = socket.getaddrinfo(host, None)

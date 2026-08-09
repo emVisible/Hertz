@@ -278,3 +278,8 @@
   - **CDN 熔断**：连续 403 ≥3 → 600s 进程内熔断；熔断期间条目保持 discovered 不 FAILED（保护队列）
   - **条间节奏**：`download_pacing` 1.2s ±15% 抖动；**静图防护**：40MB 上限 / 256B 最小字节
   - 测试 7 项：候选链/checker 过滤/请求头/死 id/熔断（monkeypatch 配置）/候选降级集成（uvicorn 404→兜底 200）/静图大小校验；测试隔离（§34）：集成测试清理残留条目防污染 chain
+- **D-150 下载韧性查漏补缺（v0.2.9）**——
+  - **严重 bug**：候选链曾含 DASHPlaylist.mpd/HLS_720.mpd——Hertz 无 MPD 解析器，ChunkedDownloader 会把 XML 清单文本直下存成 raw.mp4 → 产物污染、produce 必失败。修复：候选链排除清单（诚实不支持解析），仅保留 DASH_720.mp4 + 原 URL + permalink；下载后内容嗅探兜底（`looks_like_manifest`：`<?xml`/`#EXTM3U` 开头 → 丢弃继续下一候选）
+  - **封装违规**：download_headers 跨模块引用 engine 私有 `_host_trusted` → 公开重命名 `host_trusted`（§5.1）
+  - **测试隔离**：熔断测试残留 `_cdn_403_count=1` 会污染后续真实 403 计数（阈值 3 → 2 次即熔断）→ 测试结尾恢复模块状态（§34）
+  - **性能**：collect 死 id import 移出循环

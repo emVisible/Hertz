@@ -29,6 +29,7 @@ class CollectStep(Pipe):
 async def run_collect(ctx: StepContext, channel: str, limit: int, collector) -> dict:
     """Batch collection for one channel. Returns a summary dict."""
     from backend.pipeline.collectors.base import SourceCollector
+    from backend.pipeline.download import is_dead_reddit_media
 
     if not isinstance(collector, SourceCollector):
         raise TypeError("collector must be a SourceCollector")
@@ -64,8 +65,6 @@ async def run_collect(ctx: StepContext, channel: str, limit: int, collector) -> 
             # 死 id 预筛（v0.2.9，参考原项目 _invalid_collect_media）：
             # 无 /comments/ 详情页的 v.redd.it 视频、1f1 结尾死 id——
             # 已知必死媒体不下车，采集时直接跳过（否则下载必然 404）
-            from backend.pipeline.download import is_dead_reddit_media
-
             if is_dead_reddit_media(post.media_url or "", post.source_url, post.source_id):
                 skipped += 1
                 continue

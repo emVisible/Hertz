@@ -23,20 +23,36 @@ from backend.pipeline.download import (
 # ---------- 候选链 ----------
 
 def test_media_candidates_chain() -> None:
-    """v.redd.it 视频 → DASH 变体 + 原 URL + permalink 兜底；去重。"""
+    """v.redd.it 视频 → DASH_720.mp4 变体 + 原 URL + permalink 兜底；
+    清单候选（.mpd/.m3u8）排除——无解析器，直下会误存 XML 文本（§34 查漏补缺）。"""
     url = "https://v.redd.it/abc123/DASH_720.mp4"
     permalink = "https://www.reddit.com/r/funny/comments/abc123/title/"
     cands = media_candidates(url, permalink)
     assert cands[0] == url  # 已是 DASH_720.mp4：原样在前
-    assert "https://v.redd.it/abc123/DASHPlaylist.mpd" in cands
-    assert "https://v.redd.it/abc123/HLS_720.mpd" in cands
     assert permalink in cands
     assert len(cands) == len(set(cands))  # 去重
+    # 清单候选绝不出现
+    assert not any(".mpd" in c or ".m3u8" in c for c in cands)
+
+    # 裸 v.redd.it id → 只生成 DASH_720.mp4（无清单）
+    raw_id = media_candidates("https://v.redd.it/abc123", permalink)
+    assert "https://v.redd.it/abc123/DASH_720.mp4" in raw_id
+    assert not any(".mpd" in c or ".m3u8" in c for c in raw_id)
 
     # 非 v.redd.it：只保留原 URL + permalink
     plain = media_candidates("https://i.redd.it/x.jpg", "https://www.reddit.com/r/a/comments/1/x/")
     assert plain[0] == "https://i.redd.it/x.jpg"
     assert len(plain) == 2
+
+
+def test_looks_like_manifest() -> None:
+    from backend.pipeline.download import looks_like_manifest
+
+    assert looks_like_manifest(b'<?xml version="1.0" encoding="UTF-8"?><MPD>')
+    assert looks_like_manifest(b"#EXTM3U\n#EXT-X-VERSION:3")
+    assert not looks_like_manifest(b"\x00\x00\x00\x18ftypmp42")  # mp4 魔数
+    assert not looks_like_manifest(b"\xff\xd8\xff\xe0")  # jpeg 魔数
+    assert not looks_like_manifest(b"")
 
 
 def test_media_candidates_filtered_by_checker() -> None:
@@ -108,6 +124,9 @@ def test_cdn_circuit_breaker(monkeypatch) -> None:
     # 冷却结束后熔断解除
     dl._cdn_until = 0
     assert not cdn_circuit_open()
+    # 测试隔离（§34）：恢复模块状态，避免污染后续测试的 403 计数
+    dl._cdn_403_count = 0
+    dl._cdn_until = 0
 
 
 # ---------- 候选降级集成（本地服务器） ----------

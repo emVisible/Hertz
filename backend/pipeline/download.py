@@ -3,8 +3,9 @@
 解决「内容项 failed: download failed: HTTP_404」的根因：Reddit CDN 的
 v.redd.it 分享 URL 经常 404（帖子删除/死 id/HLS-only），单 URL 直下
 必然整条失败。本模块提供：
-- media_candidates：候选链（DASH_720.mp4 → DASHPlaylist.mpd → HLS_720.mpd
-  → 原 URL → permalink 兜底），逐个尝试
+- media_candidates：候选链（DASH_720.mp4 → 原 URL → permalink 兜底），逐个尝试；
+  排除 DASHPlaylist.mpd/HLS_720.mpd 清单候选——Hertz 无 MPD 解析器，
+  直下会把 XML 清单误存为成片（v0.2.9 查漏补缺）
 - download_headers：白名单域附加 Referer/Origin/Sec-Fetch（Reddit CDN 要求）
 - is_dead_reddit_media：死 id 预筛（采集时直接跳过，不下车）
 - CDN 熔断：连续 403 达阈值 → 进程内熔断，保护队列不逐条 FAILED
@@ -19,7 +20,7 @@ import time
 from urllib.parse import urlparse
 
 from backend.config import settings
-from backend.download.engine import is_safe_media_url
+from backend.download.engine import host_trusted, is_safe_media_url
 
 logger = logging.getLogger(__name__)
 
@@ -33,15 +34,15 @@ _REDDIT_REFERER = "https://www.reddit.com/"
 
 
 def _reddit_dash_url(url: str) -> list[str]:
-    """v.redd.it/{id} → DASH 变体候选（只认 v.redd.it 视频）。"""
+    """v.redd.it/{id} → DASH 视频候选（只认 v.redd.it，且仅直接视频文件——
+    清单（.mpd/.m3u8）需要解析器，Hertz 不引入，宁缺勿滥）。"""
     p = urlparse(url)
     if p.hostname != "v.redd.it":
         return []
     vid = (p.path or "").strip("/").split("/")[0]
     if not vid:
         return []
-    base = f"https://v.redd.it/{vid}"
-    return [f"{base}/DASH_720.mp4", f"{base}/DASHPlaylist.mpd", f"{base}/HLS_720.mpd"]
+    return [f"https://v.redd.it/{vid}/DASH_720.mp4"]
 
 
 def media_candidates(
@@ -62,6 +63,12 @@ def media_candidates(
     return candidates
 
 
+def looks_like_manifest(content: bytes) -> bool:
+    """下载内容嗅探：XML/M3U 清单文本（误下 DASHPlaylist/HLS 时的兜底）。"""
+    head = content[:512].lstrip().lower()
+    return head.startswith(b"<?xml") or head.startswith(b"#extm3u")
+
+
 # ---- 请求头 ----
 
 
@@ -72,7 +79,6 @@ def download_headers(url: str) -> dict[str, str]:
     """
     p = urlparse(url)
     host = (p.hostname or "").lower()
-    from backend.download.engine import _host_trusted
 
     headers = {
         "User-Agent": (
@@ -80,7 +86,7 @@ def download_headers(url: str) -> dict[str, str]:
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
         )
     }
-    if _host_trusted(host) and ("reddit" in host or "redd.it" in host):
+    if host_trusted(host) and ("reddit" in host or "redd.it" in host):
         headers.update({
             "Referer": _REDDIT_REFERER,
             "Origin": "https://www.reddit.com",
