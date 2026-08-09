@@ -36,17 +36,19 @@ export function AuditCard({
   const biliTid = script?.bili_tid != null ? String(script.bili_tid) : ''
 
   return (
-    <li className="flex gap-4 px-3 py-3">
-      {/* 媒体区：宽度与右侧内容相当（w-1/2），高度按 16:9 自然比例——
-          不随右侧内容高度拉伸（v0.2.7 修复封面被强行拉长变形） */}
-      <div className="group/cover relative aspect-video w-1/2 shrink-0">
-        <MediaThumb item={item} className="h-full w-full" />
+    <li className="flex gap-5 px-4 py-4">
+      {/* 媒体区（相册感，v0.2.7）：适中宽度 + 圆角 + 柔和阴影 + 留白，
+          16:9 自然比例，不占满宽度也不随内容拉伸 */}
+      <div className="group/cover relative w-44 shrink-0">
+        <div className="aspect-video overflow-hidden rounded-lg shadow-sm">
+          <MediaThumb item={item} className="h-full w-full" />
+        </div>
         <button
           type="button"
           onClick={() => coverInputRef.current?.click()}
           title={t('console.changeCover')}
           aria-label={t('console.changeCover')}
-          className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center border border-border bg-black/55 text-white/90 opacity-0 backdrop-blur-sm transition-opacity group-hover/cover:opacity-100 hover:border-primary hover:text-primary"
+          className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-border bg-black/55 text-white/90 opacity-0 backdrop-blur-sm transition-opacity group-hover/cover:opacity-100 hover:border-primary hover:text-primary"
         >
           <Icon name="edit" size={13} />
         </button>
