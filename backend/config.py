@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     pipeline_download_delay_seconds: float = 1.2
     pipeline_cdn_circuit_403: int = 3  # 连续 403 达阈值 → 熔断
     pipeline_cdn_circuit_cooldown: int = 600  # 熔断冷却秒数
+    # 评分预过滤（v0.3.0，参考原项目 _prefilter_reject）：LLM 前的廉价门槛，
+    # 仅当 reddit_score > 0 时生效（RSS/空分源防误杀）
+    pipeline_prefilter_min_reddit_score: int = 50
+    pipeline_prefilter_min_upvote_ratio: float = 0.85
     # Test/dev escape hatch: allow http(s) non-public URLs in the pipeline
     # download step (SSRF guard stays on by default — AXIOM §8.1).
     pipeline_allow_loopback_urls: bool = False

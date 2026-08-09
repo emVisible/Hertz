@@ -283,3 +283,10 @@
   - **封装违规**：download_headers 跨模块引用 engine 私有 `_host_trusted` → 公开重命名 `host_trusted`（§5.1）
   - **测试隔离**：熔断测试残留 `_cdn_403_count=1` 会污染后续真实 403 计数（阈值 3 → 2 次即熔断）→ 测试结尾恢复模块状态（§34）
   - **性能**：collect 死 id import 移出循环
+- **D-151 生产稳定（Wave 2，v0.3.0，参考原项目 Autarkeia）**——
+  - **评分**：预过滤配置化（pipeline_prefilter_min_reddit_score=50 / min_upvote_ratio=0.85，仅 reddit_score>0 生效防 RSS 空分误杀）；服务端按权重重算 total（short_form 1.2/safety 1.1/emotion 0.9，忽略 LLM 自报）；safety≤3 合规红线强制拒绝（人工导入也不豁免，与低分可复用区分）
+  - **去重**：标题指纹（小写/去标点/截断，7 天窗口）score 前拒绝（只统计已评分条目——同批 discovered 不计防自身误伤）；phash 汉明距离 ≤5 容差（发布闸门替代精确相等）
+  - **TTS 裁词重试**：旁白超预算（>98% 时长）按比例裁词 ≤3 次，仍超/失败 → subs_only
+  - **字幕**：按句长加权分配时间（中文按字符/英文按词数，0.45s 最小可读）+ 旁白起始延迟（watch/look 0.45s、slow 1.1s、默认 0.75s，封顶 min(2.2, dur*0.15)）音频 adelay 对齐
+  - **封面**：5 位置采样（短片 3 个）signalstats 兴趣评分（对比度主分 + 暗/过曝惩罚）取最高，全失败首帧兜底
+  - 测试 +7（预过滤拒绝/服务端重算/safety 红线/标题指纹与排除未评分/phash 距离/字幕加权偏移/旁白延迟）

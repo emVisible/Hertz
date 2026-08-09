@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -729,3 +730,160 @@ async def test_collect_zero_items_marks_empty_and_cooldown() -> None:
             assert state.consecutive_fails >= 1  # 空源同样记账
     finally:
         registry.pipeline.engine.collector = original
+
+
+# ---------- score 服务端重算 / safety 红线 / 预过滤（v0.3.0） ----------
+
+def test_recompute_total_weighted() -> None:
+    from backend.pipeline.steps.score import recompute_total
+
+    # short_form 加权 1.2：总和非等权平均
+    dims = {"entertainment": 5.0, "short_form": 10.0}
+    total = recompute_total(dims)
+    assert abs(total - (5 + 12) / 2.2) < 0.01
+    assert isinstance(total, float) and total <= 10.0
+    # 空维度 → 0
+    assert recompute_total({}) == 0.0
+    # 非数值忽略
+    assert recompute_total({"entertainment": 5.0, "script": "x"}) == 5.0
+
+
+@pytest.mark.asyncio
+async def test_score_safety_redline_rejects() -> None:
+    """safety ≤3 → 强制拒绝（合规红线，人工导入也不豁免）。"""
+    from backend.models.item import Item
+    from backend.pipeline.steps.score import ScoreStep
+
+    class Ai:
+        llm_available = True
+
+        async def score(self, **kwargs):
+            class R:
+                total = 9.9  # LLM 自报高分——不采信
+                dimensions = {"entertainment": 8.0, "safety": 2.0}
+                reasons = []
+                fallback = False
+            return R()
+
+    class SettingsStub:
+        pipeline_score_max_per_run = 100
+        pipeline_score_max_per_day = 1000
+        pipeline_min_score = 6.0
+        pipeline_prefilter_min_reddit_score = 50
+        pipeline_prefilter_min_upvote_ratio = 0.85
+
+    class Ctx:
+        settings = SettingsStub()
+        ai = Ai()
+        scores_used = 0
+
+        def log(self, message, level="info"):
+            pass
+
+    item = Item(status="downloaded", source="reddit", source_id="safety-1",
+                title="合规测试", reddit_score=100, upvote_ratio=0.9)
+    result = await ScoreStep().process(Ctx(), item)
+    assert result.status == "rejected"
+    assert result.data["reason"] == "safety_redline"
+    assert result.data["score_total"] == 4.86  # (8*1 + 2*1.1)/2.1 重算
+    assert any("safety" in r for r in result.data["score_reasons"])
+
+
+# ---------- 去重（v0.3.0，参考原项目 dedupe.py） ----------
+
+def test_title_fingerprint_and_hamming() -> None:
+    from backend.pipeline.dedupe import hamming_distance, normalize_title_key
+
+    # 指纹：小写/去标点/压缩空白/截断
+    assert normalize_title_key("Hello, World!!") == normalize_title_key("hello world")
+    assert normalize_title_key("  A  B  ") == "a b"
+    assert len(normalize_title_key("x" * 200)) <= 120
+    # 汉明距离：一位翻转
+    assert hamming_distance("0000000000000000", "0000000000000001") == 1
+    assert hamming_distance("ffffffffffffffff", "fffffffffffffffe") == 1
+    assert hamming_distance("0123456789abcdef", "0123456789abcdef") == 0
+    assert hamming_distance("", "abc") == 999
+
+
+@pytest.mark.asyncio
+async def test_find_title_duplicate_ignores_unscored() -> None:
+    """标题去重只统计已评分条目——同批 discovered 不误伤（查漏补缺）。"""
+    from backend.models.item import Item
+    from backend.pipeline.dedupe import find_title_duplicate
+
+    async with session_factory() as session:
+        unscored = Item(status="discovered", source="reddit", source_id="td-1",
+                        title="一个很棒的夜晚观察笔记标题")
+        scored = Item(status="scored", source="reddit", source_id="td-2",
+                      title="另一个完全不同的标题", score_total=7.0)
+        session.add_all([unscored, scored])
+        await session.commit()
+
+    # 未评分条目标题 → 不命中（避免自身误伤）
+    assert await find_title_duplicate("一个很棒的夜晚观察笔记标题") is False
+    # 已评分条目标题 → 命中
+    assert await find_title_duplicate("另一个完全不同的标题") is True
+    # 短标题（<6 字）不查
+    assert await find_title_duplicate("短") is False
+
+
+@pytest.mark.asyncio
+async def test_find_phash_duplicate_distance() -> None:
+    """phash 汉明距离 ≤5 判重；6+ 位翻转不误报。"""
+    from backend.models.item import Item
+    from backend.pipeline.dedupe import find_phash_duplicate
+
+    base = "0123456789abcdef"
+    near = "0123456789abcdee"  # 1 位翻转
+    far = "ffffffffffffffff"  # 32+ 位翻转
+
+    async with session_factory() as session:
+        session.add(Item(status="published", source="reddit", source_id="ph-1",
+                         title="已发布", phash=base))
+        await session.commit()
+
+    assert await find_phash_duplicate(near) is True  # 距离 1 ≤5
+    assert await find_phash_duplicate(far) is False  # 距离大
+    assert await find_phash_duplicate("") is False
+
+
+# ---------- 字幕加权分配 / 旁白起始延迟（v0.3.0，参考原项目 subtitle/tts） ----------
+
+def test_script_to_srt_weighted_and_offset(tmp_path) -> None:
+    from backend.pipeline.producers.media import script_to_srt
+
+    out = tmp_path / "subs.srt"
+    text = "这是一个很长的句子啊。短。"
+    script_to_srt(text, 10.0, out, start_offset=1.0)
+    raw = out.read_text(encoding="utf-8")
+    times = []
+    pat = r"(\d+):(\d+):(\d+),(\d+) --> (\d+):(\d+):(\d+),(\d+)"
+    for m in re.finditer(pat, raw):
+        sec1 = int(m.group(1)) * 3600 + int(m.group(2)) * 60
+        sec1 += int(m.group(3)) + int(m.group(4)) / 1000
+        sec2 = int(m.group(5)) * 3600 + int(m.group(6)) * 60
+        sec2 += int(m.group(7)) + int(m.group(8)) / 1000
+        times.append((sec1, sec2))
+    assert times, "至少一条字幕"
+    # 起始偏移：第一条从 1.0s 开始
+    assert times[0][0] == 1.0
+    # 长句占比大：第一条（长句）时长 ≥ 第二条（短句）
+    long_seg = times[0][1] - times[0][0]
+    short_seg = times[1][1] - times[1][0]
+    assert long_seg > short_seg
+    # 最小可读时长 0.45s
+    assert all((b - a) >= 0.449 for a, b in times)
+    # 不超总时长
+    assert times[-1][1] <= 10.0
+
+
+def test_narration_start_offset() -> None:
+    from backend.pipeline.producers.media import narration_start_offset
+
+    assert narration_start_offset("watch this video about dogs", 10.0) == 0.45
+    assert narration_start_offset("slowly explaining the details", 10.0) == 1.1
+    assert narration_start_offset("今天聊聊这个", 10.0) == 0.45
+    assert narration_start_offset("hello world", 10.0) == 0.75
+    # 封顶 min(2.2, dur*0.15)
+    assert narration_start_offset("watch", 4.0) <= 0.6
+    assert narration_start_offset("whatever", 30.0) <= 2.2

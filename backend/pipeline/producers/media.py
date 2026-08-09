@@ -149,22 +149,69 @@ async def _localize_text(ai: AIRouter, text: str, target_lang: str) -> str:
         return text
 
 
-def script_to_srt(text: str, duration: float, out_path: Path) -> Path:
-    """Naive-but-valid SRT: split narration into lines, distribute time."""
+def script_to_srt(
+    text: str, duration: float, out_path: Path, start_offset: float = 0.0
+) -> Path:
+    """SRT：按句长加权分配时间（v0.3.0，参考原项目 _allocate_slots——
+    长句多占时间，短句不硬撑；加旁白起始偏移），替代朴素均分。"""
     split_text = text.replace("。", "\n").replace(".", ".\n")
     sentences = [s.strip() for s in split_text.split("\n") if s.strip()]
     if not sentences:
         sentences = [text.strip()[:80]]
-    per = duration / max(len(sentences), 1)
+    # 权重：中文按字符数、英文按词数（长句长显示）
+    weights = [
+        max(len(s.split()), 1) if any(c.isascii() for c in s) else max(len(s), 1)
+        for s in sentences
+    ]
+    total_w = sum(weights)
+    usable = max(duration - start_offset, 0.0)
     lines: list[str] = []
-    for i, sentence in enumerate(sentences):
-        start = i * per
-        end = min((i + 1) * per, duration)
+    cursor = start_offset
+    for i, (sentence, w) in enumerate(zip(sentences, weights, strict=False)):
+        seg = usable * w / total_w
+        # 最小可读时长 0.45s（参考原项目）
+        seg = max(seg, 0.45)
+        start = cursor
+        end = min(start + seg, duration)
+        cursor = end
         if end <= start:
             continue
         lines.append(f"{i + 1}\n{_fmt_ts(start)} --> {_fmt_ts(end)}\n{sentence[:120]}\n")
     out_path.write_text("\n".join(lines), encoding="utf-8")
     return out_path
+
+
+def narration_start_offset(text: str, duration: float) -> float:
+    """旁白起始延迟（v0.3.0，参考原项目 narration_start_seconds）：
+    让画面先走一拍——开头 watch/look/see → 0.45s，slow/detail → 1.1s，
+    默认 0.75s；封顶 min(2.2, dur*0.15)。
+    """
+    head = (text or "").strip().lower()[:80]
+    if any(w in head for w in ("watch", "look", "see", "看", "今天")):
+        offset = 0.45
+    elif any(w in head for w in ("slow", "detail", "慢慢", "仔细")):
+        offset = 1.1
+    else:
+        offset = 0.75
+    return min(offset, max(duration * 0.15, 0.2), 2.2)
+
+
+async def apply_narration_delay(audio_path: Path, offset: float) -> Path:
+    """给旁白音频加起始静音（adelay），与字幕 start_offset 对齐（音画同步）。"""
+    if offset <= 0:
+        return audio_path
+    ffmpeg = find_ffmpeg()
+    if ffmpeg is None:
+        return audio_path
+    delayed = audio_path.with_name("narration-delayed.mp3")
+    ms = int(offset * 1000)
+    await _run_cmd([
+        str(ffmpeg), "-y", "-i", str(audio_path),
+        "-af", f"adelay={ms}|{ms}",
+        "-c:a", "libmp3lame", "-q:a", "4",
+        str(delayed),
+    ])
+    return delayed
 
 
 def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
@@ -291,14 +338,72 @@ async def compose_video(raw: Path, narration: Path | None, srt: Path | None, out
     return {"path": str(out), "width": 1280, "height": 720}
 
 
+async def _frame_interest(ffmpeg: str, probe_path: Path) -> float:
+    """帧兴趣分（v0.3.0，参考原项目 cover.py）：signalstats 对比度（YSTD）
+    为主分，暗/过曝（YAVG 越界）惩罚。返回 -1 = 不可评分。"""
+    proc = await asyncio.create_subprocess_exec(
+        str(ffmpeg), "-i", str(probe_path), "-vf",
+        "signalstats,metadata=print:file=-", "-frames:v", "1", "-f", "null", "-",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except TimeoutError:
+        proc.kill()
+        return -1.0
+    ystd = yavg = None
+    for line in out.decode(errors="replace").splitlines():
+        m = re.search(r"YSTD=([\d.]+)", line)
+        if m:
+            ystd = float(m.group(1))
+        m = re.search(r"YAVG=([\d.]+)", line)
+        if m:
+            yavg = float(m.group(1))
+    if ystd is None:
+        return -1.0
+    score = ystd
+    if yavg is not None:
+        score -= max(0.0, 20.0 - yavg) * 0.2  # 暗画面惩罚
+        score -= max(0.0, yavg - 235.0) * 0.2  # 过曝惩罚
+    return score
+
+
 async def generate_cover(raw: Path, out: Path) -> dict:
-    """Frame extraction at 1s as the cover image (16:9 crop)."""
+    """封面抽帧（v0.3.0，参考原项目 cover.py 兴趣评分）：
+    5 位置采样（短片 3 个）→ 对比度/亮度评分取最高 → 16:9 裁切；
+    全失败回退首帧，避免封面缺失。"""
     ffmpeg = find_ffmpeg()
     if ffmpeg is None:
         raise ProducerError("ffmpeg not found")
     out.parent.mkdir(parents=True, exist_ok=True)
+    duration = await probe_duration(raw)
+    positions = [0.18, 0.32, 0.48, 0.62, 0.78] if duration >= 4 else [0.2, 0.5, 0.8]
+    best_score = -1.0
+    best_pct = 0.0
+    probe_dir = out.parent / "cover-probes"
+    await asyncio.to_thread(probe_dir.mkdir, exist_ok=True)
+    for pct in positions:
+        probe = probe_dir / f"p{int(pct * 100)}.jpg"
+        try:
+            await _run_cmd([
+                str(ffmpeg), "-y", "-ss", str(max(duration * pct, 0.0)),
+                "-i", str(raw), "-frames:v", "1",
+                "-vf", "scale=160:90,format=yuv420p", str(probe),
+            ])
+        except Exception:  # noqa: BLE001 — 单位置失败跳过
+            continue
+        score = await _frame_interest(str(ffmpeg), probe)
+        if score > best_score:
+            best_score, best_pct = score, pct
+        try:
+            probe.unlink()
+        except OSError:
+            pass
+    if best_score < 0:
+        best_pct = 0.0  # 全部失败 → 首帧兜底
     await _run_cmd([
-        ffmpeg, "-y", "-ss", "1", "-i", str(raw), "-frames:v", "1",
+        str(ffmpeg), "-y", "-ss", str(max(duration * best_pct, 0.0)),
+        "-i", str(raw), "-frames:v", "1",
         "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
         str(out),
     ])
@@ -347,23 +452,55 @@ async def produce_item(
         else await _localize_text(ai, narration_text, subtitle_lang)
     )
 
-    audio_path = directory / "narration.mp3"
-    try:
-        tts = await synthesize_tts(ai, tts_text, audio_path)
-        artifacts["audio"] = tts
-    except ProducerError as exc:
-        logger.warning("tts failed, falling back to subs-only: %s", exc)
-        artifacts["audio"] = None
-
+    # 先探测原片时长（TTS 裁词预算依赖）
     duration = await probe_duration(raw_path)
     if duration <= 0:
         duration = 15.0  # unknown duration → fixed budget
+
+    # TTS 裁词重试（v0.3.0，参考原项目 fit_script_to_budget）：旁白超预算
+    # （>98% 时长）按比例裁词重试 ≤3 次；仍超/失败 → subs_only 降级
+    audio_path = directory / "narration.mp3"
+    tts = None
+    current_text = tts_text
+    for attempt in range(3):
+        try:
+            candidate = await synthesize_tts(ai, current_text, audio_path)
+        except ProducerError as exc:
+            logger.warning(
+                "tts attempt %d failed, falling back to subs-only: %s", attempt + 1, exc
+            )
+            break
+        audio_dur = await probe_duration(audio_path)
+        if audio_dur and audio_dur <= duration * 0.98:
+            tts = candidate
+            break
+        # 超预算：按比例裁词（保前段，≥4 字下限）
+        ratio = max(0.3, (duration * 0.9) / max(audio_dur or duration, 1))
+        current_text = current_text[: max(4, int(len(current_text) * ratio))]
+        logger.warning(
+            "narration %.1fs exceeds %.1fs budget — trim to %d chars, retry %d/3",
+            audio_dur or 0, duration * 0.98, len(current_text), attempt + 2,
+        )
+    artifacts["audio"] = tts
+
+    # 旁白起始延迟（v0.3.0）：音频加起始静音 + 字幕时间线同偏移（音画同步）
+    start_offset = narration_start_offset(tts_text, duration)
+    if artifacts.get("audio") is not None and start_offset > 0:
+        try:
+            delayed = await apply_narration_delay(
+                Path(artifacts["audio"]["path"]), start_offset
+            )
+            artifacts["audio"] = {"path": str(delayed), "bytes": artifacts["audio"]["bytes"]}
+        except Exception:  # noqa: BLE001 — 延迟失败不影响主流程（无偏移）
+            logger.warning("narration delay failed, continuing without offset")
 
     srt_path = None
     if artifacts.get("audio") is not None:
         srt_path = directory / "subs.srt"
         try:
-            await asyncio.to_thread(script_to_srt, subtitle_text, duration, srt_path)
+            await asyncio.to_thread(
+                script_to_srt, subtitle_text, duration, srt_path, start_offset
+            )
             artifacts["subtitle"] = {"path": str(srt_path), "source": "script"}
         except Exception:  # noqa: BLE001 — subtitles are best-effort
             srt_path = None

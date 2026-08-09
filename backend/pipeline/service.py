@@ -162,21 +162,15 @@ class PipelineService:
                     f"cannot publish item in state {item.status}"
                 )
             # phash 去重闸门（v0.2.1，参考原项目 block_publish_duplicates）：
-            # 同源成片已被发布过 → 拒绝发布，避免重复投稿
+            # 同源成片已被发布过 → 拒绝发布，避免重复投稿。
+            # v0.3.0：汉明距离 ≤5 容差（抽帧抖动/编码差异下同视频 phash 可翻转几位）
             if item.phash:
-                dup = (
-                    await session.execute(
-                        select(Item.id).where(
-                            Item.phash == item.phash,
-                            Item.status == ItemStatus.PUBLISHED,
-                            Item.id != item.id,
-                        )
-                    )
-                ).scalar_one_or_none()
-                if dup is not None:
+                from backend.pipeline.dedupe import find_phash_duplicate
+
+                if await find_phash_duplicate(item.phash, exclude_id=item.id):
                     raise ValueError(
                         f"duplicate detected: phash {item.phash} already published "
-                        f"(item {dup}) — 同源内容已发布，禁止重复投稿"
+                        f"(近源成片已发布，禁止重复投稿)"
                     )
             if selfmade:
                 script = dict(item.script_json or {})

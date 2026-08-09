@@ -31,7 +31,11 @@ FAKE_NARRATION = (
 
 
 class ScoringLLM:
-    """LLM fake: returns a rubric JSON for score calls, narration otherwise."""
+    """LLM fake: returns a rubric JSON for score calls, narration otherwise.
+
+    v0.3.0：低分用例按标题「低分」触发（预过滤配置化后 reddit_score 不再
+    恒低）；维度带实际值供服务端重算验证。
+    """
 
     async def chat_stream(self, messages, *, temperature=0.7, max_tokens=4096):
         content = "\n".join(getattr(m, "content", None) or m.get("content") for m in messages)
@@ -39,14 +43,15 @@ class ScoringLLM:
             import re
 
             match = re.search(r"score: (\d+)", content)
-            if match and int(match.group(1)) < 10:
+            if "低分" in content or (match and int(match.group(1)) < 10):
                 text = json.dumps(
-                    {"total": 4.0, "dimensions": {}, "reasons": ["测试低分"]},
+                    {"total": 4.0, "dimensions": {"entertainment": 4.0},
+                     "reasons": ["测试低分"]},
                     ensure_ascii=False,
                 )
             else:
                 text = json.dumps(
-                    {"total": 7.5, "dimensions": {"novelty": 7, "depth": 8},
+                    {"total": 9.9, "dimensions": {"novelty": 7, "depth": 8},
                      "reasons": ["测试高分"]},
                     ensure_ascii=False,
                 )
@@ -145,8 +150,8 @@ async def pipeline_env(client, remote_server, tmp_path):
                 title="低分",
                 source_url=f"{remote_server}/media.mp4",
                 media_url=f"{remote_server}/media.mp4",
-                score=1,
-                upvote_ratio=0.2,
+                score=60,
+                upvote_ratio=0.86,
                 created_utc=1_700_000_001.0,
                 item_type="video_raw",
             ),
@@ -156,8 +161,18 @@ async def pipeline_env(client, remote_server, tmp_path):
                 source_url=f"{remote_server}/missing.mp4",
                 media_url=f"{remote_server}/missing.mp4",
                 score=90,
-                upvote_ratio=0.8,
+                upvote_ratio=0.86,
                 created_utc=1_700_000_002.0,
+                item_type="video_raw",
+            ),
+            RawPost(
+                source_id="pref-1",
+                title="预过滤拒绝（低分低比例）",
+                source_url=f"{remote_server}/media.mp4",
+                media_url=f"{remote_server}/media.mp4",
+                score=1,
+                upvote_ratio=0.2,
+                created_utc=1_700_000_003.0,
                 item_type="video_raw",
             ),
         ]
@@ -187,12 +202,13 @@ async def test_chain_to_review_gate(client, pipeline_env) -> None:
     assert "collect" in results and "produce" in results
 
     queued = await _wait_items(client, "queued", 1)
-    assert queued[0]["status"] == "queued"
-    assert queued[0]["title"].startswith("一个很棒")
-    assert queued[0]["script_json"] is not None
-    assert queued[0]["raw_path"] is not None
-    assert queued[0]["cover_path"] is not None
-    assert queued[0]["score_total"] == 7.5
+    good = next(q for q in queued if q["source_id"] == "good-1")
+    assert good["status"] == "queued"
+    assert good["title"].startswith("一个很棒")
+    assert good["script_json"] is not None
+    assert good["raw_path"] is not None
+    assert good["cover_path"] is not None
+    assert good["score_total"] == 7.5
 
     # v0.2.0 低分不再 reject：low-1 → 低分标记 + 继续流程进入审核队列（人工决定）
     queued = await _wait_items(client, "queued", 2)
@@ -214,6 +230,9 @@ async def test_chain_to_review_gate(client, pipeline_env) -> None:
     counts = (await client.get("/api/pipeline/items/counts")).json()
     assert counts.get("queued") == 2
     assert counts.get("failed") == 1
+    # v0.3.0 预过滤配置化：低分低比例（score=1/ratio=0.2）LLM 前直接拒绝
+    rejected = (await client.get("/api/pipeline/items", params={"status": "rejected"})).json()
+    assert any(i["source_id"] == "pref-1" for i in rejected)
 
 
 @pytest.mark.asyncio
