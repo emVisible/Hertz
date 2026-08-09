@@ -66,15 +66,19 @@ interface PipelineViewProps {
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
   publishItem: (item: PipelineItem, selfmade?: boolean) => void
+  uploadCover: (item: PipelineItem, file: File) => void
   retryClass: (cls: string, n: number) => void
   modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
 type PipelineTabId = 'run' | 'preReview' | 'inReview' | 'postReview'
 
-/** 审核排序（v0.2.6）：前端排序——队列数据已全量拉取，无需后端参数 */
-type AuditSort = 'newest' | 'oldest' | 'scoreDesc' | 'scoreAsc' | 'redditDesc' | 'title'
+/** 审核排序（v0.2.6）：前端排序——队列数据已全量拉取，无需后端参数。
+ *  videoFirst = 有成片的排前面（可预览优先，默认）；random = 每次洗牌。 */
+type AuditSort = 'videoFirst' | 'newest' | 'oldest' | 'scoreDesc' | 'scoreAsc' | 'redditDesc' | 'title' | 'random'
 const AUDIT_SORTS: Array<{ id: AuditSort }> = [
+  { id: 'videoFirst' },
+  { id: 'random' },
   { id: 'newest' },
   { id: 'oldest' },
   { id: 'scoreDesc' },
@@ -101,13 +105,37 @@ export function PipelineView(p: PipelineViewProps) {
   const { t } = useTranslation()
   // 发布 tab 视图：列表（默认）｜内容日历（v0.2.3）
   const [calendarView, setCalendarView] = useState(false)
-  // 审核排序（v0.2.6）：默认最新在前
-  const [auditSort, setAuditSort] = useState<AuditSort>('newest')
+  // 异常内容折叠（v0.2.6）：非主要内容，默认折叠，标题行可展开
+  const [exceptionsOpen, setExceptionsOpen] = useState(false)
+  // 审核排序（v0.2.6）：默认「有成片优先」（可预览的在前面）；随机=每次点击重新洗牌
+  const [auditSort, setAuditSort] = useState<AuditSort>('videoFirst')
+  const [randomSeed, setRandomSeed] = useState(0)
+  function changeAuditSort(value: string) {
+    if (value === 'random') {
+      // 每次选「随机」重新洗牌（seed 变化触发 memo 重排）
+      setRandomSeed(Date.now())
+    }
+    setAuditSort(value as AuditSort)
+  }
   const sortedQueued = useMemo(() => {
     const list = [...p.stageQueued]
     const cmpTime = (a: PipelineItem, b: PipelineItem) =>
       (a.created_at ?? '').localeCompare(b.created_at ?? '')
+    const byVideoFirst = (a: PipelineItem, b: PipelineItem) => {
+      const av = a.video_path ? 1 : 0
+      const bv = b.video_path ? 1 : 0
+      return bv - av || -cmpTime(a, b)
+    }
     switch (auditSort) {
+      case 'random': {
+        // 每次点击「随机」生成一次洗牌（seed 变化触发重排），而非每帧重排
+        const shuffled = [...list]
+        for (let i = shuffled.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1))
+          ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+        }
+        return shuffled
+      }
       case 'oldest':
         return list.sort(cmpTime)
       case 'scoreDesc':
@@ -119,10 +147,13 @@ export function PipelineView(p: PipelineViewProps) {
         return list.sort((a, b) => b.reddit_score - a.reddit_score)
       case 'title':
         return list.sort((a, b) => a.title.localeCompare(b.title, 'zh'))
-      default:
+      case 'newest':
         return list.sort((a, b) => -cmpTime(a, b))
+      default:
+        return list.sort(byVideoFirst)
     }
-  }, [p.stageQueued, auditSort])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.stageQueued, auditSort, randomSeed])
   const pTab: PipelineTabId = PIPELINE_TABS.some((tb) => tb.id === p.tab)
     ? (p.tab as PipelineTabId)
     : 'inReview'
@@ -285,7 +316,7 @@ export function PipelineView(p: PipelineViewProps) {
                   <Select
                     aria-label={t('console.auditSort')}
                     value={auditSort}
-                    onChange={(e) => setAuditSort(e.target.value as AuditSort)}
+                    onChange={(e) => changeAuditSort(e.target.value)}
                     options={AUDIT_SORTS.map((s) => ({ value: s.id, label: t(`console.auditSort.${s.id}`) }))}
                     className="w-36"
                   />
@@ -299,16 +330,47 @@ export function PipelineView(p: PipelineViewProps) {
                       onApprove={(i) => void p.act(i, 'approve')}
                       onReject={(i) => void p.act(i, 'reject')}
                       onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
+                      onUploadCover={(i, file) => void p.uploadCover(i, file)}
                     />
                   ))}
                 </ul>
               </PipelineStage>
             </div>
 
-            {/* 异常列（failed / rejected）：失败分类 + 批量重试 + 恢复待审 */}
+            {/* 异常列（failed / rejected）：可折叠（v0.2.6，非主要内容默认收起）；
+                折叠时标题行显示失败分类计数徽章 */}
             <div className="min-w-0 xl:col-span-2">
-              <SectionCard title={t('console.exceptions')} padded={false}>
-                {p.stageError ? (
+              <SectionCard
+                title={
+                  <button
+                    type="button"
+                    onClick={() => setExceptionsOpen((v) => !v)}
+                    aria-expanded={exceptionsOpen}
+                    className="flex items-center gap-1.5 text-sm font-semibold text-text-primary transition-colors hover:text-primary"
+                  >
+                    <Icon name="chevron-down" size={13} className={`transition-transform ${exceptionsOpen ? '' : '-rotate-90'}`} />
+                    {t('console.exceptions')}
+                    {!exceptionsOpen && Object.keys(p.failures).length > 0 && (
+                      <span className="font-mono text-[10px] font-normal text-text-disabled">
+                        {Object.keys(p.failures).length} 类
+                      </span>
+                    )}
+                  </button>
+                }
+                padded={false}
+              >
+                {!exceptionsOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setExceptionsOpen(true)}
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-2"
+                  >
+                    <span>{t('console.exceptionsExpand')}</span>
+                    <span className="font-mono text-text-disabled">
+                      {(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)} 条
+                    </span>
+                  </button>
+                ) : p.stageError ? (
                   <QueryErrorState message={t('error.queryFailed', { detail: 'pipeline' })} onRetry={() => void p.refetchStage()} />
                 ) : p.stageFailed.length + p.stageRejected.length === 0 ? (
                   <p className="p-3 text-sm text-text-disabled">{t('console.noExceptions')}</p>

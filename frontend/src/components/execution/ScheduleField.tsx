@@ -5,33 +5,38 @@ import { Button, useToast } from '../ui'
 import { pipelineApi } from '../../api'
 
 /** 排期设置字段（审核/发布卡片共用，AXIOM §1.2 单一真相源）：
- *  datetime-local + 保存；scheduled_at 已有值时显示「已设排期」。
- *  「推荐」按钮走本地排期引擎（窗口 + 最小间隔 + 抖动），推荐值回填草稿。 */
+ *  v0.2.6：仅日期（date），默认当前年/月，min=今天（不能排到过去）；
+ *  提交时取当日 10:00（与日历拖拽/排期引擎同语义）。
+ *  「推荐」按钮走本地排期引擎（窗口 + 最小间隔 + 抖动），推荐值回填。 */
 export function ScheduleField({
   scheduledAt,
   onSave,
 }: {
   scheduledAt: string | null
-  onSave: (value: string | null) => void
+  onSave: (value: string) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()
   const [draft, setDraft] = useState<string | null>(null)
   const [suggesting, setSuggesting] = useState(false)
-  const scheduled = scheduledAt ? scheduledAt.slice(0, 16) : null
+
+  const today = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const todayIso = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+  const scheduled = scheduledAt ? scheduledAt.slice(0, 10) : null
+  const current = draft ?? scheduled ?? ''
 
   async function suggest() {
     setSuggesting(true)
     try {
       const res = await pipelineApi.nextScheduleSlot()
-      // datetime-local 需要本地时间（去时区偏移）
+      // 推荐槽位 → 本地日期（时区偏移转换）
       const local = new Date(res.recommended_at)
-      const pad = (n: number) => String(n).padStart(2, '0')
-      setDraft(
-        `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}T${pad(local.getHours())}:${pad(local.getMinutes())}`,
-      )
+      if (Number.isNaN(local.getTime())) return
+      const iso = `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}`
+      setDraft(iso < todayIso ? todayIso : iso)
     } catch (err) {
-      // §4.4 异步加载失败不永久沉默：推荐失败给出可读提示，手动输入仍可用
+      // §4.4 异步失败不沉默：推荐失败给出可读提示，手动输入仍可用
       toast(err instanceof Error ? err.message : String(err), 'error')
     } finally {
       setSuggesting(false)
@@ -42,16 +47,26 @@ export function ScheduleField({
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.schedule')}</span>
       <input
-        type="datetime-local"
+        type="date"
         aria-label={t('console.schedule')}
-        value={draft ?? scheduled ?? ''}
+        value={current}
+        min={todayIso}
         onChange={(e) => setDraft(e.target.value)}
         className="h-7 border border-border bg-surface-1 px-2 text-xs text-text-primary outline-none focus:border-primary"
       />
       <Button size="sm" variant="ghost" disabled={suggesting} onClick={() => void suggest()} title={t('console.scheduleSuggestHint')}>
         {t('console.scheduleSuggest')}
       </Button>
-      <Button size="sm" variant="ghost" onClick={() => { onSave(draft ?? ''); setDraft(null) }}>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={!draft}
+        onClick={() => {
+          // 提交当日 10:00（与日历拖拽/排期引擎同语义）；取消选中=清空排期
+          onSave(draft ? `${draft}T10:00` : '')
+          setDraft(null)
+        }}
+      >
         {t('console.scheduleSave')}
       </Button>
       {scheduled && !draft && (

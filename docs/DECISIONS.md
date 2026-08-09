@@ -224,3 +224,10 @@
   - **前端显示**：MediaThumb 封面失效回退成片首帧（不再空白）；无封面条目 video 首帧渲染（onLoadedMetadata 跳 0.1s，preload=metadata 不再白板）
   - 回归测试：相对路径锚定 + ../ 越界 403（§28）
 - **D-140 审核区布局优化 + 排序（v0.2.6）**：inReview tab 从竖向堆叠改为左右分栏（xl:grid-cols-5，审核 3 列｜异常 2 列，小屏回退单列），两栏各自内部滚动（审核 max-h-[calc(100vh-15rem)]，异常区包滚动容器）——审核与异常两个大模块不再一上一下挤压；审核列表新增 6 种排序（最新/最旧/评分高→低/评分低→高[低分优先审]/Reddit 分/标题 A-Z），前端排序（队列数据已全量拉取，不加后端参数，§1.2 不引入重复数据源）；PipelineStage 补 right 插槽（透传 SectionCard 既有 right）。
+- **D-141 审核体验批（v0.2.6）**——
+  - **异常内容可折叠**：非主要内容默认收起（标题行 chevron + 失败分类数徽章；折叠态显示「展开 + N 条」行），SectionCard title 放宽 ReactNode
+  - **审核排序扩展**：新增「有成片优先」（默认——可预览的视频排前面，内部按最新）与「🎲 随机」（每次选择重新洗牌，seed 触发 memo 重排，非每帧重排）
+  - **修改封面**：`POST /items/{id}/cover` multipart 上传（python-multipart 新依赖）→ data/media/covers/ 落盘 + cover_path 更新；审核卡缩略图 hover 出现换封面按钮（扩展名校验 + 10MB 上限）
+  - **分区 Select**：参考原项目 Autarkeia category.py 分区表 → 前端 constants/bilibili.ts 单一真相源（25 个常用 tid + biliTidName 助手），审核卡分区从数字输入改为 Select（含「默认分区」）
+  - **评分维度网格化**：ScoreDims 只渲染数值字段（LLM 返回混入的 script_meta/subtitle/compose_quality/suitable 等 object/boolean 不再平铺成「裹脚布」），已知维度顺序 + 迷你强度条，独立行展示
+  - **排期仅日期**：datetime-local → date（默认当前年/月、min=今天不能排到过去），提交取当日 10:00（与日历拖拽/排期引擎同语义），推荐/清空保留

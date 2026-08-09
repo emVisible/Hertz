@@ -3,7 +3,7 @@
 import json
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -153,6 +153,33 @@ async def publish_item(item_id: uuid.UUID, selfmade: int = 0):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — 发布失败（缺 cookie/文件等）返回可读错误
         raise HTTPException(status_code=502, detail=f"发布失败：{exc}") from exc
+
+
+@router.post("/items/{item_id}/cover")
+async def upload_cover(item_id: uuid.UUID, file: UploadFile = File(...)):  # noqa: B008 — FastAPI 依赖注入惯用
+    """上传并替换审核条目的封面（v0.2.6）：保存到 data/media/covers/，更新 cover_path。"""
+    from backend.factory.registry import ServiceRegistry
+    from backend.models.item import Item
+    from backend.models.session import session_factory
+
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in ("jpg", "jpeg", "png", "webp"):
+        raise HTTPException(status_code=422, detail="仅支持 jpg/png/webp 封面")
+    files = ServiceRegistry.get().files
+    dest = files.resolve(f"media/covers/{item_id}.{ext}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=422, detail="封面文件过大（≤10MB）")
+    await files.atomic_write(dest, content)
+    async with session_factory() as session:
+        item = await session.get(Item, item_id)
+        if item is None:
+            raise ItemNotFoundError(item_id)
+        item.cover_path = str(dest)
+        await session.merge(item)
+        await session.commit()
+    return {"id": str(item_id), "cover_path": str(dest)}
 
 
 @router.post("/run")

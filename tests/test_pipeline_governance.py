@@ -462,3 +462,42 @@ async def test_duplicates_endpoint(tmp_path, monkeypatch) -> None:
     groups = resp["groups"]
     assert len(groups) == 1  # 只有 red 组
     assert {f["name"] for f in groups[0]["files"]} == {"a.mp4", "b.mp4"}
+
+
+# ---------- 封面上传（v0.2.6） ----------
+
+@pytest.mark.asyncio
+async def test_upload_cover_endpoint(client, tmp_path, monkeypatch) -> None:
+    """POST /items/{id}/cover：multipart 上传 → data/media/covers/ 落盘 + cover_path 更新。"""
+    from backend.factory.registry import ServiceRegistry
+    from backend.models.item import Item
+
+    async with session_factory() as session:
+        item = Item(
+            status=ItemStatus.QUEUED, source="reddit",
+            source_id="cover-1", title="封面测试",
+        )
+        session.add(item)
+        await session.commit()
+        item_id = item.id
+
+    files = ServiceRegistry.get().files
+    original = files.data_dir
+    monkeypatch.setattr(files, "data_dir", tmp_path)  # 封面落盘到临时数据根
+    try:
+        resp = await client.post(
+            f"/api/pipeline/items/{item_id}/cover",
+            files={"file": ("cover.png", b"\x89PNG\r\n\x1a\nfake-image", "image/png")},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert tmp_path in Path(body["cover_path"]).parents
+        assert await asyncio.to_thread(_exists, body["cover_path"])
+        # 非法扩展名 → 422
+        bad = await client.post(
+            f"/api/pipeline/items/{item_id}/cover",
+            files={"file": ("x.txt", b"not-an-image", "text/plain")},
+        )
+        assert bad.status_code == 422
+    finally:
+        monkeypatch.setattr(files, "data_dir", original)

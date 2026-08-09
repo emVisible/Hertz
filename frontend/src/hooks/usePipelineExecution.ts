@@ -198,6 +198,17 @@ export function usePipelineExecution() {
     }
   }
 
+  /** 上传替换封面（v0.2.6）：审核卡换封面。 */
+  async function uploadCover(item: PipelineItem, file: File) {
+    try {
+      await pipelineApi.uploadCover(item.id, file)
+      refresh()
+      toast(t('console.coverSaved'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   /** 同类批量重试（失败分类看板）：批量副作用，先确认（AXIOM §13.1）。 */
   async function retryClass(cls: string, n: number) {
     if (!window.confirm(t('console.retryClassConfirm', { cls, n }))) return
@@ -244,6 +255,7 @@ export function usePipelineExecution() {
     act,
     saveMeta,
     publishItem,
+    uploadCover,
     retryClass,
     refresh,
   }

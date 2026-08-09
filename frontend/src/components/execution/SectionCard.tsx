@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Card } from '../ui'
 
 export interface SectionCardProps {
-  title: string
+  title: ReactNode
   right?: ReactNode
   children: ReactNode
   className?: string

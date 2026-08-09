@@ -116,6 +116,20 @@ export const pipelineApi = {
     api.put<{ id: string; ok: boolean }>(`/api/pipeline/items/${id}/meta`, meta),
   publish: (id: string, selfmade = false) =>
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/publish?selfmade=${selfmade ? 1 : 0}`),
+  /** 上传替换封面（v0.2.6）：FormData multipart。 */
+  uploadCover: async (id: string, file: File): Promise<{ id: string; cover_path: string }> => {
+    const form = new FormData()
+    form.append('file', file)
+    const resp = await fetch(`${API_BASE}/api/pipeline/items/${id}/cover`, {
+      method: 'POST',
+      body: form,
+    })
+    if (!resp.ok) {
+      const detail = await resp.text()
+      throw new Error(detail || `cover upload failed (${resp.status})`)
+    }
+    return resp.json() as Promise<{ id: string; cover_path: string }>
+  },
   run: (step: string, limit = 10) =>
     api.post<PipelineJob>(`/api/pipeline/run?step=${step}&limit=${limit}`),
   chain: (limit = 10) => api.post<Record<string, PipelineJob>>(`/api/pipeline/chain?limit=${limit}`),

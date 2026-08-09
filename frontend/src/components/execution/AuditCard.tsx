@@ -1,31 +1,35 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
-import { Badge, Button, CopyButton, Icon } from '../ui'
+import { Badge, Button, CopyButton, Icon, Select } from '../ui'
 import { MediaThumb, PIPELINE_ITEM_TONE, THUMB_LG } from './PipelineStage'
 import { ScoreDims } from './ScoreDims'
 import { ScheduleField } from './ScheduleField'
+import { BILI_TIDS } from '../../constants/bilibili'
 
 /** 审核卡片（借鉴 Autarkeia 信息结构，Hertz 设计语言）：
- *  媒体缩略 + 标题内联编辑 + 徽章行 + 评分维度 chips + 文案折叠 + B站标签 +
- *  排期设置 + 通过/驳回（右对齐）。 */
+ *  媒体缩略（可播放/换封面）+ 标题内联编辑 + 徽章行 + 评分维度网格 +
+ *  文案折叠 + B站标签/分区 Select + 排期 + 通过/驳回（右对齐）。 */
 export function AuditCard({
   item,
   onApprove,
   onReject,
   onSaveMeta,
+  onUploadCover,
 }: {
   item: PipelineItem
   onApprove: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
   onSaveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
+  onUploadCover: (item: PipelineItem, file: File) => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [titleDraft, setTitleDraft] = useState<string | null>(null)
   const [tagsDraft, setTagsDraft] = useState<string | null>(null)
   const [tidDraft, setTidDraft] = useState<string | null>(null)
+  const coverInputRef = useRef<HTMLInputElement>(null)
   const script = item.script_json
   const biliTitle = (script?.bili_title as string | undefined) ?? item.title
   const biliTags = (script?.bili_tags as string | undefined) ?? ''
@@ -33,7 +37,30 @@ export function AuditCard({
 
   return (
     <li className="flex gap-3 px-3 py-3">
-      <MediaThumb item={item} className={THUMB_LG} />
+      {/* 缩略图：点击播放成片；hover 出现「换封面」（v0.2.6） */}
+      <div className="group/cover relative shrink-0">
+        <MediaThumb item={item} className={THUMB_LG} />
+        <button
+          type="button"
+          onClick={() => coverInputRef.current?.click()}
+          title={t('console.changeCover')}
+          aria-label={t('console.changeCover')}
+          className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center border border-border bg-black/55 text-white/90 opacity-0 backdrop-blur-sm transition-opacity group-hover/cover:opacity-100 hover:border-primary hover:text-primary"
+        >
+          <Icon name="edit" size={12} />
+        </button>
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) onUploadCover(item, file)
+            e.target.value = ''
+          }}
+        />
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           {titleDraft !== null ? (
@@ -72,7 +99,6 @@ export function AuditCard({
               {t('console.lowScore')}
             </span>
           )}
-          <ScoreDims dims={item.score_dimensions} />
           {item.source_url && (
             <a
               href={item.source_url}
@@ -84,6 +110,8 @@ export function AuditCard({
             </a>
           )}
         </div>
+        {/* 评分维度：独立迷你网格（v0.2.6，不再平铺进 meta 行） */}
+        <ScoreDims dims={item.score_dimensions} />
         {item.error && <p className="mt-1 text-xs text-error">{item.error}</p>}
 
         {/* B站标签（可编辑） */}
@@ -131,40 +159,35 @@ export function AuditCard({
           />
         </div>
 
-        {/* B站分区（tid）：留空 = 发布时用默认分区 */}
+        {/* B站分区（tid）：Select 选择（v0.2.6，参考原项目 category.py 分区表）；
+            留空 = 发布时用默认分区 */}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.biliTid')}</span>
-          {tidDraft !== null ? (
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <input
-                autoFocus
-                type="number"
-                min={0}
-                value={tidDraft}
-                onChange={(e) => setTidDraft(e.target.value)}
-                placeholder={t('console.tidPlaceholder')}
-                className="h-7 w-24 border border-border bg-surface-1 px-2 text-xs text-text-primary outline-none focus:border-primary"
-              />
-              <Button size="sm" onClick={() => { onSaveMeta(item, { bili_tid: tidDraft ? Number(tidDraft) : 0 }); setTidDraft(null) }}>
-                {t('common.save')}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setTidDraft(null)}>
-                {t('docs.cancel')}
-              </Button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setTidDraft(biliTid)}
-              className="text-left"
-              title={t('console.editTid')}
+          <Select
+            aria-label={t('console.biliTid')}
+            value={tidDraft ?? biliTid}
+            onChange={(e) => setTidDraft(e.target.value)}
+            options={[
+              { value: '', label: t('console.tidDefault') },
+              ...BILI_TIDS.map((p) => ({
+                value: String(p.tid),
+                label: `${p.tid} · ${p.name}`,
+              })),
+            ]}
+            className="w-40"
+          />
+          {tidDraft !== null && (
+            <Button
+              size="sm"
+              onClick={() => { onSaveMeta(item, { bili_tid: tidDraft ? Number(tidDraft) : 0 }); setTidDraft(null) }}
             >
-              {biliTid ? (
-                <span className="border border-border px-1.5 py-0.5 text-[10px] text-text-secondary">{biliTid}</span>
-              ) : (
-                <span className="text-[10px] text-text-disabled">{t('console.tidDefault')}</span>
-              )}
-            </button>
+              {t('common.save')}
+            </Button>
+          )}
+          {tidDraft !== null && (
+            <Button size="sm" variant="ghost" onClick={() => setTidDraft(null)}>
+              {t('docs.cancel')}
+            </Button>
           )}
         </div>
 
