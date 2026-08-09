@@ -210,3 +210,6 @@
   - **动效**：浮层 backdrop 统一淡入（.hz-overlay-in，Modal/命令面板/右键菜单）；prefers-reduced-motion 全量尊重
   - **组件打磨**：Badge pill 化（rounded-full，全局统一分度）；Button 圆角 + primary 阴影/ hover 抬升（shadow-sm→md）；Select/Input hover 边框微亮；EmptyState 图标圆角容器；侧栏 NavLink 激活圆角+微影；窗口红绿灯圆形化；画布卡片/素材卡圆角；粉笔色块圆形化
   - **克制**：未引入彩色渐变/玻璃拟态等风格化元素，保持单色中性系统；未动布局与信息架构
+- **D-137 i18n 引用排查 + 审核卡点击播放（v0.2.4）**——
+  - **i18n 排查**：全量扫描 t()/labelKey 引用 vs zh/en key 集，发现两处真实缺口——`console.stagePostReview`（发布 tab 标签渲染原始 key）与 `docs.*` 12 个 key（素材页文档区渲染原始 key，AssetsPage 重构时前缀改名 docs. 但 key 未迁移）；修复：补齐 docs 段（文案取自 assets 段对应残留）、补 stagePostReview；清理 assets 段 9 个无引用死 key + docs.title/select 死 key（§3.3）；复查零缺失
+  - **审核卡点击封面播放**：MediaThumb 内置播放能力（有 video_path 时点击 → Modal + video controls autoPlay，复用素材库 QuickPreview 交互；hover 播放浮层）；单一真相源——AuditCard/PreReviewCard/阶段列表共用，一处实现处处可用

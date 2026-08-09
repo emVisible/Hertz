@@ -55,8 +55,19 @@
     "newBoardHint": "在画布上新建一块黑板"
   },
   "docs": {
-    "title": "文档",
-    "select": "选择左侧文档开始阅读"
+    "newDoc": "新建文档",
+    "edit": "编辑",
+    "editPlaceholder": "在此编写 Markdown 内容…",
+    "empty": "从左侧选择或新建项目文档",
+    "emptyList": "项目文档空间为空——点「新建文档」创建",
+    "delete": "删除",
+    "deleteConfirm": "删除该文档？",
+    "cancel": "取消",
+    "save": "保存文档",
+    "saved": "文档已保存",
+    "deleted": "文档已删除",
+    "namePlaceholder": "文档名（如：README.md）",
+    "created": "文档已创建"
   },
   "theme": {
     "toggle": "切换主题",
@@ -203,17 +214,7 @@
     "entryCount": "项",
     "noTags": "还没有标签——下载的素材会自动打上来源标签",
     "removeTag": "点击移除",
-    "newDoc": "新建文档",
-    "edit": "编辑",
-    "save": "保存文档",
-    "saved": "文档已保存",
-    "cancel": "取消",
     "delete": "删除",
-    "deleteConfirm": "删除该文档？",
-    "created": "文档已创建",
-    "emptyList": "项目文档空间为空——点「新建文档」创建",
-    "namePlaceholder": "文档名（如：README.md）",
-    "editPlaceholder": "在此编写 Markdown 内容…",
     "artifactsDir": "产物",
     "tag": "标记…",
     "tagPlaceholder": "输入标签，用逗号分隔（如: 精选, 剪辑）",
@@ -482,6 +483,7 @@
     "scheduleSet": "已设排期",
     "scheduleSuggest": "推荐",
     "scheduleSuggestHint": "本地排期引擎：窗口 + 最小间隔 + 抖动，推荐下一个发布槽位",
+    "playVideo": "点击播放成片",
     "scheduleFirst": "请先设置排期",
     "backToReview": "改回待审",
     "published": "已发布",
@@ -532,7 +534,8 @@
     "produced": "已成片",
     "pendingProduce": "待制作",
     "hasCover": "有封面",
-    "emptyPreReview": "暂无预处理数据"
+    "emptyPreReview": "暂无预处理数据",
+    "stagePostReview": "审核后"
   },
   "canvas": {
     "tool": {

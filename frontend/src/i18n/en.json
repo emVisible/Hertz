@@ -199,17 +199,7 @@
     "entryCount": "items",
     "noTags": "No tags yet — downloads are tagged automatically by source",
     "removeTag": "click to remove",
-    "newDoc": "New document",
-    "edit": "Edit",
-    "save": "Save document",
-    "saved": "Document saved",
-    "cancel": "Cancel",
     "delete": "Delete",
-    "deleteConfirm": "Delete this document?",
-    "created": "Document created",
-    "emptyList": "No project documents yet — click \"New document\" to create one",
-    "namePlaceholder": "Document name (e.g. README.md)",
-    "editPlaceholder": "Write Markdown content here…",
     "artifactsDir": "Artifacts",
     "tag": "Tag…",
     "tagPlaceholder": "Enter tags, comma separated (e.g. featured, cut)",
@@ -478,6 +468,7 @@
     "scheduleSet": "Scheduled",
     "scheduleSuggest": "Suggest",
     "scheduleSuggestHint": "Local schedule engine: window + min interval + jitter, suggests the next publish slot",
+    "playVideo": "Click to play the finished video",
     "scheduleFirst": "Set a schedule first",
     "backToReview": "Back to review",
     "published": "Published",
@@ -528,7 +519,8 @@
     "produced": "Produced",
     "pendingProduce": "Pending produce",
     "hasCover": "Has cover",
-    "emptyPreReview": "Nothing in pre-process"
+    "emptyPreReview": "Nothing in pre-process",
+    "stagePostReview": "Post-review"
   },
   "canvas": {
     "tool": {
@@ -620,8 +612,19 @@
     }
   },
   "docs": {
-    "title": "Docs",
-    "select": "Select a document on the left to start reading"
+    "newDoc": "New document",
+    "edit": "Edit",
+    "editPlaceholder": "Write Markdown content here…",
+    "empty": "Select or create a project document on the left",
+    "emptyList": "No project documents yet — click \"New document\" to create one",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this document?",
+    "cancel": "Cancel",
+    "save": "Save document",
+    "saved": "Document saved",
+    "deleted": "Document deleted",
+    "namePlaceholder": "Document name (e.g. README.md)",
+    "created": "Document created"
   },
   "phases": {
     "title": "Phases",

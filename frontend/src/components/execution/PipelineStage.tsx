@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { SectionCard } from './SectionCard'
 import type { PipelineItem } from '../../api'
 import { fileUrl } from '../../api/client'
-import { Icon, type BadgeTone } from '../ui'
+import { Icon, Modal, type BadgeTone } from '../ui'
 
 /** 流水线状态 → 徽章色调（单一真相源，wave12 合并各组件重复定义）。 */
 export const PIPELINE_ITEM_TONE: Record<string, BadgeTone> = {
@@ -76,35 +76,66 @@ function isImageUrl(url: string): boolean {
 }
 
 /** 条目缩略图（各阶段共用）：本地封面/成片优先，远程图片兜底，无图占位。
- *  远程图加载失败回退占位（不残留空白块）。 */
+ *  远程图加载失败回退占位（不残留空白块）。
+ *  v0.2.4：有成片时点击缩略图播放成片（复用素材库 QuickPreview 的
+ *  Modal + video controls 交互，单一真相源——审核/预处理/阶段列表共用）。 */
 export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineItem; className?: string }) {
   const { t } = useTranslation()
   const [remoteFailed, setRemoteFailed] = useState(false)
+  const [playing, setPlaying] = useState(false)
   const cover = item.cover_path
   const video = item.video_path
   const remote = item.media_url && isImageUrl(item.media_url) ? item.media_url : null
-  const base = `${className} shrink-0 border border-border bg-surface-2 object-cover`
-  if (cover) {
-    return <img src={fileUrl(cover)} alt="" className={base} loading="lazy" />
-  }
-  if (video) {
-    return <video src={fileUrl(video)} preload="metadata" muted className={base} />
-  }
-  if (remote && !remoteFailed) {
+
+  const thumb = (() => {
+    const base = `${className} shrink-0 border border-border bg-surface-2 object-cover`
+    if (cover) {
+      return <img src={fileUrl(cover)} alt="" className={base} loading="lazy" />
+    }
+    if (video) {
+      return <video src={fileUrl(video)} preload="metadata" muted className={base} />
+    }
+    if (remote && !remoteFailed) {
+      return (
+        <img
+          src={remote}
+          alt=""
+          loading="lazy"
+          onError={() => setRemoteFailed(true)}
+          className={base}
+        />
+      )
+    }
     return (
-      <img
-        src={remote}
-        alt=""
-        loading="lazy"
-        onError={() => setRemoteFailed(true)}
-        className={base}
-      />
+      <div
+        className={`${className} flex shrink-0 items-center justify-center border border-border bg-surface-2`}
+        title={t('audit.noMedia')}
+      >
+        <Icon name="console" size={14} className="text-text-disabled" />
+      </div>
     )
-  }
+  })()
+
+  if (!video) return <>{thumb}</>
+
   return (
-    <div className={`${className} flex shrink-0 items-center justify-center border border-border bg-surface-2`} title={t('audit.noMedia')}>
-      <Icon name="console" size={14} className="text-text-disabled" />
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => setPlaying(true)}
+        title={t('console.playVideo')}
+        aria-label={t('console.playVideo')}
+        className="group relative shrink-0 focus-visible:outline-none"
+      >
+        {thumb}
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <Icon name="play" size={20} className="text-white/90" />
+        </span>
+      </button>
+      <Modal open={playing} onClose={() => setPlaying(false)} width={820} title={item.title}>
+        <video src={fileUrl(video)} controls autoPlay className="max-h-[70vh] w-full bg-black" />
+      </Modal>
+    </>
   )
 }
 
