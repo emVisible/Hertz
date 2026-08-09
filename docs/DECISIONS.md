@@ -265,3 +265,8 @@
   - **修复**：engine collect 分支——`collected == 0` 时记健康度（fail_count+1/consecutive_fails+1/last_error=collected 0 items）+ 10 分钟短冷却（连续 0 条叠加熔断），summary 带 `empty: true`；collected > 0 才清除冷却
   - **前端**：job_done 日志显示 ⚠（非 ✓）+ warning toast「采集 0 条——源可能异常，已进入冷却」
   - 测试：0 条 → empty 标记 + 健康度记账 + 冷却生效；新 channel 同样记账
+- **D-148 下载 SSRF_BLOCKED 误杀修复（v0.2.8，参考原项目静态白名单）**——
+  - **根因**：is_safe_media_url 对每个域名做本地 socket.getaddrinfo 解析——代理/墙内环境下本地 DNS 无法解析 Reddit CDN（getaddrinfo 不走系统代理）→ gaierror → 误报 SSRF_BLOCKED
+  - **修复**：参考原项目 Autarkeia `_ALLOWED_MEDIA_SUFFIXES`——新增静态可信媒体域后缀白名单（reddit.com/redd.it/redditmedia.com/redditstatic.com + bilibili.com/b23.tv/youtube.com/youtu.be），命中即直通（httpx 自身走代理解析）；未知域名保持 DNS + 公网 IP 校验（通用下载防护不变）
+  - **防逃逸**：后缀精确匹配（evil-redd.it / redd.it.evil.com 均拒绝）+ 仅 https + 无内嵌凭据；重定向到未知域仍被 checker 拦截
+  - 测试：白名单直通（无需 DNS）、子域逃逸拒绝、非 https 拒绝

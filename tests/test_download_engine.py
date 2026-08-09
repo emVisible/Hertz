@@ -176,6 +176,28 @@ def test_ssrf_rejects_bad_schemes_and_credentials():
     assert is_safe_media_url("https://example.com/x.mp4")
 
 
+def test_ssrf_trusts_media_cdns_without_dns():
+    """已知可信媒体域直通（v0.2.8，参考原项目静态白名单）——
+    代理环境下本地 DNS 解析失败不再误报 SSRF_BLOCKED。"""
+    from backend.download.engine import is_safe_media_url
+
+    # Reddit 媒体 CDN（采集来源）
+    assert is_safe_media_url("https://v.redd.it/abc123/DASH_720.mp4")
+    assert is_safe_media_url("https://i.redd.it/xyz.jpg")
+    assert is_safe_media_url("https://preview.redd.it/xyz.jpg")
+    assert is_safe_media_url("https://www.redditmedia.com/x/1.mp4")
+    assert is_safe_media_url("https://external-preview.redd.it/abc.jpg")
+    # 手动下载来源
+    assert is_safe_media_url("https://www.bilibili.com/video/BV1xx411c7mD")
+    assert is_safe_media_url("https://b23.tv/abc")
+    assert is_safe_media_url("https://www.youtube.com/watch?v=abc")
+    # 子域逃逸拒绝（evil-redd.it 不匹配 .redd.it 后缀）
+    assert not is_safe_media_url("https://evil-redd.it/x.mp4")
+    assert not is_safe_media_url("https://redd.it.evil.com/x.mp4")
+    # 非 https 白名单域同样拒绝
+    assert not is_safe_media_url("http://v.redd.it/x.mp4")
+
+
 def test_parse_url_classification():
     assert parse_url("https://www.bilibili.com/video/BV1xx411c7mD").provider == "bilibili"
     assert parse_url("BV1xx411c7mD").provider == "bilibili"

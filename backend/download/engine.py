@@ -41,8 +41,35 @@ class DownloadResult:
     error: str | None = None
 
 
+# 静态可信媒体域后缀（参考原项目 Autarkeia _ALLOWED_MEDIA_SUFFIXES）：
+# 代理/墙内环境下本地 DNS 无法解析这些域名（getaddrinfo 不走系统代理），
+# 解析失败会被误判为 SSRF_BLOCKED——已知可信 CDN 域名跳过解析直接放行，
+# httpx 自身走系统代理解析。未知域名仍做 DNS + 公网 IP 校验（通用防护保留）。
+_TRUSTED_MEDIA_SUFFIXES = (
+    # Reddit 媒体 CDN（采集来源）
+    "reddit.com",
+    "redd.it",
+    "redditmedia.com",
+    "redditstatic.com",
+    # 手动下载来源（parser 同源白名单）
+    "bilibili.com",
+    "b23.tv",
+    "youtube.com",
+    "youtu.be",
+)
+
+
+def _host_trusted(host: str) -> bool:
+    h = (host or "").lower().rstrip(".")
+    return any(h == s or h.endswith("." + s) for s in _TRUSTED_MEDIA_SUFFIXES)
+
+
 def is_safe_media_url(url: str) -> bool:
-    """SSRF guard: https only, no embedded credentials, public IPs only."""
+    """SSRF guard: https only, no embedded credentials, public IPs only.
+
+    v0.2.8：已知可信媒体域直通（不做 DNS 解析——代理环境下本地 DNS 解析
+    失败会误杀，参考原项目静态白名单）；未知域名保持 DNS + 公网 IP 校验。
+    """
     p = urlparse(url)
     if p.scheme != "https":
         return False
@@ -51,6 +78,8 @@ def is_safe_media_url(url: str) -> bool:
     host = p.hostname
     if not host:
         return False
+    if _host_trusted(host):
+        return True
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
