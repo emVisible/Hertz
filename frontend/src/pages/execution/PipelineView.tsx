@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
@@ -72,6 +72,17 @@ interface PipelineViewProps {
 
 type PipelineTabId = 'run' | 'preReview' | 'inReview' | 'postReview'
 
+/** 审核排序（v0.2.6）：前端排序——队列数据已全量拉取，无需后端参数 */
+type AuditSort = 'newest' | 'oldest' | 'scoreDesc' | 'scoreAsc' | 'redditDesc' | 'title'
+const AUDIT_SORTS: Array<{ id: AuditSort }> = [
+  { id: 'newest' },
+  { id: 'oldest' },
+  { id: 'scoreDesc' },
+  { id: 'scoreAsc' },
+  { id: 'redditDesc' },
+  { id: 'title' },
+]
+
 // 第三级路由：内容流水线平铺菜单（v0.2.0 审核三态）——
 // 运行（操作）｜审核前（discovered/downloaded/scored 合并展示，单条数据审核前状态）
 // ｜审核中（queued 审核操作）｜审核后（approved 发布操作 + published 历史 + 异常恢复）
@@ -90,6 +101,28 @@ export function PipelineView(p: PipelineViewProps) {
   const { t } = useTranslation()
   // 发布 tab 视图：列表（默认）｜内容日历（v0.2.3）
   const [calendarView, setCalendarView] = useState(false)
+  // 审核排序（v0.2.6）：默认最新在前
+  const [auditSort, setAuditSort] = useState<AuditSort>('newest')
+  const sortedQueued = useMemo(() => {
+    const list = [...p.stageQueued]
+    const cmpTime = (a: PipelineItem, b: PipelineItem) =>
+      (a.created_at ?? '').localeCompare(b.created_at ?? '')
+    switch (auditSort) {
+      case 'oldest':
+        return list.sort(cmpTime)
+      case 'scoreDesc':
+        return list.sort((a, b) => (b.score_total ?? -1) - (a.score_total ?? -1))
+      case 'scoreAsc':
+        // 低分优先审（低分可复用，人工决定）
+        return list.sort((a, b) => (a.score_total ?? 99) - (b.score_total ?? 99))
+      case 'redditDesc':
+        return list.sort((a, b) => b.reddit_score - a.reddit_score)
+      case 'title':
+        return list.sort((a, b) => a.title.localeCompare(b.title, 'zh'))
+      default:
+        return list.sort((a, b) => -cmpTime(a, b))
+    }
+  }, [p.stageQueued, auditSort])
   const pTab: PipelineTabId = PIPELINE_TABS.some((tb) => tb.id === p.tab)
     ? (p.tab as PipelineTabId)
     : 'inReview'
@@ -239,27 +272,41 @@ export function PipelineView(p: PipelineViewProps) {
           </div>
         )}
         {pTab === 'inReview' && (
-          <div className="p-4">
-            <PipelineStage
-              title={t('console.stageAudit')}
-              isEmpty={p.stageQueued.length === 0}
-              emptyText={t('console.emptyAudit')}
-            >
-              <ul className="divide-y divide-border/60">
-                {p.stageQueued.map((item) => (
-                  <AuditCard
-                    key={item.id}
-                    item={item}
-                    onApprove={(i) => void p.act(i, 'approve')}
-                    onReject={(i) => void p.act(i, 'reject')}
-                    onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
+          /* 左右分栏（v0.2.6）：审核（宽列）｜异常内容（窄列），不再竖向堆叠；
+             小屏回退单列堆叠。两栏各自内部滚动。 */
+          <div className="grid gap-4 p-4 xl:grid-cols-5">
+            {/* 审核列：排序（v0.2.6）+ 审核卡片 */}
+            <div className="min-w-0 xl:col-span-3">
+              <PipelineStage
+                title={t('console.stageAudit')}
+                isEmpty={p.stageQueued.length === 0}
+                emptyText={t('console.emptyAudit')}
+                right={
+                  <Select
+                    aria-label={t('console.auditSort')}
+                    value={auditSort}
+                    onChange={(e) => setAuditSort(e.target.value as AuditSort)}
+                    options={AUDIT_SORTS.map((s) => ({ value: s.id, label: t(`console.auditSort.${s.id}`) }))}
+                    className="w-36"
                   />
-                ))}
-              </ul>
-            </PipelineStage>
+                }
+              >
+                <ul className="max-h-[calc(100vh-15rem)] divide-y divide-border/60 overflow-y-auto">
+                  {sortedQueued.map((item) => (
+                    <AuditCard
+                      key={item.id}
+                      item={item}
+                      onApprove={(i) => void p.act(i, 'approve')}
+                      onReject={(i) => void p.act(i, 'reject')}
+                      onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
+                    />
+                  ))}
+                </ul>
+              </PipelineStage>
+            </div>
 
-            {/* 异常内容（failed / rejected）：独立查询，可重试/恢复待审 */}
-            <div className="mt-4">
+            {/* 异常列（failed / rejected）：失败分类 + 批量重试 + 恢复待审 */}
+            <div className="min-w-0 xl:col-span-2">
               <SectionCard title={t('console.exceptions')} padded={false}>
                 {p.stageError ? (
                   <QueryErrorState message={t('error.queryFailed', { detail: 'pipeline' })} onRetry={() => void p.refetchStage()} />
@@ -286,28 +333,30 @@ export function PipelineView(p: PipelineViewProps) {
                         ))}
                       </div>
                     )}
-                    <StageList
-                      items={[...p.stageRejected, ...p.stageFailed]}
-                      emptyText={t('console.noExceptions')}
-                      total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)}
-                      renderRow={(item) => (
-                        <StageItemRow
-                          item={item}
-                          badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
-                          right={
-                            item.status === 'failed' ? (
-                              <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'retry')}>
-                                {t('common.retry')}
-                              </Button>
-                            ) : (
-                              <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
-                                {t('console.restore')}
-                              </Button>
-                            )
-                          }
-                        />
-                      )}
-                    />
+                    <div className="max-h-[calc(100vh-19rem)] overflow-y-auto">
+                      <StageList
+                        items={[...p.stageRejected, ...p.stageFailed]}
+                        emptyText={t('console.noExceptions')}
+                        total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)}
+                        renderRow={(item) => (
+                          <StageItemRow
+                            item={item}
+                            badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
+                            right={
+                              item.status === 'failed' ? (
+                                <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'retry')}>
+                                  {t('common.retry')}
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
+                                  {t('console.restore')}
+                                </Button>
+                              )
+                            }
+                          />
+                        )}
+                      />
+                    </div>
                   </>
                 )}
               </SectionCard>

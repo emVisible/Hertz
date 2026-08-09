@@ -223,3 +223,4 @@
   - **§33 锚定加固**：_ensure_allowed 相对路径按 file_store.data_dir 锚定 + resolve 归一化（不再依赖进程 cwd——打包版/外部启动目录下相对产物路径同样可解析）；_allowed_roots 增加 file_store.output_root（产物目录可浏览可播放）
   - **前端显示**：MediaThumb 封面失效回退成片首帧（不再空白）；无封面条目 video 首帧渲染（onLoadedMetadata 跳 0.1s，preload=metadata 不再白板）
   - 回归测试：相对路径锚定 + ../ 越界 403（§28）
+- **D-140 审核区布局优化 + 排序（v0.2.6）**：inReview tab 从竖向堆叠改为左右分栏（xl:grid-cols-5，审核 3 列｜异常 2 列，小屏回退单列），两栏各自内部滚动（审核 max-h-[calc(100vh-15rem)]，异常区包滚动容器）——审核与异常两个大模块不再一上一下挤压；审核列表新增 6 种排序（最新/最旧/评分高→低/评分低→高[低分优先审]/Reddit 分/标题 A-Z），前端排序（队列数据已全量拉取，不加后端参数，§1.2 不引入重复数据源）；PipelineStage 补 right 插槽（透传 SectionCard 既有 right）。

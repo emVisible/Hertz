@@ -28,14 +28,17 @@ export function PipelineStage({
   children,
   emptyText,
   isEmpty,
+  right,
 }: {
   title: string
   children: ReactNode
   emptyText?: string
   isEmpty?: boolean
+  /** 标题右侧插槽（排序控件等，v0.2.6） */
+  right?: ReactNode
 }) {
   return (
-    <SectionCard title={title} padded={false}>
+    <SectionCard title={title} right={right} padded={false}>
       {isEmpty && emptyText ? <p className="p-3 text-sm text-text-disabled">{emptyText}</p> : children}
     </SectionCard>
   )
