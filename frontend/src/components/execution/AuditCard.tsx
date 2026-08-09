@@ -37,9 +37,10 @@ export function AuditCard({
 
   return (
     <li className="flex gap-4 px-3 py-3">
-      {/* 媒体区：宽度与右侧内容相当（v0.2.6 大图预览），点击播放/换封面 */}
-      <div className="group/cover relative w-1/2 shrink-0">
-        <MediaThumb item={item} className="h-full max-h-48 w-full" />
+      {/* 媒体区：宽度与右侧内容相当（w-1/2），高度按 16:9 自然比例——
+          不随右侧内容高度拉伸（v0.2.7 修复封面被强行拉长变形） */}
+      <div className="group/cover relative aspect-video w-1/2 shrink-0">
+        <MediaThumb item={item} className="h-full w-full" />
         <button
           type="button"
           onClick={() => coverInputRef.current?.click()}
