@@ -36,8 +36,16 @@ async def _allowed_roots() -> list[Path]:
     (AXIOM §8.1/§8.3).
     """
     from backend.config import runtime_config
+    from backend.infrastructure.storage import file_store
 
-    roots = [Path(runtime_config.load().get("assets_root") or settings.data_dir)]
+    # 相对路径一律锚定 file_store.data_dir（§33 持久化路径单一真相根），
+    # 不依赖后端进程 cwd——打包版/外部启动目录下相对路径同样可解析
+    roots = [file_store.data_dir]
+    overrides = runtime_config.load()
+    custom_assets = overrides.get("assets_root")
+    if custom_assets:
+        roots.append(Path(custom_assets))
+    roots.append(file_store.output_root())  # 产物目录（pipeline/studio）可浏览可播放
     async with session_factory() as session:
         result = await session.execute(select(Project.path))
         roots.extend(Path(p) for p in result.scalars().all() if p)
@@ -51,7 +59,15 @@ async def _allowed_roots() -> list[Path]:
 
 
 async def _ensure_allowed(path: str) -> Path:
-    target = Path(await APath(path).resolve())
+    raw = Path(path)
+    if raw.is_absolute():
+        target = Path(await APath(raw).resolve())
+    else:
+        # 相对路径（如 data/output/pipeline/... 产物相对引用）按数据根锚定，
+        # 不依赖后端进程 cwd（§33 持久化路径单一真相根）；归一化 .. 防越界
+        from backend.infrastructure.storage import file_store
+
+        target = file_store.resolve(raw).resolve()
     for root in await _allowed_roots():
         if target == root or root in target.parents:
             return target

@@ -217,3 +217,9 @@
   - 有成片：点击播放 Modal；视频加载失败（文件缺失/损坏）→ 红色提示 + 「在 Finder 中显示成片」按钮；播放正常时底部常驻同一定位按钮（排查路径，复用 Electron shell:show-in-folder，§13.1 用户显式触发）
   - 无成片（有封面）：点击直接定位原始素材/封面（hover 显示文件夹图标），排查「为什么没成片」
   - 全部无媒体：保持占位不可点
+- **D-139 审核视频播放失败排查修复（v0.2.5）**——
+  - **根因**：迁移条目的 video_path 全部指向 Autarkeia 旧目录（127 条，文件在系统上但超出 Hertz library 允许根 → 403 播放失败）；封面 12 条同问题
+  - **修复**：scripts/migrate_autarkeia_media.py 硬链接迁移视频/封面到 data/media/{videos,covers}（同卷零拷贝，跨卷回退复制，幂等），更新 items 路径；清理 data/data 历史嵌套残留（合并 media/output 回 data 根）并修正 139 条 DB 路径；迁移脚本自身修复双重 data_dir 前缀 bug（file_store.resolve 已锚定，勿再拼 data_dir）
+  - **§33 锚定加固**：_ensure_allowed 相对路径按 file_store.data_dir 锚定 + resolve 归一化（不再依赖进程 cwd——打包版/外部启动目录下相对产物路径同样可解析）；_allowed_roots 增加 file_store.output_root（产物目录可浏览可播放）
+  - **前端显示**：MediaThumb 封面失效回退成片首帧（不再空白）；无封面条目 video 首帧渲染（onLoadedMetadata 跳 0.1s，preload=metadata 不再白板）
+  - 回归测试：相对路径锚定 + ../ 越界 403（§28）

@@ -83,6 +83,7 @@ function isImageUrl(url: string): boolean {
 export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineItem; className?: string }) {
   const { t } = useTranslation()
   const [remoteFailed, setRemoteFailed] = useState(false)
+  const [coverFailed, setCoverFailed] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [videoFailed, setVideoFailed] = useState(false)
   const cover = item.cover_path
@@ -91,11 +92,33 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
 
   const thumb = (() => {
     const base = `${className} shrink-0 border border-border bg-surface-2 object-cover`
-    if (cover) {
-      return <img src={fileUrl(cover)} alt="" className={base} loading="lazy" />
+    // 回退链：封面 → 成片首帧 → 远程图 → 占位（cover 失效不空白，§15 视图完整性）
+    if (cover && !coverFailed) {
+      return (
+        <img
+          src={fileUrl(cover)}
+          alt=""
+          loading="lazy"
+          onError={() => setCoverFailed(true)}
+          className={base}
+        />
+      )
     }
     if (video) {
-      return <video src={fileUrl(video)} preload="metadata" muted className={base} />
+      return (
+        <video
+          src={fileUrl(video)}
+          preload="metadata"
+          muted
+          playsInline
+          onLoadedMetadata={(e) => {
+            // 无封面时显示首帧：metadata 就绪后跳到 0.1s 触发首帧绘制
+            const el = e.currentTarget
+            if (el.duration > 0.2 && el.currentTime === 0) el.currentTime = 0.1
+          }}
+          className={base}
+        />
+      )
     }
     if (remote && !remoteFailed) {
       return (

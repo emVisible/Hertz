@@ -137,3 +137,33 @@ def test_search_matches_name_and_tags(tmp_path):
     # 空查询/无匹配
     assert browser.search([tmp_path], "") == []
     assert browser.search([tmp_path], "不存在") == []
+
+
+def test_ensure_allowed_anchors_relative_paths(monkeypatch, tmp_path):
+    """相对路径按数据根锚定（§33），不依赖进程 cwd——打包版/外部目录启动也正确。"""
+    import asyncio
+
+    from backend.infrastructure.storage import file_store
+    from backend.routers import library as lib
+    from backend.routers.library import _ensure_allowed
+
+    video = tmp_path / "output" / "pipeline" / "slug" / "final.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"x")
+
+    # 锚定目标是全局 file_store 数据根：测试内指向 tmp_path
+    monkeypatch.setattr(file_store, "data_dir", tmp_path)
+
+    async def fake_roots():
+        return [tmp_path]
+
+    monkeypatch.setattr(lib, "_allowed_roots", fake_roots)
+    # 相对路径（如 data/output/pipeline/... 产物引用）→ 锚定 tmp_path 数据根
+    target = asyncio.run(_ensure_allowed("output/pipeline/slug/final.mp4"))
+    assert target == video
+    # 越界相对路径（../ 逃逸）→ 403
+    try:
+        asyncio.run(_ensure_allowed("../secret.txt"))
+        raise AssertionError("expected 403")
+    except Exception as exc:  # noqa: BLE001
+        assert getattr(exc, "status_code", None) == 403
