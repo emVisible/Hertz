@@ -558,7 +558,17 @@
     "reprocessed": "已打回重新处理，完成后回到审核",
     "retranslated": "已打回重新翻译，完成后回到审核",
     "rescheduleUpdated": "已更新 {{n}} 条过期排期为新的推荐时间",
-    "tidAuto": "自动"
+    "tidAuto": "自动",
+    "dims": {
+      "entertainment": "娱乐性",
+      "novelty": "新颖度",
+      "completion": "完成度",
+      "cultural_fit": "文化契合",
+      "short_form": "短视频适配",
+      "visual_punch": "视觉冲击",
+      "emotion": "情感共鸣",
+      "safety": "安全性"
+    }
   },
   "canvas": {
     "tool": {

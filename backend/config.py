@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     pipeline_auto_approve_after_hours: int = 12
     # B站默认分区 tid（审核未显式设置时使用；0 = 不传，用账号默认）
     pipeline_bili_default_tid: int = 201  # 201 = 知识
+    # 处理语言（v0.2.7，参考原项目 locales 配置）：默认英文旁白 + 中文字幕
+    # narration_lang: 旁白目标语言（edge-tts 音色对应；zh-CN = 中文旁白）
+    # subtitle_lang: 字幕目标语言（zh-CN = 中文字幕；可配 vi/id/fil/pt-BR 等）
+    pipeline_narration_lang: str = "en-US"
+    pipeline_subtitle_lang: str = "zh-CN"
     # Test/dev escape hatch: allow http(s) non-public URLs in the pipeline
     # download step (SSRF guard stays on by default — AXIOM §8.1).
     pipeline_allow_loopback_urls: bool = False

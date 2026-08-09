@@ -102,20 +102,51 @@ def check_script_compliance(script: dict) -> dict:
     return hits
 
 
-async def synthesize_tts(ai: AIRouter, script: dict, out_path: Path) -> dict:
+async def synthesize_tts(ai: AIRouter, text: str, out_path: Path) -> dict:
     """TTS narration; raises ProducerError if TTS is unavailable.
 
     v3.0：音色由注册表 tts 角色决定（ai_roles.tts = provider:voice），
     TaskRouter.synthesize 解析；不再从 settings 直配。
+    v0.2.7：文本参数化（旁白可能为翻译后的目标语言文本）。
     """
     if not ai.tts_available:
         raise ProducerError("TTS provider not configured")
-    text = script["narration"][:1000]
-    audio = await ai.synthesize(text)
+    audio = await ai.synthesize(text[:1000])
     if not audio:
         raise ProducerError("TTS produced empty audio")
     await asyncio.to_thread(out_path.write_bytes, audio)
     return {"path": str(out_path), "bytes": len(audio)}
+
+
+async def _localize_text(ai: AIRouter, text: str, target_lang: str) -> str:
+    """旁白/字幕本地化（v0.2.7，参考原项目 locales）：LLM 翻译，失败回退原文。
+
+    走 fast 角色（翻译是低成本任务，不占用 main 强推理）。
+    """
+    from backend.ai.types import ChatMessage
+
+    if not text.strip():
+        return text
+    lang_names = {
+        "en-US": "English", "zh-CN": "简体中文", "vi": "Tiếng Việt",
+        "id": "Bahasa Indonesia", "fil": "Filipino", "pt-BR": "Português (Brasil)",
+    }
+    target = lang_names.get(target_lang, target_lang)
+    messages = [
+        ChatMessage(role="system", content=(
+            "你是短视频旁白翻译。把文本翻译成"
+            f"{target}，保持口语化、可直接朗读的节奏，"
+            "不要解释、不要加引号，只输出译文。"
+        )),
+        ChatMessage(role="user", content=text),
+    ]
+    try:
+        translated = await ai.chat_messages(messages, role="fast", max_tokens=1600)
+        translated = (translated or "").strip()
+        return translated if len(translated) >= 10 else text
+    except Exception:  # noqa: BLE001 — 翻译失败回退原文，不阻塞生产
+        logger.warning("localize to %s failed, falling back to original", target_lang)
+        return text
 
 
 def script_to_srt(text: str, duration: float, out_path: Path) -> Path:
@@ -295,9 +326,30 @@ async def produce_item(
     compliance = check_script_compliance(script)
     artifacts = {"script": script, "compliance": compliance, "directory": str(directory)}
 
+    # 处理语言（v0.2.7，参考原项目 locales）：英文旁白 + 中文字幕可配置
+    # narration_lang != zh-CN → 脚本旁白翻译成目标语言再 TTS；
+    # subtitle_lang 决定字幕文本语言（zh-CN 用原脚本中文旁白）
+    narration_text = str(script.get("narration") or "")[:1000]
+    narration_lang = str(
+        getattr(settings, "pipeline_narration_lang", "en-US") or "en-US"
+    )
+    subtitle_lang = str(
+        getattr(settings, "pipeline_subtitle_lang", "zh-CN") or "zh-CN"
+    )
+    tts_text = (
+        await _localize_text(ai, narration_text, narration_lang)
+        if narration_lang != "zh-CN"
+        else narration_text
+    )
+    subtitle_text = (
+        narration_text
+        if subtitle_lang == "zh-CN"
+        else await _localize_text(ai, narration_text, subtitle_lang)
+    )
+
     audio_path = directory / "narration.mp3"
     try:
-        tts = await synthesize_tts(ai, script, audio_path)
+        tts = await synthesize_tts(ai, tts_text, audio_path)
         artifacts["audio"] = tts
     except ProducerError as exc:
         logger.warning("tts failed, falling back to subs-only: %s", exc)
@@ -311,7 +363,7 @@ async def produce_item(
     if artifacts.get("audio") is not None:
         srt_path = directory / "subs.srt"
         try:
-            await asyncio.to_thread(script_to_srt, script["narration"], duration, srt_path)
+            await asyncio.to_thread(script_to_srt, subtitle_text, duration, srt_path)
             artifacts["subtitle"] = {"path": str(srt_path), "source": "script"}
         except Exception:  # noqa: BLE001 — subtitles are best-effort
             srt_path = None

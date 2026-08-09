@@ -543,7 +543,17 @@
     "reprocessed": "Sent back for reprocessing — will return to review",
     "retranslated": "Sent back for retranslation — will return to review",
     "rescheduleUpdated": "Updated {{n}} expired schedules to fresh recommended slots",
-    "tidAuto": "auto"
+    "tidAuto": "auto",
+    "dims": {
+      "entertainment": "Entertainment",
+      "novelty": "Novelty",
+      "completion": "Completion",
+      "cultural_fit": "Cultural fit",
+      "short_form": "Short-form",
+      "visual_punch": "Visual punch",
+      "emotion": "Emotion",
+      "safety": "Safety"
+    }
   },
   "canvas": {
     "tool": {

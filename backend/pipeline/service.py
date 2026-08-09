@@ -240,11 +240,14 @@ class PipelineService:
         )
         return {"id": str(item_id), "status": "scored", "retranslate": retranslate}
 
-    # ---------- 过期排期自动重排（v0.2.7） ----------
+    # ---------- 排期自动维护（v0.2.7） ----------
 
     async def reschedule_expired(self) -> int:
-        """进入审核时调用：把已过期的排期自动更新为下一个推荐槽位
-        （不能排到过去——参考排期引擎 next_slot，逐个分配不冲突）。
+        """进入审核时调用：过期排期自动更新 + 未排期条目自动分配推荐槽位。
+
+        - 过期（scheduled_at < now）→ next_slot 重新分配（不能排到过去）
+        - 未排期的 queued/approved → 自动分配推荐槽位（每次进入系统都有排期，
+          用户可再改）；单次最多 30 条，避免排期冲到遥远未来（§7.4 有界）
         """
         from datetime import UTC, datetime
 
@@ -252,16 +255,18 @@ class PipelineService:
 
         now = datetime.now(UTC)
         async with session_factory() as session:
-            rows = (
+            pending = (
                 await session.execute(
                     select(Item).where(
                         Item.status.in_((ItemStatus.QUEUED, ItemStatus.APPROVED)),
-                        Item.scheduled_at.isnot(None),
-                        Item.scheduled_at < now,
-                    ).order_by(Item.scheduled_at)
+                    ).order_by(Item.created_at.desc())
                 )
             ).scalars().all()
-            if not rows:
+            expired = [i for i in pending if i.scheduled_at is not None and i.scheduled_at < now]
+            unscheduled = [
+                i for i in pending if i.scheduled_at is None
+            ][:30]
+            if not expired and not unscheduled:
                 return 0
             allocated = [
                 t for t in
@@ -274,7 +279,8 @@ class PipelineService:
                 )).scalars().all()
                 if t is not None
             ]
-            for item in rows:
+            targets = expired + unscheduled
+            for item in targets:
                 slot = next_slot(
                     allocated,
                     now=now,
@@ -290,7 +296,7 @@ class PipelineService:
                 item.scheduled_at = slot
                 allocated.append(slot)
             await session.commit()
-            return len(rows)
+            return len(targets)
 
     # ---------- 自动过审（v0.2.1，参考原项目 auto_approve） ----------
 

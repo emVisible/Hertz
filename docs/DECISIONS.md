@@ -248,3 +248,9 @@
   - **过期排期自动重排**：`POST /pipeline/reschedule-expired`——进入审核 tab 时自动把已过期排期逐个更新为 next_slot 推荐槽位（不冲突、不做抖动），toast 提示更新数；「不能排到过去」语义落地
   - **分区自动显示**：serialize 附 auto_tid（参考原项目 assign_bili_tid），审核 Select 未手动设置时显示「自动」建议分区（不再误导性「留空」）；publisher tid 解析链：显式 → assign 建议 → 配置默认
   - **重新处理/重新翻译**（参考原项目 reproduce/retranslate）：`POST /items/{id}/reprocess?retranslate=`——重新处理=清脚本+产物完整重跑；重新翻译=保留脚本只重跑 TTS/字幕/合成（produce_item 支持 existing_script 复用）；完成后回审核（状态回 scored）
+- **D-145 审核对齐与本地化批（v0.2.7）**——
+  - **评分维度中英随界面语言**：ScoreDims 维度名走 i18n（console.dims.*，zh/en 各 8 项），中文语境显示中文名
+  - **低饱和色板**：8 维固定色从高饱和（粉/紫/蓝…）降为低饱和灰调（灰蓝/灰紫/灰绿/灰金/灰玫/灰青/灰粉/灰红），贴合单色简约设计不刺眼
+  - **排期每次自动**：reschedule-expired 扩展——除过期重排外，未排期 queued/approved 自动分配推荐槽位（单次 ≤30 条有界，逐个 next_slot 不冲突）；进入审核即触发，无需手动点推荐
+  - **分区 Select 大小**：w-44 → w-36 与其他控件一致
+  - **处理语言配置化**（参考原项目 locales：narration_lang/subtitle_lang）：config 新增 pipeline_narration_lang（默认 en-US 英文旁白）+ pipeline_subtitle_lang（默认 zh-CN 中文字幕）；produce 流程——旁白非中文时 LLM 翻译（fast 角色，失败回退原文不阻塞）后 TTS；字幕按 subtitle_lang 本地化；重新翻译复用同一流程；ASS 字幕淡入淡出（\fad 200ms）已具备

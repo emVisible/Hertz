@@ -183,7 +183,7 @@ export function AuditCard({
                 label: `${p.tid} · ${p.name}`,
               })),
             ]}
-            className="w-44"
+            className="w-36"
           />
           {tidDraft !== null && (
             <Button

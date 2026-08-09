@@ -605,3 +605,56 @@ def test_auto_tid_in_serialize(client) -> None:
         item_type = "video_raw"
 
     assert _auto_tid(Stub()) == 152  # 动物
+
+
+# ---------- 处理语言本地化（v0.2.7，参考原项目 locales） ----------
+
+class _TranslateLLM:
+    """翻译接口 fake：固定返回英文译文。"""
+
+    async def chat_stream(self, messages, *, temperature=0.7, max_tokens=4096):
+        for ch in "This is the translated English narration text for testing purposes.":
+            yield ch
+
+    async def aclose(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_localize_text_falls_back_on_failure() -> None:
+    """翻译失败回退原文（不阻塞生产）；成功时返回译文。"""
+    from backend.ai.router import AIRouter
+    from backend.factory.registry import ServiceRegistry
+    from backend.pipeline.producers.media import _localize_text
+
+    registry = ServiceRegistry.get()
+    original = registry.ai
+    try:
+        registry.ai = AIRouter(llm=_TranslateLLM(), image=None, tts=None)
+        translated = await _localize_text(registry.ai, "这是中文旁白", "en-US")
+        assert "translated" in translated
+    finally:
+        registry.ai = original
+
+
+@pytest.mark.asyncio
+async def test_reschedule_assigns_unscheduled(client) -> None:
+    """未排期条目自动分配推荐槽位（每次进入系统都有排期）。"""
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    async with session_factory() as session:
+        a = Item(status=ItemStatus.QUEUED, source="reddit", source_id="rs-3", title="未排期A")
+        b = Item(status=ItemStatus.QUEUED, source="reddit", source_id="rs-4", title="未排期B")
+        session.add_all([a, b])
+        await session.commit()
+        ids = [a.id, b.id]
+
+    resp = await client.post("/api/pipeline/reschedule-expired")
+    assert resp.status_code == 200, resp.text
+    async with session_factory() as session:
+        rows = [await session.get(Item, i) for i in ids]
+        assert all(r.scheduled_at is not None and r.scheduled_at > now for r in rows)
+        # 分配槽位互不冲突（最小间隔）
+        slots = sorted(r.scheduled_at for r in rows)
+        assert (slots[1] - slots[0]).total_seconds() >= 30 * 60 - 60
