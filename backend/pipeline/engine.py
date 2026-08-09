@@ -177,7 +177,15 @@ class StepEngine:
             except Exception as exc:  # noqa: BLE001 — 记录失败到数据源健康度后重抛
                 await self._record_collect_failure(self.collector.name, channel or "hot", str(exc))
                 raise
-            await self._clear_collect_cooldown(self.collector.name, channel or "hot")
+            if summary.get("collected", 0) == 0:
+                # 接口正常但 0 条（v0.2.8，参考原项目 failed_subs/供给告警）：
+                # 源可能挂/被 block 返回空列表——记健康度 + 冷却，不静默标 ✓
+                await self._record_collect_empty(
+                    self.collector.name, channel or "hot", summary
+                )
+                summary["empty"] = True
+            else:
+                await self._clear_collect_cooldown(self.collector.name, channel or "hot")
             self._emit(ctx.run_id, {"type": "job_step", "step": "collect", **summary})
             return summary
 
@@ -253,6 +261,41 @@ class StepEngine:
             },
         )
         return outcome
+
+    async def _record_collect_empty(self, source: str, channel: str, summary: dict) -> None:
+        """采集 0 条记账（v0.2.8）：源返回空列表视为异常——健康度失败计数 +
+        10 分钟短冷却（连续 0 条叠加熔断逻辑），下次跳过避免空转。"""
+        from backend.models.pipeline import SourceState
+
+        try:
+            async with session_factory() as session:
+                state = (
+                    await session.execute(
+                        select(SourceState).where(
+                            SourceState.source == source,
+                            SourceState.channel == channel,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if state is None:
+                    state = SourceState(source=source, channel=channel)
+                    session.add(state)
+                state.fail_count += 1
+                state.consecutive_fails += 1
+                state.last_error = (
+                    f"collected 0 items (empty response, skipped={summary.get('skipped', 0)})"
+                )
+                state.last_error_at = datetime.now(UTC)
+                cooldowns = state.get_cooldowns()
+                cooldowns["default"] = datetime.now(UTC).timestamp() + 600  # 10 分钟
+                state.set_cooldowns(cooldowns)
+                await session.commit()
+                logger.warning(
+                    "collect %s:%s returned 0 items — cooldown 600s (consecutive %d)",
+                    source, channel, state.consecutive_fails,
+                )
+        except Exception:  # noqa: BLE001 — 健康度记账失败不阻塞采集主流程
+            logger.exception("failed to record empty collect for %s:%s", source, channel)
 
     async def _record_collect_failure(self, source: str, channel: str, error: str) -> None:
         """采集失败记账（数据源健康度 v0.2.1）：连续失败 + 失败计数 + 最后错误 + 冷却。

@@ -553,7 +553,8 @@
       "visual_punch": "Visual punch",
       "emotion": "Emotion",
       "safety": "Safety"
-    }
+    },
+    "collectEmpty": "Collected 0 items — source may be down, cooling down"
   },
   "canvas": {
     "tool": {

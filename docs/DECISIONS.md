@@ -260,3 +260,8 @@
   - **reschedule 会话内一次**：切 tab 往返不再重复分配未排期条目（ref 标记）——避免排期越排越远；重新启动应用仍会触发（「每次登录有新排期」语义保持）
   - **操作组键盘可达**（§17.6）：hover + focus-within 双触发，键盘用户可见操作按钮
   - 核对无遗漏：synthesize_tts 签名变更唯一调用点已更新；'info' toast tone 支持；reschedule 测试按 id 断言不脆弱
+- **D-147 采集 0 条不静默完成（v0.2.8，参考原项目 failed_subs/供给告警）**——
+  - **根因**：run_collect 接口正常但返回空列表时 job 直接 complete ✓——源挂/被 block 返回空被当作成功
+  - **修复**：engine collect 分支——`collected == 0` 时记健康度（fail_count+1/consecutive_fails+1/last_error=collected 0 items）+ 10 分钟短冷却（连续 0 条叠加熔断），summary 带 `empty: true`；collected > 0 才清除冷却
+  - **前端**：job_done 日志显示 ⚠（非 ✓）+ warning toast「采集 0 条——源可能异常，已进入冷却」
+  - 测试：0 条 → empty 标记 + 健康度记账 + 冷却生效；新 channel 同样记账

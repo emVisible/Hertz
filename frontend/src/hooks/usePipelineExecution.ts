@@ -112,9 +112,12 @@ export function usePipelineExecution() {
       appendLog(`${t('console.item')} ${event.status}${event.error ? `: ${event.error}` : ''}`, event.status === 'rejected' || event.status === 'failed' ? 'done' : 'item')
     } else if (event.type === 'job_done') {
       const failed = event.status === 'failed'
-      appendLog(`── [${event.job}] ${failed ? '✗' : '✓'}${event.error ? `: ${event.error}` : ''} ──`, 'done')
+      const empty = Boolean(event.summary?.empty)
+      // 采集 0 条（v0.2.8）：⚠ 警示而非静默 ✓——源可能异常，已进入冷却
+      appendLog(`── [${event.job}] ${failed ? '✗' : empty ? '⚠' : '✓'}${event.error ? `: ${event.error}` : ''} ──`, 'done')
       void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
       if (failed) toast(event.error ?? `${event.job} failed`, 'error')
+      else if (empty) toast(t('console.collectEmpty'), 'warning')
     }
   }
 

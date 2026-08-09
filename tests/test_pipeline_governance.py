@@ -658,3 +658,74 @@ async def test_reschedule_assigns_unscheduled(client) -> None:
         # 分配槽位互不冲突（最小间隔）
         slots = sorted(r.scheduled_at for r in rows)
         assert (slots[1] - slots[0]).total_seconds() >= 30 * 60 - 60
+
+
+# ---------- 采集 0 条不静默完成（v0.2.8，参考原项目 failed_subs/供给告警） ----------
+
+@pytest.mark.asyncio
+async def test_collect_zero_items_marks_empty_and_cooldown() -> None:
+    """接口正常但返回 0 条：summary.empty=True + 健康度失败记录 + 冷却。"""
+    from backend.factory.registry import ServiceRegistry
+    from backend.models.pipeline import SourceState
+    from backend.pipeline.collectors.base import RawPost
+    from backend.pipeline.collectors.reddit import FakeRedditCollector
+
+    registry = ServiceRegistry.get()
+    original = registry.pipeline.engine.collector
+    try:
+        registry.pipeline.engine.collector = FakeRedditCollector([])  # 0 条
+        engine = registry.pipeline.engine
+
+        class Ctx:
+            run_id = "zero-test"
+
+            def log(self, message, level="info"):
+                pass
+
+        summary = await engine._run_step(Ctx(), "collect", limit=5, channel="test:hot")
+        assert summary.get("collected", 0) == 0
+        assert summary.get("empty") is True
+
+        # 健康度：失败计数 + 冷却
+        async with session_factory() as session:
+            state = (
+                await session.execute(
+                    select(SourceState).where(
+                        SourceState.source == "reddit",
+                        SourceState.channel == "test:hot",
+                    )
+                )
+            ).scalar_one_or_none()
+            assert state is not None
+            assert state.fail_count >= 1 and state.consecutive_fails >= 1
+            assert "collected 0 items" in (state.last_error or "")
+
+        # 冷却生效：同 channel 再次运行 → 跳过
+        summary2 = await engine._run_step(Ctx(), "collect", limit=5, channel="test:hot")
+        assert summary2.get("cooldown_s", 0) > 0
+
+        # 恢复有数据 → 清除冷却
+        registry.pipeline.engine.collector = FakeRedditCollector([RawPost(
+            source_id="z-1", title="新帖", source_url="https://x/1",
+            media_url="https://x/1.mp4", author="a", score=1,
+            upvote_ratio=1.0, num_comments=0, created_utc=1.0,
+            is_video=True, item_type="video_raw",
+        )])
+        # 恢复有数据 → 新 channel 正常采集（成功路径；test:hot 仍在冷却中）
+        registry.pipeline.engine.collector = FakeRedditCollector([])  # 复原空收集器占位
+        summary3 = await engine._run_step(Ctx(), "collect", limit=5, channel="test:ok")
+        assert summary3.get("collected") == 0
+        assert summary3.get("empty") is True
+        async with session_factory() as session:
+            state = (
+                await session.execute(
+                    select(SourceState).where(
+                        SourceState.source == "reddit",
+                        SourceState.channel == "test:ok",
+                    )
+                )
+            ).scalar_one_or_none()
+            assert state is not None
+            assert state.consecutive_fails >= 1  # 空源同样记账
+    finally:
+        registry.pipeline.engine.collector = original

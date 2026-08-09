@@ -54,6 +54,8 @@ export interface JobSummary {
   collected?: number
   inserted?: number
   skipped?: number
+  /** 采集 0 条（v0.2.8）：源返回空列表，已记健康度并冷却 */
+  empty?: boolean
   error?: string
   [key: string]: unknown
 }

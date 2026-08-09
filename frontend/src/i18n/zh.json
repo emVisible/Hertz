@@ -568,7 +568,8 @@
       "visual_punch": "视觉冲击",
       "emotion": "情感共鸣",
       "safety": "安全性"
-    }
+    },
+    "collectEmpty": "采集 0 条——源可能异常，已进入冷却"
   },
   "canvas": {
     "tool": {
