@@ -6,7 +6,7 @@ import { Badge, Button, CopyButton, Icon, Select } from '../ui'
 import { MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { ScoreDims } from './ScoreDims'
 import { ScheduleField } from './ScheduleField'
-import { BILI_TIDS } from '../../constants/bilibili'
+import { BILI_TIDS, biliTidName } from '../../constants/bilibili'
 
 /** 审核卡片（借鉴 Autarkeia 信息结构，Hertz 设计语言）：
  *  媒体缩略（可播放/换封面）+ 标题内联编辑 + 徽章行 + 评分维度网格 +
@@ -164,7 +164,7 @@ export function AuditCard({
         </div>
 
         {/* B站分区（tid）：Select 选择（v0.2.6 参考原项目分区表）；
-            未手动设置时显示自动建议分区（v0.2.7，非误导性的「留空」） */}
+            未手动设置时显示自动建议分区名（v0.2.8，非数字、非误导性「留空」） */}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.biliTid')}</span>
           <Select
@@ -175,9 +175,15 @@ export function AuditCard({
               {
                 value: '',
                 label: biliTid
-                  ? `${biliTid} · ${t('console.tidAuto')}`
-                  : `${item.auto_tid ?? ''} · ${t('console.tidAuto')}`.replace(/^\s*·\s*/, ''),
+                  ? `${biliTidName(Number(biliTid))} · ${t('console.tidAuto')}`
+                  : biliTidName(item.auto_tid)
+                    ? `${biliTidName(item.auto_tid)} · ${t('console.tidAuto')}`
+                    : t('console.tidAuto'),
               },
+              // 自定义 tid 兜底（不在分区表内的显式值不空白）
+              ...(biliTid && !BILI_TIDS.some((p) => String(p.tid) === biliTid)
+                ? [{ value: biliTid, label: `${biliTid} (自定义)` }]
+                : []),
               ...BILI_TIDS.map((p) => ({
                 value: String(p.tid),
                 label: `${p.tid} · ${p.name}`,
@@ -217,9 +223,10 @@ export function AuditCard({
           </details>
         )}
 
-        {/* 操作区（v0.2.7）：hover 卡片才显示——通过/驳回 + 重新处理/重新翻译
-            （参考原项目 reproduce/retranslate），默认隐藏保持简约 */}
-        <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        {/* 操作区（v0.2.7）：hover/键盘聚焦卡片才显示——通过/驳回 + 重新处理/重新翻译
+            （参考原项目 reproduce/retranslate），默认隐藏保持简约（§17.6 可达性：
+            focus-within 保证键盘用户可见） */}
+        <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
           <Button size="sm" variant="ghost" onClick={() => onReprocess(item, true)} title={t('console.retranslateHint')}>
             <Icon name="refresh" size={12} />
             {t('console.retranslate')}

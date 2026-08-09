@@ -254,3 +254,9 @@
   - **排期每次自动**：reschedule-expired 扩展——除过期重排外，未排期 queued/approved 自动分配推荐槽位（单次 ≤30 条有界，逐个 next_slot 不冲突）；进入审核即触发，无需手动点推荐
   - **分区 Select 大小**：w-44 → w-36 与其他控件一致
   - **处理语言配置化**（参考原项目 locales：narration_lang/subtitle_lang）：config 新增 pipeline_narration_lang（默认 en-US 英文旁白）+ pipeline_subtitle_lang（默认 zh-CN 中文字幕）；produce 流程——旁白非中文时 LLM 翻译（fast 角色，失败回退原文不阻塞）后 TTS；字幕按 subtitle_lang 本地化；重新翻译复用同一流程；ASS 字幕淡入淡出（\fad 200ms）已具备
+- **D-146 审核批三查漏补缺（v0.2.8）**——
+  - **分区自动显示数字→分区名**：auto_tid 用 biliTidName 显示「动物 · 自动」而非「152 · 自动」（前批遗留）
+  - **自定义 tid 兜底**：显式值不在分区表时 Select 不再空白（prepend「(自定义)」选项）
+  - **reschedule 会话内一次**：切 tab 往返不再重复分配未排期条目（ref 标记）——避免排期越排越远；重新启动应用仍会触发（「每次登录有新排期」语义保持）
+  - **操作组键盘可达**（§17.6）：hover + focus-within 双触发，键盘用户可见操作按钮
+  - 核对无遗漏：synthesize_tts 签名变更唯一调用点已更新；'info' toast tone 支持；reschedule 测试按 id 断言不脆弱

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
@@ -160,9 +160,14 @@ export function PipelineView(p: PipelineViewProps) {
     ? (p.tab as PipelineTabId)
     : 'inReview'
 
-  // 进入审核自动重排过期排期（v0.2.7）：不能排到过去，每次进入系统自动更新
+  // 进入审核自动维护排期（v0.2.7）：过期重排 + 未排期自动分配。
+  // 会话内只触发一次（v0.2.8）——切 tab 往返不再重复分配，避免排期越排越远
+  const rescheduleRef = useRef(false)
   useEffect(() => {
-    if (pTab === 'inReview') void p.rescheduleExpired()
+    if (pTab === 'inReview' && !rescheduleRef.current) {
+      rescheduleRef.current = true
+      void p.rescheduleExpired()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pTab])
 
