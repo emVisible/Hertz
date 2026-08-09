@@ -7,7 +7,100 @@ const DEV_SERVER_URL = process.env.HERTZ_FRONTEND_URL ?? 'http://localhost:3000'
 const BACKEND_URL = process.env.HERTZ_BACKEND_URL
 const BACKEND_PORT = process.env.HERTZ_BACKEND_PORT ?? '8787'
 
+// 应用身份（立即设置，早于任何窗口/弹窗）：
+// macOS 菜单栏标题、强制退出面板、关于窗口都读 app.name——
+// package.json name 是内部包名（hertz-electron），不设会显示包名而非产品名。
+app.setName('Hertz')
+app.setAboutPanelOptions({
+  applicationName: 'Hertz',
+  applicationVersion: app.getVersion(),
+  copyright: 'Hertz',
+})
+
 let backendProcess: ChildProcess | null = null
+
+// ---- 自定义简约弹窗（替代 dialog.showMessageBox/errorBox）----
+// 系统弹窗会渲染 app bundle 图标（默认 Electron logo），观感割裂；
+// 改为内联 HTML 的无边框小窗（无图标、跟随系统深浅色），按钮经 preload 回传。
+
+let dialogSeq = 0
+
+function showCustomDialog(opts: {
+  title: string
+  message: string
+  buttons: Array<{ id: string; label: string; primary?: boolean }>
+}): Promise<string> {
+  return new Promise((resolve) => {
+    const parent = BrowserWindow.getAllWindows()[0]
+    const channel = `hertz:dialog:${++dialogSeq}`
+    const win = new BrowserWindow({
+      width: 420,
+      height: 200,
+      frame: false,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      parent,
+      modal: !!parent,
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    })
+
+    const buttons = opts.buttons
+      .map(
+        (b, i) =>
+          `<button class="${b.primary ? 'primary' : ''}" onclick="window.electron.respondToDialog('${channel}','${b.id}')">${b.label}</button>`,
+      )
+      .join('')
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+      :root { color-scheme: light dark; }
+      * { margin: 0; box-sizing: border-box; }
+      body { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        background: light-dark(#ffffff, #1c1c21); color: light-dark(#18181b, #f4f4f5);
+        height: 100vh; display: flex; flex-direction: column; padding: 20px 22px; }
+      h2 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+      p { font-size: 12px; line-height: 1.7; color: light-dark(#52525b, #a1a1aa);
+        white-space: pre-wrap; overflow-y: auto; flex: 1; }
+      .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+      button { height: 30px; padding: 0 16px; font-size: 12px; border-radius: 6px;
+        border: 1px solid light-dark(#e4e4e7, #27272a);
+        background: light-dark(#f4f4f5, #1c1c21);
+        color: light-dark(#18181b, #f4f4f5); cursor: pointer; }
+      button:hover { border-color: light-dark(#a1a1aa, #52525b); }
+      button.primary { background: light-dark(#27272a, #e4e4e7);
+        color: light-dark(#ffffff, #1c1917); border-color: transparent; }
+      button.primary:hover { opacity: 0.85; }
+    </style></head><body>
+      <h2>${opts.title}</h2>
+      <p>${opts.message.replace(/</g, '&lt;')}</p>
+      <div class="actions">${buttons}</div>
+    </body></html>`
+
+    const cleanup = () => {
+      ipcMain.removeListener(channel, onPick)
+      if (!win.isDestroyed()) win.destroy()
+    }
+    const onPick = (_e: Electron.IpcMainEvent, id: string) => {
+      resolve(String(id ?? ''))
+      cleanup()
+    }
+    ipcMain.on(channel, onPick)
+    win.once('closed', () => {
+      resolve('')
+      cleanup()
+    })
+
+    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    win.once('ready-to-show', () => win.show())
+    win.center()
+  })
+}
 
 function registerWindowIpc(): void {
   ipcMain.on('window:minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize())
@@ -48,10 +141,11 @@ function startBackend(): void {
     { cwd: backendDir, stdio: 'ignore', env: { ...process.env } },
   )
   backendProcess.on('error', (err) => {
-    dialog.showErrorBox(
-      'Hertz 后端启动失败',
-      `无法启动后端服务（${err.message}）。\n\n请确认已安装 Python 与依赖（见 USER_GUIDE），\n或设置 HERTZ_BACKEND_URL 指向外部后端后重启。`,
-    )
+    void showCustomDialog({
+      title: 'Hertz 后端启动失败',
+      message: `无法启动后端服务（${err.message}）。\n\n请确认已安装 Python 与依赖（见 USER_GUIDE），\n或设置 HERTZ_BACKEND_URL 指向外部后端后重启。`,
+      buttons: [{ id: 'ok', label: '知道了', primary: true }],
+    })
   })
   backendProcess.unref()
 }
@@ -78,17 +172,16 @@ function setupAutoUpdate(): void {
   const { autoUpdater } = require('electron-updater') as typeof import('electron-updater')
   autoUpdater.autoDownload = true
   autoUpdater.on('update-downloaded', () => {
-    void dialog
-      .showMessageBox({
-        type: 'info',
-        title: '更新可用',
-        message: '新版 Hertz 已下载，重启安装？',
-        buttons: ['稍后', '重启安装'],
-        defaultId: 1,
-      })
-      .then(({ response }) => {
-        if (response === 1) autoUpdater.quitAndInstall()
-      })
+    void showCustomDialog({
+      title: '更新可用',
+      message: '新版 Hertz 已下载，重启安装？',
+      buttons: [
+        { id: 'later', label: '稍后' },
+        { id: 'install', label: '重启安装', primary: true },
+      ],
+    }).then((id) => {
+      if (id === 'install') autoUpdater.quitAndInstall()
+    })
   })
   autoUpdater.checkForUpdates().catch(() => {
     /* offline or no release channel — silent */
@@ -227,10 +320,10 @@ app.whenReady().then(async () => {
     startBackend()
     const ok = await waitForBackend()
     if (!ok) {
-      dialog.showMessageBox({
-        type: 'warning',
+      void showCustomDialog({
         title: '后端未就绪',
         message: `无法连接后端服务（${BACKEND_URL ?? `http://127.0.0.1:${BACKEND_PORT}`}）。\n\n功能将不可用。请确认 Python 依赖已安装，或设置 HERTZ_BACKEND_URL。`,
+        buttons: [{ id: 'ok', label: '知道了', primary: true }],
       })
     }
   }

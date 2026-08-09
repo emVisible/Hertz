@@ -231,3 +231,7 @@
   - **分区 Select**：参考原项目 Autarkeia category.py 分区表 → 前端 constants/bilibili.ts 单一真相源（25 个常用 tid + biliTidName 助手），审核卡分区从数字输入改为 Select（含「默认分区」）
   - **评分维度网格化**：ScoreDims 只渲染数值字段（LLM 返回混入的 script_meta/subtitle/compose_quality/suitable 等 object/boolean 不再平铺成「裹脚布」），已知维度顺序 + 迷你强度条，独立行展示
   - **排期仅日期**：datetime-local → date（默认当前年/月、min=今天不能排到过去），提交取当日 10:00（与日历拖拽/排期引擎同语义），推荐/清空保留
+- **D-142 Electron 品牌身份修复（v0.2.6）**——
+  - **根因**：dev 模式下 Electron.app 的 CFBundleName=Electron 且 bundle 图标为默认 electron.icns——dock.setIcon 只在运行中覆盖，cmd+tab/退出动画/系统弹窗读 bundle 资源时全部变回「Electron」
+  - **修复**：set-dock-name.sh 扩展为同时替换 CFBundleName + Resources/electron.icns（按哈希幂等）；main.ts 启动即 app.setName('Hertz') + setAboutPanelOptions（菜单栏/强制退出面板/关于窗口不再显示包名 hertz-electron）
+  - **自定义简约弹窗**：主进程 3 处系统 dialog（自动更新/后端启动失败/后端未就绪）替换为内联 HTML 无边框小窗（无图标、跟随系统深浅色、按钮经 preload respondToDialog 通道回传）；打包版 icon.icns 已由 electron-builder 写入（验证 CFBundleName/图标齐全）
