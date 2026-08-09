@@ -213,3 +213,7 @@
 - **D-137 i18n 引用排查 + 审核卡点击播放（v0.2.4）**——
   - **i18n 排查**：全量扫描 t()/labelKey 引用 vs zh/en key 集，发现两处真实缺口——`console.stagePostReview`（发布 tab 标签渲染原始 key）与 `docs.*` 12 个 key（素材页文档区渲染原始 key，AssetsPage 重构时前缀改名 docs. 但 key 未迁移）；修复：补齐 docs 段（文案取自 assets 段对应残留）、补 stagePostReview；清理 assets 段 9 个无引用死 key + docs.title/select 死 key（§3.3）；复查零缺失
   - **审核卡点击封面播放**：MediaThumb 内置播放能力（有 video_path 时点击 → Modal + video controls autoPlay，复用素材库 QuickPreview 交互；hover 播放浮层）；单一真相源——AuditCard/PreReviewCard/阶段列表共用，一处实现处处可用
+- **D-138 审核卡成片排查定位（v0.2.5）**：MediaThumb 点击交互三态——
+  - 有成片：点击播放 Modal；视频加载失败（文件缺失/损坏）→ 红色提示 + 「在 Finder 中显示成片」按钮；播放正常时底部常驻同一定位按钮（排查路径，复用 Electron shell:show-in-folder，§13.1 用户显式触发）
+  - 无成片（有封面）：点击直接定位原始素材/封面（hover 显示文件夹图标），排查「为什么没成片」
+  - 全部无媒体：保持占位不可点

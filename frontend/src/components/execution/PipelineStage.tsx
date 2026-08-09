@@ -78,11 +78,13 @@ function isImageUrl(url: string): boolean {
 /** 条目缩略图（各阶段共用）：本地封面/成片优先，远程图片兜底，无图占位。
  *  远程图加载失败回退占位（不残留空白块）。
  *  v0.2.4：有成片时点击缩略图播放成片（复用素材库 QuickPreview 的
- *  Modal + video controls 交互，单一真相源——审核/预处理/阶段列表共用）。 */
+ *  Modal + video controls 交互）；v0.2.5：播放 Modal 内可一键在
+ *  Finder 定位成片（排查文件缺失），无成片时点击直达原始素材定位。 */
 export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineItem; className?: string }) {
   const { t } = useTranslation()
   const [remoteFailed, setRemoteFailed] = useState(false)
   const [playing, setPlaying] = useState(false)
+  const [videoFailed, setVideoFailed] = useState(false)
   const cover = item.cover_path
   const video = item.video_path
   const remote = item.media_url && isImageUrl(item.media_url) ? item.media_url : null
@@ -116,13 +118,40 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
     )
   })()
 
-  if (!video) return <>{thumb}</>
+  /** 在 Finder/资源管理器中定位（桌面排查路径，§13.1 用户显式触发）。 */
+  function revealInFinder(path: string | null) {
+    if (!path || !window.electron?.showItemInFolder) return
+    window.electron.showItemInFolder(path)
+  }
+
+  if (!video) {
+    // 无成片：点击直接定位原始素材/封面（有值才可点），排查「为什么没成片」
+    const locate = item.raw_path ?? cover ?? null
+    if (!locate) return <>{thumb}</>
+    return (
+      <button
+        type="button"
+        onClick={() => revealInFinder(locate)}
+        title={t('console.revealRaw')}
+        aria-label={t('console.revealRaw')}
+        className="group relative shrink-0 focus-visible:outline-none"
+      >
+        {thumb}
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <Icon name="folder" size={20} className="text-white/90" />
+        </span>
+      </button>
+    )
+  }
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setPlaying(true)}
+        onClick={() => {
+          setVideoFailed(false)
+          setPlaying(true)
+        }}
         title={t('console.playVideo')}
         aria-label={t('console.playVideo')}
         className="group relative shrink-0 focus-visible:outline-none"
@@ -133,7 +162,42 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
         </span>
       </button>
       <Modal open={playing} onClose={() => setPlaying(false)} width={820} title={item.title}>
-        <video src={fileUrl(video)} controls autoPlay className="max-h-[70vh] w-full bg-black" />
+        <div className="flex flex-col gap-2">
+          {videoFailed ? (
+            <div className="flex min-h-40 flex-col items-center justify-center gap-2 border border-error/40 bg-error/5 px-4 text-center">
+              <Icon name="alert" size={22} className="text-error" />
+              <p className="text-sm text-text-primary">{t('console.videoMissing')}</p>
+              <button
+                type="button"
+                onClick={() => revealInFinder(video)}
+                className="flex items-center gap-1.5 border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-primary transition-colors hover:border-primary hover:text-primary"
+              >
+                <Icon name="folder" size={13} />
+                {t('console.revealVideo')}
+              </button>
+            </div>
+          ) : (
+            <video
+              src={fileUrl(video)}
+              controls
+              autoPlay
+              onError={() => setVideoFailed(true)}
+              className="max-h-[70vh] w-full bg-black"
+            />
+          )}
+          <div className="flex items-center justify-end gap-2">
+            {window.electron?.showItemInFolder && (
+              <button
+                type="button"
+                onClick={() => revealInFinder(video)}
+                className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
+              >
+                <Icon name="folder" size={13} />
+                {t('console.revealVideo')}
+              </button>
+            )}
+          </div>
+        </div>
       </Modal>
     </>
   )
