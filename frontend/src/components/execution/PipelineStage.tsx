@@ -82,7 +82,9 @@ function isImageUrl(url: string): boolean {
  *  远程图加载失败回退占位（不残留空白块）。
  *  v0.2.4：有成片时点击缩略图播放成片（复用素材库 QuickPreview 的
  *  Modal + video controls 交互）；v0.2.5：播放 Modal 内可一键在
- *  Finder 定位成片（排查文件缺失），无成片时点击直达原始素材定位。 */
+ *  Finder 定位成片（排查文件缺失），无成片时点击直达原始素材定位。
+ *  v0.2.6：尺寸类（className）作用于外层按钮/容器，内容统一填充——
+ *  支持 h-full w-full 填充模式（审核卡大图），不再依赖 img 的固定尺寸。 */
 export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineItem; className?: string }) {
   const { t } = useTranslation()
   const [remoteFailed, setRemoteFailed] = useState(false)
@@ -92,9 +94,10 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
   const cover = item.cover_path
   const video = item.video_path
   const remote = item.media_url && isImageUrl(item.media_url) ? item.media_url : null
+  const sizing = className || 'h-12 w-20'
+  const fill = 'h-full w-full border border-border bg-surface-2 object-cover'
 
   const thumb = (() => {
-    const base = `${className} shrink-0 border border-border bg-surface-2 object-cover`
     // 回退链：封面 → 成片首帧 → 远程图 → 占位（cover 失效不空白，§15 视图完整性）
     if (cover && !coverFailed) {
       return (
@@ -103,7 +106,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
           alt=""
           loading="lazy"
           onError={() => setCoverFailed(true)}
-          className={base}
+          className={fill}
         />
       )
     }
@@ -119,7 +122,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
             const el = e.currentTarget
             if (el.duration > 0.2 && el.currentTime === 0) el.currentTime = 0.1
           }}
-          className={base}
+          className={fill}
         />
       )
     }
@@ -130,15 +133,12 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
           alt=""
           loading="lazy"
           onError={() => setRemoteFailed(true)}
-          className={base}
+          className={fill}
         />
       )
     }
     return (
-      <div
-        className={`${className} flex shrink-0 items-center justify-center border border-border bg-surface-2`}
-        title={t('audit.noMedia')}
-      >
+      <div className="flex h-full w-full items-center justify-center border border-border bg-surface-2" title={t('audit.noMedia')}>
         <Icon name="console" size={14} className="text-text-disabled" />
       </div>
     )
@@ -153,14 +153,14 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
   if (!video) {
     // 无成片：点击直接定位原始素材/封面（有值才可点），排查「为什么没成片」
     const locate = item.raw_path ?? cover ?? null
-    if (!locate) return <>{thumb}</>
+    if (!locate) return <div className={`shrink-0 ${sizing}`}>{thumb}</div>
     return (
       <button
         type="button"
         onClick={() => revealInFinder(locate)}
         title={t('console.revealRaw')}
         aria-label={t('console.revealRaw')}
-        className="group relative shrink-0 focus-visible:outline-none"
+        className={`group relative shrink-0 ${sizing} focus-visible:outline-none`}
       >
         {thumb}
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
@@ -180,7 +180,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
         }}
         title={t('console.playVideo')}
         aria-label={t('console.playVideo')}
-        className="group relative shrink-0 focus-visible:outline-none"
+        className={`group relative shrink-0 ${sizing} focus-visible:outline-none`}
       >
         {thumb}
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity duration-150 group-hover:opacity-100">

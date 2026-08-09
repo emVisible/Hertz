@@ -124,6 +124,20 @@ body {
   animation: hz-overlay-in 150ms ease-out;
 }
 
+/* tab/menu 内容切换：轻量淡入（v0.2.6，消除切换抖动观感） */
+@keyframes hz-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hz-fade-in {
+  animation: hz-fade-in 150ms ease-out;
+}
+
 /* Toast entrance */
 @keyframes hz-toast-in {
   from {
@@ -274,7 +288,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .hz-toast-in,
-  .hz-overlay-in {
+  .hz-overlay-in,
+  .hz-fade-in {
     animation: none;
   }
 }

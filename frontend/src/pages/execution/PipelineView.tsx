@@ -71,7 +71,7 @@ interface PipelineViewProps {
   modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
-type PipelineTabId = 'run' | 'preReview' | 'inReview' | 'postReview'
+type PipelineTabId = 'run' | 'preReview' | 'inReview' | 'postReview' | 'exceptions'
 
 /** 审核排序（v0.2.6）：前端排序——队列数据已全量拉取，无需后端参数。
  *  videoFirst = 有成片的排前面（可预览优先，默认）；random = 每次洗牌。 */
@@ -88,13 +88,15 @@ const AUDIT_SORTS: Array<{ id: AuditSort }> = [
 ]
 
 // 第三级路由：内容流水线平铺菜单（v0.2.0 审核三态）——
-// 运行（操作）｜审核前（discovered/downloaded/scored 合并展示，单条数据审核前状态）
-// ｜审核中（queued 审核操作）｜审核后（approved 发布操作 + published 历史 + 异常恢复）
+// 运行（操作）｜预处理（discovered/downloaded/scored 合并展示）
+// ｜审核（queued 审核操作）｜发布（approved 发布操作 + published 历史 + 日历）
+// ｜异常（failed/rejected 独立 menu，v0.2.6——审核专注审核，不再挤在侧栏）
 const PIPELINE_TABS = [
   { id: 'run', labelKey: 'execution.modePipeline' },
   { id: 'preReview', labelKey: 'console.stagePreReview', countKeys: ['discovered', 'downloaded', 'scored'] },
   { id: 'inReview', labelKey: 'console.stageAudit', countKeys: ['queued'] },
   { id: 'postReview', labelKey: 'console.stagePostReview', countKeys: ['approved', 'published'] },
+  { id: 'exceptions', labelKey: 'console.stageExceptions', countKeys: ['failed', 'rejected'] },
 ] satisfies Array<{
   id: PipelineTabId
   labelKey: string
@@ -105,8 +107,6 @@ export function PipelineView(p: PipelineViewProps) {
   const { t } = useTranslation()
   // 发布 tab 视图：列表（默认）｜内容日历（v0.2.3）
   const [calendarView, setCalendarView] = useState(false)
-  // 异常内容折叠（v0.2.6）：非主要内容，默认折叠，标题行可展开
-  const [exceptionsOpen, setExceptionsOpen] = useState(false)
   // 审核排序（v0.2.6）：默认「有成片优先」（可预览的在前面）；随机=每次点击重新洗牌
   const [auditSort, setAuditSort] = useState<AuditSort>('videoFirst')
   const [randomSeed, setRandomSeed] = useState(0)
@@ -173,8 +173,8 @@ export function PipelineView(p: PipelineViewProps) {
         <TabBar items={tabItems} active={pTab} onChange={p.setTab} />
       </div>
 
-      {/* 内容区（当前部分，独立滚动） */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* 内容区（当前部分，独立滚动）；key 化触发切换淡入（v0.2.6 消除抖动观感） */}
+      <div key={pTab} className="hz-fade-in min-h-0 flex-1 overflow-y-auto">
         {pTab === 'run' && (
           <div className="flex min-h-full flex-col gap-4 p-4">
             <CommandDeck
@@ -303,126 +303,92 @@ export function PipelineView(p: PipelineViewProps) {
           </div>
         )}
         {pTab === 'inReview' && (
-          /* 左右分栏（v0.2.6）：审核（宽列）｜异常内容（窄列），不再竖向堆叠；
-             小屏回退单列堆叠。两栏各自内部滚动。 */
-          <div className="grid gap-4 p-4 xl:grid-cols-5">
-            {/* 审核列：排序（v0.2.6）+ 审核卡片 */}
-            <div className="min-w-0 xl:col-span-3">
-              <PipelineStage
-                title={t('console.stageAudit')}
-                isEmpty={p.stageQueued.length === 0}
-                emptyText={t('console.emptyAudit')}
-                right={
-                  <Select
-                    aria-label={t('console.auditSort')}
-                    value={auditSort}
-                    onChange={(e) => changeAuditSort(e.target.value)}
-                    options={AUDIT_SORTS.map((s) => ({ value: s.id, label: t(`console.auditSort.${s.id}`) }))}
-                    className="w-36"
+          /* 审核专注审核（v0.2.6）：异常内容移至独立「异常」menu——全宽单栏 */
+          <div className="p-4">
+            <PipelineStage
+              title={t('console.stageAudit')}
+              isEmpty={p.stageQueued.length === 0}
+              emptyText={t('console.emptyAudit')}
+              right={
+                <Select
+                  aria-label={t('console.auditSort')}
+                  value={auditSort}
+                  onChange={(e) => changeAuditSort(e.target.value)}
+                  options={AUDIT_SORTS.map((s) => ({ value: s.id, label: t(`console.auditSort.${s.id}`) }))}
+                  className="w-36"
+                />
+              }
+            >
+              <ul className="divide-y divide-border/60">
+                {sortedQueued.map((item) => (
+                  <AuditCard
+                    key={item.id}
+                    item={item}
+                    onApprove={(i) => void p.act(i, 'approve')}
+                    onReject={(i) => void p.act(i, 'reject')}
+                    onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
+                    onUploadCover={(i, file) => void p.uploadCover(i, file)}
                   />
-                }
-              >
-                <ul className="max-h-[calc(100vh-15rem)] divide-y divide-border/60 overflow-y-auto">
-                  {sortedQueued.map((item) => (
-                    <AuditCard
-                      key={item.id}
-                      item={item}
-                      onApprove={(i) => void p.act(i, 'approve')}
-                      onReject={(i) => void p.act(i, 'reject')}
-                      onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
-                      onUploadCover={(i, file) => void p.uploadCover(i, file)}
-                    />
-                  ))}
-                </ul>
-              </PipelineStage>
-            </div>
+                ))}
+              </ul>
+            </PipelineStage>
+          </div>
+        )}
 
-            {/* 异常列（failed / rejected）：可折叠（v0.2.6，非主要内容默认收起）；
-                折叠时标题行显示失败分类计数徽章 */}
-            <div className="min-w-0 xl:col-span-2">
-              <SectionCard
-                title={
-                  <button
-                    type="button"
-                    onClick={() => setExceptionsOpen((v) => !v)}
-                    aria-expanded={exceptionsOpen}
-                    className="flex items-center gap-1.5 text-sm font-semibold text-text-primary transition-colors hover:text-primary"
-                  >
-                    <Icon name="chevron-down" size={13} className={`transition-transform ${exceptionsOpen ? '' : '-rotate-90'}`} />
-                    {t('console.exceptions')}
-                    {!exceptionsOpen && Object.keys(p.failures).length > 0 && (
-                      <span className="font-mono text-[10px] font-normal text-text-disabled">
-                        {Object.keys(p.failures).length} 类
-                      </span>
-                    )}
-                  </button>
-                }
-                padded={false}
-              >
-                {!exceptionsOpen ? (
-                  <button
-                    type="button"
-                    onClick={() => setExceptionsOpen(true)}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-2"
-                  >
-                    <span>{t('console.exceptionsExpand')}</span>
-                    <span className="font-mono text-text-disabled">
-                      {(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)} 条
-                    </span>
-                  </button>
-                ) : p.stageError ? (
-                  <QueryErrorState message={t('error.queryFailed', { detail: 'pipeline' })} onRetry={() => void p.refetchStage()} />
-                ) : p.stageFailed.length + p.stageRejected.length === 0 ? (
-                  <p className="p-3 text-sm text-text-disabled">{t('console.noExceptions')}</p>
-                ) : (
-                  <>
-                    {/* 失败分类看板（v0.2.1）：按类统计 + 同类批量重试 */}
-                    {Object.keys(p.failures).length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
-                        {Object.entries(p.failures).map(([cls, n]) => (
-                          <span key={cls} className="inline-flex items-center gap-1.5 border border-border bg-surface-2/60 px-2 py-0.5 text-[11px] text-text-secondary">
-                            <span className="font-mono">{cls}</span>
-                            <span className="text-text-disabled">{n}</span>
-                            <button
-                              type="button"
-                              onClick={() => void p.retryClass(cls, n)}
-                              title={t('console.retryClassHint', { cls })}
-                              className=" p-0.5 text-text-disabled transition-colors hover:text-primary"
-                            >
-                              <Icon name="refresh" size={11} />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <div className="max-h-[calc(100vh-19rem)] overflow-y-auto">
-                      <StageList
-                        items={[...p.stageRejected, ...p.stageFailed]}
-                        emptyText={t('console.noExceptions')}
-                        total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)}
-                        renderRow={(item) => (
-                          <StageItemRow
-                            item={item}
-                            badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
-                            right={
-                              item.status === 'failed' ? (
-                                <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'retry')}>
-                                  {t('common.retry')}
-                                </Button>
-                              ) : (
-                                <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
-                                  {t('console.restore')}
-                                </Button>
-                              )
-                            }
-                          />
-                        )}
-                      />
+        {/* 异常（独立 menu，v0.2.6）：失败分类看板 + 批量重试 + 恢复待审 */}
+        {pTab === 'exceptions' && (
+          <div className="p-4">
+            <SectionCard title={t('console.exceptions')} padded={false}>
+              {p.stageError ? (
+                <QueryErrorState message={t('error.queryFailed', { detail: 'pipeline' })} onRetry={() => void p.refetchStage()} />
+              ) : p.stageFailed.length + p.stageRejected.length === 0 ? (
+                <p className="p-3 text-sm text-text-disabled">{t('console.noExceptions')}</p>
+              ) : (
+                <>
+                  {/* 失败分类看板（v0.2.1）：按类统计 + 同类批量重试 */}
+                  {Object.keys(p.failures).length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
+                      {Object.entries(p.failures).map(([cls, n]) => (
+                        <span key={cls} className="inline-flex items-center gap-1.5 border border-border bg-surface-2/60 px-2 py-0.5 text-[11px] text-text-secondary">
+                          <span className="font-mono">{cls}</span>
+                          <span className="text-text-disabled">{n}</span>
+                          <button
+                            type="button"
+                            onClick={() => void p.retryClass(cls, n)}
+                            title={t('console.retryClassHint', { cls })}
+                            className=" p-0.5 text-text-disabled transition-colors hover:text-primary"
+                          >
+                            <Icon name="refresh" size={11} />
+                          </button>
+                        </span>
+                      ))}
                     </div>
-                  </>
-                )}
-              </SectionCard>
-            </div>
+                  )}
+                  <StageList
+                    items={[...p.stageRejected, ...p.stageFailed]}
+                    emptyText={t('console.noExceptions')}
+                    total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)}
+                    renderRow={(item) => (
+                      <StageItemRow
+                        item={item}
+                        badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
+                        right={
+                          item.status === 'failed' ? (
+                            <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'retry')}>
+                              {t('common.retry')}
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
+                              {t('console.restore')}
+                            </Button>
+                          )
+                        }
+                      />
+                    )}
+                  />
+                </>
+              )}
+            </SectionCard>
           </div>
         )}
 

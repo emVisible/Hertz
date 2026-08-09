@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
 import { Badge, Button, CopyButton, Icon, Select } from '../ui'
-import { MediaThumb, PIPELINE_ITEM_TONE, THUMB_LG } from './PipelineStage'
+import { MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { ScoreDims } from './ScoreDims'
 import { ScheduleField } from './ScheduleField'
 import { BILI_TIDS } from '../../constants/bilibili'
@@ -36,18 +36,18 @@ export function AuditCard({
   const biliTid = script?.bili_tid != null ? String(script.bili_tid) : ''
 
   return (
-    <li className="flex gap-3 px-3 py-3">
-      {/* 缩略图：点击播放成片；hover 出现「换封面」（v0.2.6） */}
-      <div className="group/cover relative shrink-0">
-        <MediaThumb item={item} className={THUMB_LG} />
+    <li className="flex gap-4 px-3 py-3">
+      {/* 媒体区：宽度与右侧内容相当（v0.2.6 大图预览），点击播放/换封面 */}
+      <div className="group/cover relative w-1/2 shrink-0">
+        <MediaThumb item={item} className="h-full max-h-48 w-full" />
         <button
           type="button"
           onClick={() => coverInputRef.current?.click()}
           title={t('console.changeCover')}
           aria-label={t('console.changeCover')}
-          className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center border border-border bg-black/55 text-white/90 opacity-0 backdrop-blur-sm transition-opacity group-hover/cover:opacity-100 hover:border-primary hover:text-primary"
+          className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center border border-border bg-black/55 text-white/90 opacity-0 backdrop-blur-sm transition-opacity group-hover/cover:opacity-100 hover:border-primary hover:text-primary"
         >
-          <Icon name="edit" size={12} />
+          <Icon name="edit" size={13} />
         </button>
         <input
           ref={coverInputRef}

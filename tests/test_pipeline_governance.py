@@ -501,3 +501,20 @@ async def test_upload_cover_endpoint(client, tmp_path, monkeypatch) -> None:
         assert bad.status_code == 422
     finally:
         monkeypatch.setattr(files, "data_dir", original)
+
+
+# ---------- 分区自动分配（v0.2.6，参考原项目 assign_bili_tid） ----------
+
+def test_assign_bili_tid_resolution() -> None:
+    from backend.pipeline.category import assign_bili_tid
+
+    # 精确 subreddit
+    assert assign_bili_tid("aww") == 152
+    assert assign_bili_tid("funny") == 138
+    assert assign_bili_tid("space") == 85
+    # 关键词兜底（大小写不敏感）
+    assert assign_bili_tid("CrazyAnimals") == 152
+    assert assign_bili_tid("cooking_master") == 23
+    # 类型默认：图 202 / 视频 21
+    assert assign_bili_tid("random_sub") == 21
+    assert assign_bili_tid("random_sub", "image_gallery") == 202

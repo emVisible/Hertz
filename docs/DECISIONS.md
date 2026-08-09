@@ -235,3 +235,9 @@
   - **根因**：dev 模式下 Electron.app 的 CFBundleName=Electron 且 bundle 图标为默认 electron.icns——dock.setIcon 只在运行中覆盖，cmd+tab/退出动画/系统弹窗读 bundle 资源时全部变回「Electron」
   - **修复**：set-dock-name.sh 扩展为同时替换 CFBundleName + Resources/electron.icns（按哈希幂等）；main.ts 启动即 app.setName('Hertz') + setAboutPanelOptions（菜单栏/强制退出面板/关于窗口不再显示包名 hertz-electron）
   - **自定义简约弹窗**：主进程 3 处系统 dialog（自动更新/后端启动失败/后端未就绪）替换为内联 HTML 无边框小窗（无图标、跟随系统深浅色、按钮经 preload respondToDialog 通道回传）；打包版 icon.icns 已由 electron-builder 写入（验证 CFBundleName/图标齐全）
+- **D-143 审核体验批二（v0.2.6）**——
+  - **异常内容独立 menu**：用户反馈「不是上下/左右展开，而是单独 menu」——PIPELINE_TABS 增加第 5 个 tab「异常」（failed/rejected 计数徽章），审核 tab 恢复全宽单栏专注审核；删除折叠态与死 key
+  - **审核大媒体区**：AuditCard 改左右对半（媒体 w-1/2、内容 flex-1），换封面按钮随尺寸放大；MediaThumb 尺寸类上移到外层按钮/容器、内容统一填充（支持 h-full 填充模式，修复此前 img 尺寸挂在无尺寸父级上的布局塌陷）
+  - **评分条形图**：ScoreDims 升级为彩色水平条形图（8 维度固定色板 + 未知字段灰色兜底、相对强度条长 + 宽度过渡动画），有限空间客观可比，无新图形库依赖（AXIOM §6.1 克制）
+  - **分区自动分配**：backend/pipeline/category.py（参考原项目 assign_bili_tid：精确 subreddit → 关键词 → 类型默认），produce 步骤未手动设置 tid 时自动写入 script_json.bili_tid；审核 Select 可直接看到自动结果并可改
+  - **tab 切换动效**：内容区 key 化触发 150ms 淡入（.hz-fade-in，prefers-reduced-motion 尊重），消除顶级 tab 切换抖动观感

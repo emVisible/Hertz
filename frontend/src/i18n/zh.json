@@ -461,7 +461,6 @@
     "auditSort.scoreAsc": "评分低→高",
     "auditSort.redditDesc": "Reddit 分高→低",
     "auditSort.title": "标题 A-Z",
-    "exceptionsExpand": "展开异常内容",
     "changeCover": "更换封面",
     "coverSaved": "封面已更新",
     "stagePublish": "发布",
@@ -550,7 +549,8 @@
     "pendingProduce": "待制作",
     "hasCover": "有封面",
     "emptyPreReview": "暂无预处理数据",
-    "stagePostReview": "审核后"
+    "stagePostReview": "审核后",
+    "stageExceptions": "异常"
   },
   "canvas": {
     "tool": {

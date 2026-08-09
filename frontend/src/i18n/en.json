@@ -446,7 +446,6 @@
     "auditSort.scoreAsc": "Score low → high",
     "auditSort.redditDesc": "Reddit score high → low",
     "auditSort.title": "Title A-Z",
-    "exceptionsExpand": "Expand exceptions",
     "changeCover": "Change cover",
     "coverSaved": "Cover updated",
     "stagePublish": "Publish",
@@ -535,7 +534,8 @@
     "pendingProduce": "Pending produce",
     "hasCover": "Has cover",
     "emptyPreReview": "Nothing in pre-process",
-    "stagePostReview": "Post-review"
+    "stagePostReview": "Post-review",
+    "stageExceptions": "Exceptions"
   },
   "canvas": {
     "tool": {

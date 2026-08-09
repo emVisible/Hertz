@@ -32,10 +32,18 @@ class ProduceStep(Pipe):
         audio = artifacts.get("audio")
         subtitle = artifacts.get("subtitle")
 
+        # 分区自动分配（v0.2.6，参考原项目 assign_bili_tid）：
+        # 未手动设置 tid 时按 subreddit 推荐（审核页 Select 可改）
+        script = dict(artifacts.get("script") or {})
+        if not script.get("bili_tid"):
+            from backend.pipeline.category import assign_bili_tid
+
+            script["bili_tid"] = assign_bili_tid(item.subreddit, item.item_type or "video_raw")
+
         return ProcessResult(
             status="queued",
             data={
-                "script_json": artifacts.get("script"),
+                "script_json": script,
                 "video_path": video["path"] if video else None,
                 "cover_path": cover["path"] if cover else None,
                 "audio_path": audio["path"] if audio else None,
