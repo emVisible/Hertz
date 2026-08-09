@@ -535,7 +535,15 @@
     "hasCover": "Has cover",
     "emptyPreReview": "Nothing in pre-process",
     "stagePostReview": "Post-review",
-    "stageExceptions": "Exceptions"
+    "stageExceptions": "Exceptions",
+    "reprocess": "Reprocess",
+    "reprocessHint": "Rerun the full pipeline (script/TTS/subs/compose); back to review when done",
+    "retranslate": "Retranslate",
+    "retranslateHint": "Keep the script, retranslate narration & subs on the original video",
+    "reprocessed": "Sent back for reprocessing — will return to review",
+    "retranslated": "Sent back for retranslation — will return to review",
+    "rescheduleUpdated": "Updated {{n}} expired schedules to fresh recommended slots",
+    "tidAuto": "auto"
   },
   "canvas": {
     "tool": {

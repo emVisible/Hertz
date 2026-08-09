@@ -37,6 +37,8 @@ export interface PipelineItem {
   error: string | null
   error_class: string
   retry_count: number
+  /** 分区自动建议（v0.2.7）：未手动设置 tid 时的推荐分区 */
+  auto_tid: number | null
   created_at: string | null
   approved_at: string | null
   scheduled_at: string | null
@@ -112,6 +114,13 @@ export const pipelineApi = {
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/reject?reason=${encodeURIComponent(reason)}`),
   retry: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/retry`),
   requeue: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/requeue`),
+  /** 打回重新生产（v0.2.7）：retranslate=1 保留脚本只重翻译。 */
+  reprocess: (id: string, retranslate = false) =>
+    api.post<{ id: string; status: string; retranslate: boolean }>(
+      `/api/pipeline/items/${id}/reprocess?retranslate=${retranslate ? 1 : 0}`,
+    ),
+  /** 过期排期自动重排（v0.2.7）：进入审核时调用。 */
+  rescheduleExpired: () => api.post<{ updated: number }>('/api/pipeline/reschedule-expired'),
   updateMeta: (id: string, meta: Record<string, string | number | null>) =>
     api.put<{ id: string; ok: boolean }>(`/api/pipeline/items/${id}/meta`, meta),
   publish: (id: string, selfmade = false) =>

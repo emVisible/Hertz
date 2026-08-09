@@ -106,6 +106,8 @@ export function ExecutionPage() {
           publishItem={pipeline.publishItem}
           uploadCover={pipeline.uploadCover}
           retryClass={pipeline.retryClass}
+          reprocess={pipeline.reprocess}
+          rescheduleExpired={pipeline.rescheduleExpired}
           modelSwitch={pipelineModelSwitch}
         />
       )}

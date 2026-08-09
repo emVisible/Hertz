@@ -274,10 +274,15 @@ async def generate_cover(raw: Path, out: Path) -> dict:
     return {"path": str(out)}
 
 
-async def produce_item(ai: AIRouter, files: FileStore, item) -> dict:
+async def produce_item(
+    ai: AIRouter, files: FileStore, item, existing_script: dict | None = None
+) -> dict:
     """Full production for one item. Returns artifact dict; raises ProducerError
     only when no producible media exists (item-level failures). Individual
     artifact failures degrade gracefully (missing cover, subs-only, etc.).
+
+    v0.2.7：existing_script 提供时（重新翻译）跳过脚本生成——只重跑
+    TTS/字幕/合成，基于原视频重新翻译。
     """
     directory = _artifacts_dir(files, item)
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
@@ -286,7 +291,7 @@ async def produce_item(ai: AIRouter, files: FileStore, item) -> dict:
     if raw_path is None or not raw_path.exists():
         raise ProducerError("raw media missing")
 
-    script = await generate_script(ai, item)
+    script = existing_script or await generate_script(ai, item)
     compliance = check_script_compliance(script)
     artifacts = {"script": script, "compliance": compliance, "directory": str(directory)}
 

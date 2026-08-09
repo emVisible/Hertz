@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
@@ -68,6 +68,8 @@ interface PipelineViewProps {
   publishItem: (item: PipelineItem, selfmade?: boolean) => void
   uploadCover: (item: PipelineItem, file: File) => void
   retryClass: (cls: string, n: number) => void
+  reprocess: (item: PipelineItem, retranslate: boolean) => void
+  rescheduleExpired: () => Promise<void>
   modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
@@ -158,9 +160,17 @@ export function PipelineView(p: PipelineViewProps) {
     ? (p.tab as PipelineTabId)
     : 'inReview'
 
+  // 进入审核自动重排过期排期（v0.2.7）：不能排到过去，每次进入系统自动更新
+  useEffect(() => {
+    if (pTab === 'inReview') void p.rescheduleExpired()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pTab])
+
   const tabItems = PIPELINE_TABS.map((tb) => ({
     id: tb.id,
     label: t(tb.labelKey),
+    // 异常 menu 与正常流程分隔（v0.2.7，最右侧独立区）
+    dividerBefore: tb.id === 'exceptions',
     count: tb.countKeys
       ? tb.countKeys.reduce((sum, k) => sum + (p.counts[k] ?? 0), 0)
       : undefined,
@@ -321,14 +331,15 @@ export function PipelineView(p: PipelineViewProps) {
             >
               <ul className="divide-y divide-border/60">
                 {sortedQueued.map((item) => (
-                  <AuditCard
-                    key={item.id}
-                    item={item}
-                    onApprove={(i) => void p.act(i, 'approve')}
-                    onReject={(i) => void p.act(i, 'reject')}
-                    onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
-                    onUploadCover={(i, file) => void p.uploadCover(i, file)}
-                  />
+                    <AuditCard
+                      key={item.id}
+                      item={item}
+                      onApprove={(i) => void p.act(i, 'approve')}
+                      onReject={(i) => void p.act(i, 'reject')}
+                      onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
+                      onUploadCover={(i, file) => void p.uploadCover(i, file)}
+                      onReprocess={(i, retranslate) => void p.reprocess(i, retranslate)}
+                    />
                 ))}
               </ul>
             </PipelineStage>

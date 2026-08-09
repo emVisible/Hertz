@@ -120,6 +120,24 @@ async def requeue_item(item_id: uuid.UUID):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/items/{item_id}/reprocess")
+async def reprocess_item(item_id: uuid.UUID, retranslate: int = 0):
+    """打回重新生产（v0.2.7，参考原项目 reproduce/retranslate）：
+    retranslate=1 保留脚本只重翻译（TTS/字幕/合成）；默认完整重跑。"""
+    try:
+        return await _pipe().reprocess(item_id, retranslate=bool(retranslate))
+    except ItemNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidItemStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/reschedule-expired")
+async def reschedule_expired():
+    """过期排期自动重排（v0.2.7）：进入审核时调用，逐个分配不冲突的新槽位。"""
+    return {"updated": await _pipe().reschedule_expired()}
+
+
 class ItemMetaBody(BaseModel):
     bili_title: str | None = None
     bili_tags: str | None = None

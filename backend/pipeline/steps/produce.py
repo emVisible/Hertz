@@ -22,8 +22,12 @@ class ProduceStep(Pipe):
         ai = ctx.ai if ctx.ai is not None else registry.ai
         from backend.pipeline.producers.media import ProducerError, produce_item
 
+        # 重新翻译（v0.2.7）：保留已有脚本，只重跑 TTS/字幕/合成
+        existing_script = dict(item.script_json) if item.script_json else None
         try:
-            artifacts = await produce_item(ai, registry.files, item)
+            artifacts = await produce_item(
+                ai, registry.files, item, existing_script=existing_script
+            )
         except ProducerError as exc:
             raise StepError(str(exc)) from exc
 

@@ -241,3 +241,10 @@
   - **评分条形图**：ScoreDims 升级为彩色水平条形图（8 维度固定色板 + 未知字段灰色兜底、相对强度条长 + 宽度过渡动画），有限空间客观可比，无新图形库依赖（AXIOM §6.1 克制）
   - **分区自动分配**：backend/pipeline/category.py（参考原项目 assign_bili_tid：精确 subreddit → 关键词 → 类型默认），produce 步骤未手动设置 tid 时自动写入 script_json.bili_tid；审核 Select 可直接看到自动结果并可改
   - **tab 切换动效**：内容区 key 化触发 150ms 淡入（.hz-fade-in，prefers-reduced-motion 尊重），消除顶级 tab 切换抖动观感
+- **D-144 审核批三（v0.2.7）**——
+  - **异常 menu 最右独立**：TabBar 支持 dividerBefore——异常 tab 前插入竖分隔线，与正常流程（运行/预处理/审核/发布）视觉区分
+  - **Studio 开始执行垂直居中**：CommandDeck 按钮容器 self-center（小屏 flex-col 也居中）
+  - **通过/拒绝 hover 显示**：AuditCard 操作组（重新处理/重新翻译/通过/拒绝）默认隐藏，hover 卡片淡入——审核卡保持简约
+  - **过期排期自动重排**：`POST /pipeline/reschedule-expired`——进入审核 tab 时自动把已过期排期逐个更新为 next_slot 推荐槽位（不冲突、不做抖动），toast 提示更新数；「不能排到过去」语义落地
+  - **分区自动显示**：serialize 附 auto_tid（参考原项目 assign_bili_tid），审核 Select 未手动设置时显示「自动」建议分区（不再误导性「留空」）；publisher tid 解析链：显式 → assign 建议 → 配置默认
+  - **重新处理/重新翻译**（参考原项目 reproduce/retranslate）：`POST /items/{id}/reprocess?retranslate=`——重新处理=清脚本+产物完整重跑；重新翻译=保留脚本只重跑 TTS/字幕/合成（produce_item 支持 existing_script 复用）；完成后回审核（状态回 scored）

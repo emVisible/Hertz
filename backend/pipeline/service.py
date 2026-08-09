@@ -22,6 +22,16 @@ from backend.pipeline.errors import ItemNotFoundError
 logger = logging.getLogger(__name__)
 
 
+def _auto_tid(item) -> int | None:
+    """分区自动建议：subreddit/关键词 → tid（参考原项目 assign_bili_tid）。"""
+    try:
+        from backend.pipeline.category import assign_bili_tid
+
+        return assign_bili_tid(item.subreddit or "", item.item_type or "video_raw")
+    except Exception:  # noqa: BLE001 — 建议失败不影响序列化
+        return None
+
+
 class PipelineService:
     def __init__(self, hub: EventHub, engine: StepEngine) -> None:
         self.hub = hub
@@ -196,6 +206,91 @@ class PipelineService:
             {"type": "item", "item_id": str(item_id), "status": "published"},
         )
         return {"id": str(item_id), "status": "published", "result": result}
+
+    # ---------- 重新处理 / 重新翻译（v0.2.7，参考原项目 reproduce/retranslate） ----------
+
+    async def reprocess(self, item_id: uuid.UUID, *, retranslate: bool = False) -> dict:
+        """打回重新生产（完成后回到审核队列）。
+
+        reprocess（重新处理）：清空脚本与产物 → 完整重跑 script→TTS→字幕→合成；
+        retranslate（重新翻译）：保留脚本，只重跑 TTS/字幕/合成（原视频上重翻译）。
+        """
+        from backend.pipeline.errors import InvalidItemStateError
+
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+            if item is None:
+                raise ItemNotFoundError(item_id)
+            if item.status not in (ItemStatus.QUEUED, ItemStatus.APPROVED, ItemStatus.FAILED):
+                raise InvalidItemStateError(
+                    f"cannot reprocess item in state {item.status}"
+                )
+            item.status = ItemStatus.SCORED  # produce 步骤消费 scored
+            item.error = None
+            if not retranslate:
+                item.script_json = None  # 重新生成脚本
+            for field in ("video_path", "cover_path", "audio_path", "subtitle_path", "phash"):
+                setattr(item, field, None)
+            await session.merge(item)
+            await session.commit()
+        self.hub.publish(
+            "pipeline",
+            {"type": "item", "item_id": str(item_id), "status": "scored",
+             "step": "retranslate" if retranslate else "reprocess"},
+        )
+        return {"id": str(item_id), "status": "scored", "retranslate": retranslate}
+
+    # ---------- 过期排期自动重排（v0.2.7） ----------
+
+    async def reschedule_expired(self) -> int:
+        """进入审核时调用：把已过期的排期自动更新为下一个推荐槽位
+        （不能排到过去——参考排期引擎 next_slot，逐个分配不冲突）。
+        """
+        from datetime import UTC, datetime
+
+        from backend.pipeline.schedule import next_slot
+
+        now = datetime.now(UTC)
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status.in_((ItemStatus.QUEUED, ItemStatus.APPROVED)),
+                        Item.scheduled_at.isnot(None),
+                        Item.scheduled_at < now,
+                    ).order_by(Item.scheduled_at)
+                )
+            ).scalars().all()
+            if not rows:
+                return 0
+            allocated = [
+                t for t in
+                (await session.execute(
+                    select(Item.scheduled_at).where(
+                        Item.status.in_((ItemStatus.QUEUED, ItemStatus.APPROVED)),
+                        Item.scheduled_at.isnot(None),
+                        Item.scheduled_at >= now,
+                    )
+                )).scalars().all()
+                if t is not None
+            ]
+            for item in rows:
+                slot = next_slot(
+                    allocated,
+                    now=now,
+                    windows_raw=getattr(self.engine.settings, "pipeline_publish_windows", ""),
+                    min_interval_min=int(
+                        getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
+                    ),
+                    jitter_min=0,  # 批量分配不做随机抖动，避免重复
+                    lookahead_days=int(
+                        getattr(self.engine.settings, "pipeline_publish_lookahead_days", 3)
+                    ),
+                )
+                item.scheduled_at = slot
+                allocated.append(slot)
+            await session.commit()
+            return len(rows)
 
     # ---------- 自动过审（v0.2.1，参考原项目 auto_approve） ----------
 
@@ -460,5 +555,11 @@ class PipelineService:
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "approved_at": item.approved_at.isoformat() if item.approved_at else None,
             "scheduled_at": item.scheduled_at.isoformat() if item.scheduled_at else None,
+            # 分区自动建议（v0.2.7，参考原项目 assign_bili_tid）：未手动设置时的推荐分区
+            "auto_tid": (
+                None
+                if (item.script_json or {}).get("bili_tid")
+                else _auto_tid(item)
+            ),
             "published_at": item.published_at.isoformat() if item.published_at else None,
         }

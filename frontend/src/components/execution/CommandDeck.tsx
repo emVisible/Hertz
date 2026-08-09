@@ -49,7 +49,8 @@ export function CommandDeck({
       </div>
       <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center">
         <div className="min-w-0 flex-1">{controls}</div>
-        <div className="flex shrink-0 items-center">
+        {/* 开始执行：与 controls 垂直居中（v0.2.7，小屏 flex-col 下 self-center 保持居中） */}
+        <div className="flex shrink-0 items-center self-center">
           {running ? (
             <Button variant="danger" onClick={onStop} className="h-10 min-w-40">
               <Icon name="stop" size={15} />

@@ -17,12 +17,14 @@ export function AuditCard({
   onReject,
   onSaveMeta,
   onUploadCover,
+  onReprocess,
 }: {
   item: PipelineItem
   onApprove: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
   onSaveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
   onUploadCover: (item: PipelineItem, file: File) => void
+  onReprocess: (item: PipelineItem, retranslate: boolean) => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -36,7 +38,7 @@ export function AuditCard({
   const biliTid = script?.bili_tid != null ? String(script.bili_tid) : ''
 
   return (
-    <li className="flex gap-5 px-4 py-4">
+    <li className="group flex gap-5 px-4 py-4">
       {/* 媒体区（相册感）：w-1/3 宽度，16:9 圆角卡片 + 柔和阴影 + 留白 */}
       <div className="group/cover relative aspect-video w-1/3 shrink-0">
         <div className="aspect-video overflow-hidden rounded-lg shadow-sm">
@@ -161,8 +163,8 @@ export function AuditCard({
           />
         </div>
 
-        {/* B站分区（tid）：Select 选择（v0.2.6，参考原项目 category.py 分区表）；
-            留空 = 发布时用默认分区 */}
+        {/* B站分区（tid）：Select 选择（v0.2.6 参考原项目分区表）；
+            未手动设置时显示自动建议分区（v0.2.7，非误导性的「留空」） */}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.biliTid')}</span>
           <Select
@@ -170,13 +172,18 @@ export function AuditCard({
             value={tidDraft ?? biliTid}
             onChange={(e) => setTidDraft(e.target.value)}
             options={[
-              { value: '', label: t('console.tidDefault') },
+              {
+                value: '',
+                label: biliTid
+                  ? `${biliTid} · ${t('console.tidAuto')}`
+                  : `${item.auto_tid ?? ''} · ${t('console.tidAuto')}`.replace(/^\s*·\s*/, ''),
+              },
               ...BILI_TIDS.map((p) => ({
                 value: String(p.tid),
                 label: `${p.tid} · ${p.name}`,
               })),
             ]}
-            className="w-40"
+            className="w-44"
           />
           {tidDraft !== null && (
             <Button
@@ -210,8 +217,17 @@ export function AuditCard({
           </details>
         )}
 
-        {/* 通过/驳回：右侧对齐，等宽按钮（审核 menu 只含 queued 条目） */}
-        <div className="mt-2 flex items-center justify-end gap-2">
+        {/* 操作区（v0.2.7）：hover 卡片才显示——通过/驳回 + 重新处理/重新翻译
+            （参考原项目 reproduce/retranslate），默认隐藏保持简约 */}
+        <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <Button size="sm" variant="ghost" onClick={() => onReprocess(item, true)} title={t('console.retranslateHint')}>
+            <Icon name="refresh" size={12} />
+            {t('console.retranslate')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onReprocess(item, false)} title={t('console.reprocessHint')}>
+            <Icon name="refresh" size={12} />
+            {t('console.reprocess')}
+          </Button>
           <Button size="sm" className="w-20" onClick={() => onApprove(item)}>
             <Icon name="check" size={12} />
             {t('console.approve')}

@@ -518,3 +518,90 @@ def test_assign_bili_tid_resolution() -> None:
     # 类型默认：图 202 / 视频 21
     assert assign_bili_tid("random_sub") == 21
     assert assign_bili_tid("random_sub", "image_gallery") == 202
+
+
+# ---------- 重新处理 / 重新翻译 / 过期重排（v0.2.7） ----------
+
+@pytest.mark.asyncio
+async def test_reprocess_and_retranslate(client) -> None:
+    """reprocess 清脚本全重跑；retranslate 保留脚本只重翻译。"""
+
+    async with session_factory() as session:
+        item = Item(
+            status=ItemStatus.QUEUED, source="reddit", source_id="rp-1", title="重处理",
+            script_json={"script": "旧脚本", "bili_tid": 201},
+            video_path="/x/v.mp4", cover_path="/x/c.jpg", audio_path="/x/a.mp3",
+            phash="abc",
+        )
+        session.add(item)
+        await session.commit()
+        item_id = item.id
+
+    resp = await client.post(
+        f"/api/pipeline/items/{item_id}/reprocess", params={"retranslate": 1}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "scored" and body["retranslate"] is True
+    async with session_factory() as session:
+        row = await session.get(Item, item_id)
+        assert row.status == "scored"
+        assert row.script_json is not None  # 保留脚本
+        assert row.video_path is None and row.cover_path is None  # 产物清空
+
+    # 回到 queued 后重新处理（完整重跑）
+    async with session_factory() as session:
+        row = await session.get(Item, item_id)
+        row.status = ItemStatus.QUEUED
+        await session.commit()
+    resp = await client.post(f"/api/pipeline/items/{item_id}/reprocess")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["retranslate"] is False
+    async with session_factory() as session:
+        row = await session.get(Item, item_id)
+        assert row.status == "scored"
+        assert row.script_json is None  # 脚本重生成
+
+    # 非法状态（published）→ 409
+    async with session_factory() as session:
+        row = await session.get(Item, item_id)
+        row.status = ItemStatus.PUBLISHED
+        await session.commit()
+    resp = await client.post(f"/api/pipeline/items/{item_id}/reprocess")
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_reschedule_expired(client) -> None:
+    """过期排期自动更新为未来推荐槽位；未过期不动。"""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    async with session_factory() as session:
+        expired = Item(status=ItemStatus.QUEUED, source="reddit", source_id="rs-1",
+                       title="过期", scheduled_at=now - timedelta(days=2))
+        fresh = Item(status=ItemStatus.QUEUED, source="reddit", source_id="rs-2",
+                     title="未过期", scheduled_at=now + timedelta(days=1))
+        session.add_all([expired, fresh])
+        await session.commit()
+        expired_id, fresh_id = expired.id, fresh.id
+
+    resp = await client.post("/api/pipeline/reschedule-expired")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["updated"] >= 1
+    async with session_factory() as session:
+        expired = await session.get(Item, expired_id)
+        fresh = await session.get(Item, fresh_id)
+        assert expired.scheduled_at is not None and expired.scheduled_at > now
+        assert fresh.scheduled_at == now + timedelta(days=1)  # 未过期不动
+
+
+def test_auto_tid_in_serialize(client) -> None:
+    """serialize 未手动设置 tid 时附 auto_tid 建议。"""
+    from backend.pipeline.service import _auto_tid
+
+    class Stub:
+        subreddit = "aww"
+        item_type = "video_raw"
+
+    assert _auto_tid(Stub()) == 152  # 动物

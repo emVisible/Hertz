@@ -221,6 +221,30 @@ export function usePipelineExecution() {
     }
   }
 
+  /** 打回重新生产（v0.2.7，参考原项目 reproduce/retranslate）。 */
+  async function reprocess(item: PipelineItem, retranslate: boolean) {
+    try {
+      await pipelineApi.reprocess(item.id, retranslate)
+      refresh()
+      toast(t(retranslate ? 'console.retranslated' : 'console.reprocessed'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 过期排期自动重排（v0.2.7）：进入审核时调用。 */
+  async function rescheduleExpired() {
+    try {
+      const res = await pipelineApi.rescheduleExpired()
+      if (res.updated > 0) {
+        toast(t('console.rescheduleUpdated', { n: res.updated }), 'info')
+        refresh()
+      }
+    } catch {
+      /* 静默：重排失败不阻塞审核浏览 */
+    }
+  }
+
   const running = (status as { running?: boolean } | undefined)?.running ?? false
 
   return {
@@ -257,6 +281,8 @@ export function usePipelineExecution() {
     publishItem,
     uploadCover,
     retryClass,
+    reprocess,
+    rescheduleExpired,
     refresh,
   }
 }
