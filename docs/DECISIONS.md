@@ -270,3 +270,11 @@
   - **修复**：参考原项目 Autarkeia `_ALLOWED_MEDIA_SUFFIXES`——新增静态可信媒体域后缀白名单（reddit.com/redd.it/redditmedia.com/redditstatic.com + bilibili.com/b23.tv/youtube.com/youtu.be），命中即直通（httpx 自身走代理解析）；未知域名保持 DNS + 公网 IP 校验（通用下载防护不变）
   - **防逃逸**：后缀精确匹配（evil-redd.it / redd.it.evil.com 均拒绝）+ 仅 https + 无内嵌凭据；重定向到未知域仍被 checker 拦截
   - 测试：白名单直通（无需 DNS）、子域逃逸拒绝、非 https 拒绝
+- **D-149 下载韧性（Wave 1，v0.2.9，参考原项目 Autarkeia download.py）**——
+  - **根因**：下载步骤单 URL 直下 Reddit CDN——v.redd.it 分享 URL 404（删帖/死 id/HLS-only）即整条 failed，无候选降级
+  - **URL 候选链**：backend/pipeline/download.py `media_candidates`——v.redd.it 展开 DASH_720.mp4 → DASHPlaylist.mpd → HLS_720.mpd → 原 URL → permalink 兜底（去重 + checker 参数化：loopback 逃生与最终下载同一把尺）
+  - **请求头**：`download_headers`——UA 升级 Chrome/131 + 仅 Reddit 白名单域附加 Referer/Origin/Sec-Fetch-*（防重定向泄漏）
+  - **死 id 预筛**：`is_dead_reddit_media`——无 /comments/ 详情页的 v.redd.it、1f1 结尾 id，采集时直接跳过
+  - **CDN 熔断**：连续 403 ≥3 → 600s 进程内熔断；熔断期间条目保持 discovered 不 FAILED（保护队列）
+  - **条间节奏**：`download_pacing` 1.2s ±15% 抖动；**静图防护**：40MB 上限 / 256B 最小字节
+  - 测试 7 项：候选链/checker 过滤/请求头/死 id/熔断（monkeypatch 配置）/候选降级集成（uvicorn 404→兜底 200）/静图大小校验；测试隔离（§34）：集成测试清理残留条目防污染 chain

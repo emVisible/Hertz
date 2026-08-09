@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     # subtitle_lang: 字幕目标语言（zh-CN = 中文字幕；可配 vi/id/fil/pt-BR 等）
     pipeline_narration_lang: str = "en-US"
     pipeline_subtitle_lang: str = "zh-CN"
+    # 下载韧性（v0.2.9，参考原项目 download.py）：条间延迟抖动 + CDN 403 熔断
+    pipeline_download_delay_seconds: float = 1.2
+    pipeline_cdn_circuit_403: int = 3  # 连续 403 达阈值 → 熔断
+    pipeline_cdn_circuit_cooldown: int = 600  # 熔断冷却秒数
     # Test/dev escape hatch: allow http(s) non-public URLs in the pipeline
     # download step (SSRF guard stays on by default — AXIOM §8.1).
     pipeline_allow_loopback_urls: bool = False
