@@ -37,9 +37,8 @@ export function AuditCard({
 
   return (
     <li className="flex gap-5 px-4 py-4">
-      {/* 媒体区（相册感，v0.2.7）：适中宽度 + 圆角 + 柔和阴影 + 留白，
-          16:9 自然比例，不占满宽度也不随内容拉伸 */}
-      <div className="group/cover relative w-44 shrink-0">
+      {/* 媒体区（相册感）：w-1/3 宽度，16:9 圆角卡片 + 柔和阴影 + 留白 */}
+      <div className="group/cover relative aspect-video w-1/3 shrink-0">
         <div className="aspect-video overflow-hidden rounded-lg shadow-sm">
           <MediaThumb item={item} className="h-full w-full" />
         </div>
