@@ -33,6 +33,11 @@ export const tokens = {
     lg: '12px',
     full: '9999px',
   },
+  shadow: {
+    sm: 'var(--hz-shadow-sm)',
+    md: 'var(--hz-shadow-md)',
+    lg: 'var(--hz-shadow-lg)',
+  },
   motion: {
     fast: '150ms',
     normal: '300ms',

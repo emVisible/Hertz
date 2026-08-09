@@ -16,6 +16,12 @@
   --hz-success: #10b981;
   --hz-warning: #d97706;
   --hz-error: #ef4444;
+  /* 阴影（视觉深度层级，§27 单一来源）：sm=卡片静置 / md=交互抬升 / lg=浮层 */
+  --hz-shadow-sm: 0 1px 2px rgb(24 24 27 / 0.05);
+  --hz-shadow-md: 0 4px 12px rgb(24 24 27 / 0.08);
+  --hz-shadow-lg: 0 12px 32px rgb(24 24 27 / 0.14);
+  /* 焦点环（键盘可达性，§17.6）：与主色同源的柔和描边 */
+  --hz-focus-ring: rgb(39 39 42 / 0.28);
 }
 
 .dark {
@@ -33,6 +39,10 @@
   --hz-success: #34d399;
   --hz-warning: #fbbf24;
   --hz-error: #f87171;
+  --hz-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35);
+  --hz-shadow-md: 0 4px 12px rgb(0 0 0 / 0.45);
+  --hz-shadow-lg: 0 12px 32px rgb(0 0 0 / 0.6);
+  --hz-focus-ring: rgb(228 228 231 / 0.3);
 }
 
 /* Map semantic variables into Tailwind utilities: bg-surface-1, text-primary, ... */
@@ -52,6 +62,9 @@
   --color-error: var(--hz-error);
   --color-chalk: #e8d8a8; /* Revel heritage: chalk yellow */
   --font-kai: 'KaiTi', 'STKaiti', 'Noto Serif SC', 'Kaiti SC', serif;
+  --shadow-sm: var(--hz-shadow-sm);
+  --shadow-md: var(--hz-shadow-md);
+  --shadow-lg: var(--hz-shadow-lg);
 }
 
 html,
@@ -66,6 +79,49 @@ body {
   font-family:
     -apple-system, 'SF Pro Text', 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* 键盘可达性（§17.6）：全局焦点环，鼠标点击不显示（:focus-visible 语义） */
+:focus-visible {
+  outline: 2px solid var(--hz-focus-ring);
+  outline-offset: 1px;
+}
+
+/* 细滚动条（桌面质感）：webkit + firefox 双通道，随主题变色 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hz-border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: var(--hz-border);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--hz-text-disabled);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 浮层 backdrop（Modal/命令面板共用）：淡入，不位移（§35 动效只作用于装饰层） */
+@keyframes hz-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hz-overlay-in {
+  animation: hz-overlay-in 150ms ease-out;
 }
 
 /* Toast entrance */
@@ -217,7 +273,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hz-toast-in {
+  .hz-toast-in,
+  .hz-overlay-in {
     animation: none;
   }
 }

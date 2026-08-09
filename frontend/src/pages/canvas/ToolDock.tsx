@@ -28,9 +28,9 @@ export function ToolDock() {
           type="button"
           title={t(`canvas.tool.${toolDef.id}`)}
           onClick={() => setTool(toolDef.id)}
-          className={` p-2 transition-colors ${
+          className={`rounded-md p-2 transition-[background-color,color,box-shadow] ${
             tool === toolDef.id
-              ? 'bg-primary/20 text-primary'
+              ? 'bg-primary/20 text-primary shadow-sm'
               : 'text-text-secondary hover:bg-surface-2'
           }`}
         >
@@ -51,7 +51,7 @@ export function ToolDock() {
               setStrokeColor(color)
               setTool('pen')
             }}
-            className="h-4 w-4  border border-black/20 transition-transform hover:scale-110"
+            className="h-4 w-4 rounded-full border border-black/20 shadow-sm transition-transform hover:scale-110"
             style={{
               background: color,
               boxShadow: strokeColor === color ? `0 0 0 2px rgba(255,255,255,.35)` : undefined,

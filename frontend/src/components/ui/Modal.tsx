@@ -41,7 +41,7 @@ export function Modal({ open, title, onClose, children, width = 480 }: ModalProp
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="hz-overlay-in fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -49,7 +49,7 @@ export function Modal({ open, title, onClose, children, width = 480 }: ModalProp
       <div
         ref={panelRef}
         style={{ width }}
-        className="max-h-[80vh] overflow-auto  border border-border bg-surface-1 p-5 shadow-2xl"
+        className="max-h-[80vh] overflow-auto rounded-lg border border-border bg-surface-1 p-5 shadow-lg"
       >
         <div className="mb-4 flex items-center justify-between">
           {title && <h2 className="text-base font-semibold text-text-primary">{title}</h2>}

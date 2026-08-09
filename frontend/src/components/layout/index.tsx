@@ -25,7 +25,7 @@ export function WindowControls() {
           type="button"
           aria-label={c.label}
           onClick={c.onClick}
-          className="h-3 w-3  border border-black/10 transition-transform hover:scale-110"
+          className="h-3 w-3 rounded-full border border-black/10 shadow-sm transition-transform hover:scale-110"
           style={{ background: c.color }}
         />
       ))}
@@ -68,9 +68,9 @@ function NavLinkButton({ item }: { item: NavItem }) {
       to={item.to}
       title={typeof item.label === 'string' ? item.label : undefined}
       className={({ isActive }) =>
-        `flex h-10 w-10 items-center justify-center  transition-colors duration-150 ${
+        `flex h-10 w-10 items-center justify-center rounded-lg transition-[background-color,color,box-shadow] duration-150 ${
           isActive
-            ? 'bg-primary/15 text-primary'
+            ? 'bg-primary/15 text-primary shadow-sm'
             : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary'
         }`
       }

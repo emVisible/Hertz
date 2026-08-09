@@ -203,3 +203,10 @@
   - **browser.info 契约**：恢复 exists 守卫（此前误删，dict|None 契约回归）
   - **unscheduled 有界**：limit 200（§7.4 列表与缓存）
   - 接受项：calendar 时区依赖服务器本地时区（写入侧同语义，两端一致；桌面单机 OK，远程部署时需前端传偏移——记录在案）
+- **D-136 视觉增强批（v0.2.4）**：整体视觉与体验打磨——
+  - **阴影令牌系统（§27）**：新增 --hz-shadow-sm/md/lg（两主题独立值，暗色更深）+ --hz-focus-ring；@theme inline 映射 shadow-sm/md/lg 工具类；Modal/命令面板/右键菜单改用 shadow-lg（替换 shadow-2xl 硬编码）
+  - **全局滚动条**：webkit + firefox 双通道细滚动条，随主题变色，hover 加深
+  - **键盘可达性（§17.6）**：全局 :focus-visible 焦点环（鼠标点击不显示）
+  - **动效**：浮层 backdrop 统一淡入（.hz-overlay-in，Modal/命令面板/右键菜单）；prefers-reduced-motion 全量尊重
+  - **组件打磨**：Badge pill 化（rounded-full，全局统一分度）；Button 圆角 + primary 阴影/ hover 抬升（shadow-sm→md）；Select/Input hover 边框微亮；EmptyState 图标圆角容器；侧栏 NavLink 激活圆角+微影；窗口红绿灯圆形化；画布卡片/素材卡圆角；粉笔色块圆形化
+  - **克制**：未引入彩色渐变/玻璃拟态等风格化元素，保持单色中性系统；未动布局与信息架构

@@ -11,7 +11,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
-  primary: 'bg-primary text-on-primary hover:bg-primary-hover disabled:bg-text-disabled/40 disabled:text-text-primary/60',
+  primary:
+    'bg-primary text-on-primary shadow-sm hover:bg-primary-hover hover:shadow-md disabled:bg-text-disabled/40 disabled:text-text-primary/60 disabled:shadow-none',
   secondary:
     'bg-surface-2 text-text-primary hover:bg-surface-1 border border-border hover:border-text-disabled/50',
   ghost: 'bg-transparent text-text-secondary hover:bg-surface-2 hover:text-text-primary',
@@ -36,7 +37,8 @@ export function Button({
     <button
       type="button"
       disabled={disabled || loading}
-      className={`inline-flex select-none items-center justify-center  font-medium transition-colors duration-150
+      className={`inline-flex select-none items-center justify-center rounded-md font-medium
+        transition-[box-shadow,background-color,color,border-color] duration-150
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
         disabled:cursor-not-allowed ${VARIANT_CLASS[variant]} ${SIZE_CLASS[size]} ${className}`}
       {...rest}

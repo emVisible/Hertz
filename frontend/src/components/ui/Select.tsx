@@ -25,7 +25,8 @@ export function Select({ label, options, className = '', id, ...rest }: SelectPr
         <select
           id={selectId}
           className={`h-9 w-full appearance-none  border border-border bg-surface-2 px-3 pr-8 text-sm text-text-primary
-            transition-colors duration-150 focus:border-primary focus:bg-surface-1 focus:outline-none focus:ring-2 focus:ring-primary/30`}
+            transition-[border-color,background-color] duration-150 hover:border-text-disabled/50
+            focus:border-primary focus:bg-surface-1 focus:outline-none focus:ring-2 focus:ring-primary/30`}
           {...rest}
         >
           {options.map((opt) => (

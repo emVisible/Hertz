@@ -55,13 +55,13 @@ export function AssetCard({
         e.preventDefault()
         onContext(e.clientX, e.clientY)
       }}
-      className="group flex flex-col border border-transparent p-1.5 transition-colors hover:border-border hover:bg-surface-1"
+      className="group flex flex-col rounded-md border border-transparent p-1.5 transition-[background-color,border-color,box-shadow] hover:border-border hover:bg-surface-1 hover:shadow-sm"
     >
       {/* 图像区：图片/视频/音频直接预览；文件夹直接进入 */}
       <button
         type="button"
         onClick={onPreview}
-        className={`relative flex h-24 w-full items-center justify-center overflow-hidden bg-surface-2 ${
+        className={`relative flex h-24 w-full items-center justify-center overflow-hidden rounded-sm bg-surface-2 ${
           entry.kind === 'directory' ? 'cursor-pointer' : 'cursor-zoom-in'
         }`}
       >

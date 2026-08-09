@@ -870,7 +870,7 @@ export function AssetsPage() {
       {/* 右键菜单 */}
       {menu && (
         <div
-          className="fixed z-50 w-44 border border-border bg-surface-1 py-1 text-sm shadow-2xl"
+          className="hz-overlay-in fixed z-50 w-44 rounded-md border border-border bg-surface-1 py-1 text-sm shadow-lg"
           style={{ left: menu.x, top: menu.y }}
           onMouseLeave={() => setMenu(null)}
         >

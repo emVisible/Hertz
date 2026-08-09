@@ -133,7 +133,7 @@ export function CardView({
             ? '0 0 0 2px rgba(232,121,249,.55), 0 6px 18px rgba(0,0,0,.35)'
             : '0 4px 14px rgba(0,0,0,.28)',
       }}
-      className={`group absolute z-10 cursor-grab touch-none  border-2 border-dashed bg-surface-1/95 p-2.5 backdrop-blur-sm transition-opacity duration-150 active:cursor-grabbing ${
+      className={`group absolute z-10 cursor-grab touch-none rounded-md border-2 border-dashed bg-surface-1/95 p-2.5 backdrop-blur-sm transition-opacity duration-150 active:cursor-grabbing ${
         connecting ? 'ring-2 ring-fuchsia-400/40' : ''
       }`}
     >

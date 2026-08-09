@@ -12,7 +12,7 @@ export interface EmptyStateProps {
 export function EmptyState({ icon = 'library', title, description, action }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-      <span className="mb-1 flex h-12 w-12 items-center justify-center  bg-surface-2 text-text-disabled">
+      <span className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-surface-2 text-text-disabled shadow-sm">
         <Icon name={icon} size={22} />
       </span>
       <p className="text-sm font-medium text-text-primary">{title}</p>

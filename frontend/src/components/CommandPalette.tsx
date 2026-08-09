@@ -194,12 +194,12 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[12vh]"
+      className="hz-overlay-in fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[12vh]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="w-full max-w-lg border border-border bg-surface-1 shadow-2xl">
+      <div className="w-full max-w-lg rounded-lg border border-border bg-surface-1 shadow-lg">
         <div className="flex items-center gap-2 border-b border-border px-3">
           <Icon name="search" size={15} className="shrink-0 text-text-disabled" />
           <input
