@@ -18,6 +18,8 @@ class ProcessResult:
     status: str  # the item status the engine should apply (or keep)
     data: dict = field(default_factory=dict)
     error: str = ""
+    # 跳过标记（v0.3.6）：冷却/熔断等非失败跳过——摘要计「跳过」而非「成功」
+    skip: bool = False
 
 
 @dataclass

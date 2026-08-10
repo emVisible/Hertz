@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 from backend.config import settings
 from backend.download.engine import host_trusted, is_safe_media_url
+from backend.models.session import session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,120 @@ def reset_cdn_circuit() -> None:
     """非 403 结果重置连续计数（成功/404/网络错误都算非 403）。"""
     global _cdn_403_count
     _cdn_403_count = 0
+
+
+# ---- 下载资源冷却（v0.3.6 冰川式，参考原项目 CDN 熔断的持久化扩展） ----
+#
+# 进程内熔断（上）保护「本轮队列」；这里是**域级**持久冷却——下载 403 按
+# 媒体域（v.redd.it / i.redd.it / www.youtube.com…）冻结，指数退避落库，
+# 重启不丢。冷却中的域整批跳过（条目保持 discovered 不 FAILED），
+# 避免每次 run 都反复打被封锁的 CDN。域内任一下载成功即解冻。
+
+
+def domain_of(url: str) -> str:
+    from urllib.parse import urlparse
+
+    return (urlparse(url).hostname or "").lower()
+
+
+def _cooldown_base() -> int:
+    return int(getattr(settings, "pipeline_download_cooling_base_seconds", 300))
+
+
+def _cooldown_max() -> int:
+    return int(getattr(settings, "pipeline_download_cooling_max_seconds", 7200))
+
+
+def _cooldown_duration(level: int) -> int:
+    """指数退避：base × 2^(level-1)，封顶 max。"""
+    return min(_cooldown_base() * (2 ** max(level - 1, 0)), _cooldown_max())
+
+
+async def resource_cooldown_left(url: str) -> int:
+    """媒体域冰封剩余秒数（>0 = 冷却中，跳过该域所有下载）。"""
+    from sqlalchemy import select
+
+    from backend.models.pipeline import ResourceCooldown
+
+    domain = domain_of(url)
+    if not domain:
+        return 0
+    try:
+        async with session_factory() as session:
+            row = (
+                await session.execute(
+                    select(ResourceCooldown).where(ResourceCooldown.domain == domain)
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return 0
+            left = int(row.until_epoch - time.time())
+            return max(left, 0)
+    except Exception:  # noqa: BLE001 — 冷却查询失败按未冷却处理
+        return 0
+
+
+async def note_resource_failure(url: str, *, error: str = "") -> int:
+    """403 记账：媒体域指数退避冷却。返回新冷却时长（秒）。"""
+    from sqlalchemy import select
+
+    from backend.models.pipeline import ResourceCooldown
+
+    domain = domain_of(url)
+    if not domain:
+        return 0
+    try:
+        async with session_factory() as session:
+            row = (
+                await session.execute(
+                    select(ResourceCooldown).where(ResourceCooldown.domain == domain)
+                )
+            ).scalar_one_or_none()
+            if row is None or row.until_epoch < time.time():
+                level = 1 if row is None else row.fail_level + 1
+            else:
+                level = row.fail_level + 1
+            duration = _cooldown_duration(level)
+            if row is None:
+                row = ResourceCooldown(
+                    domain=domain, fail_level=level,
+                    until_epoch=time.time() + duration,
+                )
+                session.add(row)
+            else:
+                row.fail_level = level
+                row.until_epoch = time.time() + duration
+            await session.commit()
+        logger.warning(
+            "resource cooldown: %s frozen %ds (level %d)%s",
+            domain, duration, level, f" — {error[:100]}" if error else "",
+        )
+        return duration
+    except Exception:  # noqa: BLE001 — 记账失败不阻塞下载主流程
+        return 0
+
+
+async def clear_resource_cooldown(url: str) -> None:
+    """域内下载成功 → 解冻该媒体域。"""
+    from sqlalchemy import select
+
+    from backend.models.pipeline import ResourceCooldown
+
+    domain = domain_of(url)
+    if not domain:
+        return
+    try:
+        async with session_factory() as session:
+            row = (
+                await session.execute(
+                    select(ResourceCooldown).where(ResourceCooldown.domain == domain)
+                )
+            ).scalar_one_or_none()
+            if row is not None:
+                await session.delete(row)
+                await session.commit()
+    except Exception:  # noqa: BLE001 — 解冻失败无害
+        return
 
 
 # ---- 条间节奏（参考原项目 _sleep_jitter） ----

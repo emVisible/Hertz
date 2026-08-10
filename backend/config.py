@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     pipeline_subtitle_lang: str = "zh-CN"
     # 下载韧性（v0.2.9，参考原项目 download.py）：条间延迟抖动 + CDN 403 熔断
     pipeline_download_delay_seconds: float = 1.2
+    # 下载资源冷却（v0.3.6 冰川式）：按媒体域指数退避冻结，base 起步、max 封顶
+    pipeline_download_cooling_base_seconds: int = 300
+    pipeline_download_cooling_max_seconds: int = 7200
     pipeline_cdn_circuit_403: int = 3  # 连续 403 达阈值 → 熔断
     pipeline_cdn_circuit_cooldown: int = 600  # 熔断冷却秒数
     # 评分预过滤（v0.3.0，参考原项目 _prefilter_reject）：LLM 前的廉价门槛，

@@ -253,7 +253,7 @@ class StepEngine:
         ctx.log(f"[{job_name}] processing {len(items)} item(s)")
         self._emit(ctx.run_id, {"type": "job_step", "step": job_name, "count": len(items)})
 
-        results = {"processed": len(items), "ok": 0, "rejected": 0, "failed": 0}
+        results = {"processed": len(items), "ok": 0, "rejected": 0, "failed": 0, "skipped": 0}
         for item in items:
             outcome = await self._process_item(ctx, step, item)
             results[outcome] += 1
@@ -287,8 +287,12 @@ class StepEngine:
             new_status = ItemStatus.FAILED
         else:
             new_status = result.status
-            outcome = "failed" if new_status == ItemStatus.FAILED else (
-                "rejected" if new_status == ItemStatus.REJECTED else "ok"
+            outcome = (
+                "skipped"  # v0.3.6：冷却/熔断等跳过，摘要不再误报「成功」
+                if result.skip
+                else "failed" if new_status == ItemStatus.FAILED else (
+                    "rejected" if new_status == ItemStatus.REJECTED else "ok"
+                )
             )
 
         async with session_factory() as session:

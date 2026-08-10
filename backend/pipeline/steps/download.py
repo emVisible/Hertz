@@ -72,18 +72,31 @@ class DownloadStep(Pipe):
             STILL_MIN_BYTES,
             cdn_circuit_open,
             cdn_circuit_remaining,
+            clear_resource_cooldown,
+            domain_of,
             download_headers,
             download_pacing,
             looks_like_html,
             looks_like_manifest,
             media_candidates,
+            note_resource_failure,
             reset_cdn_circuit,
+            resource_cooldown_left,
             trip_cdn_circuit,
         )
 
         url = item.media_url or item.source_url
         if not url:
             raise StepError("item has no source URL to download")
+
+        # 媒体域冰封（v0.3.6 冰川式）：该域被 403 冻结 → 跳过，冷却到期后自动重试
+        left = await resource_cooldown_left(url)
+        if left > 0:
+            ctx.log(
+                f"[download] {domain_of(url)} frozen ({left}s left) — "
+                "keeping discovered, skipping"
+            )
+            return ProcessResult(status="discovered", skip=True)
 
         # SSRF guard (AXIOM §8.1): collector-supplied URLs are remote input.
         checker = is_safe_media_url
@@ -94,7 +107,7 @@ class DownloadStep(Pipe):
         if cdn_circuit_open():
             left = cdn_circuit_remaining()
             ctx.log(f"[download] CDN cooling down ({left}s left) — skipping")
-            return ProcessResult(status="discovered")
+            return ProcessResult(status="discovered", skip=True)
 
         candidates = media_candidates(url, item.source_url, checker=checker)
         if not candidates:
@@ -137,17 +150,20 @@ class DownloadStep(Pipe):
                     hint = ""
                     if result.status == 403:
                         hint = "（CDN 拒绝——检查网络/代理/Reddit Cookie）"
+                        # 域级冰封（v0.3.6 冰川式）：403 → 该媒体域指数退避冷却
+                        await note_resource_failure(cand, error=result.error)
                     last_error = f"{cand[:48]}: {result.error}{hint}"
                     status = result.status
                     if status == 403:
                         if trip_cdn_circuit():
                             # 熔断刚触发：剩余候选同 CDN 大概率全拒，直接放弃本轮
                             ctx.log("[download] CDN 403 — circuit tripped")
-                            return ProcessResult(status="discovered")
+                            return ProcessResult(status="discovered", skip=True)
                     else:
                         reset_cdn_circuit()  # 非 403 重置连续计数
                     continue
                 reset_cdn_circuit()
+                await clear_resource_cooldown(url)  # 域内成功 → 解冻
                 size = dest.stat().st_size if dest.exists() else 0
                 # 内容嗅探（v0.2.9 查漏补缺）：误下 MPD/HLS 清单文本 → 丢弃继续下一候选
                 if size > 0:

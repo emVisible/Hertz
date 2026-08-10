@@ -141,6 +141,7 @@ export function usePipelineExecution() {
         const parts = []
         if (s.processed !== undefined) parts.push(`处理 ${s.processed} 项`)
         if (s.ok !== undefined) parts.push(`成功 ${s.ok}`)
+        if (s.skipped !== undefined) parts.push(`跳过 ${s.skipped}（冷却）`)
         if (s.rejected !== undefined) parts.push(`拒绝 ${s.rejected}`)
         if (s.failed !== undefined) parts.push(`失败 ${s.failed}`)
         if (parts.length) summary = parts.join(' · ')

@@ -426,3 +426,75 @@ async def test_oauth_channel_fetches_posts(monkeypatch) -> None:
     assert posts[0].source_id == "oa1"
     assert posts[0].item_type == "image_gallery"
     await c.aclose()
+
+
+# ---------- 下载资源冷却（v0.3.6 冰川式） ----------
+
+
+@pytest.mark.asyncio
+async def test_resource_cooldown_backoff_and_thaw(monkeypatch) -> None:
+    """403 → 域级冰封指数退避；冷却中跳过；成功解冻。"""
+    from backend.models.pipeline import ResourceCooldown
+    from backend.models.session import session_factory
+    from backend.pipeline.download import (
+        clear_resource_cooldown,
+        domain_of,
+        note_resource_failure,
+        resource_cooldown_left,
+    )
+
+    url = "https://v.redd.it/abc123/DASH_720.mp4"
+    assert domain_of(url) == "v.redd.it"
+
+    # 两次失败 → level 2 → 时长 = base 300 × 2 = 600s
+    d1 = await note_resource_failure(url, error="HTTP 403")
+    d2 = await note_resource_failure(url, error="HTTP 403")
+    assert d1 == 300
+    assert d2 == 600
+
+    left = await resource_cooldown_left("https://v.redd.it/other/DASH_720.mp4")
+    assert left > 0  # 同域其他 URL 也被冻结
+
+    # 其他域不受影响
+    assert await resource_cooldown_left("https://i.redd.it/img.jpg") == 0
+
+    # 解冻
+    await clear_resource_cooldown(url)
+    assert await resource_cooldown_left(url) == 0
+
+    from sqlalchemy import select
+
+    async with session_factory() as session:
+        row = (
+            await session.execute(
+                select(ResourceCooldown).where(ResourceCooldown.domain == "v.redd.it")
+            )
+        ).scalar_one_or_none()
+        assert row is None  # 解冻后记录删除
+
+
+@pytest.mark.asyncio
+async def test_download_skips_frozen_domain() -> None:
+    """冰封中的域：下载步骤跳过，条目保持 discovered 不 FAILED。"""
+    from backend.config import settings
+    from backend.pipeline.base import StepContext
+    from backend.pipeline.download import note_resource_failure
+    from backend.pipeline.steps.download import DownloadStep
+
+    await note_resource_failure("https://v.redd.it/zzz/DASH_720.mp4", error="403")
+
+    class Item:
+        media_url = "https://v.redd.it/zzz/DASH_720.mp4"
+        source_url = "https://www.reddit.com/r/t/comments/zzz/x/"
+        item_type = "video_raw"
+        title = "frozen"
+        id = None
+        output_dir = None
+
+    ctx = StepContext(
+        run_id="t", settings=settings, ai=None,
+        emit=lambda e: None,
+    )
+    result = await DownloadStep().process(ctx, Item())
+    assert result.status == "discovered"  # 保持状态，等待冷却到期自动重试
+    assert result.skip is True  # 摘要计「跳过」而非「成功」

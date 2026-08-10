@@ -6,7 +6,7 @@ The JobRun audit trail lives in backend.models.system (job_runs table).
 import json
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import BaseModel
@@ -58,3 +58,18 @@ class SourceState(BaseModel):
 
     def set_cooldowns(self, cooldowns: dict[str, float]) -> None:
         self.cooldowns_json = json.dumps(cooldowns)
+
+
+class ResourceCooldown(BaseModel):
+    """媒体资源冷却（v0.3.6 冰川式，参考原项目 CDN 熔断扩展）。
+
+    采集失败冷却记在 SourceState；下载失败按**媒体域**冻结——期间跳过该域
+    全部下载（条目保持 discovered 不 FAILED），避免反复打被封锁的 CDN。
+    指数退避落库持久（重启不丢）；域内任一下载成功即解冻。
+    """
+
+    __tablename__ = "resource_cooldown"
+
+    domain: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    fail_level: Mapped[int] = mapped_column(Integer, default=1)
+    until_epoch: Mapped[float] = mapped_column(Float, default=0.0)
