@@ -82,7 +82,17 @@ class LogManager:
 
         # 系统日志面板（v0.3.0）：uvicorn/apscheduler 日志同样进 buffer——
         # 排查「立即完成/无明细」需要看到调度器与请求层信息
-        for name in ("uvicorn", "uvicorn.error", "apscheduler", "httpx"):
+        # v0.3.5 降噪：httpx 每请求一条 INFO、apscheduler 5 分钟周期任务刷屏——
+        # 这两个 logger 走独立 WARNING-only handler（仅失败请求/异常进面板），
+        # uvicorn 启动信息保留 INFO
+        warn_buffer = BufferHandler()
+        warn_buffer.setLevel(logging.WARNING)
+        for name in ("apscheduler", "httpx"):
+            extra = logging.getLogger(name)
+            extra.setLevel(logging.INFO)
+            extra.addHandler(warn_buffer)
+            extra.propagate = False
+        for name in ("uvicorn", "uvicorn.error"):
             extra = logging.getLogger(name)
             extra.setLevel(logging.INFO)
             extra.addHandler(buffer_handler)

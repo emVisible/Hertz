@@ -55,6 +55,9 @@ class StepEngine:
             emit=lambda e: self._emit(str(job.id), e),
         )
 
+        # 运行前后数据差异（v0.3.5）：各状态计数快照 → delta 随 job_done 下发
+        before = await self._counts()
+
         try:
             summary = await self._run_step(ctx, job_name, limit=limit, channel=channel)
             job.status = JobStatus.COMPLETED
@@ -73,6 +76,20 @@ class StepEngine:
             async with session_factory() as session:
                 await session.merge(job)
                 await session.commit()
+
+        summary = dict(summary or {})
+        try:
+            after = await self._counts()
+            delta = {
+                status: after.get(status, 0) - before.get(status, 0)
+                for status in set(before) | set(after)
+                if after.get(status, 0) != before.get(status, 0)
+            }
+            if delta:
+                summary["delta"] = delta
+        except Exception:  # noqa: BLE001 — diff 是增强，失败不阻塞主流程
+            logger.warning("delta snapshot failed for job %s", job_name)
+        job.summary = summary
 
         self._emit(
             str(job.id),
@@ -190,6 +207,16 @@ class StepEngine:
         return {"id": str(item_id), "status": "queued"}
 
     # ---------- internals ----------
+
+    async def _counts(self) -> dict[str, int]:
+        """各状态计数快照（v0.3.5，job 前后 diff 用）。"""
+        from sqlalchemy import func
+
+        async with session_factory() as session:
+            rows = await session.execute(
+                select(Item.status, func.count()).group_by(Item.status)
+            )
+            return {str(status): count for status, count in rows.all()}
 
     async def _run_step(self, ctx: StepContext, job_name: str, *, limit: int, channel: str) -> dict:
         if job_name == "collect":

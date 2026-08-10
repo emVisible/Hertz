@@ -631,7 +631,13 @@
     "preSort.seq": "入库序",
     "preSort.score": "评分",
     "preSort.produce": "生产方式",
-    "collectCooling": "采集源冷却中，稍后自动恢复"
+    "collectCooling": "采集源冷却中，稍后自动恢复",
+    "discovered": "待下载",
+    "queued": "待审核",
+    "approved": "待发布",
+    "rejected": "已驳回",
+    "failed": "失败",
+    "delta": "变化"
   },
   "canvas": {
     "tool": {

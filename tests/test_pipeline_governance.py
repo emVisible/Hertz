@@ -1060,3 +1060,27 @@ async def test_score_one_endpoint(client) -> None:
     # 已下载 → 走评分（fake_ai 无 LLM → 502 或 LLM provider 错误）
     resp = await client.post(f"/api/pipeline/items/{dl_id}/score")
     assert resp.status_code in (200, 502)  # 无 LLM 时评分失败但状态流正确
+
+
+@pytest.mark.asyncio
+async def test_run_batch_delta_snapshot(client, monkeypatch) -> None:
+    """运行前后数据差异（v0.3.5）：job summary 带 delta 各状态增减。"""
+    from backend.factory.registry import ServiceRegistry
+    from backend.pipeline.collectors.reddit import FakeRedditCollector, RawPost
+
+    post = RawPost(
+        source_id="delta-1", title="diff 测试", source_url="https://www.reddit.com/r/t/comments/delta1/x/",
+        media_url=None, author="", score=10, upvote_ratio=0.9, num_comments=0,
+        created_utc=1_700_000_000, is_video=False, item_type="text_only",
+    )
+    registry = ServiceRegistry.get()
+    registry.pipeline.engine.collector = FakeRedditCollector([post])
+    try:
+        # 采集入库一条 → summary 应含 delta（discovered +1）
+        resp = await client.post("/api/pipeline/run?step=collect&channel=hot")
+        body = resp.json()
+        if resp.status_code == 200:
+            summary = body.get("summary") or {}
+            assert summary.get("delta", {}).get("discovered", 0) == 1
+    finally:
+        registry.pipeline.engine.collector = FakeRedditCollector([])  # 复原占位

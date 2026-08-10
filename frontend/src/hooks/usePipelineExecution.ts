@@ -36,12 +36,17 @@ export function usePipelineExecution() {
     queryFn: pipelineApi.counts,
     refetchInterval: pollingInterval,
   })
-  // 阶段队列：单查询拉取全部状态（wave13 多状态合并，轮询 7→1 个请求），
-  // 前端按状态分组派生各阶段列表
-  const { data: stageAll = [], isError: stageError, refetch: refetchStage } = useQuery({
+  // 阶段队列（v0.3.5）：发现队列独立查询——避免 discovered 占满 limit 截断
+  // 已下载/已评分/待审核等旧序条目（seq desc 排序下老数据被 200 截断的 bug）
+  const { data: discoveryAll = [], isError: stageError, refetch: refetchStage } = useQuery({
     queryKey: ['pipeline-stage'],
+    queryFn: () => pipelineApi.items('discovered', 200),
+    refetchInterval: pollingInterval,
+  })
+  const { data: queueAll = [] } = useQuery({
+    queryKey: ['pipeline-queue'],
     queryFn: () =>
-      pipelineApi.items('discovered,downloaded,scored,queued,approved,failed,rejected', 200),
+      pipelineApi.items('downloaded,scored,queued,approved,failed,rejected', 500),
     refetchInterval: pollingInterval,
   })
   // 最近发布历史（发布页独立查询）
@@ -52,11 +57,11 @@ export function usePipelineExecution() {
   })
   const stageGroups = useMemo(() => {
     const g: Record<string, PipelineItem[]> = {}
-    for (const it of stageAll) {
+    for (const it of queueAll) {
       ;(g[it.status] ??= []).push(it)
     }
     return g
-  }, [stageAll])
+  }, [queueAll])
   const { data: jobs = [] } = useQuery({
     queryKey: ['pipeline-jobs'],
     queryFn: () => pipelineApi.jobs(8),
@@ -143,7 +148,13 @@ export function usePipelineExecution() {
           summary = t('console.noPending')
         }
       }
-      appendLog(`── [${event.job}] ${failed ? '✗' : empty || cooling ? '⚠' : '✓'}${summary ? ` ${summary}` : ''}${event.error ? `: ${event.error}` : ''} ──`, 'done')
+      // 运行前后数据差异（v0.3.5）：discovered −1 · downloaded +1 等
+      const delta = (s?.delta ?? {}) as Record<string, number>
+      const deltaText = Object.entries(delta)
+        .filter(([, n]) => n !== 0)
+        .map(([status, n]) => `${t(`console.${status}`) ?? status} ${n > 0 ? '+' : ''}${n}`)
+        .join(' · ')
+      appendLog(`── [${event.job}] ${failed ? '✗' : empty || cooling ? '⚠' : '✓'}${summary ? ` ${summary}` : ''}${deltaText ? `  ${deltaText}` : ''}${event.error ? `: ${event.error}` : ''} ──`, 'done')
       void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
       if (failed) toast(event.error ?? `${event.job} failed`, 'error')
       else if (empty) toast(t('console.collectEmpty'), 'warning')
@@ -359,7 +370,7 @@ export function usePipelineExecution() {
     counts,
     stageError,
     refetchStage,
-    stageDiscovered: stageGroups.discovered ?? [],
+    stageDiscovered: discoveryAll,
     stageDownloaded: stageGroups.downloaded ?? [],
     stageScored: stageGroups.scored ?? [],
     stageQueued: stageGroups.queued ?? [],

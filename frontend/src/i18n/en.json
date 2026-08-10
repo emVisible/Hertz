@@ -616,7 +616,13 @@
     "preSort.seq": "Inbound",
     "preSort.score": "Score",
     "preSort.produce": "Produce mode",
-    "collectCooling": "Source cooling down, will auto-resume"
+    "collectCooling": "Source cooling down, will auto-resume",
+    "discovered": "Discovered",
+    "queued": "In review",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "failed": "Failed",
+    "delta": "delta"
   },
   "canvas": {
     "tool": {
