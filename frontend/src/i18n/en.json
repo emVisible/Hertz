@@ -495,7 +495,6 @@
     "editTid": "Click to set partition (empty = default)",
     "tidPlaceholder": "empty = default",
     "tidDefault": "Default partition (empty)",
-    "originalLink": "Reddit post",
     "approvedHint": "Approved — handle it in the Publish tab",
     "recentPublishes": "Recent publishes",
     "calendar": "Calendar",
@@ -559,7 +558,8 @@
     "skipped": "skipped {{n}}",
     "noPending": "No pending items",
     "sysLogs": "System logs (backend/Scheduler)",
-    "sysLogsEmpty": "No system logs yet"
+    "sysLogsEmpty": "No system logs yet",
+    "viewSource": "View source"
   },
   "canvas": {
     "tool": {

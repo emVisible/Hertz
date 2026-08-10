@@ -304,3 +304,7 @@
   - **根因**：PostgreSQL `now()` 是事务开始时间——一次 collect 批量插入的所有条目 created_at 完全相同，按时间戳排序全等 → newest/oldest 无效
   - **修复**：items 加入库自增序号 seq（wave17 迁移，Identity 序列，参考原项目 SQLite rowid 语义）；serialize 输出 seq；前端排序改用 seq（旧数据回退 created_at 时间戳）；list_items 全局改 seq desc
   - 迁移验证：存量 763 条自动回填 1..763，0 NULL；测试同批 created_at 相同 → seq 区分先后
+- **D-155 源头审核（v0.3.1）**——
+  - **根因**：Electron 未处理 target=_blank——审核卡的源帖链接点击被拦截（新窗口空白/无响应），源头审核不可达
+  - **修复**：主进程 setWindowOpenHandler——http/https 外链转 shell.openExternal（系统浏览器打开，用户显式点击 §13.1），其余 deny（§8.1）；审核卡 meta 行：subreddit 徽章可点击直达源帖 + 「查看源帖」主色按钮（icon+文案），源头审核入口显式化
+  - 清理 originalLink 死 i18n key（§3.3）

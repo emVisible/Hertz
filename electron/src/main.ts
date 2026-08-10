@@ -219,6 +219,15 @@ function createWindow(): void {
     saveWindowBounds(win)
   })
 
+  // 外链（target=_blank）→ 系统浏览器打开（v0.3.1）：
+  // 审核「源头审核」跳转源帖的必经通道；仅放行 http/https（§8.1）
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      void shell.openExternal(url)
+    }
+    return { action: 'deny' }
+  })
+
   if (app.isPackaged) {
     void win.loadFile(path.join(process.resourcesPath, 'renderer', 'index.html'))
   } else {

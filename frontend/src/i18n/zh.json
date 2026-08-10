@@ -510,7 +510,6 @@
     "editTid": "点击设置分区（留空用默认）",
     "tidPlaceholder": "留空=默认",
     "tidDefault": "默认分区（留空）",
-    "originalLink": "Reddit 原帖",
     "approvedHint": "已通过审核，请在「发布」页处理",
     "recentPublishes": "最近发布",
     "calendar": "日历",
@@ -574,7 +573,8 @@
     "skipped": "跳过 {{n}}",
     "noPending": "无待处理条目",
     "sysLogs": "系统日志（后端/Scheduler）",
-    "sysLogsEmpty": "暂无系统日志"
+    "sysLogsEmpty": "暂无系统日志",
+    "viewSource": "查看源帖"
   },
   "canvas": {
     "tool": {

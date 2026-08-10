@@ -94,7 +94,20 @@ export function AuditCard({
           <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-text-secondary">
-          <Badge tone="neutral">r/{item.subreddit}</Badge>
+          {/* 源头审核（v0.3.1）：subreddit/标题可点击直达源帖（系统浏览器打开） */}
+          {item.source_url ? (
+            <a
+              href={item.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={t('console.viewSource')}
+              className="border border-border px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:border-primary hover:text-primary"
+            >
+              r/{item.subreddit}
+            </a>
+          ) : (
+            <Badge tone="neutral">r/{item.subreddit}</Badge>
+          )}
           <Badge tone="neutral">u/{item.author}</Badge>
           <Badge tone="neutral">r{item.reddit_score}</Badge>
           {item.score_total != null && <Badge tone="primary">AI {item.score_total.toFixed(1)}</Badge>}
@@ -108,9 +121,10 @@ export function AuditCard({
               href={item.source_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-primary underline-offset-2 hover:underline"
+              className="flex items-center gap-1 border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary transition-colors hover:bg-primary/20"
             >
-              {t('console.originalLink')}
+              <Icon name="link" size={10} />
+              {t('console.viewSource')}
             </a>
           )}
         </div>
