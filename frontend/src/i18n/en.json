@@ -718,7 +718,12 @@
     "similar": "Similar",
     "similarPublished": "similar to published",
     "similarQueued": "similar in queue",
-    "collectSourceHint": "Collect this source only (independent cooldown)"
+    "collectSourceHint": "Collect this source only (independent cooldown)",
+    "lowScoreOnly": "Low score only",
+    "lowScoreOnlyHint": "Show only items marked low AI score (possibly reusable)",
+    "lowScorePool": "Low-score pool",
+    "lowScorePoolHint": "Items marked low score — review & decide, or restore",
+    "lowScoreRestoreAll": "Restore all ({{n}})"
   },
   "canvas": {
     "tool": {

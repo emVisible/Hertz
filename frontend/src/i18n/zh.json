@@ -733,7 +733,12 @@
     "similar": "相似内容",
     "similarPublished": "与已发布相似",
     "similarQueued": "与队列内相似",
-    "collectSourceHint": "单独采集该源（独立冷却，失联后可重试）"
+    "collectSourceHint": "单独采集该源（独立冷却，失联后可重试）",
+    "lowScoreOnly": "仅看低分",
+    "lowScoreOnlyHint": "只显示 AI 评分低但可能可复用的条目",
+    "lowScorePool": "低分回收池",
+    "lowScorePoolHint": "低分标记的条目（可人工决定复用/恢复）",
+    "lowScoreRestoreAll": "全部恢复待审（{{n}}）"
   },
   "canvas": {
     "tool": {

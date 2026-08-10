@@ -67,7 +67,7 @@ interface PipelineViewProps {
   retryClass: (cls: string, n: number) => void
   backToPrep: (item: PipelineItem) => void
   backToCollect: (item: PipelineItem) => void
-  batchAction: (action: 'approve' | 'reject' | 'back_to_prep', ids: string[]) => void
+  batchAction: (action: 'approve' | 'reject' | 'back_to_prep' | 'requeue', ids: string[]) => void
   rescheduleExpired: () => Promise<void>
   setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
   produceOne: (item: PipelineItem) => Promise<void>
@@ -147,6 +147,8 @@ export function PipelineView(p: PipelineViewProps) {
   const [auditSort, setAuditSort] = useState<SortSpec>({ field: 'seq', dir: 'desc' })
   const [videoFirst, setVideoFirst] = useState(true)
   const [auditRandom, setAuditRandom] = useState(false)
+  // 低分复用池（v0.5 D）：仅看 is_lowscore 条目
+  const [lowScoreOnly, setLowScoreOnly] = useState(false)
   const [randomSeed, setRandomSeed] = useState(0)
   function toggleAuditRandom() {
     const next = !auditRandom
@@ -193,9 +195,10 @@ export function PipelineView(p: PipelineViewProps) {
       const rest = sorted.filter((i) => !i.video_path)
       sorted = [...withVideo, ...rest]
     }
-    return sorted
+    // 低分复用池（v0.5 D）：仅看 is_lowscore 时过滤
+    return lowScoreOnly ? sorted.filter((i) => i.is_lowscore) : sorted
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.stageQueued, auditSort, videoFirst, auditRandom, randomSeed])
+  }, [p.stageQueued, auditSort, videoFirst, auditRandom, randomSeed, lowScoreOnly])
   const pTab: PipelineTabId = PIPELINE_TABS.some((tb) => tb.id === p.tab)
     ? (p.tab as PipelineTabId)
     : 'inReview'
@@ -536,6 +539,19 @@ export function PipelineView(p: PipelineViewProps) {
                 <span className="flex items-center gap-1.5">
                   {/* 审核排序（v0.3.12）：要素 × 方向 + 独立开关 */}
                   <SortControl fields={AUDIT_SORT_FIELDS} sort={auditSort} onSort={setAuditSort} />
+                  {/* 仅看低分（v0.5 D 低分复用池）：is_lowscore 过滤 */}
+                  <button
+                    type="button"
+                    onClick={() => setLowScoreOnly((v) => !v)}
+                    title={t('console.lowScoreOnlyHint')}
+                    className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                      lowScoreOnly
+                        ? 'border-warning/50 bg-warning/15 font-medium text-warning'
+                        : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
+                    }`}
+                  >
+                    {t('console.lowScoreOnly')}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setVideoFirst((v) => !v)}
@@ -614,6 +630,46 @@ export function PipelineView(p: PipelineViewProps) {
         {/* 异常（独立 menu，v0.2.6）：失败分类看板 + 批量重试 + 恢复待审 */}
         {pTab === 'exceptions' && (
           <div className="p-4">
+            {/* 低分回收池（v0.5 D）：is_lowscore 条目批量恢复待审（可复用） */}
+            {(() => {
+              const low = [...p.stageQueued, ...p.stageRejected, ...p.stageFailed].filter((i) => i.is_lowscore)
+              if (low.length === 0) return null
+              return (
+                <SectionCard
+                  title={`${t('console.lowScorePool')} (${low.length})`}
+                  padded={false}
+                  className="mb-4"
+                >
+                  <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
+                    <p className="text-xs text-text-secondary">{t('console.lowScorePoolHint')}</p>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="ml-auto"
+                      onClick={() => void p.batchAction('requeue', low.map((i) => i.id))}
+                    >
+                      <Icon name="refresh" size={12} />
+                      {t('console.lowScoreRestoreAll', { n: low.length })}
+                    </Button>
+                  </div>
+                  <StageList
+                    items={low}
+                    emptyText={t('console.noExceptions')}
+                    renderRow={(item) => (
+                      <StageItemRow
+                        item={item}
+                        badge={<Badge tone="warning">low</Badge>}
+                        right={
+                          <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
+                            {t('console.restore')}
+                          </Button>
+                        }
+                      />
+                    )}
+                  />
+                </SectionCard>
+              )
+            })()}
             <SectionCard title={t('console.exceptions')} padded={false}>
               {p.stageError ? (
                 <QueryErrorState message={t('error.queryFailed', { detail: 'pipeline' })} onRetry={() => void p.refetchStage()} />

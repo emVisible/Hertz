@@ -295,7 +295,7 @@ export function usePipelineExecution() {
 
   /** 批量操作（v0.4 A2）：多选后一次处理——成功/失败计数 + 逐条错误。 */
   async function batchAction(
-    action: 'approve' | 'reject' | 'back_to_prep',
+    action: 'approve' | 'reject' | 'back_to_prep' | 'requeue',
     ids: string[],
   ) {
     if (ids.length === 0) return
