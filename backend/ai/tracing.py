@@ -66,6 +66,9 @@ async def list_calls(task_id: str | None = None, limit: int = 50) -> list[dict]:
                 "status": r.status,
                 "error": r.error,
                 "result_summary": r.result_summary,
+                # v0.5 E 成本估算：usage（无 usage 的 provider 为 None）
+                "prompt_tokens": r.prompt_tokens,
+                "completion_tokens": r.completion_tokens,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in rows

@@ -23,6 +23,7 @@ class OpenAICompatProvider:
         model: str = "deepseek-chat",
     ) -> None:
         self.model = model
+        self.last_usage: dict | None = None  # v0.5 E：流式 usage 探测（成本估算）
         self._client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
@@ -60,7 +61,15 @@ class OpenAICompatProvider:
                 if data == "[DONE]":
                     break
                 try:
-                    delta = json.loads(data)["choices"][0]["delta"].get("content")
+                    parsed = json.loads(data)
+                    # v0.5 E 成本估算：探测流式 usage（部分 OpenAI 兼容 API 携带）
+                    usage = parsed.get("usage")
+                    if isinstance(usage, dict):
+                        self.last_usage = {
+                            "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                            "completion_tokens": int(usage.get("completion_tokens") or 0),
+                        }
+                    delta = parsed["choices"][0]["delta"].get("content")
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
                 if delta:

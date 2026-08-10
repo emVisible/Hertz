@@ -189,6 +189,15 @@ class TaskRouter:
                 await self._record(
                     task_id=task_id, caller=caller, resolved=resolved,
                     operation=operation, status="ok", started_at=start,
+                    # v0.5 E 成本估算：usage 探测（无 usage 的 provider 记 None）
+                    prompt_tokens=(
+                        client.last_usage.get("prompt_tokens")
+                        if client.last_usage else None
+                    ),
+                    completion_tokens=(
+                        client.last_usage.get("completion_tokens")
+                        if client.last_usage else None
+                    ),
                 )
                 return text
             except Exception as exc:  # noqa: BLE001 — 记录后尝试下一个 key
@@ -204,7 +213,9 @@ class TaskRouter:
         raise last_error or RuntimeError(f"all API keys failed for {resolved.provider_key}")
 
     async def _record(self, *, task_id, caller, resolved, operation, status,
-                      started_at, error=None) -> None:
+                      started_at, error=None,
+                      prompt_tokens: int | None = None,
+                      completion_tokens: int | None = None) -> None:
         """写入 ai_calls（v2.3 追踪）。失败不阻塞调用（尽力而为）。"""
         try:
             from backend.ai.tracing import record_call
@@ -219,6 +230,8 @@ class TaskRouter:
                 duration_ms=int((time.perf_counter() - started_at) * 1000),
                 status=status,
                 error=error,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
             )
         except Exception:  # noqa: BLE001
             logger.debug("ai call record failed (non-fatal)")

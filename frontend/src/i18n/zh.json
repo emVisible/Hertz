@@ -191,7 +191,9 @@
     "subtitleAlignTop": "顶部",
     "subtitleEffectHint": "改动在下次制作（produce）时生效，历史成片不变。",
     "ttsPreview": "试听",
-    "ttsPreviewText": "这是一段语音试听。欢迎使用。"
+    "ttsPreviewText": "这是一段语音试听。欢迎使用。",
+    "prices": "模型单价",
+    "pricesHint": "每行 `模型: 输入价/输出价`（美元/百万 tokens），用于看板成本估算。如 deepseek-chat: 0.27/1.10"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -892,7 +894,11 @@
     "usage": "AI 用量（按模型耗时）",
     "usageEmpty": "暂无调用记录",
     "usageHint": "共 {{calls}} 次调用（最近 500 条）",
-    "trend": "近 30 天趋势（采集/入库/发布）"
+    "trend": "近 30 天趋势（采集/入库/发布）",
+    "cost": "成本估算（近 500 次调用）",
+    "costTotal": "合计估算",
+    "costEmpty": "未配置模型单价（设置 → AI → 模型单价）",
+    "costHint": "按调用 tokens × 单价估算；无 usage 数据的 provider 不计"
   },
   "onboarding": {
     "title": "欢迎使用 Hertz",

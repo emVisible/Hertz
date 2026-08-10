@@ -1600,3 +1600,58 @@ async def test_trends_endpoint(client) -> None:
     assert today["collected"] >= 15
     assert today["inserted"] >= 11
     assert isinstance(today["published"], int)
+
+
+# ---------- 成本估算（v0.5 E） ----------
+
+
+@pytest.mark.asyncio
+async def test_usage_extraction_from_stream() -> None:
+    """流式响应携带 usage → last_usage 记录（成本估算数据源）。"""
+    import httpx
+
+    from backend.ai.providers.openai_compat import OpenAICompatProvider
+
+    class FakeTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            body = (
+                'data: {"choices":[{"delta":{"content":"你"}}]}\n\n'
+                'data: {"choices":[{"delta":{"content":"好"}}]}\n\n'
+                'data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":12,"completion_tokens":5}}\n\n'
+                'data: [DONE]\n\n'
+            )
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/event-stream"},
+                content=body.encode(),
+            )
+
+    provider = OpenAICompatProvider(api_key="k", base_url="https://x/v1", model="m")
+    provider._client = httpx.AsyncClient(transport=FakeTransport())
+    chunks = [c async for c in provider.chat_stream([{"role": "user", "content": "hi"}])]
+    assert "".join(chunks) == "你好"
+    assert provider.last_usage == {"prompt_tokens": 12, "completion_tokens": 5}
+    await provider._client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_usage_absent_when_no_usage_chunk() -> None:
+    """无 usage 的流（不兼容 provider）→ last_usage None，不破坏主流程。"""
+    import httpx
+
+    from backend.ai.providers.openai_compat import OpenAICompatProvider
+
+    class FakeTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/event-stream"},
+                content='data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n'.encode(),
+            )
+
+    provider = OpenAICompatProvider(api_key="k", base_url="https://x/v1", model="m")
+    provider._client = httpx.AsyncClient(transport=FakeTransport())
+    chunks = [c async for c in provider.chat_stream([{"role": "user", "content": "hi"}])]
+    assert "".join(chunks) == "ok"
+    assert provider.last_usage is None
+    await provider._client.aclose()

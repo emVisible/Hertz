@@ -176,7 +176,9 @@
     "subtitleAlignTop": "Top",
     "subtitleEffectHint": "Changes apply on the next produce; existing videos stay unchanged.",
     "ttsPreview": "Preview",
-    "ttsPreviewText": "This is a voice preview. Welcome."
+    "ttsPreviewText": "This is a voice preview. Welcome.",
+    "prices": "Model prices",
+    "pricesHint": "One per line: `model: input/output` (USD per million tokens), used for dashboard cost estimates. e.g. deepseek-chat: 0.27/1.10"
   },
   "execution": {
     "modeStudio": "Studio",
@@ -892,7 +894,11 @@
     "usage": "AI usage (by model, ms)",
     "usageEmpty": "No calls yet",
     "usageHint": "{{calls}} calls total (latest 500)",
-    "trend": "Last 30 days (collect/insert/publish)"
+    "trend": "Last 30 days (collect/insert/publish)",
+    "cost": "Cost estimate (latest 500 calls)",
+    "costTotal": "Estimated total",
+    "costEmpty": "No model prices configured (Settings → AI → Model prices)",
+    "costHint": "tokens × price; providers without usage data are skipped"
   },
   "onboarding": {
     "title": "Welcome to Hertz",

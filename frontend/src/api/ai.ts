@@ -49,6 +49,9 @@ export interface AITraceCall {
   status: string
   error: string | null
   result_summary: string | null
+  /** v0.5 E 成本估算：usage（无 usage 的 provider 为 null） */
+  prompt_tokens?: number | null
+  completion_tokens?: number | null
   created_at: string | null
 }
 

@@ -32,6 +32,8 @@ RUNTIME_ALLOWLIST = {
     "pipeline_subtitle_outline",
     "pipeline_subtitle_bold",
     "pipeline_subtitle_alignment",
+    # 模型单价（v0.5 E 成本估算）：model_key → {prompt, completion}（美元/百万 tokens）
+    "ai_model_prices",
     # 角色分配经 PUT /api/ai/roles 写入（唯一写入口，见 routers/ai.py）
     # Single-user desktop: API keys live in the local runtime.yaml.
     # They are never returned by GET — only set via PATCH.

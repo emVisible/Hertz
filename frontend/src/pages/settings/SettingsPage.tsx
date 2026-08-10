@@ -31,6 +31,7 @@ interface ConfigData {
   pipeline_reddit_client_id?: string
   pipeline_reddit_client_id_set?: boolean
   pipeline_reddit_client_secret_set?: boolean
+  ai_model_prices?: Record<string, { prompt?: number; completion?: number }>
   llm_api_key_masked?: string | null
   llm_api_key_set?: boolean
 }
@@ -134,6 +135,61 @@ function PublishStatusCard({ onChanged }: { onChanged: () => void }) {
           {t('settings.checkCookie')}
         </Button>
       </div>
+    </div>
+  )
+}
+
+/** 模型单价配置（v0.5 E 成本估算）：每行 `model_key: prompt价/completion价`（美元/百万 tokens）。 */
+function ModelPrices() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data: cfg, refetch } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => api.get<ConfigData>('/api/config'),
+  })
+  const [raw, setRaw] = useState('')
+
+  useEffect(() => {
+    if (!cfg) return
+    const prices = (cfg.ai_model_prices ?? {}) as Record<string, { prompt?: number; completion?: number }>
+    setRaw(
+      Object.entries(prices)
+        .map(([k, v]) => `${k}: ${v?.prompt ?? 0}/${v?.completion ?? 0}`)
+        .join('\n'),
+    )
+  }, [cfg])
+
+  async function save() {
+    const prices: Record<string, { prompt: number; completion: number }> = {}
+    for (const line of raw.split('\n')) {
+      const m = line.trim().match(/^([^\s:]+):\s*([\d.]+)\s*\/\s*([\d.]+)$/)
+      if (!m) continue
+      prices[m[1]] = { prompt: Number(m[2]), completion: Number(m[3]) }
+    }
+    try {
+      await api.patch('/api/config', { overrides: { ai_model_prices: prices } })
+      await refetch()
+      toast(t('settings.saved'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs text-text-secondary">{t('settings.pricesHint')}</p>
+      <textarea
+        value={raw}
+        onChange={(e) => setRaw(e.target.value)}
+        spellCheck={false}
+        rows={4}
+        placeholder={'deepseek-chat: 0.27/1.10'}
+        className="w-full resize-y border border-border bg-surface-2/60 px-3 py-2 font-mono text-xs leading-relaxed text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
+      />
+      <Button size="sm" className="self-end" onClick={() => void save()}>
+        <Icon name="check" size={13} />
+        {t('common.save')}
+      </Button>
     </div>
   )
 }
@@ -332,6 +388,14 @@ export function SettingsPage() {
                     <h2 className="text-sm font-semibold text-text-primary">{t('settings.models')}</h2>
                   </div>
                   <RolesManager />
+                </section>
+
+                <section className={section}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Icon name="config" size={15} />
+                    <h2 className="text-sm font-semibold text-text-primary">{t('settings.prices')}</h2>
+                  </div>
+                  <ModelPrices />
                 </section>
               </>
             )}

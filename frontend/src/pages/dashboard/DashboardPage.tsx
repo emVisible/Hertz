@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
-import { pipelineApi } from '../../api'
+import { pipelineApi, API_BASE } from '../../api'
 import { aiRegistryApi } from '../../api/ai'
 import type { PipelineItem } from '../../api/pipeline'
 import { Card } from '../../components/ui'
@@ -98,6 +98,14 @@ export function DashboardPage() {
     queryKey: ['ai-trace-summary'],
     queryFn: () => aiRegistryApi.trace(undefined, 500),
   })
+  // 模型单价（v0.5 E 成本估算）
+  const { data: cfg } = useQuery({
+    queryKey: ['config'],
+    queryFn: () =>
+      fetch(`${API_BASE}/api/config`).then((r) => r.json()) as Promise<{
+        ai_model_prices?: Record<string, { prompt?: number; completion?: number }>
+      }>,
+  })
 
   const maxCount = useMemo(
     () => Math.max(...STAGES.map((s) => counts[s.key] ?? 0), 1),
@@ -135,6 +143,32 @@ export function DashboardPage() {
     return [...map.entries()].sort((a, b) => b[1].ms - a[1].ms).slice(0, 8)
   }, [trace])
   const maxMs = Math.max(...byModel.map(([, v]) => v.ms), 1)
+
+  // 成本估算（v0.5 E）：tokens 聚合 × 单价（美元/百万）
+  const cost = useMemo(() => {
+    const prices = cfg?.ai_model_prices ?? {}
+    const perModel = new Map<string, { prompt: number; completion: number; calls: number }>()
+    for (const call of trace) {
+      const key = call.model_key || 'unknown'
+      const entry = perModel.get(key) ?? { prompt: 0, completion: 0, calls: 0 }
+      entry.prompt += call.prompt_tokens ?? 0
+      entry.completion += call.completion_tokens ?? 0
+      entry.calls += 1
+      perModel.set(key, entry)
+    }
+    let total = 0
+    const rows: Array<{ model: string; cost: number; tokens: number }> = []
+    for (const [model, v] of perModel) {
+      const price = prices[model]
+      if (!price) continue
+      const costUsd =
+        (v.prompt / 1_000_000) * (price.prompt ?? 0) +
+        (v.completion / 1_000_000) * (price.completion ?? 0)
+      total += costUsd
+      rows.push({ model, cost: costUsd, tokens: v.prompt + v.completion })
+    }
+    return { total, rows }
+  }, [trace, cfg])
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-6">
@@ -217,6 +251,32 @@ export function DashboardPage() {
                 <p className="pt-1 text-[10px] text-text-disabled">
                   {t('dashboard.usageHint', { calls: trace.length })}
                 </p>
+              </div>
+            )}
+          </Card>
+
+          {/* 成本估算（v0.5 E） */}
+          <Card className="p-4">
+            <h2 className="mb-3 text-sm font-semibold text-text-primary">{t('dashboard.cost')}</h2>
+            {cost.rows.length === 0 ? (
+              <p className="text-xs text-text-disabled">{t('dashboard.costEmpty')}</p>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-baseline justify-between border-b border-border/60 pb-1.5">
+                  <span className="text-xs text-text-secondary">{t('dashboard.costTotal')}</span>
+                  <span className="font-mono text-sm text-text-primary">
+                    ${cost.total.toFixed(4)}
+                  </span>
+                </div>
+                {cost.rows.map((r) => (
+                  <div key={r.model} className="flex items-center justify-between text-xs">
+                    <span className="min-w-0 truncate font-mono text-text-secondary">{r.model}</span>
+                    <span className="shrink-0 text-text-disabled">
+                      {r.tokens.toLocaleString()} tok · ${r.cost.toFixed(4)}
+                    </span>
+                  </div>
+                ))}
+                <p className="pt-1 text-[10px] text-text-disabled">{t('dashboard.costHint')}</p>
               </div>
             )}
           </Card>

@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     #   ai_roles = {"main": "deepseek:deepseek-chat", "fast": "ollama:qwen2.5:7b"}
     # 未配置角色时 TaskRouter 回退：fast/embedding/image/tts → main → 首个可用 chat
     ai_roles: dict[str, str] = {}
+    # 模型单价（v0.5 E 成本估算）：model_key → {prompt, completion}（美元/百万 tokens）
+    ai_model_prices: dict[str, dict[str, float]] = {}
 
     @property
     def runtime_config_path(self) -> Path:
