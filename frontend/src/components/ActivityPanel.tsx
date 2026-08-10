@@ -11,9 +11,9 @@ import type { LogLine } from './execution'
 type ActivityTab = 'events' | 'jobs' | 'system'
 
 /**
- * 全局活动浮窗（v0.3.4，浏览器下载栏语义）：右下角常驻按钮，
- * 所有页面可见——实时事件 / 最近任务 / 系统日志 三 tab。
- * 数据：事件走 execution store（AppShell 常驻共享）；任务/系统日志轮询。
+ * 全局活动横条（v0.3.5，浏览器下载栏语义）：AppShell 底部常驻——
+ * 所有页面可见，展开显示 实时事件 / 最近任务 / 系统日志 三 tab。
+ * 收起时仅一条窄栏（运行中高亮脉冲）。
  */
 export function ActivityPanel() {
   const { t } = useTranslation()
@@ -33,24 +33,21 @@ export function ActivityPanel() {
     refetchInterval: open ? 5000 : false,
   })
 
-  // Esc 关闭
+  // Esc / 外部点击收起
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open])
-
-  // 点击外部关闭
-  useEffect(() => {
-    if (!open) return
     const onDown = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false)
     }
+    window.addEventListener('keydown', onKey)
     window.addEventListener('mousedown', onDown)
-    return () => window.removeEventListener('mousedown', onDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onDown)
+    }
   }, [open])
 
   const tabs: Array<{ id: ActivityTab; label: string }> = [
@@ -60,16 +57,35 @@ export function ActivityPanel() {
   ]
 
   return (
-    <div ref={panelRef} className="fixed bottom-4 right-4 z-40">
+    <div ref={panelRef} className="fixed bottom-0 left-0 right-0 z-40">
+      {/* 收起态窄条（浏览器下载栏收起语义）：点击展开 */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={t('console.act.title')}
+        aria-label={t('console.act.title')}
+        className={`flex h-7 w-full items-center gap-2 border-t border-border bg-surface-1/95 px-4 text-[11px] text-text-secondary backdrop-blur transition-colors hover:text-text-primary ${
+          open ? 'border-b' : ''
+        }`}
+      >
+        <Icon name="console" size={12} className={logs.length > 0 ? 'animate-pulse text-primary' : 'text-text-disabled'} />
+        <span className="truncate">
+          {t('console.act.title')}
+          {logs.length > 0 && !open && <span className="ml-2 text-text-disabled">· {logs.length} 事件</span>}
+        </span>
+        <span className="ml-auto shrink-0">{t('console.act.toggle')}</span>
+      </button>
+
       {open && (
-        <div className="hz-fade-in mb-2 w-96 overflow-hidden rounded-lg border border-border bg-surface-1 shadow-lg">
-          <div className="flex items-center gap-1 border-b border-border px-2 pt-1.5">
+        <div className="hz-fade-in border-t border-border bg-surface-1/95 shadow-lg backdrop-blur">
+          {/* tab 栏 */}
+          <div className="flex items-center gap-1 px-2 pt-1.5">
             {tabs.map((tb) => (
               <button
                 key={tb.id}
                 type="button"
                 onClick={() => setTab(tb.id)}
-                className={`flex-1 border-b-2 px-2 py-1.5 text-xs font-medium transition-colors ${
+                className={`flex-1 border-b-2 px-2 py-1 text-xs font-medium transition-colors ${
                   tab === tb.id
                     ? 'border-primary text-text-primary'
                     : 'border-transparent text-text-secondary hover:text-text-primary'
@@ -80,7 +96,8 @@ export function ActivityPanel() {
             ))}
           </div>
 
-          <div className="h-64 overflow-y-auto p-2">
+          {/* 内容区（固定高度，内部滚动） */}
+          <div className="h-48 overflow-y-auto p-2">
             {tab === 'events' && (
               <div className="flex flex-col gap-1 font-mono text-[10px] leading-relaxed">
                 {logs.length === 0 && <p className="p-2 text-text-disabled">{t('console.noLogs')}</p>}
@@ -116,19 +133,6 @@ export function ActivityPanel() {
           </div>
         </div>
       )}
-
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={t('console.act.title')}
-        aria-label={t('console.act.title')}
-        className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface-1 shadow-md transition-colors hover:border-primary hover:text-primary"
-      >
-        <Icon name="console" size={18} className="text-text-secondary" />
-        {logs.length > 0 && (
-          <span className="absolute right-0 top-0 h-2.5 w-2.5 animate-pulse rounded-full bg-primary" />
-        )}
-      </button>
     </div>
   )
 }

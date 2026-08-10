@@ -111,6 +111,10 @@ export function ExecutionPage() {
           setProduceOptions={pipeline.setProduceOptions}
           produceOne={pipeline.produceOne}
           produceBatch={pipeline.produceBatch}
+          collectAndDownload={pipeline.collectAndDownload}
+          scoreOne={pipeline.scoreOne}
+          scoreBatch={pipeline.scoreBatch}
+          runStep={pipeline.runStep}
           modelSwitch={pipelineModelSwitch}
         />
       )}

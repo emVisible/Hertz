@@ -110,6 +110,19 @@ async def retry_item(item_id: uuid.UUID):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/items/{item_id}/score")
+async def score_item(item_id: uuid.UUID):
+    """单条评分（v0.3.5，预处理手动评分按钮）：仅已下载条目。"""
+    try:
+        return await _pipe().score_one(item_id)
+    except ItemNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidItemStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @router.post("/items/{item_id}/produce")
 async def produce_item(item_id: uuid.UUID):
     """单条制作（v0.3.4，预处理「制作」按钮）：按生产方式立即执行 produce。"""

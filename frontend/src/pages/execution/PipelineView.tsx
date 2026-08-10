@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { api, type PipelineItem } from '../../api'
+import type { PipelineItem } from '../../api'
 import {
   Badge,
   Button,
@@ -12,8 +12,6 @@ import {
 } from '../../components/ui'
 import {
   AuditCard,
-  CommandDeck,
-  HistoryList,
   PIPELINE_ITEM_TONE,
   PipelineStage,
   PreReviewCard,
@@ -21,18 +19,11 @@ import {
   SectionCard,
   StageItemRow,
   StageList,
-  Terminal,
 } from '../../components/execution'
 import { CalendarView } from './CalendarView'
 import { ProduceBatchModal } from '../../components/execution/ProduceBatchModal'
 import { usePipelineExecution } from '../../hooks/usePipelineExecution'
 import { useModelSwitch } from '../../hooks/useModelSwitch'
-
-const JOB_TONE: Record<string, 'neutral' | 'success' | 'error'> = {
-  completed: 'success',
-  failed: 'error',
-  running: 'neutral',
-}
 
 // ================= Pipeline 域 =================
 
@@ -74,6 +65,10 @@ interface PipelineViewProps {
   setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
   produceOne: (item: PipelineItem) => Promise<void>
   produceBatch: () => Promise<void>
+  collectAndDownload: () => Promise<void>
+  scoreOne: (item: PipelineItem) => Promise<void>
+  scoreBatch: () => Promise<void>
+  runStep: (stepName: string) => Promise<void>
   modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
@@ -108,15 +103,41 @@ const PIPELINE_TABS = [
   countKeys?: string[]
 }>
 
+/** 预处理排序（v0.3.5）：下载时间（seq 入库序）/ 评分 / 生产方式 */
+type PreSort = 'seq' | 'score' | 'produce'
+const PRE_SORTS: Array<{ id: PreSort }> = [
+  { id: 'seq' },
+  { id: 'score' },
+  { id: 'produce' },
+]
+
 export function PipelineView(p: PipelineViewProps) {
   const { t } = useTranslation()
   // 发布 tab 视图：列表（默认）｜内容日历（v0.2.3）
   const [calendarView, setCalendarView] = useState(false)
-  // 系统日志（v0.3.0）：/api/logs/buffer 轮询，可折叠
-  const [sysLogsOpen, setSysLogsOpen] = useState(false)
-  const [sysLogs, setSysLogs] = useState<string[]>([])
   // 批量生产方式（v0.3.3，预处理）
   const [produceBatchOpen, setProduceBatchOpen] = useState(false)
+  // 预处理排序（v0.3.5）
+  const [preSort, setPreSort] = useState<PreSort>('seq')
+  const sortedPreReview = useMemo(() => {
+    const list = [...p.stageDownloaded, ...p.stageScored]
+    const seqOf = (item: PipelineItem) => item.seq ?? (item.created_at ? Date.parse(item.created_at) : 0)
+    switch (preSort) {
+      case 'score':
+        return list.sort((a, b) => (b.score_total ?? -1) - (a.score_total ?? -1))
+      case 'produce': {
+        // 生产方式组合排序：直发优先展示（无需加工最快），其余按模块数
+        const key = (i: PipelineItem): number => {
+          const o = i.produce_options ?? {}
+          if ((o as { passthrough?: boolean }).passthrough) return 0
+          return Object.values(o).filter(Boolean).length
+        }
+        return list.sort((a, b) => key(a) - key(b) || -seqOf(a) + seqOf(b))
+      }
+      default:
+        return list.sort((a, b) => seqOf(a) - seqOf(b))
+    }
+  }, [p.stageDownloaded, p.stageScored, preSort])
   // 审核排序（v0.2.6）：默认「有成片优先」（可预览的在前面）；随机=每次点击重新洗牌
   const [auditSort, setAuditSort] = useState<AuditSort>('videoFirst')
   const [randomSeed, setRandomSeed] = useState(0)
@@ -180,20 +201,6 @@ export function PipelineView(p: PipelineViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pTab])
 
-  // 系统日志（v0.3.0）：/api/logs/buffer 轮询，可折叠（pTab 声明后）
-  useEffect(() => {
-    if (pTab !== 'run' || !sysLogsOpen) return
-    const load = () => {
-      void api
-        .get<{ lines: string[] }>('/api/logs/buffer?limit=200')
-        .then((r) => setSysLogs(r.lines))
-        .catch(() => {})
-    }
-    load()
-    const timer = setInterval(load, 5000)
-    return () => clearInterval(timer)
-  }, [pTab, sysLogsOpen])
-
   const tabItems = PIPELINE_TABS.map((tb) => ({
     id: tb.id,
     label: t(tb.labelKey),
@@ -215,138 +222,103 @@ export function PipelineView(p: PipelineViewProps) {
       <div key={pTab} className="hz-fade-in min-h-0 flex-1 overflow-y-auto">
         {pTab === 'run' && (
           <div className="flex min-h-full flex-col gap-4 p-4">
-            <CommandDeck
-              title={t('console.stageCollect')}
-              icon="console"
-              running={p.running}
-              onRun={p.run}
-              onStop={p.stop}
-              runDisabled={!p.step}
-              controls={
-                <div className="flex flex-wrap items-end gap-3">
-                  {/* 半自动化（v0.3.4）：采集 menu 只做 collect + download（下载后自动评分） */}
-                  <Select
-                    label={t('console.step')}
-                    value={p.step}
-                    onChange={(e) => p.setStep(e.target.value)}
-                    options={[
-                      { value: 'collect', label: t('console.stageCollect') },
-                      { value: 'download', label: t('console.stageDownload') },
-                    ]}
-                    className="w-44"
-                  />
-                  <Select
-                    label={t('console.limit')}
-                    value={String(p.limit)}
-                    onChange={(e) => p.setLimit(Number(e.target.value))}
-                    options={[5, 10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))}
-                    className="w-28"
-                  />
-                  {/* 流水线运行时默认 AI（v0.2.0）：绑定评分角色 fast */}
-                  <Select
-                    label={t('console.defaultAi')}
-                    value={p.modelSwitch.current}
-                    onChange={(e) => void p.modelSwitch.switchModel(e.target.value)}
-                    options={[
-                      { value: '', label: t('console.aiFollowDefault') },
-                      ...p.modelSwitch.chatModels,
-                    ]}
-                    className="w-64"
-                  />
-                  {p.running && (
-                    <p className="pb-1 text-xs text-text-secondary">{p.statusJob}</p>
-                  )}
-                </div>
-              }
-            />
-
-            {/* 日志/采集源/任务：与 Studio 一致——flex 布局，Terminal 随容器伸展内部滚动 */}
-            <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-3">
-              <Terminal
-                title={t('console.logs')}
-                lines={p.logs}
-                streaming={p.running}
-                kindClass={(kind) =>
-                  kind === 'done' ? 'font-semibold text-error' : kind === 'item' ? 'text-text-primary' : 'text-text-secondary'
-                }
-              />
-              <div className="flex min-h-0 flex-col gap-4">
-                {/* 供给告警（参考原项目漏斗水位）：源头出问题时一眼可见 */}
-                {p.supplyWarnings.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 border border-warning/30 bg-warning/10 px-2.5 py-1.5">
-                    {p.supplyWarnings.map((w) => (
-                      <span key={w} className="text-[11px] text-warning">{t(`console.supply.${w}`)}</span>
-                    ))}
-                  </div>
-                )}
-                <SectionCard title={t('console.sources')} padded={false} className="shrink-0">
-                  <ul className="max-h-40 space-y-1 overflow-y-auto p-3 text-xs">
-                    {p.sources.length === 0 && <p className="text-text-disabled">{t('console.noSources')}</p>}
-                    {p.sources.map((s) => (
-                      <li key={`${s.source}:${s.channel}`} className="flex items-center justify-between gap-2">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span
-                            title={t(`console.sourceHealth.${s.health}`)}
-                            className={`h-2 w-2 shrink-0 rounded-full ${
-                              s.health === 'healthy'
-                                ? 'bg-emerald-400'
-                                : s.health === 'degraded'
-                                  ? 'bg-warning'
-                                  : 'bg-error'
-                            }`}
-                          />
-                          <span className="truncate">{s.source}:{s.channel}</span>
-                        </span>
-                        <span
-                          className="shrink-0 text-text-secondary"
-                          title={s.last_error ?? undefined}
-                        >
-                          ok {s.ok_count} / fail {s.fail_count}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </SectionCard>
-                <HistoryList
-                  title={t('console.jobs')}
-                  items={p.jobs.map((job) => ({
-                    id: job.id,
-                    title: job.job,
-                    tone: JOB_TONE[job.status] ?? 'neutral',
-                    statusLabel: job.status,
-                  }))}
-                  emptyText={t('console.noJobs')}
-                  onSelect={() => undefined}
-                />
-                {/* 系统日志（v0.3.0，参考原项目 logbuf）：后端/scheduler 日志尾部，
-                    可折叠 + 5s 轮询——排查「立即完成/无明细」的底层信息 */}
-                <SectionCard
-                  title={
-                    <button
-                      type="button"
-                      onClick={() => setSysLogsOpen((v) => !v)}
-                      aria-expanded={sysLogsOpen}
-                      className="flex w-full items-center justify-between text-left text-sm font-semibold text-text-primary transition-colors hover:text-primary"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Icon name="console" size={13} className="text-text-secondary" />
-                        {t('console.sysLogs')}
-                      </span>
-                      <Icon name="chevron-down" size={13} className={`shrink-0 text-text-disabled transition-transform ${sysLogsOpen ? '' : '-rotate-90'}`} />
-                    </button>
-                  }
-                  padded={false}
+            {/* 操作区（v0.3.5）：三个显式大按钮——采集/下载/一键，无 Select */}
+            <SectionCard title={t('console.stageCollect')} padded={false}>
+              <div className="flex flex-wrap items-end gap-3 p-3">
+                <Button
+                  size="md"
+                  onClick={() => void p.runStep('collect')}
+                  disabled={p.running}
+                  title={t('console.collectHint')}
                 >
-                  {sysLogsOpen && (
-                    <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-all p-2.5 font-mono text-[10px] leading-relaxed text-text-secondary">
-                      {sysLogs.length === 0
-                        ? t('console.sysLogsEmpty')
-                        : sysLogs.join('\n')}
-                    </pre>
-                  )}
-                </SectionCard>
+                  <Icon name="downloads" size={14} />
+                  {t('console.stageCollect')}
+                </Button>
+                <Button
+                  size="md"
+                  variant="secondary"
+                  onClick={() => void p.runStep('download')}
+                  disabled={p.running}
+                  title={t('console.downloadHint')}
+                >
+                  <Icon name="downloads" size={14} />
+                  {t('console.stageDownload')}
+                  <span className="font-mono text-[10px] text-text-disabled">{p.counts.discovered ?? 0}</span>
+                </Button>
+                <Button
+                  size="md"
+                  variant="ghost"
+                  onClick={() => void p.collectAndDownload()}
+                  disabled={p.running}
+                  title={t('console.collectAllHint')}
+                >
+                  <Icon name="play" size={14} />
+                  {t('console.collectAll')}
+                </Button>
+                <Select
+                  label={t('console.limit')}
+                  value={String(p.limit)}
+                  onChange={(e) => p.setLimit(Number(e.target.value))}
+                  options={[5, 10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))}
+                  className="w-28"
+                />
+                {p.running && (
+                  <p className="pb-1 text-xs text-text-secondary">{p.statusJob}</p>
+                )}
               </div>
-            </div>
+            </SectionCard>
+
+            {/* 待下载队列（v0.3.5）：discovered 条目——下载前的供给可见 */}
+            <SectionCard
+              title={`${t('console.pendingDownloads')} (${p.counts.discovered ?? 0})`}
+              padded={false}
+              className="shrink-0"
+            >
+              {p.stageDiscovered.length === 0 ? (
+                <p className="p-3 text-sm text-text-disabled">{t('console.noPendingDownloads')}</p>
+              ) : (
+                <ul className="max-h-56 space-y-1 overflow-y-auto p-2">
+                  {p.stageDiscovered.map((item) => (
+                    <li key={item.id} className="flex items-center gap-2 px-1.5 py-1 text-xs">
+                      <span className="min-w-0 flex-1 truncate text-text-secondary" title={item.title}>
+                        {item.title}
+                      </span>
+                      <span className="shrink-0 font-mono text-[10px] text-text-disabled">r{item.reddit_score}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SectionCard>
+
+            {/* 采集源状态（参考原项目漏斗水位） */}
+            <SectionCard title={t('console.sources')} padded={false} className="shrink-0">
+              <ul className="max-h-40 space-y-1 overflow-y-auto p-3 text-xs">
+                {p.sources.length === 0 && <p className="text-text-disabled">{t('console.noSources')}</p>}
+                {p.sources.map((s) => (
+                  <li key={`${s.source}:${s.channel}`} className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span
+                        title={t(`console.sourceHealth.${s.health}`)}
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          s.health === 'healthy'
+                            ? 'bg-emerald-400'
+                            : s.health === 'degraded'
+                              ? 'bg-warning'
+                              : 'bg-error'
+                        }`}
+                      />
+                      <span className="truncate">{s.source}:{s.channel}</span>
+                    </span>
+                    <span
+                      className="shrink-0 text-text-secondary"
+                      title={s.last_error ?? undefined}
+                    >
+                      ok {s.ok_count} / fail {s.fail_count}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
           </div>
         )}
 
@@ -356,6 +328,22 @@ export function PipelineView(p: PipelineViewProps) {
               title={t('console.stagePreReview')}
               right={
                 <div className="flex items-center gap-1.5">
+                  {/* 预处理排序（v0.3.5）：下载时间/评分/生产方式 */}
+                  <Select
+                    aria-label={t('console.preSort')}
+                    value={preSort}
+                    onChange={(e) => setPreSort(e.target.value as PreSort)}
+                    options={PRE_SORTS.map((s) => ({ value: s.id, label: t(`console.preSort.${s.id}`) }))}
+                    className="w-32"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => void p.scoreBatch()}
+                    title={t('console.scoreBatchHint')}
+                  >
+                    <Icon name="whisper" size={12} />
+                    {t('console.scoreBatch')}
+                  </Button>
                   <Button
                     size="sm"
                     onClick={() => void p.produceBatch()}
@@ -376,20 +364,17 @@ export function PipelineView(p: PipelineViewProps) {
                 </div>
               }
             >
-              {/* 审核前混合列表：单条数据聚合生产方式/下载/评分/制作信息（v0.3.3） */}
+              {/* v0.3.5：预处理只含已下载/已评分条目（discovered 留在采集 menu 待下载队列） */}
               <StageList
-                items={[
-                  ...p.stageDiscovered,
-                  ...p.stageDownloaded,
-                  ...p.stageScored,
-                ].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))}
+                items={sortedPreReview}
                 emptyText={t('console.emptyPreReview')}
-                total={(p.counts.discovered ?? 0) + (p.counts.downloaded ?? 0) + (p.counts.scored ?? 0)}
+                total={(p.counts.downloaded ?? 0) + (p.counts.scored ?? 0)}
                 renderRow={(item) => (
                   <PreReviewCard
                     key={item.id}
                     item={item}
                     onSaveOptions={(i, options) => void p.setProduceOptions([i], options)}
+                    onScore={(i) => void p.scoreOne(i)}
                     onProduce={(i) => void p.produceOne(i)}
                     onReject={(i) => void p.act(i, 'reject')}
                     onUploadCover={(i, file) => void p.uploadCover(i, file)}
@@ -400,11 +385,7 @@ export function PipelineView(p: PipelineViewProps) {
             <ProduceBatchModal
               open={produceBatchOpen}
               onClose={() => setProduceBatchOpen(false)}
-              items={[
-                ...p.stageDiscovered,
-                ...p.stageDownloaded,
-                ...p.stageScored,
-              ]}
+              items={[...p.stageDownloaded, ...p.stageScored]}
               onApply={(items, options) => void p.setProduceOptions(items, options)}
             />
           </div>

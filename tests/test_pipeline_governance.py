@@ -1040,3 +1040,23 @@ async def test_reject_discovered_item(client) -> None:
     resp = await client.post(f"/api/pipeline/items/{item_id}/reject")
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_score_one_endpoint(client) -> None:
+    """预处理手动评分（v0.3.5）：仅已下载条目；未下载 409。"""
+    async with session_factory() as session:
+        not_dl = Item(status="discovered", source="reddit", source_id="sc-1", title="未下载")
+        dl = Item(status="downloaded", source="reddit", source_id="sc-2",
+                  title="已下载", reddit_score=100, upvote_ratio=0.9)
+        session.add_all([not_dl, dl])
+        await session.commit()
+        not_id, dl_id = not_dl.id, dl.id
+
+    # 未下载 → 409
+    resp = await client.post(f"/api/pipeline/items/{not_id}/score")
+    assert resp.status_code == 409
+
+    # 已下载 → 走评分（fake_ai 无 LLM → 502 或 LLM provider 错误）
+    resp = await client.post(f"/api/pipeline/items/{dl_id}/score")
+    assert resp.status_code in (200, 502)  # 无 LLM 时评分失败但状态流正确

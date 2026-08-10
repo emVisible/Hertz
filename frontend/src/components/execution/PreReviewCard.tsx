@@ -12,12 +12,14 @@ import { normalizeOptions, ProduceOptionsPicker } from './ProduceOptionsPicker'
 export function PreReviewCard({
   item,
   onSaveOptions,
+  onScore,
   onProduce,
   onReject,
   onUploadCover,
 }: {
   item: PipelineItem
   onSaveOptions: (item: PipelineItem, options: Partial<ProduceOptions>) => void
+  onScore: (item: PipelineItem) => void
   onProduce: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
   onUploadCover: (item: PipelineItem, file: File) => void
@@ -116,12 +118,23 @@ export function PreReviewCard({
           />
         </div>
 
-        {/* hover 操作：制作（单条）+ 拒绝（v0.3.4） */}
+        {/* hover 操作：评分（未评分且已下载时显示）+ 制作 + 拒绝（v0.3.5） */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
           <Button size="sm" variant="danger" onClick={() => onReject(item)}>
             <Icon name="close" size={12} />
             {t('console.reject')}
           </Button>
+          {item.score_total == null && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onScore(item)}
+              title={t('console.scoreHint')}
+            >
+              <Icon name="whisper" size={12} />
+              {t('console.score')}
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={() => onProduce(item)}

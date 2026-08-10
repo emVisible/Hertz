@@ -165,19 +165,45 @@ export function usePipelineExecution() {
     if (!step || runningRef.current) return
     runningRef.current = true
     try {
-      if (step === 'download') {
-        // 半自动链路（v0.3.4）：下载完成后自动紧跟评分（预处理即有 AI 总分）
-        await pipelineApi.run('download', limit)
-        await pipelineApi.run('score', limit)
-      } else {
-        await pipelineApi.run(step, limit)
-      }
+      // v0.3.5：单步执行（评分手动触发，不再自动花 API）
+      await pipelineApi.run(step, limit)
       refresh()
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     } finally {
       runningRef.current = false
     }
+  }
+
+  /** 一键采集+下载（v0.3.5，快捷链）。 */
+  async function collectAndDownload() {
+    if (runningRef.current) return
+    runningRef.current = true
+    try {
+      await pipelineApi.run('collect', limit)
+      await pipelineApi.run('download', limit)
+      refresh()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    } finally {
+      runningRef.current = false
+    }
+  }
+
+  /** 单条评分（v0.3.5，预处理手动评分按钮）。 */
+  async function scoreOne(item: PipelineItem) {
+    try {
+      await pipelineApi.score(item.id)
+      refresh()
+      toast(t('console.scored'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 批量评分（v0.3.5，预处理批量操作条）。 */
+  async function scoreBatch() {
+    await runStepOnly('score')
   }
 
   /** 单条制作（v0.3.4，预处理「制作」按钮）。 */
@@ -207,6 +233,11 @@ export function usePipelineExecution() {
     } finally {
       runningRef.current = false
     }
+  }
+
+  /** 采集/下载单步执行（v0.3.5，采集 menu 大按钮）。 */
+  async function runStep(stepName: string) {
+    await runStepOnly(stepName)
   }
 
   async function stop() {
@@ -357,6 +388,10 @@ export function usePipelineExecution() {
     setProduceOptions,
     produceOne,
     produceBatch,
+    collectAndDownload,
+    scoreOne,
+    scoreBatch,
+    runStep,
     refresh,
   }
 }

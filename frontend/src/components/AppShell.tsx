@@ -99,7 +99,7 @@ export function AppShell() {
             </button>
           </div>
         </header>
-        <main className="flex flex-1 flex-col overflow-hidden bg-bg">
+        <main className="flex flex-1 flex-col overflow-hidden bg-bg pb-7">
           <PageTransition>
             <Routes>
               <Route path="/canvas" element={<CanvasPage />} />

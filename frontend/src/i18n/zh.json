@@ -607,10 +607,26 @@
     "produceOneDone": "已开始制作，完成后进入审核",
     "act": {
       "title": "运行状态",
-      "events": "实时事件"
+      "events": "实时事件",
+      "toggle": "展开/收起"
     },
     "publishTarget": "分发目标",
-    "publishTargetDefault": "默认（设置）"
+    "publishTargetDefault": "默认（设置）",
+    "collectHint": "从源采集帖子入库（无 API 成本）",
+    "downloadHint": "批量下载已入库条目（带宽成本）",
+    "collectAll": "一键采集+下载",
+    "collectAllHint": "采集后自动下载（快捷链路）",
+    "pendingDownloads": "待下载",
+    "noPendingDownloads": "没有待下载的条目",
+    "score": "评分",
+    "scoreHint": "AI 评分（消耗 API）——评分后可制作",
+    "scoreBatch": "批量评分",
+    "scoreBatchHint": "对全部已下载未评分条目执行 AI 评分",
+    "scored": "已评分",
+    "preSort": "排序",
+    "preSort.seq": "入库序",
+    "preSort.score": "评分",
+    "preSort.produce": "生产方式"
   },
   "canvas": {
     "tool": {

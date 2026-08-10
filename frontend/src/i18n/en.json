@@ -592,10 +592,26 @@
     "produceOneDone": "Producing started — will return to review",
     "act": {
       "title": "Activity",
-      "events": "Live events"
+      "events": "Live events",
+      "toggle": "Toggle"
     },
     "publishTarget": "Publish target",
-    "publishTargetDefault": "Default (settings)"
+    "publishTargetDefault": "Default (settings)",
+    "collectHint": "Collect posts from sources into the queue (no API cost)",
+    "downloadHint": "Download queued items in batch (bandwidth cost)",
+    "collectAll": "Collect + download",
+    "collectAllHint": "Collect then download in one shot",
+    "pendingDownloads": "Pending downloads",
+    "noPendingDownloads": "Nothing waiting to download",
+    "score": "Score",
+    "scoreHint": "AI scoring (API cost) — required before producing",
+    "scoreBatch": "Score all",
+    "scoreBatchHint": "Run AI scoring on all downloaded unscored items",
+    "scored": "Scored",
+    "preSort": "Sort",
+    "preSort.seq": "Inbound",
+    "preSort.score": "Score",
+    "preSort.produce": "Produce mode"
   },
   "canvas": {
     "tool": {

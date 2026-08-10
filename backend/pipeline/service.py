@@ -204,6 +204,26 @@ class PipelineService:
         )
         return {"id": str(item_id), "status": "published", "result": result}
 
+    async def score_one(self, item_id: uuid.UUID) -> dict:
+        """单条评分（v0.3.5，预处理手动评分按钮）：仅已下载条目，成本可控。"""
+        from backend.pipeline.errors import InvalidItemStateError
+
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+            if item is None:
+                raise ItemNotFoundError(item_id)
+            if item.status != ItemStatus.DOWNLOADED:
+                raise InvalidItemStateError(
+                    f"cannot score item in state {item.status}"
+                )
+        outcome = await self.engine.process_one("score", item_id)
+        if outcome == "failed":
+            async with session_factory() as session:
+                row = await session.get(Item, item_id)
+                error = row.error if row is not None else "score failed"
+            raise RuntimeError(error)
+        return {"id": str(item_id), "status": "scored", "outcome": outcome}
+
     async def produce_one(self, item_id: uuid.UUID) -> dict:
         """单条制作（v0.3.4，预处理「制作」按钮）：生产方式已设定、媒体已下载
         的条目立即执行 produce（discovered/downloaded 自动转入 scored 再制作）。
