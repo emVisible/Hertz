@@ -49,10 +49,10 @@ export function usePipelineExecution() {
       pipelineApi.items('downloaded,scored,queued,approved,failed,rejected', 500),
     refetchInterval: pollingInterval,
   })
-  // 最近发布历史（发布页独立查询）
+  // 发布历史（v0.3.8）：已发布内容完整回到发布列表——不再只有最近 10 条
   const { data: stagePublished = [] } = useQuery({
     queryKey: ['pipeline-stage', 'published'],
-    queryFn: () => pipelineApi.items('published', 10),
+    queryFn: () => pipelineApi.items('published', 100),
     refetchInterval: pollingInterval,
   })
   const stageGroups = useMemo(() => {

@@ -653,7 +653,8 @@
     "publishCookieMissing": "B 站 cookie 未就绪",
     "publishCookieHint": "请在终端运行 biliup login 生成后重新检查",
     "publishCookieReady": "cookie 已就绪",
-    "publishReady": "发布目标"
+    "publishReady": "发布目标",
+    "publishHistory": "发布历史"
   },
   "canvas": {
     "tool": {

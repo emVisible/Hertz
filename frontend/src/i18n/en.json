@@ -638,7 +638,8 @@
     "publishCookieMissing": "Bilibili cookie not ready",
     "publishCookieHint": "Run biliup login in terminal, then re-check",
     "publishCookieReady": "cookie ready",
-    "publishReady": "Publish target"
+    "publishReady": "Publish target",
+    "publishHistory": "Publish history"
   },
   "canvas": {
     "tool": {

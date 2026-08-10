@@ -574,9 +574,9 @@ export function PipelineView(p: PipelineViewProps) {
               </p>
             </PipelineStage>
 
-            {/* 最近发布（published）：可重新发布 */}
+            {/* 发布历史（v0.3.8）：已发布内容完整回到发布列表（100 条） */}
             <div className="mt-4">
-              <SectionCard title={t('console.recentPublishes')} padded={false}>
+              <SectionCard title={`${t('console.publishHistory')} (${p.stagePublished.length})`} padded={false}>
                 {p.stagePublished.length === 0 ? (
                   <p className="p-3 text-sm text-text-disabled">{t('console.noPublishes')}</p>
                 ) : (
@@ -593,6 +593,12 @@ export function PipelineView(p: PipelineViewProps) {
                             {(item.publish_json?.target ? (
                               <Badge tone="neutral">{String(item.publish_json.target)}</Badge>
                             ) : null)}
+                            {/* 发布时间（v0.3.8） */}
+                            {item.published_at && (
+                              <span className="font-mono text-[10px] text-text-disabled">
+                                {new Date(item.published_at).toLocaleString()}
+                              </span>
+                            )}
                           </span>
                         }
                         right={
