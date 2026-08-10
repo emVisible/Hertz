@@ -913,3 +913,74 @@ async def test_list_items_ordered_by_seq() -> None:
     # 后插入的 seq 更大 → desc 排前
     assert ids == ["seq-2", "seq-1"]
     assert rows[0]["seq"] is not None  # serialize 输出 seq
+
+
+# ---------- 生产方式（v0.3.3，预处理人工选择） ----------
+
+def test_normalize_produce_options() -> None:
+    from backend.pipeline.service import PipelineService
+
+    # 直发互斥：清其他
+    opts = PipelineService.normalize_produce_options(
+        {
+            "passthrough": True, "voice": True, "subtitle": True,
+            "translate": True, "mute": True,
+        }
+    )
+    assert opts == {
+        "passthrough": True, "voice": False, "subtitle": False,
+        "translate": False, "mute": False,
+    }
+    # 翻译自动附带字幕
+    opts = PipelineService.normalize_produce_options({"voice": True, "translate": True})
+    assert opts["subtitle"] is True and opts["voice"] is True
+    # 非法模块忽略
+    opts = PipelineService.normalize_produce_options({"voice": True, "evil": True})
+    assert "evil" not in opts
+
+
+@pytest.mark.asyncio
+async def test_produce_options_batch_endpoint(client) -> None:
+    """批量设置生产方式 + 互斥校验。"""
+    async with session_factory() as session:
+        a = Item(status="discovered", source="reddit", source_id="po-1", title="A")
+        b = Item(status="discovered", source="reddit", source_id="po-2", title="B")
+        session.add_all([a, b])
+        await session.commit()
+        ids = [a.id, b.id]
+
+    # 批量设置：配音+字幕
+    resp = await client.post("/api/pipeline/produce-options", json={
+        "ids": [str(i) for i in ids],
+        "options": {"voice": True, "subtitle": True},
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["updated"] == 2
+    items = (
+        await client.get(
+            "/api/pipeline/items", params={"status": "discovered", "limit": 200}
+        )
+    ).json()
+    for it in items:
+        if it["source_id"] in ("po-1", "po-2"):
+            assert it["produce_options"]["voice"] is True
+            assert it["produce_options"]["subtitle"] is True
+
+    # 直发互斥：改为直发后其他模块全清
+    resp = await client.post("/api/pipeline/produce-options", json={
+        "ids": [str(ids[0])],
+        "options": {"passthrough": True, "voice": True},
+    })
+    assert resp.status_code == 200, resp.text
+    items2 = (
+        await client.get(
+            "/api/pipeline/items", params={"status": "discovered", "limit": 200}
+        )
+    ).json()
+    item = next(i for i in items2 if i["source_id"] == "po-1")
+    assert item["produce_options"]["passthrough"] is True
+    assert item["produce_options"]["voice"] is False
+
+    # 空 ids → 422
+    bad = await client.post("/api/pipeline/produce-options", json={"ids": [], "options": {}})
+    assert bad.status_code == 422

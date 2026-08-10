@@ -201,6 +201,39 @@ class PipelineService:
         )
         return {"id": str(item_id), "status": "published", "result": result}
 
+    # ---------- 生产方式（v0.3.3，预处理人工选择） ----------
+
+    PRODUCE_MODULES = ("passthrough", "voice", "subtitle", "translate", "mute")
+
+    @staticmethod
+    def normalize_produce_options(raw: dict) -> dict:
+        """模块集合归一化：只保留合法模块布尔；直发与其他互斥（直发优先）。"""
+        options = {
+            m: bool(raw.get(m)) for m in PipelineService.PRODUCE_MODULES
+        }
+        if options["passthrough"]:
+            for m in ("voice", "subtitle", "translate", "mute"):
+                if m != "passthrough":
+                    options[m] = False
+        # 翻译依赖字幕：选翻译自动附带字幕
+        if options["translate"]:
+            options["subtitle"] = True
+        return options
+
+    async def set_produce_options(self, item_ids: list[uuid.UUID], raw: dict) -> int:
+        """设置生产方式（单条或批量）：互斥校验 + 翻译附带字幕。"""
+        options = self.normalize_produce_options(raw)
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(Item).where(Item.id.in_(item_ids))
+                )
+            ).scalars().all()
+            for row in rows:
+                row.produce_options = options
+            await session.commit()
+            return len(rows)
+
     # ---------- 重新处理 / 重新翻译（v0.2.7，参考原项目 reproduce/retranslate） ----------
 
     async def reprocess(self, item_id: uuid.UUID, *, retranslate: bool = False) -> dict:
@@ -546,6 +579,7 @@ class PipelineService:
             "score_dimensions": item.score_dimensions,
             "score_reasons": item.score_reasons or [],
             "is_lowscore": item.is_lowscore,
+            "produce_options": item.produce_options,
             "raw_path": item.raw_path,
             "video_path": item.video_path,
             "cover_path": item.cover_path,

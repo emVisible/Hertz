@@ -22,6 +22,7 @@ export type {
   PipelineEvent,
   PipelineItem,
   PipelineJob,
+  ProduceOptions,
   SourceState,
 } from './pipeline'
 export { docsApi } from './docs'

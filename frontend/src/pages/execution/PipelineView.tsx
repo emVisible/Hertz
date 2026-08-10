@@ -24,6 +24,7 @@ import {
   Terminal,
 } from '../../components/execution'
 import { CalendarView } from './CalendarView'
+import { ProduceBatchModal } from '../../components/execution/ProduceBatchModal'
 import { usePipelineExecution } from '../../hooks/usePipelineExecution'
 import { useModelSwitch } from '../../hooks/useModelSwitch'
 
@@ -70,6 +71,7 @@ interface PipelineViewProps {
   retryClass: (cls: string, n: number) => void
   reprocess: (item: PipelineItem, retranslate: boolean) => void
   rescheduleExpired: () => Promise<void>
+  setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
   modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
@@ -112,6 +114,8 @@ export function PipelineView(p: PipelineViewProps) {
   // 系统日志（v0.3.0）：/api/logs/buffer 轮询，可折叠
   const [sysLogsOpen, setSysLogsOpen] = useState(false)
   const [sysLogs, setSysLogs] = useState<string[]>([])
+  // 批量生产方式（v0.3.3，预处理）
+  const [produceBatchOpen, setProduceBatchOpen] = useState(false)
   // 审核排序（v0.2.6）：默认「有成片优先」（可预览的在前面）；随机=每次点击重新洗牌
   const [auditSort, setAuditSort] = useState<AuditSort>('videoFirst')
   const [randomSeed, setRandomSeed] = useState(0)
@@ -347,8 +351,21 @@ export function PipelineView(p: PipelineViewProps) {
 
         {pTab === 'preReview' && (
           <div className="p-4">
-            <PipelineStage title={t('console.stagePreReview')}>
-              {/* 审核前混合列表：单条数据聚合下载/评分/制作信息（v0.2.0） */}
+            <PipelineStage
+              title={t('console.stagePreReview')}
+              right={
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setProduceBatchOpen(true)}
+                  title={t('console.produce.batchHint')}
+                >
+                  <Icon name="config" size={12} />
+                  {t('console.produce.batch')}
+                </Button>
+              }
+            >
+              {/* 审核前混合列表：单条数据聚合生产方式/下载/评分/制作信息（v0.3.3） */}
               <StageList
                 items={[
                   ...p.stageDiscovered,
@@ -357,9 +374,25 @@ export function PipelineView(p: PipelineViewProps) {
                 ].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))}
                 emptyText={t('console.emptyPreReview')}
                 total={(p.counts.discovered ?? 0) + (p.counts.downloaded ?? 0) + (p.counts.scored ?? 0)}
-                renderRow={(item) => <PreReviewCard key={item.id} item={item} />}
+                renderRow={(item) => (
+                  <PreReviewCard
+                    key={item.id}
+                    item={item}
+                    onSaveOptions={(i, options) => void p.setProduceOptions([i], options)}
+                  />
+                )}
               />
             </PipelineStage>
+            <ProduceBatchModal
+              open={produceBatchOpen}
+              onClose={() => setProduceBatchOpen(false)}
+              items={[
+                ...p.stageDiscovered,
+                ...p.stageDownloaded,
+                ...p.stageScored,
+              ]}
+              onApply={(items, options) => void p.setProduceOptions(items, options)}
+            />
           </div>
         )}
         {pTab === 'inReview' && (

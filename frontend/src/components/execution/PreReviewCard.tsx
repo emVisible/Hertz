@@ -1,19 +1,28 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { PipelineItem } from '../../api'
+import type { PipelineItem, ProduceOptions } from '../../api'
 import { Badge, Icon } from '../ui'
 import { MediaThumb, PIPELINE_ITEM_TONE, THUMB_LG } from './PipelineStage'
 import { ScoreDims } from './ScoreDims'
+import { normalizeOptions, ProduceOptionsPicker } from './ProduceOptionsPicker'
 
-/** 预处理卡片（v0.2.0）：单条数据在审核前的完整状态——
- *  下载信息（来源/素材是否已下载）+ 评分信息（AI 分数与维度）+ 制作信息（产物状态）。
- *  纯展示，操作收敛在审核/发布。 */
-export function PreReviewCard({ item }: { item: PipelineItem }) {
+/** 预处理卡片（v0.3.3）：生产方式人工选择（直发/配音/字幕/翻译/静音 模块多选）
+ *  + 下载/评分/制作状态聚合。生产方式在下载后/生产前确定。 */
+export function PreReviewCard({
+  item,
+  onSaveOptions,
+}: {
+  item: PipelineItem
+  onSaveOptions: (item: PipelineItem, options: Partial<ProduceOptions>) => void
+}) {
   const { t } = useTranslation()
+  const [draft, setDraft] = useState<ProduceOptions | null>(null)
   const dims = item.score_dimensions
   const hasRaw = !!item.raw_path
   const hasVideo = !!item.video_path
   const hasCover = !!item.cover_path
+  const options = draft ?? normalizeOptions(item.produce_options)
 
   return (
     <li className="flex gap-3 px-3 py-3">
@@ -29,6 +38,35 @@ export function PreReviewCard({ item }: { item: PipelineItem }) {
             <span className="shrink-0 border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning">
               {t('console.lowScore')}
             </span>
+          )}
+        </div>
+
+        {/* 生产方式（v0.3.3）：人工选择加工方案 */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.produce.title')}</span>
+          <ProduceOptionsPicker
+            value={options}
+            compact
+            onChange={(next) => setDraft(next)}
+          />
+          {draft && (
+            <>
+              <button
+                type="button"
+                onClick={() => onSaveOptions(item, draft)}
+                className="flex items-center gap-1 border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary transition-colors hover:bg-primary/20"
+              >
+                <Icon name="check" size={10} />
+                {t('common.save')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDraft(null)}
+                className="px-1 py-0.5 text-[10px] text-text-secondary transition-colors hover:text-text-primary"
+              >
+                {t('docs.cancel')}
+              </button>
+            </>
           )}
         </div>
 

@@ -138,6 +138,26 @@ async def reschedule_expired():
     return {"updated": await _pipe().reschedule_expired()}
 
 
+class ProduceOptionsBody(BaseModel):
+    ids: list[uuid.UUID]
+    options: dict[str, bool]
+
+
+@router.post("/produce-options")
+async def set_produce_options(body: ProduceOptionsBody):
+    """生产方式批量设置（v0.3.3，预处理人工选择）：
+    直发与其他模块互斥；翻译自动附带字幕。"""
+    if not body.ids:
+        raise HTTPException(status_code=422, detail="ids 必填")
+    if len(body.ids) > 200:
+        raise HTTPException(status_code=422, detail="单批最多 200 条")
+    try:
+        updated = await _pipe().set_produce_options(body.ids, body.options)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"updated": updated}
+
+
 class ItemMetaBody(BaseModel):
     bili_title: str | None = None
     bili_tags: str | None = None

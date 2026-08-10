@@ -576,7 +576,28 @@
     "copyrightSelfmade": "自制",
     "copyrightRepost": "搬运",
     "copyrightHint": "自制=以原创身份发布；搬运=注明转载",
-    "copyrightSelfmadeHint": "将以自制（原创）身份发布"
+    "copyrightSelfmadeHint": "将以自制（原创）身份发布",
+    "produce": {
+      "title": "生产方式",
+      "passthrough": "直发",
+      "passthroughHint": "原片不加工直接发布（与其他模块互斥）",
+      "voice": "配音",
+      "voiceHint": "AI 旁白（按旁白语言配置，ducking 原声）",
+      "subtitle": "字幕",
+      "subtitleHint": "烧录字幕（原声保留）",
+      "translate": "翻译",
+      "translateHint": "仅字幕翻译成目标语言（自动附带字幕）",
+      "mute": "静音",
+      "muteHint": "去除原声（版权规避；有旁白则只留旁白）",
+      "batch": "批量生产方式",
+      "batchHint": "多选条目，统一设置加工方案（直发与其他互斥）",
+      "batchItems": "已选 {{n}} 条",
+      "batchApply": "应用到 {{n}} 条",
+      "batchEmpty": "请先勾选条目",
+      "selectAll": "全选",
+      "deselectAll": "取消全选",
+      "produceSaved": "已更新 {{n}} 条生产方式"
+    }
   },
   "canvas": {
     "tool": {

@@ -279,11 +279,14 @@ def _fmt_ts(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-async def compose_video(raw: Path, narration: Path | None, srt: Path | None, out: Path) -> dict:
+async def compose_video(
+    raw: Path, narration: Path | None, srt: Path | None, out: Path, *, muted: bool = False
+) -> dict:
     """ffmpeg: 720p + ASS 淡入字幕 + 原声/旁白 ducking 混音 + 可选 BGM。
 
     音频策略（Autarkeia edit.py heritage）：旁白说话时原声压低
     （sidechaincompress），旁白静默时原声恢复；BGM 目录存在则铺底。
+    v0.3.3：muted=True（静音模块）→ 跳过原声（无旁白则无音轨，有旁白只留旁白）。
     """
     ffmpeg = find_ffmpeg()
     if ffmpeg is None:
@@ -303,7 +306,7 @@ async def compose_video(raw: Path, narration: Path | None, srt: Path | None, out
         vf.append(f"subtitles={subtitle_file.as_posix()}:force_style='{style}'")
 
     has_narration = narration is not None and await asyncio.to_thread(narration.exists)
-    bgm = _find_bgm()
+    bgm = None if muted else _find_bgm()
 
     cmd = [ffmpeg, "-y", "-i", str(raw)]
     if has_narration:
@@ -312,7 +315,14 @@ async def compose_video(raw: Path, narration: Path | None, srt: Path | None, out
         cmd += ["-i", str(bgm)]
     cmd += ["-vf", ",".join(vf)]
 
-    if has_narration:
+    if muted:
+        # 静音模块：丢弃原声；旁白存在则只留旁白轨，否则无音轨
+        if has_narration:
+            cmd += ["-map", "0:v", "-map", "1:a", "-c:a", "aac"]
+        else:
+            cmd += ["-map", "0:v", "-an"]
+        cmd += ["-c:v", "libx264", "-preset", "veryfast"]
+    elif has_narration:
         # 原声 [0:a] 被旁白 [1:a] duck，再混旁白；BGM [2:a] 若有则铺底 0.10
         duck = (
             "[0:a]volume=1.0[bg];"
@@ -419,7 +429,16 @@ async def produce_item(
 
     v0.2.7：existing_script 提供时（重新翻译）跳过脚本生成——只重跑
     TTS/字幕/合成，基于原视频重新翻译。
+    v0.3.3：生产方式模块（item.produce_options）——直发/配音/字幕/翻译/静音
+    按模块执行；直发跳过全部加工（原片即成片），仍抽封面 + phash。
     """
+    opts = item.produce_options or {}
+    passthrough = bool(opts.get("passthrough"))
+    want_voice = bool(opts.get("voice"))
+    want_subtitle = bool(opts.get("subtitle"))
+    want_translate = bool(opts.get("translate"))
+    muted = bool(opts.get("mute"))
+
     directory = _artifacts_dir(files, item)
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
 
@@ -427,13 +446,29 @@ async def produce_item(
     if raw_path is None or not raw_path.exists():
         raise ProducerError("raw media missing")
 
+    # 直发（v0.3.3）：不加工——原片即产物（cover/phash 仍做，供审核与去重）
+    if passthrough:
+        artifacts: dict = {
+            "script": None, "compliance": None, "directory": str(directory),
+            "video": {"path": str(raw_path), "passthrough": True},
+        }
+        from backend.pipeline.phash import compute_phash
+
+        artifacts["phash"] = await compute_phash(str(raw_path))
+        cover_path = directory / "cover.jpg"
+        try:
+            artifacts["cover"] = await generate_cover(raw_path, cover_path)
+        except ProducerError as exc:
+            logger.warning("cover generation failed: %s", exc)
+            artifacts["cover"] = None
+        return artifacts
+
     script = existing_script or await generate_script(ai, item)
     compliance = check_script_compliance(script)
     artifacts = {"script": script, "compliance": compliance, "directory": str(directory)}
 
-    # 处理语言（v0.2.7，参考原项目 locales）：英文旁白 + 中文字幕可配置
-    # narration_lang != zh-CN → 脚本旁白翻译成目标语言再 TTS；
-    # subtitle_lang 决定字幕文本语言（zh-CN 用原脚本中文旁白）
+    # 处理语言（v0.2.7，参考原项目 locales）：英文旁白 + 中文字幕可配置；
+    # v0.3.3：翻译模块 = 仅字幕翻译（原声保留）
     narration_text = str(script.get("narration") or "")[:1000]
     narration_lang = str(
         getattr(settings, "pipeline_narration_lang", "en-US") or "en-US"
@@ -441,14 +476,10 @@ async def produce_item(
     subtitle_lang = str(
         getattr(settings, "pipeline_subtitle_lang", "zh-CN") or "zh-CN"
     )
-    tts_text = (
-        await _localize_text(ai, narration_text, narration_lang)
-        if narration_lang != "zh-CN"
-        else narration_text
-    )
+    # 字幕文本：want_translate → 目标语言；否则原脚本中文
     subtitle_text = (
         narration_text
-        if subtitle_lang == "zh-CN"
+        if not want_translate or subtitle_lang == "zh-CN"
         else await _localize_text(ai, narration_text, subtitle_lang)
     )
 
@@ -457,45 +488,55 @@ async def produce_item(
     if duration <= 0:
         duration = 15.0  # unknown duration → fixed budget
 
-    # TTS 裁词重试（v0.3.0，参考原项目 fit_script_to_budget）：旁白超预算
-    # （>98% 时长）按比例裁词重试 ≤3 次；仍超/失败 → subs_only 降级
-    audio_path = directory / "narration.mp3"
-    tts = None
-    current_text = tts_text
-    for attempt in range(3):
-        try:
-            candidate = await synthesize_tts(ai, current_text, audio_path)
-        except ProducerError as exc:
-            logger.warning(
-                "tts attempt %d failed, falling back to subs-only: %s", attempt + 1, exc
-            )
-            break
-        audio_dur = await probe_duration(audio_path)
-        if audio_dur and audio_dur <= duration * 0.98:
-            tts = candidate
-            break
-        # 超预算：按比例裁词（保前段，≥4 字下限）
-        ratio = max(0.3, (duration * 0.9) / max(audio_dur or duration, 1))
-        current_text = current_text[: max(4, int(len(current_text) * ratio))]
-        logger.warning(
-            "narration %.1fs exceeds %.1fs budget — trim to %d chars, retry %d/3",
-            audio_dur or 0, duration * 0.98, len(current_text), attempt + 2,
+    # 配音模块：旁白文本按 narration_lang 本地化（v0.2.7 语义）后 TTS 裁词重试；
+    # 非配音模块 → 无旁白
+    if want_voice:
+        tts_text = (
+            await _localize_text(ai, narration_text, narration_lang)
+            if narration_lang != "zh-CN"
+            else narration_text
         )
-    artifacts["audio"] = tts
-
-    # 旁白起始延迟（v0.3.0）：音频加起始静音 + 字幕时间线同偏移（音画同步）
-    start_offset = narration_start_offset(tts_text, duration)
-    if artifacts.get("audio") is not None and start_offset > 0:
-        try:
-            delayed = await apply_narration_delay(
-                Path(artifacts["audio"]["path"]), start_offset
+        audio_path = directory / "narration.mp3"
+        tts = None
+        current_text = tts_text
+        for attempt in range(3):
+            try:
+                candidate = await synthesize_tts(ai, current_text, audio_path)
+            except ProducerError as exc:
+                logger.warning(
+                    "tts attempt %d failed: %s", attempt + 1, exc
+                )
+                break
+            audio_dur = await probe_duration(audio_path)
+            if audio_dur and audio_dur <= duration * 0.98:
+                tts = candidate
+                break
+            # 超预算：按比例裁词（保前段，≥4 字下限）
+            ratio = max(0.3, (duration * 0.9) / max(audio_dur or duration, 1))
+            current_text = current_text[: max(4, int(len(current_text) * ratio))]
+            logger.warning(
+                "narration %.1fs exceeds %.1fs budget — trim to %d chars, retry %d/3",
+                audio_dur or 0, duration * 0.98, len(current_text), attempt + 2,
             )
-            artifacts["audio"] = {"path": str(delayed), "bytes": artifacts["audio"]["bytes"]}
-        except Exception:  # noqa: BLE001 — 延迟失败不影响主流程（无偏移）
-            logger.warning("narration delay failed, continuing without offset")
+        artifacts["audio"] = tts
 
+        # 旁白起始延迟（v0.3.0）：音频加起始静音 + 字幕时间线同偏移
+        start_offset = narration_start_offset(tts_text, duration)
+        if artifacts.get("audio") is not None and start_offset > 0:
+            try:
+                delayed = await apply_narration_delay(
+                    Path(artifacts["audio"]["path"]), start_offset
+                )
+                artifacts["audio"] = {"path": str(delayed), "bytes": artifacts["audio"]["bytes"]}
+            except Exception:  # noqa: BLE001 — 延迟失败不影响主流程
+                logger.warning("narration delay failed, continuing without offset")
+    else:
+        artifacts["audio"] = None
+        start_offset = 0.0
+
+    # 字幕模块：烧录字幕（不依赖旁白——subs-only 语义）
     srt_path = None
-    if artifacts.get("audio") is not None:
+    if want_subtitle:
         srt_path = directory / "subs.srt"
         try:
             await asyncio.to_thread(
@@ -508,7 +549,9 @@ async def produce_item(
     video_path = directory / "final.mp4"
     narration_file = Path(artifacts["audio"]["path"]) if artifacts.get("audio") else None
     try:
-        edit = await compose_video(raw_path, narration_file, srt_path, video_path)
+        edit = await compose_video(
+            raw_path, narration_file, srt_path, video_path, muted=muted
+        )
         artifacts["video"] = edit
     except ProducerError as exc:
         logger.warning("video composition failed: %s", exc)

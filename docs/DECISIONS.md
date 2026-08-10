@@ -313,3 +313,10 @@
   - **迁移**：标题编辑、标签、分区 Select、排期从审核卡移入发布卡；发布操作去掉独立「自制发布」按钮——自制/搬运改为显式版权开关（bili_copyright 1/2），发布 selfmade 由开关驱动
   - **改名**：「审核后」→「发布」（PIPELINE_TABS labelKey 复用 console.stagePublish），清理 stagePostReview 死 key
   - 清理死 i18n key（editTid/tidPlaceholder）
+- **D-157 预处理生产方式重构（v0.3.3）**——
+  - **核心**：生产方式 = 模块多选（直发/配音/字幕/翻译/静音），预处理阶段人工选择——视频加工不再僵硬全自动化（有的直发、有的只需字幕、有的需翻译+配音组合）
+  - **数据**：items.produce_options JSONB（wave18 迁移，默认 voice+subtitle+translate 兼容现状英文旁白+中文字幕，存量回填）；normalize 规则——直发与其他互斥（直发优先）、翻译自动附带字幕
+  - **生产分支**：直发=原片即成片（仍抽封面+phash 供审核/去重）；配音=按 narration_lang 本地化 TTS；字幕=烧录（不依赖旁白，subs-only 语义）；翻译=仅字幕走 subtitle_lang 本地化；静音=compose 丢弃原声（旁白存在只留旁白轨）
+  - **API**：POST /items/batch/produce-options（单条/批量，≤200/批，互斥校验）
+  - **UI**：PreReviewCard 生产方式 chips（直发互斥高亮/翻译自动勾字幕）+ 批量生产方式 Modal（多选条目统一设置）+ 生产方式徽章
+  - **审核解耦**：重新处理/重新翻译尊重条目当前 produce_options（produce_item 读模块执行）

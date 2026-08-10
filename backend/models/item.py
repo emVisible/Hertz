@@ -86,6 +86,11 @@ class Item(BaseModel):
     # Dedupe
     phash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # 生产方式模块集合（v0.3.3，预处理人工选择）：
+    # {"passthrough"|"voice"|"subtitle"|"translate"|"mute": bool}
+    # 默认 voice+subtitle+translate（英文旁白 + 中文字幕，现状行为）
+    produce_options: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # Review / publish
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 排期发布（独立发布环节，v5.10）：定时上传用

@@ -108,6 +108,7 @@ export function ExecutionPage() {
           retryClass={pipeline.retryClass}
           reprocess={pipeline.reprocess}
           rescheduleExpired={pipeline.rescheduleExpired}
+          setProduceOptions={pipeline.setProduceOptions}
           modelSwitch={pipelineModelSwitch}
         />
       )}

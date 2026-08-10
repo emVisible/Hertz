@@ -561,7 +561,28 @@
     "copyrightSelfmade": "Self-made",
     "copyrightRepost": "Repost",
     "copyrightHint": "Self-made = original upload; Repost = credited re-upload",
-    "copyrightSelfmadeHint": "Will publish as original (self-made)"
+    "copyrightSelfmadeHint": "Will publish as original (self-made)",
+    "produce": {
+      "title": "Produce mode",
+      "passthrough": "Pass-through",
+      "passthroughHint": "Publish the original video unprocessed (exclusive)",
+      "voice": "Voice",
+      "voiceHint": "AI narration (per narration language, ducks original audio)",
+      "subtitle": "Subtitle",
+      "subtitleHint": "Burn subtitles (keep original audio)",
+      "translate": "Translate",
+      "translateHint": "Translate subtitles only (auto-includes subtitles)",
+      "mute": "Mute",
+      "muteHint": "Remove original audio (copyright; narration-only if voiced)",
+      "batch": "Batch produce mode",
+      "batchHint": "Select items and apply one produce-mode combo (pass-through is exclusive)",
+      "batchItems": "{{n}} selected",
+      "batchApply": "Apply to {{n}}",
+      "batchEmpty": "Select items first",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all",
+      "produceSaved": "Updated produce mode for {{n}} item(s)"
+    }
   },
   "canvas": {
     "tool": {

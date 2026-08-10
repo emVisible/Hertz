@@ -12,11 +12,17 @@ export type ItemStatus =
   | 'rejected'
   | 'failed'
 
+export type ProduceModule = 'passthrough' | 'voice' | 'subtitle' | 'translate' | 'mute'
+
+export type ProduceOptions = Record<ProduceModule, boolean>
+
 export interface PipelineItem {
   id: string
   /** 入库自增序号（v0.3.1）：真实入库顺序——同批 created_at 相同 */
   seq: number | null
   status: ItemStatus
+  /** 生产方式模块集合（v0.3.3，预处理人工选择） */
+  produce_options: ProduceOptions | null
   item_type: string
   source: string
   source_url: string
@@ -135,6 +141,9 @@ export const pipelineApi = {
     ),
   /** 过期排期自动重排（v0.2.7）：进入审核时调用。 */
   rescheduleExpired: () => api.post<{ updated: number }>('/api/pipeline/reschedule-expired'),
+  /** 生产方式批量设置（v0.3.3，预处理人工选择）。 */
+  setProduceOptions: (ids: string[], options: Partial<ProduceOptions>) =>
+    api.post<{ updated: number }>('/api/pipeline/produce-options', { ids, options }),
   updateMeta: (id: string, meta: Record<string, string | number | null>) =>
     api.put<{ id: string; ok: boolean }>(`/api/pipeline/items/${id}/meta`, meta),
   publish: (id: string, selfmade = false) =>
