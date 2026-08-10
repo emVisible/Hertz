@@ -729,7 +729,10 @@
     "statsPromptInvalid": "格式应为 5 个数字（空格分隔）",
     "statsSaved": "数据已保存",
     "preReviewEmptyHint": "待下载队列还有 {{n}} 条——先下载再评分制作",
-    "preReviewGoCollect": "去下载"
+    "preReviewGoCollect": "去下载",
+    "similar": "相似内容",
+    "similarPublished": "与已发布相似",
+    "similarQueued": "与队列内相似"
   },
   "canvas": {
     "tool": {

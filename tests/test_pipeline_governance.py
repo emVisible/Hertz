@@ -1531,3 +1531,43 @@ async def test_plan_clone_export_import(client) -> None:
     # 非法 payload
     resp = await client.post("/api/plans/import", json={"payload": {"foo": 1}})
     assert resp.status_code == 422
+
+
+# ---------- 审核相似提示（v0.5 A） ----------
+
+
+@pytest.mark.asyncio
+async def test_similar_annotations(client) -> None:
+    """QUEUED 条目标注相似内容：phash 汉明≤5 且非同源同帖。"""
+
+    # 构造两条同内容 phash（用 compute_phash 对相同视频帧不可行——
+    # 直接写两个汉明距离 2 的 phash 字符串）
+    base = "0" * 64
+    close = "00" + "1" * 2 + "0" * 60  # 汉明距离 2
+    async with session_factory() as session:
+        a = Item(status=ItemStatus.QUEUED, source="reddit", source_id="sim-1",
+                 title="第一条", phash=base)
+        b = Item(status=ItemStatus.QUEUED, source="reddit", source_id="sim-2",
+                 title="第二条", phash=close)
+        same_source = Item(status=ItemStatus.QUEUED, source="reddit",
+                           source_id="sim-1", title="同源重复", phash=close)
+        published = Item(status=ItemStatus.PUBLISHED, source="reddit",
+                         source_id="sim-3", title="已发布相似", phash=close)
+        session.add_all([a, b, same_source, published])
+        await session.commit()
+        a_id, b_id = a.id, b.id
+
+    resp = await client.get("/api/pipeline/items?status=queued&limit=10")
+    assert resp.status_code == 200
+    by_id = {i["id"]: i for i in resp.json()}
+
+    # 第一条：与第二条+已发布相似（同源同帖不标）
+    sim_a = by_id[str(a_id)]["similar"]
+    assert "已发布相似" in sim_a["published"]
+    assert "第二条" in sim_a["queued"]
+    assert "同源重复" not in sim_a["queued"]
+
+    # 第二条：与第一条相似，且与已发布相似
+    sim_b = by_id[str(b_id)]["similar"]
+    assert "第一条" in sim_b["queued"]
+    assert "已发布相似" in sim_b["published"]

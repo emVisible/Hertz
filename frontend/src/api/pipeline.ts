@@ -44,6 +44,8 @@ export interface PipelineItem {
   publish_json: Record<string, unknown> | null
   error: string | null
   error_class: string
+  /** 审核相似提示（v0.5 A）：phash 汉明 ≤5 的相似内容标题（排除同源同帖） */
+  similar?: { published: string[]; queued: string[] }
   retry_count: number
   /** 分区自动建议（v0.2.7）：未手动设置 tid 时的推荐分区 */
   auto_tid: number | null

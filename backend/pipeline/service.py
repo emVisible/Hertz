@@ -552,7 +552,8 @@ class PipelineService:
         self, status: str | None = None, limit: int = 50, source: str | None = None
     ) -> list[dict]:
         """条目列表；status 支持逗号分隔多状态（wave13：前端单查询聚合阶段队列）。
-        排序：入库序号 seq desc（v0.3.1——同批 created_at 相同，seq 才是真实先后）。"""
+        排序：入库序号 seq desc（v0.3.1——同批 created_at 相同，seq 才是真实先后）。
+        v0.5 A：QUEUED 条目标注相似内容（phash 汉明 ≤5，排除同 source_id 同源）。"""
         statuses = [s.strip() for s in (status or "").split(",") if s.strip()] or None
         async with session_factory() as session:
             order = Item.seq.desc().nulls_last()
@@ -565,7 +566,64 @@ class PipelineService:
             if conditions:
                 stmt = select(Item).where(*conditions).order_by(order).limit(limit)
             result = await session.execute(stmt)
-            return [self._serialize(i) for i in result.scalars().all()]
+            items = result.scalars().all()
+            serialized = [self._serialize(i) for i in items]
+            similar = await self._similar_map(items, session)
+            for entry in serialized:
+                if entry["id"] in similar:
+                    entry["similar"] = similar[entry["id"]]
+            return serialized
+
+    async def _similar_map(self, items: list[Item], session) -> dict[str, dict]:
+        """审核相似提示（v0.5 A）：对 QUEUED 条目批量 phash 比对。
+
+        参考集 = 队列内 + 已发布 + 已拒绝 的 phash（一次查询），汉明距离 ≤5；
+        排除同 source_id（同源同帖由采集去重处理，不算相似重复）。
+        返回 {item_id: {"published": [标题], "queued": [标题]}}（各最多 3 个）。
+        """
+        from backend.pipeline.dedupe import PHASH_MAX_DISTANCE, hamming_distance
+
+        queued = [
+            i for i in items
+            if i.status == ItemStatus.QUEUED and i.phash and len(i.phash) >= 16
+        ]
+        if not queued:
+            return {}
+        ref_statuses = (
+            ItemStatus.QUEUED, ItemStatus.APPROVED,
+            ItemStatus.PUBLISHED, ItemStatus.REJECTED,
+        )
+        refs = (
+            await session.execute(
+                select(Item.id, Item.phash, Item.source_id, Item.title, Item.status)
+                .where(
+                    Item.phash.isnot(None),
+                    Item.phash != "",
+                    Item.status.in_(ref_statuses),
+                )
+            )
+        ).all()
+        out: dict[str, dict] = {}
+        for item in queued:
+            published: list[str] = []
+            queued_titles: list[str] = []
+            for rid, rphash, rsource, rtitle, rstatus in refs:
+                if rid == item.id:
+                    continue
+                if rsource and item.source_id and rsource == item.source_id:
+                    continue  # 同源同帖：采集去重已覆盖
+                if not rphash or len(rphash) < 16:
+                    continue
+                if hamming_distance(item.phash, rphash) <= PHASH_MAX_DISTANCE:
+                    bucket = published if rstatus == ItemStatus.PUBLISHED else queued_titles
+                    if len(bucket) < 3:
+                        bucket.append(rtitle or "")
+            if published or queued_titles:
+                out[str(item.id)] = {
+                    "published": published,
+                    "queued": queued_titles,
+                }
+        return out
 
     async def counts(self) -> dict[str, int]:
         async with session_factory() as session:

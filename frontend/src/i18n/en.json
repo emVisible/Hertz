@@ -714,7 +714,10 @@
     "statsPromptInvalid": "Expected 5 numbers separated by spaces",
     "statsSaved": "Stats saved",
     "preReviewEmptyHint": "{{n}} items waiting to download — download first, then score & produce",
-    "preReviewGoCollect": "Download"
+    "preReviewGoCollect": "Download",
+    "similar": "Similar",
+    "similarPublished": "similar to published",
+    "similarQueued": "similar in queue"
   },
   "canvas": {
     "tool": {

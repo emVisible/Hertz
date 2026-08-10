@@ -107,6 +107,24 @@ export function AuditCard({
               {t('console.lowScore')}
             </span>
           )}
+          {/* 相似内容提示（v0.5 A）：phash 判重防重复投稿 */}
+          {item.similar && (item.similar.published.length > 0 || item.similar.queued.length > 0) && (
+            <span
+              title={[
+                ...(item.similar.published.length > 0
+                  ? [t('console.similarPublished') + ': ' + item.similar.published.join(' | ')]
+                  : []),
+                ...(item.similar.queued.length > 0
+                  ? [t('console.similarQueued') + ': ' + item.similar.queued.join(' | ')]
+                  : []),
+              ].join('\n')}
+              className="border border-warning/60 bg-warning/10 px-1.5 py-0.5 text-[10px] leading-none text-warning"
+            >
+              ⚠ {t('console.similar')}
+              {item.similar.published.length > 0 && ` · ${t('console.similarPublished')}×${item.similar.published.length}`}
+              {item.similar.queued.length > 0 && ` · ${t('console.similarQueued')}×${item.similar.queued.length}`}
+            </span>
+          )}
           {item.source_url && (
             <a
               href={item.source_url}
