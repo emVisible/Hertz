@@ -717,7 +717,8 @@
     "preReviewGoCollect": "Download",
     "similar": "Similar",
     "similarPublished": "similar to published",
-    "similarQueued": "similar in queue"
+    "similarQueued": "similar in queue",
+    "collectSourceHint": "Collect this source only (independent cooldown)"
   },
   "canvas": {
     "tool": {

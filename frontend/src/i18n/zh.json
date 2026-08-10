@@ -732,7 +732,8 @@
     "preReviewGoCollect": "去下载",
     "similar": "相似内容",
     "similarPublished": "与已发布相似",
-    "similarQueued": "与队列内相似"
+    "similarQueued": "与队列内相似",
+    "collectSourceHint": "单独采集该源（独立冷却，失联后可重试）"
   },
   "canvas": {
     "tool": {

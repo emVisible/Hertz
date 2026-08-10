@@ -218,8 +218,10 @@ export const pipelineApi = {
     }
     return resp.json() as Promise<{ id: string; cover_path: string }>
   },
-  run: (step: string, limit = 10) =>
-    api.post<PipelineJob>(`/api/pipeline/run?step=${step}&limit=${limit}`),
+  run: (step: string, limit = 10, channel = '') =>
+    api.post<PipelineJob>(
+      `/api/pipeline/run?step=${step}&limit=${limit}${channel ? `&channel=${encodeURIComponent(channel)}` : ''}`,
+    ),
   chain: (limit = 10) => api.post<Record<string, PipelineJob>>(`/api/pipeline/chain?limit=${limit}`),
   cancel: () => api.post<{ ok: boolean; cancelling: boolean }>('/api/pipeline/cancel'),
   jobs: (limit = 10) => api.get<PipelineJob[]>(`/api/pipeline/jobs?limit=${limit}`),

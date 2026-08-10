@@ -75,7 +75,7 @@ interface PipelineViewProps {
   collectAndDownload: () => Promise<void>
   scoreOne: (item: PipelineItem) => Promise<void>
   scoreBatch: () => Promise<void>
-  runStep: (stepName: string) => Promise<void>
+  runStep: (stepName: string, channel?: string) => Promise<void>
   modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
@@ -425,6 +425,16 @@ export function PipelineView(p: PipelineViewProps) {
                     >
                       ok {s.ok_count} / fail {s.fail_count}
                     </span>
+                    {/* 单源采集（v0.5 C）：源失联/冷却后可单独重试 */}
+                    <button
+                      type="button"
+                      disabled={p.running}
+                      onClick={() => void p.runStep('collect', s.channel)}
+                      title={t('console.collectSourceHint')}
+                      className="shrink-0 border border-border px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Icon name="downloads" size={11} />
+                    </button>
                   </li>
                 ))}
               </ul>

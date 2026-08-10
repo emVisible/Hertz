@@ -246,11 +246,11 @@ export function usePipelineExecution() {
     await runStepOnly('produce')
   }
 
-  async function runStepOnly(stepName: string) {
+  async function runStepOnly(stepName: string, channel = '') {
     if (runningRef.current) return
     runningRef.current = true
     try {
-      await pipelineApi.run(stepName, limit)
+      await pipelineApi.run(stepName, limit, channel)
       refresh()
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
@@ -260,8 +260,8 @@ export function usePipelineExecution() {
   }
 
   /** 采集/下载单步执行（v0.3.5，采集 menu 大按钮）。 */
-  async function runStep(stepName: string) {
-    await runStepOnly(stepName)
+  async function runStep(stepName: string, channel = '') {
+    await runStepOnly(stepName, channel)
   }
 
   async function stop() {
