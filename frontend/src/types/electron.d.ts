@@ -10,6 +10,7 @@ declare global {
       showItemInFolder: (filePath: string) => void
       pickDirectory: (currentPath?: string) => Promise<string | null>
       notifyDownloadDone: (name: string) => void
+      notifyPublish: (title: string, ok: boolean) => void
       onClipboardParse: (cb: (url: string) => void) => () => void
     }
   }

@@ -283,6 +283,15 @@ ipcMain.on('notify:download-done', (_e, name: string) => {
   new Notification({ title: 'Hertz · 下载完成', body: `${name ?? '任务'} 已完成` }).show()
 })
 
+// ---- 发布完成/失败系统通知（v0.4 E3） ----
+ipcMain.on('notify:publish', (_e, title: string, ok: boolean) => {
+  if (!Notification.isSupported()) return
+  new Notification({
+    title: ok ? 'Hertz · 发布成功' : 'Hertz · 发布失败',
+    body: `${title ?? ''}`.slice(0, 80),
+  }).show()
+})
+
 // ---- 窗口位置记忆（HeartStone heritage） ----
 function boundsPath(): string {
   return path.join(app.getPath('userData'), 'window-bounds.json')

@@ -727,7 +727,9 @@
     "statsTitle": "播放·点赞·收藏·评论·分享",
     "statsPrompt": "补录数据（空格分隔）：播放 点赞 收藏 评论 分享",
     "statsPromptInvalid": "格式应为 5 个数字（空格分隔）",
-    "statsSaved": "数据已保存"
+    "statsSaved": "数据已保存",
+    "preReviewEmptyHint": "待下载队列还有 {{n}} 条——先下载再评分制作",
+    "preReviewGoCollect": "去下载"
   },
   "canvas": {
     "tool": {
@@ -881,5 +883,17 @@
     "usage": "AI 用量（按模型耗时）",
     "usageEmpty": "暂无调用记录",
     "usageHint": "共 {{calls}} 次调用（最近 500 条）"
+  },
+  "onboarding": {
+    "title": "欢迎使用 Hertz",
+    "ai": "配置 AI 底座",
+    "aiDesc": "在设置里添加你的 LLM/图像/TTS 服务商（DeepSeek、硅基流动等），Studio 编排与流水线评分都依赖它。",
+    "plan": "创建你的第一个计划",
+    "planDesc": "在编排页从工序库搭一个计划（策略→导演→写作→分发），或直接用默认模板。",
+    "pipeline": "打开内容流水线",
+    "pipelineDesc": "流水线负责 采集→预处理→审核→发布 全流程，先配置采集源与发布目标。",
+    "next": "下一步",
+    "start": "开始",
+    "skip": "跳过（不再提示）"
   }
 }

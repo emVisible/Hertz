@@ -43,12 +43,16 @@ export function AssetCard({
   onPreview,
   onDetail,
   onContext,
+  onFavorite,
 }: {
   entry: LibraryEntry
   onPreview: () => void
   onDetail: () => void
   onContext: (x: number, y: number) => void
+  /** 收藏切换（v0.4 E5）：⭐ tag 快捷打标/移除 */
+  onFavorite?: (entry: LibraryEntry) => void
 }) {
+  const favorite = (entry.tags ?? []).includes('⭐')
   return (
     <div
       onContextMenu={(e) => {
@@ -89,6 +93,24 @@ export function AssetCard({
               </span>
             ))}
           </span>
+        )}
+        {/* 收藏星标（v0.4 E5）：hover 显示，已收藏常亮 */}
+        {onFavorite && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onFavorite(entry)
+            }}
+            title={favorite ? '⭐' : '☆'}
+            className={`absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${
+              favorite
+                ? 'border-warning/60 bg-warning/20 text-warning'
+                : 'border-border bg-black/40 text-white/70 opacity-0 group-hover:opacity-100 hover:text-warning'
+            }`}
+          >
+            <Icon name="tag" size={12} />
+          </button>
         )}
       </button>
       {/* 名称区：进入详情（元数据 / 管理） */}

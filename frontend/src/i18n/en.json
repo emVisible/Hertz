@@ -712,7 +712,9 @@
     "statsTitle": "views · likes · favorites · comments · shares",
     "statsPrompt": "Stats (space separated): views likes favorites comments shares",
     "statsPromptInvalid": "Expected 5 numbers separated by spaces",
-    "statsSaved": "Stats saved"
+    "statsSaved": "Stats saved",
+    "preReviewEmptyHint": "{{n}} items waiting to download — download first, then score & produce",
+    "preReviewGoCollect": "Download"
   },
   "canvas": {
     "tool": {
@@ -881,5 +883,17 @@
     "usage": "AI usage (by model, ms)",
     "usageEmpty": "No calls yet",
     "usageHint": "{{calls}} calls total (latest 500)"
+  },
+  "onboarding": {
+    "title": "Welcome to Hertz",
+    "ai": "Configure AI providers",
+    "aiDesc": "Add your LLM/image/TTS providers in Settings (DeepSeek, SiliconFlow…). Studio and pipeline scoring depend on them.",
+    "plan": "Create your first plan",
+    "planDesc": "In Orchestrate, assemble a plan from the phase library (brief → director → writer → distribution) or use the default template.",
+    "pipeline": "Open the content pipeline",
+    "pipelineDesc": "The pipeline runs collect → preprocess → review → publish. Configure collect sources and publish target first.",
+    "next": "Next",
+    "start": "Get started",
+    "skip": "Skip (never ask again)"
   }
 }

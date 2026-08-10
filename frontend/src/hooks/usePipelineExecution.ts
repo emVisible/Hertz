@@ -351,8 +351,11 @@ export function usePipelineExecution() {
       } else {
         toast(t('console.published'), 'success')
       }
+      // v0.4 E3：桌面系统通知（Electron；浏览器环境静默跳过）
+      window.electron?.notifyPublish(item.title, !res.noop)
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
+      window.electron?.notifyPublish(item.title, false)
     }
   }
 

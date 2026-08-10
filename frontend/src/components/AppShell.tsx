@@ -8,6 +8,7 @@ import type { NavItem } from '../components/layout'
 import { Icon } from '../components/ui'
 import { CommandPalette } from './CommandPalette'
 import { ActivityPanel } from './ActivityPanel'
+import { OnboardingModal } from './OnboardingModal'
 import { useThemeStore } from '../stores/theme'
 import { useExecutionStore } from '../stores/execution'
 import { pipelineApi } from '../api'
@@ -27,6 +28,10 @@ export function AppShell() {
   const navigate = useNavigate()
   // ⌘K 全局命令面板（v0.2.3）：输入框聚焦时不劫持（素材页 ⌘K 聚焦搜索框是既有行为）
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // 首次运行引导（v0.4 E6）：localStorage 标记后不再弹
+  const [onboardingOpen, setOnboardingOpen] = useState(
+    () => localStorage.getItem('hertz.onboarded.v1') === null,
+  )
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -120,6 +125,7 @@ export function AppShell() {
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <ActivityPanel />
+      {onboardingOpen && <OnboardingModal onDone={() => setOnboardingOpen(false)} />}
     </div>
   )
 }

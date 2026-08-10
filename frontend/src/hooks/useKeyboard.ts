@@ -13,6 +13,13 @@ export function useKeyboard() {
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
       const s = useBoardStore.getState()
+      // v0.4 E2：撤销/重做（⌘Z / ⇧⌘Z）
+      if (meta && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) s.redo()
+        else s.undo()
+        return
+      }
       if (meta && e.key.toLowerCase() === 'g') {
         e.preventDefault()
         s.toggleClusters()

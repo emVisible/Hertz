@@ -473,6 +473,22 @@ export function PipelineView(p: PipelineViewProps) {
               }
             >
               {/* v0.3.5：预处理只含已下载/已评分条目（discovered 留在采集 menu 待下载队列） */}
+              {/* v0.4 E4 空态引导：数据在待下载队列时指路，不让人困惑 */}
+              {sortedPreReview.length === 0 && (p.counts.discovered ?? 0) > 0 && (
+                <div className="flex items-center gap-2 border-b border-border bg-surface-2/40 px-3 py-2 text-xs text-text-secondary">
+                  <Icon name="downloads" size={12} className="shrink-0 text-text-disabled" />
+                  <span className="min-w-0">
+                    {t('console.preReviewEmptyHint', { n: p.counts.discovered ?? 0 })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => p.setTab('run')}
+                    className="ml-auto shrink-0 text-primary underline-offset-2 hover:underline"
+                  >
+                    {t('console.preReviewGoCollect')}
+                  </button>
+                </div>
+              )}
               <StageList
                 items={sortedPreReview}
                 emptyText={t('console.emptyPreReview')}

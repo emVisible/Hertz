@@ -13,7 +13,8 @@ import {
   Modal,
   Progress,
   QueryErrorState,
-  Spinner,
+  SkeletonCard,
+  SkeletonList,
   useToast,
 } from '../../components/ui'
 import { useEventSource } from '../../hooks/useEventSource'
@@ -455,8 +456,8 @@ export function AssetsPage() {
                   <ReactMarkdown>{doc.content}</ReactMarkdown>
                 </article>
               ) : (
-                <div className="flex flex-1 items-center justify-center">
-                  <Spinner />
+                <div className="flex-1 p-4">
+                  <SkeletonList rows={5} height={44} />
                 </div>
               )
             ) : (
@@ -724,7 +725,7 @@ export function AssetsPage() {
           {scan.isError ? (
             <QueryErrorState message={t('error.queryFailed', { detail: currentPath ?? '' })} onRetry={() => void scan.refetch()} />
           ) : scan.isLoading ? (
-            <div className="flex h-40 items-center justify-center"><Spinner /></div>
+            <SkeletonCard count={8} className="p-3" />
           ) : filtered.length === 0 && kind !== 'active' ? (
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-text-secondary">
               <Icon name="downloads" size={32} className="text-text-disabled" />
@@ -746,6 +747,10 @@ export function AssetsPage() {
                   onPreview={() => (entry.kind === 'directory' ? openEntry(entry) : setQuickPreview(entry))}
                   onDetail={() => openEntry(entry)}
                   onContext={(x, y) => setMenu({ x, y, entry })}
+                  onFavorite={(e) => {
+                    const tags = e.tags ?? []
+                    void saveTags(e, tags.includes('⭐') ? tags.filter((x) => x !== '⭐') : [...tags, '⭐'])
+                  }}
                 />
               ))}
             </div>

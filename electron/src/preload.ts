@@ -12,6 +12,8 @@ const windowApi = {
   /** 自定义简约弹窗按钮回传（主进程按通道订阅，无默认 Electron 图标）。 */
   respondToDialog: (channel: string, id: string) => ipcRenderer.send(channel, id),
   notifyDownloadDone: (name: string) => ipcRenderer.send('notify:download-done', name),
+  notifyPublish: (title: string, ok: boolean) =>
+    ipcRenderer.send('notify:publish', title, ok),
   /** 剪贴板命中链接：返回清理后的 URL（主进程通知点击时触发）。 */
   onClipboardParse: (cb: (url: string) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, url: string) => cb(url)

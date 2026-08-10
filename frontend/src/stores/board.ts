@@ -24,6 +24,12 @@ interface BoardState {
   whispers: Whisper[]
   lastTouchAt: number
 
+  // 撤销/重做（v0.4 E2）：板级快照栈（上限 50，重做栈）
+  undoStack: Board[]
+  redoStack: Board[]
+  undo: () => void
+  redo: () => void
+
   touch: () => void
   setTool: (tool: ToolId) => void
   setStrokeColor: (color: string) => void
@@ -83,12 +89,31 @@ const MAX_WHISPERS = 5
 export const useBoardStore = create<BoardState>()(
   persist(
     (set, get) => {
-      /** 所有写操作统一入口：更新 boards 数组 + 激活板引用（单一真相源 AXIOM §1.2）。 */
-      function mutate(fn: (b: Board) => Board, patch: Partial<BoardState> = {}) {
-        const { boards, activeBoardId } = get()
-        const next = boards.map((b) => (b.id === activeBoardId ? fn(b) : b))
-        const active = next.find((b) => b.id === activeBoardId) ?? next[0]
-        set({ boards: next, board: active, lastTouchAt: Date.now(), ...patch })
+      /** 所有写操作统一入口：更新 boards 数组 + 激活板引用（单一真相源 AXIOM §1.2）。
+       *  v0.4 E2：undoable 操作先把当前板快照压入历史栈（上限 50，清空 redo）。 */
+      function mutate(
+        fn: (b: Board) => Board,
+        patch: Partial<BoardState> = {},
+        undoable = true,
+      ) {
+        const state = get()
+        const next = state.boards.map((b) => (b.id === state.activeBoardId ? fn(b) : b))
+        const active = next.find((b) => b.id === state.activeBoardId) ?? next[0]
+        const extra: Partial<BoardState> = {}
+        if (undoable) {
+          const before = state.boards.find((b) => b.id === state.activeBoardId)
+          if (before) {
+            extra.undoStack = [...state.undoStack.slice(-49), before]
+          }
+          extra.redoStack = []
+        }
+        set({
+          boards: next,
+          board: active,
+          lastTouchAt: Date.now(),
+          ...extra,
+          ...patch,
+        })
       }
 
       const initial = defaultBoard()
@@ -105,6 +130,38 @@ export const useBoardStore = create<BoardState>()(
         ghostSeen: [],
         whispers: [],
         lastTouchAt: Date.now(),
+        undoStack: [],
+        redoStack: [],
+
+        undo: () => {
+          const { undoStack, redoStack, boards, activeBoardId } = get()
+          const last = undoStack[undoStack.length - 1]
+          if (!last) return
+          const current = boards.find((b) => b.id === activeBoardId)
+          set({
+            boards: boards.map((b) => (b.id === activeBoardId ? last : b)),
+            board: last,
+            undoStack: undoStack.slice(0, -1),
+            redoStack: current ? [...redoStack, current] : redoStack,
+            selectedId: null,
+            lastTouchAt: Date.now(),
+          })
+        },
+
+        redo: () => {
+          const { undoStack, redoStack, boards, activeBoardId } = get()
+          const next = redoStack[redoStack.length - 1]
+          if (!next) return
+          const current = boards.find((b) => b.id === activeBoardId)
+          set({
+            boards: boards.map((b) => (b.id === activeBoardId ? next : b)),
+            board: next,
+            redoStack: redoStack.slice(0, -1),
+            undoStack: current ? [...undoStack, current] : undoStack,
+            selectedId: null,
+            lastTouchAt: Date.now(),
+          })
+        },
 
         touch: () => set({ lastTouchAt: Date.now() }),
 
@@ -182,11 +239,16 @@ export const useBoardStore = create<BoardState>()(
         },
 
         moveCard: (id, x, y) => {
-          mutate((b) => ({
-            ...b,
-            cards: b.cards.map((c) => (c.id === id ? { ...c, x, y } : c)),
-            updatedAt: Date.now(),
-          }))
+          // v0.4 E2：拖拽高频不入撤销栈（快照成本高且用户不期望每帧一步）
+          mutate(
+            (b) => ({
+              ...b,
+              cards: b.cards.map((c) => (c.id === id ? { ...c, x, y } : c)),
+              updatedAt: Date.now(),
+            }),
+            {},
+            false,
+          )
         },
 
         togglePin: (id) => {
