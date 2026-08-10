@@ -293,13 +293,17 @@ class PipelineService:
             await session.commit()
             return len(rows)
 
-    # ---------- 重新处理 / 重新翻译（v0.2.7，参考原项目 reproduce/retranslate） ----------
+    # ---------- 相邻双向（v0.3.9 流程解耦） ----------
+    #
+    # 采集 ⇄ 预处理 ⇄ 审核 ⇄ 发布：只允许与相邻环节互相打回，职责单一。
+    # 审核只负责 通过/拒绝/打回预处理；预处理负责 制作/评分/拒绝/打回采集；
+    # 发布负责 发布/打回审核。
 
-    async def reprocess(self, item_id: uuid.UUID, *, retranslate: bool = False) -> dict:
-        """打回重新生产（完成后回到审核队列）。
+    async def back_to_prep(self, item_id: uuid.UUID) -> dict:
+        """审核打回预处理（v0.3.9）：queued → scored。
 
-        reprocess（重新处理）：清空脚本与产物 → 完整重跑 script→TTS→字幕→合成；
-        retranslate（重新翻译）：保留脚本，只重跑 TTS/字幕/合成（原视频上重翻译）。
+        清产物（脚本/视频/音频/字幕/封面）回到预处理列表，用户重新
+        调整生产方式/评分后重新制作；脚本保留（不强制重新生成）。
         """
         from backend.pipeline.errors import InvalidItemStateError
 
@@ -307,24 +311,53 @@ class PipelineService:
             item = await session.get(Item, item_id)
             if item is None:
                 raise ItemNotFoundError(item_id)
-            if item.status not in (ItemStatus.QUEUED, ItemStatus.APPROVED, ItemStatus.FAILED):
+            if item.status != ItemStatus.QUEUED:
                 raise InvalidItemStateError(
-                    f"cannot reprocess item in state {item.status}"
+                    f"cannot back-to-prep item in state {item.status}"
                 )
-            item.status = ItemStatus.SCORED  # produce 步骤消费 scored
+            item.status = ItemStatus.SCORED
             item.error = None
-            if not retranslate:
-                item.script_json = None  # 重新生成脚本
+            item.error_class = ""
             for field in ("video_path", "cover_path", "audio_path", "subtitle_path", "phash"):
                 setattr(item, field, None)
             await session.merge(item)
             await session.commit()
         self.hub.publish(
             "pipeline",
-            {"type": "item", "item_id": str(item_id), "status": "scored",
-             "step": "retranslate" if retranslate else "reprocess"},
+            {"type": "item", "item_id": str(item_id), "status": "scored", "step": "back_to_prep"},
         )
-        return {"id": str(item_id), "status": "scored", "retranslate": retranslate}
+        return {"id": str(item_id), "status": "scored"}
+
+    async def back_to_collect(self, item_id: uuid.UUID) -> dict:
+        """预处理打回采集（v0.3.9）：downloaded/scored → discovered。
+
+        回到采集待下载队列，重新走下载（源可能已恢复）。
+        """
+        from backend.pipeline.errors import InvalidItemStateError
+
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+            if item is None:
+                raise ItemNotFoundError(item_id)
+            if item.status not in (ItemStatus.DOWNLOADED, ItemStatus.SCORED):
+                raise InvalidItemStateError(
+                    f"cannot back-to-collect item in state {item.status}"
+                )
+            item.status = ItemStatus.DISCOVERED
+            item.error = None
+            item.error_class = ""
+            await session.merge(item)
+            await session.commit()
+        self.hub.publish(
+            "pipeline",
+            {
+                "type": "item",
+                "item_id": str(item_id),
+                "status": "discovered",
+                "step": "back_to_collect",
+            },
+        )
+        return {"id": str(item_id), "status": "discovered"}
 
     # ---------- 排期自动维护（v0.2.7） ----------
 

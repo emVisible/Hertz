@@ -190,12 +190,17 @@ class StepEngine:
         return {"id": str(item_id), "status": item.status}
 
     async def requeue(self, item_id: uuid.UUID) -> dict:
-        """Restore an item back to review (queued): rejected or approved both work."""
+        """打回审核（v0.3.9 发布连通审核）：rejected/approved/published → queued。
+
+        发布卡「打回审核」用：已发布/待发布条目重新进入审核队列。
+        """
         async with session_factory() as session:
             item = await session.get(Item, item_id)
             if item is None:
                 raise ItemNotFoundError(item_id)
-            if item.status not in (ItemStatus.REJECTED, ItemStatus.APPROVED):
+            if item.status not in (
+                ItemStatus.REJECTED, ItemStatus.APPROVED, ItemStatus.PUBLISHED,
+            ):
                 raise InvalidItemStateError(f"cannot requeue item in state {item.status}")
             item.status = ItemStatus.QUEUED
             item.error = None

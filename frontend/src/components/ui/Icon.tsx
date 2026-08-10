@@ -50,6 +50,7 @@ const PATHS = {
   wand: 'M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8L19 13M12.2 6.2L11 5M15 9a4.95 4.95 0 00-3.54 1.46L5 16.9V19h2.1l6.44-6.46A4.95 4.95 0 0015 9z',
   copy: 'M9 9h11a2 2 0 012 2v9a2 2 0 01-2 2H11a2 2 0 01-2-2v-9zM5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1',
   layers: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
+  rewind: 'M11 19l-9-7 9-7v14zM22 19l-9-7 9-7v14z',
 } as const
 
 export type IconName = keyof typeof PATHS

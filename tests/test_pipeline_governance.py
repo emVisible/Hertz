@@ -524,12 +524,12 @@ def test_assign_bili_tid_resolution() -> None:
 # ---------- 重新处理 / 重新翻译 / 过期重排（v0.2.7） ----------
 
 @pytest.mark.asyncio
-async def test_reprocess_and_retranslate(client) -> None:
-    """reprocess 清脚本全重跑；retranslate 保留脚本只重翻译。"""
+async def test_back_to_prep_and_collect(client) -> None:
+    """相邻双向（v0.3.9）：审核→预处理→采集 逐级打回，职责单一。"""
 
     async with session_factory() as session:
         item = Item(
-            status=ItemStatus.QUEUED, source="reddit", source_id="rp-1", title="重处理",
+            status=ItemStatus.QUEUED, source="reddit", source_id="btp-1", title="打回",
             script_json={"script": "旧脚本", "bili_tid": 201},
             video_path="/x/v.mp4", cover_path="/x/c.jpg", audio_path="/x/a.mp3",
             phash="abc",
@@ -538,38 +538,44 @@ async def test_reprocess_and_retranslate(client) -> None:
         await session.commit()
         item_id = item.id
 
-    resp = await client.post(
-        f"/api/pipeline/items/{item_id}/reprocess", params={"retranslate": 1}
-    )
+    # 审核打回预处理：queued → scored，清产物保留脚本
+    resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-prep")
     assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["status"] == "scored" and body["retranslate"] is True
+    assert resp.json()["status"] == "scored"
     async with session_factory() as session:
         row = await session.get(Item, item_id)
         assert row.status == "scored"
-        assert row.script_json is not None  # 保留脚本
-        assert row.video_path is None and row.cover_path is None  # 产物清空
+        assert row.script_json is not None  # 脚本保留
+        assert row.video_path is None and row.phash is None  # 产物清空
 
-    # 回到 queued 后重新处理（完整重跑）
-    async with session_factory() as session:
-        row = await session.get(Item, item_id)
-        row.status = ItemStatus.QUEUED
-        await session.commit()
-    resp = await client.post(f"/api/pipeline/items/{item_id}/reprocess")
+    # 预处理打回采集：scored → discovered
+    resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-collect")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["retranslate"] is False
+    assert resp.json()["status"] == "discovered"
     async with session_factory() as session:
         row = await session.get(Item, item_id)
-        assert row.status == "scored"
-        assert row.script_json is None  # 脚本重生成
+        assert row.status == "discovered"
 
-    # 非法状态（published）→ 409
-    async with session_factory() as session:
-        row = await session.get(Item, item_id)
-        row.status = ItemStatus.PUBLISHED
-        await session.commit()
-    resp = await client.post(f"/api/pipeline/items/{item_id}/reprocess")
+    # 非法打回（discovered → back-to-prep）→ 409
+    resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-prep")
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_requeue_from_published(client) -> None:
+    """发布连通审核（v0.3.9）：已发布条目可打回审核队列。"""
+
+    async with session_factory() as session:
+        item = Item(
+            status=ItemStatus.PUBLISHED, source="reddit", source_id="rp-1", title="已发布",
+        )
+        session.add(item)
+        await session.commit()
+        item_id = item.id
+
+    resp = await client.post(f"/api/pipeline/items/{item_id}/requeue")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "queued"
 
 
 @pytest.mark.asyncio

@@ -8,20 +8,20 @@ import { ScoreDims } from './ScoreDims'
 
 /** 审核卡片（v0.3.2 重构：内容审核专用——发布元数据全部移到发布卡）：
  *  媒体（播放/换封面）+ 原始标题只读 + 源头审核链接 + 评分维度网格 +
- *  文案折叠 + 操作组（重新处理/翻译/通过/驳回）。
+ *  文案折叠 + 操作组（打回预处理/通过/拒绝——v0.3.9 职责单一）。
  *  标题/标签/分区/排期/版权等 B站发布元数据 → PublishCard。 */
 export function AuditCard({
   item,
   onApprove,
   onReject,
   onUploadCover,
-  onReprocess,
+  onBackToPrep,
 }: {
   item: PipelineItem
   onApprove: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
   onUploadCover: (item: PipelineItem, file: File) => void
-  onReprocess: (item: PipelineItem, retranslate: boolean) => void
+  onBackToPrep: (item: PipelineItem) => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -120,15 +120,11 @@ export function AuditCard({
           </details>
         )}
 
-        {/* 操作区：hover/键盘聚焦才显示——通过/驳回 + 重新处理/重新翻译 */}
+        {/* 操作区（v0.3.9 职责单一）：审核只负责 通过 / 拒绝 / 打回预处理 */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-          <Button size="sm" variant="ghost" onClick={() => onReprocess(item, true)} title={t('console.retranslateHint')}>
-            <Icon name="refresh" size={12} />
-            {t('console.retranslate')}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => onReprocess(item, false)} title={t('console.reprocessHint')}>
-            <Icon name="refresh" size={12} />
-            {t('console.reprocess')}
+          <Button size="sm" variant="ghost" onClick={() => onBackToPrep(item)} title={t('console.backToPrepHint')}>
+            <Icon name="rewind" size={12} />
+            {t('console.backToPrep')}
           </Button>
           <Button size="sm" className="w-20" onClick={() => onApprove(item)}>
             <Icon name="check" size={12} />

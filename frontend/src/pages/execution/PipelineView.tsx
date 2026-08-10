@@ -61,7 +61,8 @@ interface PipelineViewProps {
   publishItem: (item: PipelineItem, selfmade?: boolean, target?: string) => void
   uploadCover: (item: PipelineItem, file: File) => void
   retryClass: (cls: string, n: number) => void
-  reprocess: (item: PipelineItem, retranslate: boolean) => void
+  backToPrep: (item: PipelineItem) => void
+  backToCollect: (item: PipelineItem) => void
   rescheduleExpired: () => Promise<void>
   setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
   produceOne: (item: PipelineItem) => Promise<void>
@@ -378,11 +379,12 @@ export function PipelineView(p: PipelineViewProps) {
                     onScore={(i) => void p.scoreOne(i)}
                     onProduce={(i) => void p.produceOne(i)}
                     onReject={(i) => void p.act(i, 'reject')}
-                    onUploadCover={(i, file) => void p.uploadCover(i, file)}
-                  />
-                )}
-              />
-            </PipelineStage>
+                      onUploadCover={(i, file) => void p.uploadCover(i, file)}
+                      onBackToCollect={(i) => void p.backToCollect(i)}
+                    />
+                  )}
+                />
+              </PipelineStage>
             <ProduceBatchModal
               open={produceBatchOpen}
               onClose={() => setProduceBatchOpen(false)}
@@ -416,7 +418,7 @@ export function PipelineView(p: PipelineViewProps) {
                       onApprove={(i) => void p.act(i, 'approve')}
                       onReject={(i) => void p.act(i, 'reject')}
                       onUploadCover={(i, file) => void p.uploadCover(i, file)}
-                      onReprocess={(i, retranslate) => void p.reprocess(i, retranslate)}
+                      onBackToPrep={(i) => void p.backToPrep(i)}
                     />
                 ))}
               </ul>
@@ -602,14 +604,24 @@ export function PipelineView(p: PipelineViewProps) {
                           </span>
                         }
                         right={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => void p.publishItem(item, false)}
-                            title={t('console.republishHint')}
-                          >
-                            {t('console.republish')}
-                          </Button>
+                          <span className="flex items-center gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void p.act(item, 'requeue')}
+                              title={t('console.backToReviewHint')}
+                            >
+                              {t('console.backToReview')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void p.publishItem(item, false)}
+                              title={t('console.republishHint')}
+                            >
+                              {t('console.republish')}
+                            </Button>
+                          </span>
                         }
                       />
                     )}

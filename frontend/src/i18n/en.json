@@ -544,12 +544,6 @@
     "hasCover": "Has cover",
     "emptyPreReview": "Nothing in pre-process",
     "stageExceptions": "Exceptions",
-    "reprocess": "Reprocess",
-    "reprocessHint": "Rerun the full pipeline (script/TTS/subs/compose); back to review when done",
-    "retranslate": "Retranslate",
-    "retranslateHint": "Keep the script, retranslate narration & subs on the original video",
-    "reprocessed": "Sent back for reprocessing — will return to review",
-    "retranslated": "Sent back for retranslation — will return to review",
     "rescheduleUpdated": "Updated {{n}} expired schedules to fresh recommended slots",
     "tidAuto": "auto",
     "dims": {
@@ -639,7 +633,14 @@
     "publishCookieHint": "Run biliup login in terminal, then re-check",
     "publishCookieReady": "cookie ready",
     "publishReady": "Publish target",
-    "publishHistory": "Publish history"
+    "publishHistory": "Publish history",
+    "backToPrep": "Back to preprocess",
+    "backToPrepHint": "Return to preprocess list to re-produce (clears output, keeps script)",
+    "backToCollect": "Back to collect",
+    "backToCollectHint": "Return to collect queue for re-download",
+    "backToReviewHint": "Return to review queue",
+    "backToPrepDone": "Sent back to preprocess — adjust produce mode and re-produce",
+    "backToCollectDone": "Sent back to collect — re-download"
   },
   "canvas": {
     "tool": {

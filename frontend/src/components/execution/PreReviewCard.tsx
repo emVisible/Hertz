@@ -8,13 +8,15 @@ import { normalizeOptions, ProduceOptionsPicker } from './ProduceOptionsPicker'
 
 /** 预处理卡片（v0.3.4 重构，对齐审核卡相册感）：
  *  左侧大媒体（可播放）+ 右侧精简信息（标题/meta/AI 总分）+ 生产方式
- *  chips（点击即存，无保存按钮）+ hover 右下角「制作/拒绝」操作。 */
+ *  chips（点击即存，无保存按钮）+ hover 右下角操作。
+ *  v0.3.9 相邻双向：预处理可 制作→审核 / 打回采集。 */
 export function PreReviewCard({
   item,
   onSaveOptions,
   onScore,
   onProduce,
   onReject,
+  onBackToCollect,
   onUploadCover,
 }: {
   item: PipelineItem
@@ -22,6 +24,7 @@ export function PreReviewCard({
   onScore: (item: PipelineItem) => void
   onProduce: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
+  onBackToCollect: (item: PipelineItem) => void
   onUploadCover: (item: PipelineItem, file: File) => void
 }) {
   const { t } = useTranslation()
@@ -118,8 +121,12 @@ export function PreReviewCard({
           />
         </div>
 
-        {/* hover 操作：评分（未评分且已下载时显示）+ 制作 + 拒绝（v0.3.5） */}
+        {/* hover 操作：评分（未评分且已下载时显示）+ 打回采集（v0.3.9）+ 制作 + 拒绝 */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+          <Button size="sm" variant="ghost" onClick={() => onBackToCollect(item)} title={t('console.backToCollectHint')}>
+            <Icon name="rewind" size={12} />
+            {t('console.backToCollect')}
+          </Button>
           <Button size="sm" variant="danger" onClick={() => onReject(item)}>
             <Icon name="close" size={12} />
             {t('console.reject')}

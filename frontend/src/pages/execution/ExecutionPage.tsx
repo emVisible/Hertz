@@ -107,7 +107,8 @@ export function ExecutionPage() {
           publishItem={pipeline.publishItem}
           uploadCover={pipeline.uploadCover}
           retryClass={pipeline.retryClass}
-          reprocess={pipeline.reprocess}
+          backToPrep={pipeline.backToPrep}
+          backToCollect={pipeline.backToCollect}
           rescheduleExpired={pipeline.rescheduleExpired}
           setProduceOptions={pipeline.setProduceOptions}
           produceOne={pipeline.produceOne}

@@ -511,7 +511,7 @@
     "revealVideo": "在 Finder 中显示成片",
     "revealRaw": "无成片——点击在 Finder 中定位原始素材",
     "scheduleFirst": "请先设置排期",
-    "backToReview": "改回待审",
+    "backToReview": "打回审核",
     "published": "已发布",
     "metaSaved": "元数据已保存",
     "biliTags": "B站标签",
@@ -559,12 +559,6 @@
     "hasCover": "有封面",
     "emptyPreReview": "暂无预处理数据",
     "stageExceptions": "异常",
-    "reprocess": "重新处理",
-    "reprocessHint": "打回完整重跑流水线（脚本/配音/字幕/合成），完成后回到审核",
-    "retranslate": "重新翻译",
-    "retranslateHint": "保留脚本，基于原视频重新翻译配音与字幕，完成后回到审核",
-    "reprocessed": "已打回重新处理，完成后回到审核",
-    "retranslated": "已打回重新翻译，完成后回到审核",
     "rescheduleUpdated": "已更新 {{n}} 条过期排期为新的推荐时间",
     "tidAuto": "自动",
     "dims": {
@@ -654,7 +648,14 @@
     "publishCookieHint": "请在终端运行 biliup login 生成后重新检查",
     "publishCookieReady": "cookie 已就绪",
     "publishReady": "发布目标",
-    "publishHistory": "发布历史"
+    "publishHistory": "发布历史",
+    "backToPrep": "打回预处理",
+    "backToPrepHint": "回到预处理列表重新制作（清产物保留脚本）",
+    "backToCollect": "打回采集",
+    "backToCollectHint": "回到采集队列重新下载",
+    "backToReviewHint": "回到审核队列重新审核",
+    "backToPrepDone": "已打回预处理，可重新调整生产方式后制作",
+    "backToCollectDone": "已打回采集，可重新下载"
   },
   "canvas": {
     "tool": {

@@ -145,16 +145,20 @@ export const pipelineApi = {
   reject: (id: string, reason = '') =>
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/reject?reason=${encodeURIComponent(reason)}`),
   retry: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/retry`),
+  /** 打回审核（v0.3.9 相邻双向）：rejected/approved/published → queued */
   requeue: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/requeue`),
+
+  /** 审核打回预处理（v0.3.9）：queued → scored */
+  backToPrep: (id: string) =>
+    api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/back-to-prep`),
+
+  /** 预处理打回采集（v0.3.9）：downloaded/scored → discovered */
+  backToCollect: (id: string) =>
+    api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/back-to-collect`),
   /** 单条制作（v0.3.4，预处理「制作」按钮）。 */
   produce: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/produce`),
   /** 单条评分（v0.3.5，预处理手动评分按钮）。 */
   score: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/score`),
-  /** 打回重新生产（v0.2.7）：retranslate=1 保留脚本只重翻译。 */
-  reprocess: (id: string, retranslate = false) =>
-    api.post<{ id: string; status: string; retranslate: boolean }>(
-      `/api/pipeline/items/${id}/reprocess?retranslate=${retranslate ? 1 : 0}`,
-    ),
   /** 过期排期自动重排（v0.2.7）：进入审核时调用。 */
   rescheduleExpired: () => api.post<{ updated: number }>('/api/pipeline/reschedule-expired'),
   /** 生产方式批量设置（v0.3.3，预处理人工选择）。 */

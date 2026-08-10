@@ -339,12 +339,23 @@ export function usePipelineExecution() {
     }
   }
 
-  /** 打回重新生产（v0.2.7，参考原项目 reproduce/retranslate）。 */
-  async function reprocess(item: PipelineItem, retranslate: boolean) {
+  /** 审核打回预处理（v0.3.9 相邻双向）：queued → scored，重新制作。 */
+  async function backToPrep(item: PipelineItem) {
     try {
-      await pipelineApi.reprocess(item.id, retranslate)
+      await pipelineApi.backToPrep(item.id)
       refresh()
-      toast(t(retranslate ? 'console.retranslated' : 'console.reprocessed'), 'success')
+      toast(t('console.backToPrepDone'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 预处理打回采集（v0.3.9 相邻双向）：downloaded/scored → discovered，重新下载。 */
+  async function backToCollect(item: PipelineItem) {
+    try {
+      await pipelineApi.backToCollect(item.id)
+      refresh()
+      toast(t('console.backToCollectDone'), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }
@@ -411,7 +422,8 @@ export function usePipelineExecution() {
     publishStatus,
     uploadCover,
     retryClass,
-    reprocess,
+    backToPrep,
+    backToCollect,
     rescheduleExpired,
     setProduceOptions,
     produceOne,
