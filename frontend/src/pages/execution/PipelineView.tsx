@@ -97,7 +97,7 @@ const PIPELINE_TABS = [
   { id: 'run', labelKey: 'execution.modePipeline' },
   { id: 'preReview', labelKey: 'console.stagePreReview', countKeys: ['discovered', 'downloaded', 'scored'] },
   { id: 'inReview', labelKey: 'console.stageAudit', countKeys: ['queued'] },
-  { id: 'postReview', labelKey: 'console.stagePostReview', countKeys: ['approved', 'published'] },
+  { id: 'postReview', labelKey: 'console.stagePublish', countKeys: ['approved', 'published'] },
   { id: 'exceptions', labelKey: 'console.stageExceptions', countKeys: ['failed', 'rejected'] },
 ] satisfies Array<{
   id: PipelineTabId
@@ -386,7 +386,6 @@ export function PipelineView(p: PipelineViewProps) {
                       item={item}
                       onApprove={(i) => void p.act(i, 'approve')}
                       onReject={(i) => void p.act(i, 'reject')}
-                      onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
                       onUploadCover={(i, file) => void p.uploadCover(i, file)}
                       onReprocess={(i, retranslate) => void p.reprocess(i, retranslate)}
                     />

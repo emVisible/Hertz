@@ -492,8 +492,6 @@
     "noTags": "No tags",
     "tagsPlaceholder": "Comma separated, e.g. animals,high-energy",
     "biliTid": "Partition",
-    "editTid": "Click to set partition (empty = default)",
-    "tidPlaceholder": "empty = default",
     "tidDefault": "Default partition (empty)",
     "approvedHint": "Approved — handle it in the Publish tab",
     "recentPublishes": "Recent publishes",
@@ -533,7 +531,6 @@
     "pendingProduce": "Pending produce",
     "hasCover": "Has cover",
     "emptyPreReview": "Nothing in pre-process",
-    "stagePostReview": "Post-review",
     "stageExceptions": "Exceptions",
     "reprocess": "Reprocess",
     "reprocessHint": "Rerun the full pipeline (script/TTS/subs/compose); back to review when done",
@@ -559,7 +556,12 @@
     "noPending": "No pending items",
     "sysLogs": "System logs (backend/Scheduler)",
     "sysLogsEmpty": "No system logs yet",
-    "viewSource": "View source"
+    "viewSource": "View source",
+    "copyright": "Copyright",
+    "copyrightSelfmade": "Self-made",
+    "copyrightRepost": "Repost",
+    "copyrightHint": "Self-made = original upload; Repost = credited re-upload",
+    "copyrightSelfmadeHint": "Will publish as original (self-made)"
   },
   "canvas": {
     "tool": {

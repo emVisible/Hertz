@@ -308,3 +308,8 @@
   - **根因**：Electron 未处理 target=_blank——审核卡的源帖链接点击被拦截（新窗口空白/无响应），源头审核不可达
   - **修复**：主进程 setWindowOpenHandler——http/https 外链转 shell.openExternal（系统浏览器打开，用户显式点击 §13.1），其余 deny（§8.1）；审核卡 meta 行：subreddit 徽章可点击直达源帖 + 「查看源帖」主色按钮（icon+文案），源头审核入口显式化
   - 清理 originalLink 死 i18n key（§3.3）
+- **D-156 审核/发布 menu 功能重构（v0.3.2）**——
+  - **职责划分**：审核 menu = 内容判断专用（媒体/原始标题/源帖/评分维度/脚本文案/重新处理/翻译/通过驳回）；发布 menu = 发布元数据全集（标题可编辑/B站标签/分区 Select/排期/版权自制搬运）+ 定时/立即发布 + 返回审核
+  - **迁移**：标题编辑、标签、分区 Select、排期从审核卡移入发布卡；发布操作去掉独立「自制发布」按钮——自制/搬运改为显式版权开关（bili_copyright 1/2），发布 selfmade 由开关驱动
+  - **改名**：「审核后」→「发布」（PIPELINE_TABS labelKey 复用 console.stagePublish），清理 stagePostReview 死 key
+  - 清理死 i18n key（editTid/tidPlaceholder）

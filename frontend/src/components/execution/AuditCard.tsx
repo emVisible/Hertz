@@ -2,40 +2,31 @@ import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
-import { Badge, Button, CopyButton, Icon, Select } from '../ui'
+import { Badge, Button, CopyButton, Icon } from '../ui'
 import { MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { ScoreDims } from './ScoreDims'
-import { ScheduleField } from './ScheduleField'
-import { BILI_TIDS, biliTidName } from '../../constants/bilibili'
 
-/** 审核卡片（借鉴 Autarkeia 信息结构，Hertz 设计语言）：
- *  媒体缩略（可播放/换封面）+ 标题内联编辑 + 徽章行 + 评分维度网格 +
- *  文案折叠 + B站标签/分区 Select + 排期 + 通过/驳回（右对齐）。 */
+/** 审核卡片（v0.3.2 重构：内容审核专用——发布元数据全部移到发布卡）：
+ *  媒体（播放/换封面）+ 原始标题只读 + 源头审核链接 + 评分维度网格 +
+ *  文案折叠 + 操作组（重新处理/翻译/通过/驳回）。
+ *  标题/标签/分区/排期/版权等 B站发布元数据 → PublishCard。 */
 export function AuditCard({
   item,
   onApprove,
   onReject,
-  onSaveMeta,
   onUploadCover,
   onReprocess,
 }: {
   item: PipelineItem
   onApprove: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
-  onSaveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
   onUploadCover: (item: PipelineItem, file: File) => void
   onReprocess: (item: PipelineItem, retranslate: boolean) => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const [titleDraft, setTitleDraft] = useState<string | null>(null)
-  const [tagsDraft, setTagsDraft] = useState<string | null>(null)
-  const [tidDraft, setTidDraft] = useState<string | null>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const script = item.script_json
-  const biliTitle = (script?.bili_title as string | undefined) ?? item.title
-  const biliTags = (script?.bili_tags as string | undefined) ?? ''
-  const biliTid = script?.bili_tid != null ? String(script.bili_tid) : ''
 
   return (
     <li className="group flex gap-5 px-4 py-4">
@@ -67,34 +58,14 @@ export function AuditCard({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          {titleDraft !== null ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <input
-                autoFocus
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                className="h-7 min-w-0 flex-1 border border-border bg-surface-1 px-2 text-sm text-text-primary outline-none focus:border-primary"
-              />
-              <Button size="sm" onClick={() => { onSaveMeta(item, { bili_title: titleDraft }); setTitleDraft(null) }}>
-                {t('common.save')}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setTitleDraft(null)}>
-                {t('docs.cancel')}
-              </Button>
-            </div>
-          ) : (
-            <p
-              className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary hover:text-primary"
-              title={biliTitle}
-              onDoubleClick={() => setTitleDraft(biliTitle)}
-            >
-              {biliTitle}
-            </p>
-          )}
+          {/* 原始标题只读（v0.3.2：B站标题编辑移到发布卡） */}
+          <p className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary" title={item.title}>
+            {item.title}
+          </p>
           <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-text-secondary">
-          {/* 源头审核（v0.3.1）：subreddit/标题可点击直达源帖（系统浏览器打开） */}
+          {/* 源头审核：subreddit 可点击直达源帖（系统浏览器打开） */}
           {item.source_url ? (
             <a
               href={item.source_url}
@@ -128,97 +99,9 @@ export function AuditCard({
             </a>
           )}
         </div>
-        {/* 评分维度：独立迷你网格（v0.2.6，不再平铺进 meta 行） */}
+        {/* 评分维度：独立迷你网格 */}
         <ScoreDims dims={item.score_dimensions} />
         {item.error && <p className="mt-1 text-xs text-error">{item.error}</p>}
-
-        {/* B站标签（可编辑） */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.biliTags')}</span>
-          {tagsDraft !== null ? (
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <input
-                autoFocus
-                value={tagsDraft}
-                onChange={(e) => setTagsDraft(e.target.value)}
-                placeholder={t('console.tagsPlaceholder')}
-                className="h-7 min-w-0 flex-1 border border-border bg-surface-1 px-2 text-xs text-text-primary outline-none focus:border-primary"
-              />
-              <Button size="sm" onClick={() => { onSaveMeta(item, { bili_tags: tagsDraft }); setTagsDraft(null) }}>
-                {t('common.save')}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setTagsDraft(null)}>
-                {t('docs.cancel')}
-              </Button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setTagsDraft(biliTags)}
-              className="flex flex-wrap items-center gap-1 text-left"
-              title={t('console.editTags')}
-            >
-              {biliTags
-                ? biliTags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean).map((tag) => (
-                    <span key={tag} className="border border-border px-1.5 py-0.5 text-[10px] text-text-secondary">
-                      {tag}
-                    </span>
-                  ))
-                : <span className="text-[10px] text-text-disabled">{t('console.noTags')}</span>}
-            </button>
-          )}
-        </div>
-
-        {/* 排期设置 */}
-        <div className="mt-1.5">
-          <ScheduleField
-            scheduledAt={item.scheduled_at}
-            onSave={(v) => onSaveMeta(item, { scheduled_at: v })}
-          />
-        </div>
-
-        {/* B站分区（tid）：Select 选择（v0.2.6 参考原项目分区表）；
-            未手动设置时显示自动建议分区名（v0.2.8，非数字、非误导性「留空」） */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.biliTid')}</span>
-          <Select
-            aria-label={t('console.biliTid')}
-            value={tidDraft ?? biliTid}
-            onChange={(e) => setTidDraft(e.target.value)}
-            options={[
-              {
-                value: '',
-                label: biliTid
-                  ? `${biliTidName(Number(biliTid))} · ${t('console.tidAuto')}`
-                  : biliTidName(item.auto_tid)
-                    ? `${biliTidName(item.auto_tid)} · ${t('console.tidAuto')}`
-                    : t('console.tidAuto'),
-              },
-              // 自定义 tid 兜底（不在分区表内的显式值不空白）
-              ...(biliTid && !BILI_TIDS.some((p) => String(p.tid) === biliTid)
-                ? [{ value: biliTid, label: `${biliTid} (自定义)` }]
-                : []),
-              ...BILI_TIDS.map((p) => ({
-                value: String(p.tid),
-                label: `${p.tid} · ${p.name}`,
-              })),
-            ]}
-            className="w-36"
-          />
-          {tidDraft !== null && (
-            <Button
-              size="sm"
-              onClick={() => { onSaveMeta(item, { bili_tid: tidDraft ? Number(tidDraft) : 0 }); setTidDraft(null) }}
-            >
-              {t('common.save')}
-            </Button>
-          )}
-          {tidDraft !== null && (
-            <Button size="sm" variant="ghost" onClick={() => setTidDraft(null)}>
-              {t('docs.cancel')}
-            </Button>
-          )}
-        </div>
 
         {script && (
           <details className="mt-2" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
@@ -237,9 +120,7 @@ export function AuditCard({
           </details>
         )}
 
-        {/* 操作区（v0.2.7）：hover/键盘聚焦卡片才显示——通过/驳回 + 重新处理/重新翻译
-            （参考原项目 reproduce/retranslate），默认隐藏保持简约（§17.6 可达性：
-            focus-within 保证键盘用户可见） */}
+        {/* 操作区：hover/键盘聚焦才显示——通过/驳回 + 重新处理/重新翻译 */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
           <Button size="sm" variant="ghost" onClick={() => onReprocess(item, true)} title={t('console.retranslateHint')}>
             <Icon name="refresh" size={12} />

@@ -507,8 +507,6 @@
     "noTags": "未设置标签",
     "tagsPlaceholder": "逗号分隔，如：动物,高能",
     "biliTid": "分区",
-    "editTid": "点击设置分区（留空用默认）",
-    "tidPlaceholder": "留空=默认",
     "tidDefault": "默认分区（留空）",
     "approvedHint": "已通过审核，请在「发布」页处理",
     "recentPublishes": "最近发布",
@@ -548,7 +546,6 @@
     "pendingProduce": "待制作",
     "hasCover": "有封面",
     "emptyPreReview": "暂无预处理数据",
-    "stagePostReview": "审核后",
     "stageExceptions": "异常",
     "reprocess": "重新处理",
     "reprocessHint": "打回完整重跑流水线（脚本/配音/字幕/合成），完成后回到审核",
@@ -574,7 +571,12 @@
     "noPending": "无待处理条目",
     "sysLogs": "系统日志（后端/Scheduler）",
     "sysLogsEmpty": "暂无系统日志",
-    "viewSource": "查看源帖"
+    "viewSource": "查看源帖",
+    "copyright": "版权",
+    "copyrightSelfmade": "自制",
+    "copyrightRepost": "搬运",
+    "copyrightHint": "自制=以原创身份发布；搬运=注明转载",
+    "copyrightSelfmadeHint": "将以自制（原创）身份发布"
   },
   "canvas": {
     "tool": {
