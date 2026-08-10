@@ -439,7 +439,6 @@
   },
   "console": {
     "step": "步骤",
-    "chain": "全链路（至审核）",
     "limit": "数量",
     "approve": "通过",
     "reject": "拒绝",
@@ -596,8 +595,22 @@
       "batchEmpty": "请先勾选条目",
       "selectAll": "全选",
       "deselectAll": "取消全选",
-      "produceSaved": "已更新 {{n}} 条生产方式"
-    }
+      "produceSaved": "已更新 {{n}} 条生产方式",
+      "now": "制作",
+      "nowHint": "按生产方式立即制作（下载后可用）",
+      "noRawHint": "先下载素材再制作",
+      "batchProduce": "批量制作",
+      "batchProduceHint": "批量执行制作（produce 批处理）"
+    },
+    "stageCollect": "采集",
+    "stageDownload": "下载",
+    "produceOneDone": "已开始制作，完成后进入审核",
+    "act": {
+      "title": "运行状态",
+      "events": "实时事件"
+    },
+    "publishTarget": "分发目标",
+    "publishTargetDefault": "默认（设置）"
   },
   "canvas": {
     "tool": {

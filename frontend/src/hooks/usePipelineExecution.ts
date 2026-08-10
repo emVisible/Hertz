@@ -165,11 +165,42 @@ export function usePipelineExecution() {
     if (!step || runningRef.current) return
     runningRef.current = true
     try {
-      if (step === 'chain') {
-        await pipelineApi.chain(limit)
+      if (step === 'download') {
+        // 半自动链路（v0.3.4）：下载完成后自动紧跟评分（预处理即有 AI 总分）
+        await pipelineApi.run('download', limit)
+        await pipelineApi.run('score', limit)
       } else {
         await pipelineApi.run(step, limit)
       }
+      refresh()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    } finally {
+      runningRef.current = false
+    }
+  }
+
+  /** 单条制作（v0.3.4，预处理「制作」按钮）。 */
+  async function produceOne(item: PipelineItem) {
+    try {
+      await pipelineApi.produce(item.id)
+      refresh()
+      toast(t('console.produceOneDone'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 批量制作（v0.3.4，预处理 menu 批处理入口）。 */
+  async function produceBatch() {
+    await runStepOnly('produce')
+  }
+
+  async function runStepOnly(stepName: string) {
+    if (runningRef.current) return
+    runningRef.current = true
+    try {
+      await pipelineApi.run(stepName, limit)
       refresh()
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
@@ -217,9 +248,9 @@ export function usePipelineExecution() {
     }
   }
 
-  async function publishItem(item: PipelineItem, selfmade = false) {
+  async function publishItem(item: PipelineItem, selfmade = false, target = '') {
     try {
-      await pipelineApi.publish(item.id, selfmade)
+      await pipelineApi.publish(item.id, selfmade, target)
       refresh()
       toast(t('console.published'), 'success')
     } catch (err) {
@@ -324,6 +355,8 @@ export function usePipelineExecution() {
     reprocess,
     rescheduleExpired,
     setProduceOptions,
+    produceOne,
+    produceBatch,
     refresh,
   }
 }

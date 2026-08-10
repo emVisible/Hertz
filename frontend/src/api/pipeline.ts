@@ -134,6 +134,8 @@ export const pipelineApi = {
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/reject?reason=${encodeURIComponent(reason)}`),
   retry: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/retry`),
   requeue: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/requeue`),
+  /** 单条制作（v0.3.4，预处理「制作」按钮）。 */
+  produce: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/produce`),
   /** 打回重新生产（v0.2.7）：retranslate=1 保留脚本只重翻译。 */
   reprocess: (id: string, retranslate = false) =>
     api.post<{ id: string; status: string; retranslate: boolean }>(
@@ -146,8 +148,10 @@ export const pipelineApi = {
     api.post<{ updated: number }>('/api/pipeline/produce-options', { ids, options }),
   updateMeta: (id: string, meta: Record<string, string | number | null>) =>
     api.put<{ id: string; ok: boolean }>(`/api/pipeline/items/${id}/meta`, meta),
-  publish: (id: string, selfmade = false) =>
-    api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/publish?selfmade=${selfmade ? 1 : 0}`),
+  publish: (id: string, selfmade = false, target = '') =>
+    api.post<{ id: string; status: string }>(
+      `/api/pipeline/items/${id}/publish?selfmade=${selfmade ? 1 : 0}&target=${encodeURIComponent(target)}`,
+    ),
   /** 上传替换封面（v0.2.6）：FormData multipart。 */
   uploadCover: async (id: string, file: File): Promise<{ id: string; cover_path: string }> => {
     const form = new FormData()

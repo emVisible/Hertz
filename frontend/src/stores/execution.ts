@@ -56,7 +56,7 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
     buffKeys: ['random', 'no_ai_phrases'],
   },
   pipeline: {
-    step: 'chain',
+    step: 'collect',
     limit: 10,
     logs: [],
     logSeq: 0,

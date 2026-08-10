@@ -7,8 +7,16 @@ import { MediaThumb, THUMB_LG } from './PipelineStage'
 import { ScheduleField } from './ScheduleField'
 import { BILI_TIDS, biliTidName } from '../../constants/bilibili'
 
-/** 发布卡片（v0.3.2 重构：发布元数据全集——标题/标签/分区/排期/版权 + 发布操作）。
- *  审核通过后的唯一发布入口：定时/立即发布，自制/搬运由版权开关显式控制。 */
+/** 分发目标（v0.3.4）：逐条覆盖全局配置，为多平台分发铺路 */
+export const PUBLISH_TARGETS = [
+  { value: '', label: 'default' },
+  { value: 'noop', label: 'noop' },
+  { value: 'bilibili', label: 'Bilibili' },
+  { value: 'export', label: '导出包' },
+]
+
+/** 发布卡片（v0.3.4）：发布元数据全集——标题/标签/分区/版权/排期 +
+ *  分发目标（逐条覆盖）+ 定时/立即发布。 */
 export function PublishCard({
   item,
   onPublish,
@@ -16,7 +24,7 @@ export function PublishCard({
   onRequeue,
 }: {
   item: PipelineItem
-  onPublish: (item: PipelineItem, selfmade: boolean) => void
+  onPublish: (item: PipelineItem, selfmade: boolean, target: string) => void
   onSaveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
   onRequeue: (item: PipelineItem) => void
 }) {
@@ -24,6 +32,7 @@ export function PublishCard({
   const [titleDraft, setTitleDraft] = useState<string | null>(null)
   const [tagsDraft, setTagsDraft] = useState<string | null>(null)
   const [tidDraft, setTidDraft] = useState<string | null>(null)
+  const [target, setTarget] = useState<string>(() => (item.publish_json?.target as string | undefined) ?? '')
   const script = item.script_json
   const biliTitle = (script?.bili_title as string | undefined) ?? item.title
   const biliTags = (script?.bili_tags as string | undefined) ?? ''
@@ -152,6 +161,21 @@ export function PublishCard({
           )}
         </div>
 
+        {/* 分发目标（v0.3.4）：逐条覆盖全局配置，随发布操作生效 */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.publishTarget')}</span>
+          <Select
+            aria-label={t('console.publishTarget')}
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            options={PUBLISH_TARGETS.map((p) => ({
+              value: p.value,
+              label: p.value === '' ? t('console.publishTargetDefault') : p.label,
+            }))}
+            className="w-32"
+          />
+        </div>
+
         {/* 版权（v0.3.2）：自制 / 搬运 显式切换——发布 selfmade 由开关驱动 */}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.copyright')}</span>
@@ -192,18 +216,18 @@ export function PublishCard({
           />
         </div>
 
-        {/* 发布操作：定时（需排期）/ 立即（版权开关决定自制） */}
+        {/* 发布操作：定时（需排期）/ 立即（版权开关决定自制，分发目标逐条生效） */}
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             disabled={!scheduled}
             title={!scheduled ? t('console.scheduleFirst') : undefined}
-            onClick={() => onPublish(item, selfmade)}
+            onClick={() => onPublish(item, selfmade, target)}
           >
             <Icon name="play" size={12} />
             {t('console.publishTimed')}
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => onPublish(item, selfmade)}>
+          <Button size="sm" variant="secondary" onClick={() => onPublish(item, selfmade, target)}>
             <Icon name="send" size={12} />
             {t('console.publishNow')}
           </Button>

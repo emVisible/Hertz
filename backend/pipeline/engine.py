@@ -86,6 +86,31 @@ class StepEngine:
             results[step] = await self.run_batch(step, limit=limit, channel=channel)
         return results
 
+    async def process_one(self, step_name: str, item_id: uuid.UUID) -> str:
+        """单条处理（v0.3.4，预处理「制作」按钮）：指定步骤处理单个条目。
+
+        复用 _process_item（状态落库 + 事件），返回 outcome（ok/rejected/failed）。
+        """
+        step_cls = get_step(step_name)
+        step = step_cls()
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+        if item is None:
+            raise ItemNotFoundError(item_id)
+        if item.status not in step.input_statuses:
+            raise InvalidItemStateError(
+                f"step {step_name} cannot process item in state {item.status}"
+            )
+        ctx = StepContext(
+            run_id=str(uuid.uuid4()),
+            settings=self.settings,
+            ai=self.ai,
+            emit=lambda e: self._emit("item:" + item_id.hex, e),
+        )
+        outcome = await self._process_item(ctx, step, item)
+        self._emit("pipeline", {"type": "job_step", "step": step_name, "count": 1})
+        return outcome
+
     # ---------- per-item actions (review / retry) ----------
 
     async def approve(self, item_id: uuid.UUID) -> dict:

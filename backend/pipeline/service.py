@@ -140,11 +140,14 @@ class PipelineService:
             await session.commit()
         return {"id": str(item_id), "ok": True}
 
-    async def publish_one(self, item_id: uuid.UUID, *, selfmade: bool = False) -> dict:
+    async def publish_one(
+        self, item_id: uuid.UUID, *, selfmade: bool = False, target: str | None = None
+    ) -> dict:
         """单条发布（审核通过后的人工操作）：执行 publisher 并落发布结果。
 
         定时由 item.scheduled_at 驱动（biliup --timedpublish）；自制由
-        bili_copyright=1 驱动。target 仍来自 pipeline_publish_target（发布安全）。
+        bili_copyright=1 驱动。v0.3.4：target 逐条可覆盖（分发目标），
+        缺省回退 pipeline_publish_target（发布安全）。
         approved（首次发布）与 published（重新发布）均可。
         """
         from datetime import UTC, datetime
@@ -182,7 +185,7 @@ class PipelineService:
             run_id=str(item_id), settings=self.engine.settings, ai=None,
             emit=lambda e: self.hub.publish("pipeline", e),
         )
-        target = getattr(self.engine.settings, "pipeline_publish_target", "noop")
+        target = target or getattr(self.engine.settings, "pipeline_publish_target", "noop")
         publisher = PUBLISHERS.get(target)
         if publisher is None:
             raise RuntimeError(f"unknown publish target '{target}'")
@@ -200,6 +203,33 @@ class PipelineService:
             {"type": "item", "item_id": str(item_id), "status": "published"},
         )
         return {"id": str(item_id), "status": "published", "result": result}
+
+    async def produce_one(self, item_id: uuid.UUID) -> dict:
+        """单条制作（v0.3.4，预处理「制作」按钮）：生产方式已设定、媒体已下载
+        的条目立即执行 produce（discovered/downloaded 自动转入 scored 再制作）。
+        """
+        from backend.pipeline.errors import InvalidItemStateError
+
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+            if item is None:
+                raise ItemNotFoundError(item_id)
+            if item.status not in (ItemStatus.DISCOVERED, ItemStatus.DOWNLOADED, ItemStatus.SCORED):
+                raise InvalidItemStateError(
+                    f"cannot produce item in state {item.status}"
+                )
+            if not item.raw_path:
+                raise InvalidItemStateError("item not downloaded yet — run download first")
+            if item.status != ItemStatus.SCORED:
+                item.status = ItemStatus.SCORED
+                await session.commit()
+        outcome = await self.engine.process_one("produce", item_id)
+        if outcome == "failed":
+            async with session_factory() as session:
+                row = await session.get(Item, item_id)
+                error = row.error if row is not None else "produce failed"
+            raise RuntimeError(error)
+        return {"id": str(item_id), "status": "queued", "outcome": outcome}
 
     # ---------- 生产方式（v0.3.3，预处理人工选择） ----------
 

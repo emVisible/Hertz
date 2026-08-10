@@ -7,6 +7,7 @@ import { BrandName, Sidebar, WindowControls } from '../components/layout'
 import type { NavItem } from '../components/layout'
 import { Icon } from '../components/ui'
 import { CommandPalette } from './CommandPalette'
+import { ActivityPanel } from './ActivityPanel'
 import { useThemeStore } from '../stores/theme'
 import { useExecutionStore } from '../stores/execution'
 import { pipelineApi } from '../api'
@@ -114,6 +115,7 @@ export function AppShell() {
         </main>
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ActivityPanel />
     </div>
   )
 }

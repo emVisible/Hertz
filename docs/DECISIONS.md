@@ -320,3 +320,9 @@
   - **API**：POST /items/batch/produce-options（单条/批量，≤200/批，互斥校验）
   - **UI**：PreReviewCard 生产方式 chips（直发互斥高亮/翻译自动勾字幕）+ 批量生产方式 Modal（多选条目统一设置）+ 生产方式徽章
   - **审核解耦**：重新处理/重新翻译尊重条目当前 produce_options（produce_item 读模块执行）
+- **D-158 流水线半自动化重构（v0.3.4）**——
+  - **Menu 重构**：内容流水线 → 「采集」（只 collect+download，半自动链路：下载完成后自动紧跟评分）；制作并入预处理（单条「制作」按钮 + 批量制作）
+  - **预处理卡重构**：对齐审核卡相册感（左侧 w-1/3 大媒体可播放）；右侧精简（标题/meta/AI 总分，去掉评分维度）；生产方式 chips 点击即存（移除保存按钮）；hover 右下角「制作/拒绝」
+  - **后端**：engine.process_one 单条处理 + POST /items/{id}/produce（未下载 409/raw 缺失 502）；publish_one 支持逐条分发目标 target（发布卡「分发目标」Select：noop/bilibili/export，随发布操作生效并记录 publish_json）
+  - **全局活动浮窗**：AppShell 右下角 ActivityPanel（浏览器下载栏语义）——实时事件/最近任务/系统日志 三 tab，所有页面可见，Esc/点击外部关闭，运行中徽章脉冲
+  - 清理 console.chain 死 key

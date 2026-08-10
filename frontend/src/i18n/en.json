@@ -424,7 +424,6 @@
   },
   "console": {
     "step": "Step",
-    "chain": "Full chain (to review)",
     "limit": "Limit",
     "approve": "Approve",
     "reject": "Reject",
@@ -581,8 +580,22 @@
       "batchEmpty": "Select items first",
       "selectAll": "Select all",
       "deselectAll": "Deselect all",
-      "produceSaved": "Updated produce mode for {{n}} item(s)"
-    }
+      "produceSaved": "Updated produce mode for {{n}} item(s)",
+      "now": "Produce",
+      "nowHint": "Produce now per produce mode (after download)",
+      "noRawHint": "Download the media first",
+      "batchProduce": "Batch produce",
+      "batchProduceHint": "Run produce as a batch"
+    },
+    "stageCollect": "Collect",
+    "stageDownload": "Download",
+    "produceOneDone": "Producing started — will return to review",
+    "act": {
+      "title": "Activity",
+      "events": "Live events"
+    },
+    "publishTarget": "Publish target",
+    "publishTargetDefault": "Default (settings)"
   },
   "canvas": {
     "tool": {

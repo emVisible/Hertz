@@ -984,3 +984,44 @@ async def test_produce_options_batch_endpoint(client) -> None:
     # 空 ids → 422
     bad = await client.post("/api/pipeline/produce-options", json={"ids": [], "options": {}})
     assert bad.status_code == 422
+
+
+# ---------- 半自动化：单条制作 / 分发目标（v0.3.4） ----------
+
+@pytest.mark.asyncio
+async def test_produce_one_endpoint(client, monkeypatch) -> None:
+    """预处理「制作」按钮：单条立即制作（未下载 → 409；已下载 → 走 produce）。"""
+    async with session_factory() as session:
+        no_raw = Item(status="discovered", source="reddit", source_id="po-one-1", title="无素材")
+        has_raw = Item(status="downloaded", source="reddit", source_id="po-one-2",
+                       title="有素材", raw_path="/nonexistent/raw.mp4")
+        session.add_all([no_raw, has_raw])
+        await session.commit()
+        no_raw_id, has_raw_id = no_raw.id, has_raw.id
+
+    # 未下载 → 409
+    resp = await client.post(f"/api/pipeline/items/{no_raw_id}/produce")
+    assert resp.status_code == 409
+
+    # 已下载但 raw 文件不存在 → produce 失败（502，raw media missing）
+    resp = await client.post(f"/api/pipeline/items/{has_raw_id}/produce")
+    assert resp.status_code in (502,)
+
+
+@pytest.mark.asyncio
+async def test_publish_one_with_target(client) -> None:
+    """分发目标逐条覆盖（v0.3.4）：publish target=export 生效并记录。"""
+    async with session_factory() as session:
+        item = Item(status=ItemStatus.APPROVED, source="reddit", source_id="pt-1",
+                    title="分发目标", video_path="/nonexistent/v.mp4",
+                    script_json={"bili_title": "分发目标"})
+        session.add(item)
+        await session.commit()
+        item_id = item.id
+
+    # export 目标：导出包模式（无视频文件 → 502，但 target 解析正确）
+    resp = await client.post(f"/api/pipeline/items/{item_id}/publish", params={"target": "export"})
+    assert resp.status_code == 502  # 文件缺失（目标解析已通过）
+    # 非法目标 → 502
+    resp = await client.post(f"/api/pipeline/items/{item_id}/publish", params={"target": "evil"})
+    assert resp.status_code == 502

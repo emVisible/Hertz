@@ -109,6 +109,8 @@ export function ExecutionPage() {
           reprocess={pipeline.reprocess}
           rescheduleExpired={pipeline.rescheduleExpired}
           setProduceOptions={pipeline.setProduceOptions}
+          produceOne={pipeline.produceOne}
+          produceBatch={pipeline.produceBatch}
           modelSwitch={pipelineModelSwitch}
         />
       )}

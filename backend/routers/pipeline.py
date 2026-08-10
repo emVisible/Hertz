@@ -110,6 +110,19 @@ async def retry_item(item_id: uuid.UUID):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/items/{item_id}/produce")
+async def produce_item(item_id: uuid.UUID):
+    """单条制作（v0.3.4，预处理「制作」按钮）：按生产方式立即执行 produce。"""
+    try:
+        return await _pipe().produce_one(item_id)
+    except ItemNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidItemStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @router.post("/items/{item_id}/requeue")
 async def requeue_item(item_id: uuid.UUID):
     try:
@@ -182,9 +195,11 @@ async def update_item_meta(item_id: uuid.UUID, body: ItemMetaBody):
 
 
 @router.post("/items/{item_id}/publish")
-async def publish_item(item_id: uuid.UUID, selfmade: int = 0):
+async def publish_item(item_id: uuid.UUID, selfmade: int = 0, target: str = ""):
     try:
-        return await _pipe().publish_one(item_id, selfmade=bool(selfmade))
+        return await _pipe().publish_one(
+            item_id, selfmade=bool(selfmade), target=target.strip() or None
+        )
     except ItemNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InvalidItemStateError as exc:

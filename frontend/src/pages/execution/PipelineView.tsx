@@ -66,12 +66,14 @@ interface PipelineViewProps {
   stop: () => void
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
-  publishItem: (item: PipelineItem, selfmade?: boolean) => void
+  publishItem: (item: PipelineItem, selfmade?: boolean, target?: string) => void
   uploadCover: (item: PipelineItem, file: File) => void
   retryClass: (cls: string, n: number) => void
   reprocess: (item: PipelineItem, retranslate: boolean) => void
   rescheduleExpired: () => Promise<void>
   setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
+  produceOne: (item: PipelineItem) => Promise<void>
+  produceBatch: () => Promise<void>
   modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
@@ -92,11 +94,10 @@ const AUDIT_SORTS: Array<{ id: AuditSort }> = [
 ]
 
 // 第三级路由：内容流水线平铺菜单（v0.2.0 审核三态）——
-// 运行（操作）｜预处理（discovered/downloaded/scored 合并展示）
-// ｜审核（queued 审核操作）｜发布（approved 发布操作 + published 历史 + 日历）
-// ｜异常（failed/rejected 独立 menu，v0.2.6——审核专注审核，不再挤在侧栏）
+// 采集（collect+download 手动，下载后自动评分）｜预处理（生产方式选择+制作）
+// ｜审核（内容判断）｜发布（分发）｜异常（独立恢复区）
 const PIPELINE_TABS = [
-  { id: 'run', labelKey: 'execution.modePipeline' },
+  { id: 'run', labelKey: 'console.stageCollect' },
   { id: 'preReview', labelKey: 'console.stagePreReview', countKeys: ['discovered', 'downloaded', 'scored'] },
   { id: 'inReview', labelKey: 'console.stageAudit', countKeys: ['queued'] },
   { id: 'postReview', labelKey: 'console.stagePublish', countKeys: ['approved', 'published'] },
@@ -215,7 +216,7 @@ export function PipelineView(p: PipelineViewProps) {
         {pTab === 'run' && (
           <div className="flex min-h-full flex-col gap-4 p-4">
             <CommandDeck
-              title={t('execution.modePipeline')}
+              title={t('console.stageCollect')}
               icon="console"
               running={p.running}
               onRun={p.run}
@@ -223,14 +224,14 @@ export function PipelineView(p: PipelineViewProps) {
               runDisabled={!p.step}
               controls={
                 <div className="flex flex-wrap items-end gap-3">
+                  {/* 半自动化（v0.3.4）：采集 menu 只做 collect + download（下载后自动评分） */}
                   <Select
                     label={t('console.step')}
                     value={p.step}
                     onChange={(e) => p.setStep(e.target.value)}
                     options={[
-                      { value: 'chain', label: t('console.chain') },
-                      { value: 'collect', label: 'collect' },
-                      ...p.steps.map((s) => ({ value: s, label: s })),
+                      { value: 'collect', label: t('console.stageCollect') },
+                      { value: 'download', label: t('console.stageDownload') },
                     ]}
                     className="w-44"
                   />
@@ -354,15 +355,25 @@ export function PipelineView(p: PipelineViewProps) {
             <PipelineStage
               title={t('console.stagePreReview')}
               right={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setProduceBatchOpen(true)}
-                  title={t('console.produce.batchHint')}
-                >
-                  <Icon name="config" size={12} />
-                  {t('console.produce.batch')}
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    onClick={() => void p.produceBatch()}
+                    title={t('console.produce.batchProduceHint')}
+                  >
+                    <Icon name="play" size={12} />
+                    {t('console.produce.batchProduce')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setProduceBatchOpen(true)}
+                    title={t('console.produce.batchHint')}
+                  >
+                    <Icon name="config" size={12} />
+                    {t('console.produce.batch')}
+                  </Button>
+                </div>
               }
             >
               {/* 审核前混合列表：单条数据聚合生产方式/下载/评分/制作信息（v0.3.3） */}
@@ -379,6 +390,9 @@ export function PipelineView(p: PipelineViewProps) {
                     key={item.id}
                     item={item}
                     onSaveOptions={(i, options) => void p.setProduceOptions([i], options)}
+                    onProduce={(i) => void p.produceOne(i)}
+                    onReject={(i) => void p.act(i, 'reject')}
+                    onUploadCover={(i, file) => void p.uploadCover(i, file)}
                   />
                 )}
               />
@@ -529,7 +543,7 @@ export function PipelineView(p: PipelineViewProps) {
                   <PublishCard
                     key={item.id}
                     item={item}
-                    onPublish={(i, selfmade) => p.publishItem(i, selfmade)}
+                    onPublish={(i, selfmade, target) => p.publishItem(i, selfmade, target)}
                     onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
                     onRequeue={(i) => void p.act(i, 'requeue')}
                   />
