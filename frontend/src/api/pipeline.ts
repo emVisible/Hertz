@@ -48,6 +48,8 @@ export interface PipelineItem {
   /** 分区自动建议（v0.2.7）：未手动设置 tid 时的推荐分区 */
   auto_tid: number | null
   created_at: string | null
+  /** 最近操作（v0.3.12）：状态迁移自动刷新——「最新在前」排序要素 */
+  updated_at: string | null
   approved_at: string | null
   scheduled_at: string | null
   published_at: string | null

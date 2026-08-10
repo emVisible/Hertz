@@ -51,6 +51,8 @@ const PATHS = {
   copy: 'M9 9h11a2 2 0 012 2v9a2 2 0 01-2 2H11a2 2 0 01-2-2v-9zM5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1',
   layers: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
   rewind: 'M11 19l-9-7 9-7v14zM22 19l-9-7 9-7v14z',
+  'sort-asc': 'M12 5v14M12 5l-4 4M12 5l4 4M4 21h16',
+  'sort-desc': 'M12 19V5M12 19l-4-4M12 19l4-4M4 21h16',
 } as const
 
 export type IconName = keyof typeof PATHS

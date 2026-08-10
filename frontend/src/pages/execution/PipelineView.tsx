@@ -17,8 +17,11 @@ import {
   PreReviewCard,
   PublishCard,
   SectionCard,
+  SortControl,
   StageItemRow,
   StageList,
+  type SortField,
+  type SortSpec,
 } from '../../components/execution'
 import { CalendarView } from './CalendarView'
 import { ProduceBatchModal } from '../../components/execution/ProduceBatchModal'
@@ -76,18 +79,19 @@ interface PipelineViewProps {
 
 type PipelineTabId = 'run' | 'preReview' | 'inReview' | 'postReview' | 'exceptions'
 
-/** 审核排序（v0.2.6）：前端排序——队列数据已全量拉取，无需后端参数。
- *  videoFirst = 有成片的排前面（可预览优先，默认）；random = 每次洗牌。 */
-type AuditSort = 'videoFirst' | 'newest' | 'oldest' | 'scoreDesc' | 'scoreAsc' | 'redditDesc' | 'title' | 'random'
-const AUDIT_SORTS: Array<{ id: AuditSort }> = [
-  { id: 'videoFirst' },
-  { id: 'random' },
-  { id: 'newest' },
-  { id: 'oldest' },
-  { id: 'scoreDesc' },
-  { id: 'scoreAsc' },
-  { id: 'redditDesc' },
-  { id: 'title' },
+// 排序要素（v0.3.12 两维度：要素 × 方向）
+const PRE_SORT_FIELDS: SortField[] = [
+  { id: 'seq', labelKey: 'console.sort.seq' },
+  { id: 'score', labelKey: 'console.sort.score' },
+  { id: 'produce', labelKey: 'console.sort.produce' },
+  { id: 'updated', labelKey: 'console.sort.updated' },
+]
+const AUDIT_SORT_FIELDS: SortField[] = [
+  { id: 'seq', labelKey: 'console.sort.seq' },
+  { id: 'score', labelKey: 'console.sort.score' },
+  { id: 'reddit', labelKey: 'console.sort.reddit' },
+  { id: 'title', labelKey: 'console.sort.title' },
+  { id: 'updated', labelKey: 'console.sort.updated' },
 ]
 
 // 第三级路由：内容流水线平铺菜单（v0.2.0 审核三态）——
@@ -105,28 +109,25 @@ const PIPELINE_TABS = [
   countKeys?: string[]
 }>
 
-/** 预处理排序（v0.3.5）：下载时间（seq 入库序）/ 评分 / 生产方式 */
-type PreSort = 'seq' | 'score' | 'produce'
-const PRE_SORTS: Array<{ id: PreSort }> = [
-  { id: 'seq' },
-  { id: 'score' },
-  { id: 'produce' },
-]
-
 export function PipelineView(p: PipelineViewProps) {
   const { t } = useTranslation()
   // 发布 tab 视图：列表（默认）｜内容日历（v0.2.3）
   const [calendarView, setCalendarView] = useState(false)
   // 批量生产方式（v0.3.3，预处理）
   const [produceBatchOpen, setProduceBatchOpen] = useState(false)
-  // 预处理排序（v0.3.5）
-  const [preSort, setPreSort] = useState<PreSort>('seq')
+  // 预处理排序（v0.3.12）：要素 × 方向两维度；默认 入库序+降序（最新在前）
+  const [preSort, setPreSort] = useState<SortSpec>({ field: 'seq', dir: 'desc' })
   const sortedPreReview = useMemo(() => {
     const list = [...p.stageDownloaded, ...p.stageScored]
     const seqOf = (item: PipelineItem) => item.seq ?? (item.created_at ? Date.parse(item.created_at) : 0)
-    switch (preSort) {
+    const updatedOf = (item: PipelineItem) =>
+      item.updated_at ? Date.parse(item.updated_at) : seqOf(item)
+    const sign = preSort.dir === 'asc' ? 1 : -1
+    switch (preSort.field) {
       case 'score':
-        return list.sort((a, b) => (b.score_total ?? -1) - (a.score_total ?? -1))
+        return list.sort((a, b) => sign * ((b.score_total ?? -1) - (a.score_total ?? -1)))
+      case 'updated':
+        return list.sort((a, b) => sign * (updatedOf(a) - updatedOf(b)))
       case 'produce': {
         // 生产方式组合排序：直发优先展示（无需加工最快），其余按模块数
         const key = (i: PipelineItem): number => {
@@ -134,60 +135,65 @@ export function PipelineView(p: PipelineViewProps) {
           if ((o as { passthrough?: boolean }).passthrough) return 0
           return Object.values(o).filter(Boolean).length
         }
-        return list.sort((a, b) => key(a) - key(b) || -seqOf(a) + seqOf(b))
+        return list.sort((a, b) => key(a) - key(b) || sign * (seqOf(a) - seqOf(b)))
       }
       default:
-        return list.sort((a, b) => seqOf(a) - seqOf(b))
+        return list.sort((a, b) => sign * (seqOf(a) - seqOf(b)))
     }
   }, [p.stageDownloaded, p.stageScored, preSort])
-  // 审核排序（v0.2.6）：默认「有成片优先」（可预览的在前面）；随机=每次点击重新洗牌
-  const [auditSort, setAuditSort] = useState<AuditSort>('videoFirst')
+  // 审核排序（v0.3.12）：要素 × 方向 + 独立开关「有成片优先 / 随机洗牌」
+  const [auditSort, setAuditSort] = useState<SortSpec>({ field: 'seq', dir: 'desc' })
+  const [videoFirst, setVideoFirst] = useState(true)
+  const [auditRandom, setAuditRandom] = useState(false)
   const [randomSeed, setRandomSeed] = useState(0)
-  function changeAuditSort(value: string) {
-    if (value === 'random') {
-      // 每次选「随机」重新洗牌（seed 变化触发 memo 重排）
-      setRandomSeed(Date.now())
-    }
-    setAuditSort(value as AuditSort)
+  function toggleAuditRandom() {
+    const next = !auditRandom
+    setAuditRandom(next)
+    if (next) setRandomSeed(Date.now())  // 每次开启重新洗牌
   }
   const sortedQueued = useMemo(() => {
     const list = [...p.stageQueued]
     // 入库顺序（v0.3.1）：seq 自增序号优先（同批 created_at 相同无法区分先后），
     // 旧数据无 seq 时回退 created_at 时间戳
     const seqOf = (item: PipelineItem) => item.seq ?? (item.created_at ? Date.parse(item.created_at) : 0)
-    const cmpSeq = (a: PipelineItem, b: PipelineItem) => seqOf(a) - seqOf(b)
-    switch (auditSort) {
-      case 'random': {
-        // 每次点击「随机」生成一次洗牌（seed 变化触发重排），而非每帧重排
-        const shuffled = [...list]
-        for (let i = shuffled.length - 1; i > 0; i -= 1) {
-          const j = Math.floor(Math.random() * (i + 1))
-          ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-        }
-        return shuffled
+    const updatedOf = (item: PipelineItem) =>
+      item.updated_at ? Date.parse(item.updated_at) : seqOf(item)
+    const sign = auditSort.dir === 'asc' ? 1 : -1
+    if (auditRandom) {
+      // 每次开启随机生成一次洗牌（seed 变化触发重排），而非每帧重排
+      const shuffled = [...list]
+      for (let i = shuffled.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
       }
-      case 'oldest':
-        return list.sort(cmpSeq)
-      case 'scoreDesc':
-        return list.sort((a, b) => (b.score_total ?? -1) - (a.score_total ?? -1))
-      case 'scoreAsc':
-        // 低分优先审（低分可复用，人工决定）
-        return list.sort((a, b) => (a.score_total ?? 99) - (b.score_total ?? 99))
-      case 'redditDesc':
-        return list.sort((a, b) => b.reddit_score - a.reddit_score)
-      case 'title':
-        return list.sort((a, b) => a.title.localeCompare(b.title, 'zh'))
-      case 'newest':
-        return list.sort((a, b) => -cmpSeq(a, b))
-      default:
-        return list.sort((a, b) => {
-          const av = a.video_path ? 1 : 0
-          const bv = b.video_path ? 1 : 0
-          return bv - av || -cmpSeq(a, b)
-        })
+      return shuffled
     }
+    let sorted: PipelineItem[]
+    switch (auditSort.field) {
+      case 'score':
+        sorted = list.sort((a, b) => sign * ((b.score_total ?? -1) - (a.score_total ?? -1)))
+        break
+      case 'reddit':
+        sorted = list.sort((a, b) => sign * (a.reddit_score - b.reddit_score))
+        break
+      case 'title':
+        sorted = list.sort((a, b) => sign * a.title.localeCompare(b.title, 'zh'))
+        break
+      case 'updated':
+        sorted = list.sort((a, b) => sign * (updatedOf(a) - updatedOf(b)))
+        break
+      default:
+        sorted = list.sort((a, b) => sign * (seqOf(a) - seqOf(b)))
+    }
+    if (videoFirst) {
+      // 有成片优先：可预览的排前面，同组内保持当前排序
+      const withVideo = sorted.filter((i) => i.video_path)
+      const rest = sorted.filter((i) => !i.video_path)
+      sorted = [...withVideo, ...rest]
+    }
+    return sorted
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.stageQueued, auditSort, randomSeed])
+  }, [p.stageQueued, auditSort, videoFirst, auditRandom, randomSeed])
   const pTab: PipelineTabId = PIPELINE_TABS.some((tb) => tb.id === p.tab)
     ? (p.tab as PipelineTabId)
     : 'inReview'
@@ -270,26 +276,29 @@ export function PipelineView(p: PipelineViewProps) {
               </div>
             </SectionCard>
 
-            {/* 待下载队列（v0.3.5）：discovered 条目——下载前的供给可见 */}
+            {/* 待下载队列（v0.3.5）：discovered 条目——下载前的供给可见。
+                v0.3.12：无限滚动分页（此前 max-h 截断 349 条只能看到 ~8 行） */}
             <SectionCard
               title={`${t('console.pendingDownloads')} (${p.counts.discovered ?? 0})`}
               padded={false}
               className="shrink-0"
             >
-              {p.stageDiscovered.length === 0 ? (
-                <p className="p-3 text-sm text-text-disabled">{t('console.noPendingDownloads')}</p>
-              ) : (
-                <ul className="max-h-56 space-y-1 overflow-y-auto p-2">
-                  {p.stageDiscovered.map((item) => (
-                    <li key={item.id} className="flex items-center gap-2 px-1.5 py-1 text-xs">
-                      <span className="min-w-0 flex-1 truncate text-text-secondary" title={item.title}>
-                        {item.title}
-                      </span>
-                      <span className="shrink-0 font-mono text-[10px] text-text-disabled">r{item.reddit_score}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <StageList
+                items={p.stageDiscovered}
+                emptyText={t('console.noPendingDownloads')}
+                total={p.counts.discovered ?? 0}
+                pageSize={50}
+                renderRow={(item) => (
+                  <li key={item.id} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                    <span className="min-w-0 flex-1 truncate text-text-secondary" title={item.title}>
+                      {item.title}
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] text-text-disabled">
+                      r{item.reddit_score}
+                    </span>
+                  </li>
+                )}
+              />
             </SectionCard>
 
             {/* 采集源状态（参考原项目漏斗水位） */}
@@ -330,13 +339,11 @@ export function PipelineView(p: PipelineViewProps) {
               title={t('console.stagePreReview')}
               right={
                 <div className="flex items-center gap-1.5">
-                  {/* 预处理排序（v0.3.5）：下载时间/评分/生产方式 */}
-                  <Select
-                    aria-label={t('console.preSort')}
-                    value={preSort}
-                    onChange={(e) => setPreSort(e.target.value as PreSort)}
-                    options={PRE_SORTS.map((s) => ({ value: s.id, label: t(`console.preSort.${s.id}`) }))}
-                    className="w-32"
+                  {/* 预处理排序（v0.3.12）：要素 × 方向 */}
+                  <SortControl
+                    fields={PRE_SORT_FIELDS}
+                    sort={preSort}
+                    onSort={setPreSort}
                   />
                   <Button
                     size="sm"
@@ -401,13 +408,34 @@ export function PipelineView(p: PipelineViewProps) {
               isEmpty={p.stageQueued.length === 0}
               emptyText={t('console.emptyAudit')}
               right={
-                <Select
-                  aria-label={t('console.auditSort')}
-                  value={auditSort}
-                  onChange={(e) => changeAuditSort(e.target.value)}
-                  options={AUDIT_SORTS.map((s) => ({ value: s.id, label: t(`console.auditSort.${s.id}`) }))}
-                  className="w-36"
-                />
+                <span className="flex items-center gap-1.5">
+                  {/* 审核排序（v0.3.12）：要素 × 方向 + 独立开关 */}
+                  <SortControl fields={AUDIT_SORT_FIELDS} sort={auditSort} onSort={setAuditSort} />
+                  <button
+                    type="button"
+                    onClick={() => setVideoFirst((v) => !v)}
+                    title={t('console.sort.videoFirstHint')}
+                    className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                      videoFirst
+                        ? 'border-primary/40 bg-primary/15 font-medium text-primary'
+                        : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
+                    }`}
+                  >
+                    {t('console.sort.videoFirst')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleAuditRandom}
+                    title={t('console.sort.randomHint')}
+                    className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                      auditRandom
+                        ? 'border-warning/50 bg-warning/15 font-medium text-warning'
+                        : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
+                    }`}
+                  >
+                    🎲 {t('console.sort.random')}
+                  </button>
+                </span>
               }
             >
               <ul className="divide-y divide-border/60">

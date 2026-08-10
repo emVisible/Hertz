@@ -681,6 +681,8 @@ class PipelineService:
             "error_class": item.error_class,
             "retry_count": item.retry_count,
             "created_at": item.created_at.isoformat() if item.created_at else None,
+            # 最近操作（v0.3.12）：状态迁移自动刷新（onupdate）——「最新在前」排序要素
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
             "approved_at": item.approved_at.isoformat() if item.approved_at else None,
             "scheduled_at": item.scheduled_at.isoformat() if item.scheduled_at else None,
             # 分区自动建议（v0.2.7，参考原项目 assign_bili_tid）：未手动设置时的推荐分区

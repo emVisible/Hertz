@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionCard } from './SectionCard'
@@ -44,29 +44,59 @@ export function PipelineStage({
   )
 }
 
-/** 阶段条目列表（Download / Score / Produce / 异常区复用）：空态 + 行列表 + 截断提示。 */
+/** 阶段条目列表（Download / Score / Produce / 异常区复用）：
+ *  空态 + 行列表 + 无限滚动（v0.3.12 自动滚动加载，IntersectionObserver）。 */
 export function StageList({
   items,
   emptyText,
   renderRow,
   total,
+  pageSize = 50,
 }: {
   items: PipelineItem[]
   emptyText: string
   renderRow: (item: PipelineItem) => ReactNode
   /** 该阶段总计数（> 显示条数时提示截断） */
   total?: number
+  /** 每次滚动追加条数（v0.3.12） */
+  pageSize?: number
 }) {
   const { t } = useTranslation()
+  const [shown, setShown] = useState(pageSize)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  // 无限滚动：sentinel 进入视口 → 追加一页（AXIOM §7.2 懒加载，避免一次性渲染上千 DOM）
+  useEffect(() => {
+    const node = sentinelRef.current
+    if (!node || shown >= items.length) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setShown((prev) => Math.min(prev + pageSize, items.length))
+        }
+      },
+      { rootMargin: '200px' },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [shown, items.length, pageSize])
+
   if (items.length === 0) {
     return <p className="p-3 text-sm text-text-disabled">{emptyText}</p>
   }
+  const visible = items.slice(0, shown)
   return (
     <>
-      <ul className="divide-y divide-border/60">{items.map(renderRow)}</ul>
+      <ul className="divide-y divide-border/60">{visible.map(renderRow)}</ul>
+      <div ref={sentinelRef} className="h-px" aria-hidden />
       {total !== undefined && total > items.length && (
         <p className="border-t border-border/60 px-3 py-1.5 text-[10px] text-text-disabled">
           {t('console.shownLimit', { shown: items.length, total })}
+        </p>
+      )}
+      {shown < items.length && (
+        <p className="border-t border-border/60 px-3 py-1.5 text-center text-[10px] text-text-disabled">
+          {t('console.scrollMore', { shown: visible.length, total: items.length })}
         </p>
       )}
     </>

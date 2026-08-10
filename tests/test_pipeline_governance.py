@@ -1257,3 +1257,42 @@ async def test_depth_effect_db_priority(client) -> None:
     # 内置档被 seed 同步回代码版本（内置以代码为准）
     await service.restore_defaults()  # 还原
     assert "极简" in await service.effect_for("terse")
+
+
+@pytest.mark.asyncio
+async def test_updated_at_refreshes_on_requeue(client) -> None:
+    """最近操作排序要素（v0.3.12）：打回审核/打回预处理刷新 updated_at。"""
+    from datetime import UTC, datetime, timedelta
+
+    async with session_factory() as session:
+        item = Item(
+            status=ItemStatus.PUBLISHED, source="reddit", source_id="upd-1", title="已发布",
+        )
+        session.add(item)
+        await session.commit()
+        item_id = item.id
+        # 把 updated_at 拨回过去，模拟老数据
+        old = datetime.now(UTC) - timedelta(days=3)
+        row = await session.get(Item, item_id)
+        row.updated_at = old
+        await session.commit()
+
+    # 发布打回审核 → updated_at 刷新为现在
+    resp = await client.post(f"/api/pipeline/items/{item_id}/requeue")
+    assert resp.status_code == 200
+    async with session_factory() as session:
+        row = await session.get(Item, item_id)
+        assert row.updated_at is not None
+        assert (row.updated_at - old).total_seconds() > 3600  # 明显刷新
+
+    # 审核打回预处理 → 再次刷新
+    resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-prep")
+    assert resp.status_code == 200
+    async with session_factory() as session:
+        row = await session.get(Item, item_id)
+        assert row.status == "scored"
+    # 序列化暴露 updated_at（列表排序要素）
+    resp = await client.get("/api/pipeline/items?status=scored&limit=10")
+    assert resp.status_code == 200
+    serialized = resp.json()
+    assert all("updated_at" in i for i in serialized)

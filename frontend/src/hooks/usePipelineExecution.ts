@@ -40,7 +40,8 @@ export function usePipelineExecution() {
   // 已下载/已评分/待审核等旧序条目（seq desc 排序下老数据被 200 截断的 bug）
   const { data: discoveryAll = [], isError: stageError, refetch: refetchStage } = useQuery({
     queryKey: ['pipeline-stage'],
-    queryFn: () => pipelineApi.items('discovered', 200),
+    // v0.3.12：349 条发现队列此前被 200 截断——提到 500
+    queryFn: () => pipelineApi.items('discovered', 500),
     refetchInterval: pollingInterval,
   })
   const { data: queueAll = [] } = useQuery({
