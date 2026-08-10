@@ -3,6 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from backend.factory.registry import ServiceRegistry
 from backend.orchestration.errors import OrchestrationError
@@ -77,6 +78,41 @@ async def delete_plan(plan_id: uuid.UUID):
     except OrchestrationError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"ok": True}
+
+
+# ---------- 克隆 / 导出 / 导入（v0.4 D2） ----------
+
+
+class CloneBody(BaseModel):
+    name: str | None = None
+
+
+class ImportBody(BaseModel):
+    payload: dict
+
+
+@router.post("/{plan_id}/clone")
+async def clone_plan(plan_id: uuid.UUID, body: CloneBody | None = None):
+    try:
+        return await _service().clone(plan_id, name=body.name if body else None)
+    except OrchestrationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{plan_id}/export")
+async def export_plan(plan_id: uuid.UUID):
+    try:
+        return await _service().export(plan_id)
+    except OrchestrationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/import")
+async def import_plan(body: ImportBody):
+    try:
+        return await _service().import_plan(body.payload)
+    except OrchestrationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/{plan_id}/run")

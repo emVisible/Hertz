@@ -191,6 +191,56 @@ export function PlansPage() {
     }
   }
 
+  // ---- 克隆 / 导出 / 导入（v0.4 D2）----
+  async function clonePlan(plan: Plan) {
+    try {
+      const copy = await plansApi.clone(plan.id)
+      await queryClient.invalidateQueries({ queryKey: ['plans'] })
+      setTab('plans')
+      loadPlan(copy)
+      setDirty(true)
+      toast(t('plans.cloned'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  async function exportPlan(plan: Plan) {
+    try {
+      const payload = await plansApi.exportPlan(plan.id)
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `plan-${plan.name.replace(/[^\w\u4e00-\u9fa5-]+/g, '_')}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  async function importPlan() {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      try {
+        const payload = JSON.parse(await file.text())
+        const plan = await plansApi.importPlan(payload)
+        await queryClient.invalidateQueries({ queryKey: ['plans'] })
+        setTab('plans')
+        loadPlan(plan)
+        toast(t('plans.imported'), 'success')
+      } catch (err) {
+        toast(err instanceof Error ? err.message : String(err), 'error')
+      }
+    }
+    input.click()
+  }
+
   async function savePlan() {
     if (!selectedId) return
     try {
@@ -595,11 +645,19 @@ export function PlansPage() {
         {/* 列表 */}
         <ul className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {tab === 'plans' && (
-            <li className="p-1">
+            <li className="flex flex-col gap-1 p-1">
               <Button className="w-full" onClick={createPlan}>
                 <Icon name="plus" size={14} />
                 {t('plans.new')}
               </Button>
+              <button
+                type="button"
+                onClick={() => void importPlan()}
+                className="flex w-full items-center justify-center gap-1.5 border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
+              >
+                <Icon name="downloads" size={12} />
+                {t('plans.import')}
+              </button>
             </li>
           )}
           {tab === 'phases' && (
@@ -631,17 +689,43 @@ export function PlansPage() {
                   }`}
                 >
                   <span className="truncate">{plan.name}</span>
-                  <button
-                    type="button"
-                    aria-label={t('common.delete')}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void removePlan(plan)
-                    }}
-                    className="shrink-0 p-0.5 text-text-disabled hover:text-error"
-                  >
-                    <Icon name="trash" size={12} />
-                  </button>
+                  <span className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      aria-label={t('plans.clone')}
+                      title={t('plans.clone')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void clonePlan(plan)
+                      }}
+                      className="p-0.5 text-text-disabled hover:text-primary"
+                    >
+                      <Icon name="copy" size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={t('plans.export')}
+                      title={t('plans.export')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void exportPlan(plan)
+                      }}
+                      className="p-0.5 text-text-disabled hover:text-primary"
+                    >
+                      <Icon name="upload" size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={t('common.delete')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void removePlan(plan)
+                      }}
+                      className="p-0.5 text-text-disabled hover:text-error"
+                    >
+                      <Icon name="trash" size={12} />
+                    </button>
+                  </span>
                 </button>
               </li>
             ))}

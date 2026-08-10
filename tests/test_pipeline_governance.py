@@ -1488,3 +1488,46 @@ async def test_set_publish_stats_endpoint(client) -> None:
         pub = row.publish_json or {}
         assert pub["stats"]["view"] == 1234
         assert "stats_at" in pub
+
+
+# ---------- 计划克隆/导出/导入（v0.4 D2） ----------
+
+
+@pytest.mark.asyncio
+async def test_plan_clone_export_import(client) -> None:
+    """克隆/导出/导入：复制字段为新计划，导入跨环境可还原。"""
+    from backend.models.plan import Plan
+
+    async with session_factory() as session:
+        plan = Plan(name="源计划", mode="text", phase_order=[{"key": "writer", "enabled": True}],
+                    description="描述", buff_keys=["no_ai_phrases"])
+        session.add(plan)
+        await session.commit()
+        plan_id = plan.id
+
+    # 克隆
+    resp = await client.post(f"/api/plans/{plan_id}/clone")
+    assert resp.status_code == 200
+    copy = resp.json()
+    assert copy["name"] == "源计划 (副本)"
+    assert copy["phase_order"][0]["key"] == "writer" and copy["phase_order"][0]["enabled"] is True
+    assert copy["buff_keys"] == ["no_ai_phrases"]
+    assert copy["id"] != str(plan_id)
+
+    # 导出
+    resp = await client.get(f"/api/plans/{plan_id}/export")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["plan"]["name"] == "源计划"
+
+    # 导入（跨环境：crew/brief 引用置空）
+    resp = await client.post("/api/plans/import", json={"payload": payload["plan"]})
+    assert resp.status_code == 200
+    imported = resp.json()
+    assert imported["name"] == "源计划"
+    assert imported["crew_id"] is None and imported["brief_id"] is None
+    assert imported["phase_order"][0]["key"] == "writer"
+
+    # 非法 payload
+    resp = await client.post("/api/plans/import", json={"payload": {"foo": 1}})
+    assert resp.status_code == 422

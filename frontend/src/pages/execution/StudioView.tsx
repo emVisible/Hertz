@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
@@ -17,7 +17,8 @@ import {
 } from '../../components/execution'
 import { useStudioExecution } from '../../hooks/useStudioExecution'
 import { useModelSwitch } from '../../hooks/useModelSwitch'
-import { Modal } from '../../components/ui'
+import { studioApi, type WorkflowRun } from '../../api/orchestration'
+import { Modal, useToast } from '../../components/ui'
 
 const STUDIO_PHASE_DOT: Record<string, string> = {
   pending: 'bg-text-disabled/40',
@@ -81,6 +82,17 @@ export function StudioView(p: StudioViewProps) {
   const navigate = useNavigate()
   const [fileModal, setFileModal] = useState<{ file: string; content: string } | null>(null)
   const [phaseDetail, setPhaseDetail] = useState<string | null>(null)
+  // 运行对比（v0.4 D1）：⌘/Shift 选中两个 run → 产物 diff
+  const [compareSel, setCompareSel] = useState<string[]>([])
+  const [diffPair, setDiffPair] = useState<{ a: WorkflowRun; b: WorkflowRun } | null>(null)
+  const toggleCompare = (run: WorkflowRun) => {
+    setCompareSel((prev) => {
+      if (prev.includes(run.id)) return prev.filter((id) => id !== run.id)
+      if (prev.length >= 2) return [prev[1], run.id]
+      return [...prev, run.id]
+    })
+  }
+  const runById = (id: string) => p.runs.find((r) => r.id === id)
   return (
     <>
       <CommandDeck
@@ -305,23 +317,59 @@ export function StudioView(p: StudioViewProps) {
               </p>
               <div className="flex items-center gap-1.5 overflow-x-auto">
                 {p.runs.length === 0 && <p className="text-[11px] text-text-disabled">{t('studio.noRuns')}</p>}
-                {p.runs.map((run) => (
+                {p.runs.map((run) => {
+                  const inCompare = compareSel.includes(run.id)
+                  return (
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={(e) => {
+                        if (e.metaKey || e.ctrlKey || e.shiftKey) {
+                          toggleCompare(run)
+                          return
+                        }
+                        p.selectRun(run.id)
+                      }}
+                      title={inCompare ? t('studio.compareSelected') : undefined}
+                      className={`flex shrink-0 items-center gap-1.5 border px-2 py-1 text-[11px] transition-colors ${
+                        inCompare
+                          ? 'border-warning bg-warning/10 text-warning'
+                          : p.selectedRun?.id === run.id
+                            ? 'border-primary bg-primary/10 text-text-primary'
+                            : 'border-border text-text-secondary hover:bg-surface-2'
+                      }`}
+                    >
+                      <Badge tone={RUN_TONE[run.status] ?? 'neutral'}>{t(`studio.runStatus.${run.status}`)}</Badge>
+                      <span className="max-w-40 truncate">
+                        {(run.context.topic as string) ?? run.id.slice(0, 8)}
+                      </span>
+                    </button>
+                  )
+                })}
+                {/* 对比入口（v0.4 D1） */}
+                {compareSel.length === 2 && (
                   <button
-                    key={run.id}
                     type="button"
-                    onClick={() => p.selectRun(run.id)}
-                    className={`flex shrink-0 items-center gap-1.5 border px-2 py-1 text-[11px] transition-colors ${
-                      p.selectedRun?.id === run.id
-                        ? 'border-primary bg-primary/10 text-text-primary'
-                        : 'border-border text-text-secondary hover:bg-surface-2'
-                    }`}
+                    onClick={() => {
+                      const a = runById(compareSel[0])
+                      const b = runById(compareSel[1])
+                      if (a && b) setDiffPair({ a, b })
+                    }}
+                    className="ml-1 flex shrink-0 items-center gap-1.5 border border-warning/60 bg-warning/10 px-2 py-1 text-[11px] text-warning transition-colors hover:bg-warning/20"
                   >
-                    <Badge tone={RUN_TONE[run.status] ?? 'neutral'}>{t(`studio.runStatus.${run.status}`)}</Badge>
-                    <span className="max-w-40 truncate">
-                      {(run.context.topic as string) ?? run.id.slice(0, 8)}
-                    </span>
+                    <Icon name="layers" size={11} />
+                    {t('studio.compare')}
                   </button>
-                ))}
+                )}
+                {compareSel.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setCompareSel([])}
+                    className="shrink-0 px-1 text-[11px] text-text-disabled hover:text-text-primary"
+                  >
+                    ✕
+                  </button>
+                )}
                 {p.selectedRun?.output_path && (
                   <button
                     type="button"
@@ -361,7 +409,182 @@ export function StudioView(p: StudioViewProps) {
         }}
         phaseName={p.phaseName}
       />
+
+      {/* 运行产物对比（v0.4 D1） */}
+      {diffPair && (
+        <RunDiffModal
+          runA={diffPair.a}
+          runB={diffPair.b}
+          onClose={() => {
+            setDiffPair(null)
+            setCompareSel([])
+          }}
+        />
+      )}
     </>
+  )
+}
+
+// ================= 运行产物 diff（v0.4 D1） =================
+
+/** 行级 LCS diff：same/del/add 三类行。 */
+function diffLines(a: string[], b: string[]): Array<{ type: 'same' | 'del' | 'add'; text: string }> {
+  const n = a.length
+  const m = b.length
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0))
+  for (let i = n - 1; i >= 0; i -= 1) {
+    for (let j = m - 1; j >= 0; j -= 1) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  const out: Array<{ type: 'same' | 'del' | 'add'; text: string }> = []
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      out.push({ type: 'same', text: a[i] })
+      i += 1
+      j += 1
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      out.push({ type: 'del', text: a[i] })
+      i += 1
+    } else {
+      out.push({ type: 'add', text: b[j] })
+      j += 1
+    }
+  }
+  while (i < n) {
+    out.push({ type: 'del', text: a[i] })
+    i += 1
+  }
+  while (j < m) {
+    out.push({ type: 'add', text: b[j] })
+    j += 1
+  }
+  return out
+}
+
+/** 两次运行的产物对比弹窗：同名文件选择 + 行级 diff 高亮。 */
+function RunDiffModal({
+  runA,
+  runB,
+  onClose,
+}: {
+  runA: WorkflowRun
+  runB: WorkflowRun
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const [files, setFiles] = useState<string[]>([])
+  const [file, setFile] = useState('')
+  const [aText, setAText] = useState('')
+  const [bText, setBText] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const [fa, fb] = await Promise.all([
+          studioApi.files(runA.id),
+          studioApi.files(runB.id),
+        ])
+        if (cancelled) return
+        const common = fa.files.filter((f) => fb.files.includes(f))
+        if (common.length === 0) {
+          setLoading(false)
+          return
+        }
+        setFiles(common)
+        setFile(common[0])
+      } catch (err) {
+        if (!cancelled) {
+          toast(err instanceof Error ? err.message : String(err), 'error')
+          setLoading(false)
+        }
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [runA.id, runB.id, toast])
+
+  useEffect(() => {
+    if (!file) return
+    let cancelled = false
+    setLoading(true)
+    async function load() {
+      try {
+        const [ta, tb] = await Promise.all([
+          studioApi.readFile(runA.id, file),
+          studioApi.readFile(runB.id, file),
+        ])
+        if (cancelled) return
+        setAText(ta)
+        setBText(tb)
+        setLoading(false)
+      } catch (err) {
+        if (!cancelled) {
+          toast(err instanceof Error ? err.message : String(err), 'error')
+          setLoading(false)
+        }
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [file, runA.id, runB.id, toast])
+
+  const lines = useMemo(
+    () => diffLines(aText.split('\n'), bText.split('\n')),
+    [aText, bText],
+  )
+
+  return (
+    <Modal open onClose={onClose} width={820} title={`${t('studio.compare')} · ${file || ''}`}>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <Select
+            aria-label={t('studio.compareFile')}
+            value={file}
+            onChange={(e) => setFile(e.target.value)}
+            options={files.map((f) => ({ value: f, label: f }))}
+            className="w-64"
+          />
+          <span className="ml-auto text-[10px] text-text-disabled">
+            {t('studio.compareHint')}
+          </span>
+        </div>
+        {loading ? (
+          <p className="py-6 text-center text-xs text-text-disabled">{t('studio.loading')}</p>
+        ) : files.length === 0 ? (
+          <p className="py-6 text-center text-xs text-text-disabled">{t('studio.compareNoCommon')}</p>
+        ) : (
+          <pre className="max-h-[65vh] overflow-y-auto border border-border font-mono text-[11px] leading-relaxed">
+            {lines.map((line, idx) => (
+              <div
+                key={idx}
+                className={`flex gap-2 whitespace-pre-wrap px-2 ${
+                  line.type === 'del'
+                    ? 'bg-error/15 text-error'
+                    : line.type === 'add'
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : 'text-text-secondary'
+                }`}
+              >
+                <span className="w-6 shrink-0 select-none text-right text-text-disabled">
+                  {line.type === 'del' ? '-' : line.type === 'add' ? '+' : ''}
+                </span>
+                <span className="min-w-0 flex-1">{line.text || ' '}</span>
+              </div>
+            ))}
+          </pre>
+        )}
+      </div>
+    </Modal>
   )
 }
 

@@ -206,6 +206,13 @@ export const plansApi = {
   create: (body: Partial<Plan>) => api.post<Plan>('/api/plans', body),
   update: (id: string, body: Partial<Plan>) => api.put<Plan>(`/api/plans/${id}`, body),
   remove: (id: string) => api.delete<{ ok: boolean }>(`/api/plans/${id}`),
+  /** 克隆 / 导出 / 导入（v0.4 D2）：模板分享与备份 */
+  clone: (id: string, name?: string) =>
+    api.post<Plan>(`/api/plans/${id}/clone`, { name }),
+  exportPlan: (id: string) =>
+    api.get<{ version: number; plan: Plan }>(`/api/plans/${id}/export`),
+  importPlan: (payload: unknown) =>
+    api.post<Plan>('/api/plans/import', { payload }),
   run: (id: string, input: string, buffKeys?: string[], depth = 'normal') =>
     api.post<{ id: string }>(`/api/plans/${id}/run`, {
       input,

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from backend.models.plan import Plan, PlanMode
 from backend.orchestration.crud import BaseCrudService
-from backend.orchestration.errors import InvalidPlanError
+from backend.orchestration.errors import InvalidPlanError, NotFoundError
 from backend.orchestration.phases import (
     DEFAULT_PHASE_ORDER,
     LEGACY_PHASE_ALIASES,
@@ -88,6 +88,54 @@ class PlanService(BaseCrudService):
         if "phase_order" in fields and fields["phase_order"] is not None:
             fields["phase_order"] = self.validate_phase_order(fields["phase_order"])
         return await super().update(plan_id, fields)
+
+    async def clone(self, plan_id: UUID, name: str | None = None) -> dict:
+        """克隆计划（v0.4 D2）：复制全部字段为新计划，独立可编辑。"""
+        plan = await self._load(plan_id)
+        if plan is None:
+            raise NotFoundError()
+        suffix = name or f"{plan.name} (副本)"
+        return await self.create(
+            name=suffix,
+            description=plan.description or "",
+            mode=plan.mode,
+            phase_order=plan.phase_order,
+            crew_id=plan.crew_id,
+            brief_id=plan.brief_id,
+            buff_keys=plan.buff_keys or [],
+        )
+
+    async def export(self, plan_id: UUID) -> dict:
+        """导出计划（v0.4 D2）：JSON 快照（含依赖引用 id/keys，导入端校验）。"""
+        plan = await self._load(plan_id)
+        if plan is None:
+            raise NotFoundError()
+        return {
+            "version": 1,
+            "plan": self._serialize(plan),
+        }
+
+    async def import_plan(self, payload: dict) -> dict:
+        """导入计划（v0.4 D2）：JSON 快照 → 新计划。
+
+        依赖（crew/brief）引用 id 不存在时置空（导入端提示手动重挂）。
+        """
+        data = (payload or {}).get("plan") or payload
+        if not isinstance(data, dict) or not data.get("name"):
+            raise InvalidPlanError("plan payload missing name")
+        try:
+            phase_order = self.validate_phase_order(data.get("phase_order"))
+        except InvalidPlanError:
+            phase_order = DEFAULT_PHASE_ORDER
+        return await self.create(
+            name=str(data["name"]),
+            description=str(data.get("description") or ""),
+            mode=str(data.get("mode") or PlanMode.TEXT),
+            phase_order=phase_order,
+            crew_id=None,  # 跨环境 id 不可用：导入后手动重挂
+            brief_id=None,
+            buff_keys=list(data.get("buff_keys") or []),
+        )
 
     @staticmethod
     def _serialize(plan: Plan) -> dict:

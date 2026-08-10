@@ -397,7 +397,12 @@
     "modeVisual": "Visual",
     "modeVideo": "Video",
     "dragHint": "Drag to reorder",
-    "defaultOrder": "Apply default order"
+    "defaultOrder": "Apply default order",
+    "clone": "Clone",
+    "export": "Export",
+    "import": "Import plan",
+    "cloned": "Cloned (copy)",
+    "imported": "Plan imported"
   },
   "studio": {
     "title": "Studio",
@@ -460,7 +465,13 @@
     "depth.detailed.hint": "Structured: bullet points/tables, thorough",
     "depth.deep.label": "Deep dive",
     "depth.deep.hint": "Vertical-domain research, substance over length",
-    "depthNormalHint": "Normal level: no extra instruction injected"
+    "depthNormalHint": "Normal level: no extra instruction injected",
+    "compare": "Diff",
+    "compareSelected": "In compare set (pick another or ⌘-click to unselect)",
+    "compareFile": "File",
+    "compareHint": "red = removed · green = added",
+    "compareNoCommon": "No common output files between the two runs",
+    "loading": "Loading…"
   },
   "console": {
     "step": "Step",
