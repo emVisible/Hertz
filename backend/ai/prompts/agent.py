@@ -56,7 +56,7 @@ def build_agent_messages(
     output_file: str,
     templates: dict[str, str] | None = None,
     buffs: list[dict] | None = None,
-    depth: str = "normal",
+    depth: str = "",
 ) -> list[ChatMessage]:
     thinking = (templates or {}).get("agent.thinking_protocol", _THINKING_PROTOCOL)
     system_tpl = (templates or {}).get("agent.system_template", "")
@@ -79,8 +79,9 @@ def build_agent_messages(
             debuff_lines = f"\n\n【禁忌】\n{debuff_lines}\n"
     extra = buff_lines + debuff_lines
 
-    # 输出深度（v0.3.10）：与 buff/debuff 并列的单选档位；normal 不注入
-    depth_line = DEPTH_INSTRUCTIONS.get(depth, "")
+    # 输出深度（v0.3.10）：engine 传已解析的指令文本；兼容直接传档位 key
+    # （内置常量兜底）。空 = 不注入。
+    depth_line = DEPTH_INSTRUCTIONS.get(depth, "") or depth
     if depth_line:
         extra += f"\n\n{depth_line}\n"
 

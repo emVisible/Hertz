@@ -1,11 +1,12 @@
 export { api, ApiError, API_BASE, fileUrl, thumbnailUrl } from './client'
 export type { DownloadEvent, DownloadTask, DownloadStatus, FormatOption, ParseResult } from './download'
 export type { FileInfo, LibraryEntry } from './library'
-export { crewsApi, rolesApi, buffsApi, briefsApi, plansApi, studioApi } from './orchestration'
+export { crewsApi, rolesApi, buffsApi, depthsApi, briefsApi, plansApi, studioApi } from './orchestration'
 export type {
   Brief,
   Buff,
   Crew,
+  DepthLevel,
   Role,
   PhaseDef,
   PhaseOrderItem,

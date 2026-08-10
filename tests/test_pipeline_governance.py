@@ -1193,3 +1193,67 @@ async def test_run_plan_accepts_depth(client) -> None:
 
     resp = await client.post(f"/api/plans/{plan_id}/run", json={"input": "x", "depth": "terse"})
     assert resp.status_code in (200, 409)  # 409=已有运行中；端点接受参数即通过
+
+
+# ---------- 深度档位库（v0.3.10 可维护化） ----------
+
+
+@pytest.mark.asyncio
+async def test_depth_levels_seed_and_crud(client) -> None:
+    """深度库：内置五档 seed + CRUD + 恢复出厂。"""
+    # seed 五档
+    resp = await client.get("/api/depths")
+    assert resp.status_code == 200
+    levels = resp.json()
+    keys = [lv["key"] for lv in levels]
+    assert set(keys) == {"terse", "concise", "normal", "detailed", "deep"}
+    normal = next(lv for lv in levels if lv["key"] == "normal")
+    assert normal["effect"] == ""  # 正常档不注入
+
+    # 新建自定义档
+    resp = await client.post(
+        "/api/depths", json={"key": "mega", "name": "超详细", "effect": "【深】写透"}
+    )
+    assert resp.status_code == 200
+    created = resp.json()
+    assert created["builtin"] is False
+
+    # 更新档指令
+    resp = await client.put(
+        f"/api/depths/{created['id']}", json={"effect": "【深】写透改版"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["effect"] == "【深】写透改版"
+
+    # 删除自定义档
+    resp = await client.delete(f"/api/depths/{created['id']}")
+    assert resp.status_code == 200
+
+    # 恢复出厂：只剩内置五档
+    resp = await client.post("/api/depths/restore-defaults")
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 5
+    resp = await client.get("/api/depths")
+    assert len(resp.json()) == 5
+
+
+@pytest.mark.asyncio
+async def test_depth_effect_db_priority(client) -> None:
+    """engine 深度指令 DB 优先（自定义档即时生效；内置档以代码为准 seed 同步）。"""
+    from backend.orchestration.depths import DepthService
+
+    service = DepthService()
+    # 默认内置
+    assert "极简" in await service.effect_for("terse")
+    assert await service.effect_for("normal") == ""
+    # 自定义档：DB 指令即时生效
+    created = await service.create(
+        key="mega", name="超详细", effect="【新深】写透。"
+    )
+    assert (await service.effect_for("mega")) == "【新深】写透。"
+    # 更新自定义档即时生效
+    await service.update(created["id"], effect="【新深】写透改版。")
+    assert (await service.effect_for("mega")) == "【新深】写透改版。"
+    # 内置档被 seed 同步回代码版本（内置以代码为准）
+    await service.restore_defaults()  # 还原
+    assert "极简" in await service.effect_for("terse")

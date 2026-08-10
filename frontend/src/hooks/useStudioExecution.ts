@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
-import { buffsApi, plansApi, studioApi, type PhaseOrderItem, type StudioEvent, type WorkflowRun } from '../api'
+import { buffsApi, depthsApi, plansApi, studioApi, type PhaseOrderItem, type StudioEvent, type WorkflowRun } from '../api'
 import { phaseLabel } from '../i18n'
 import { useEventSource } from './useEventSource'
 import { useToast } from '../components/ui'
@@ -42,6 +42,9 @@ export function useStudioExecution() {
 
   // buff 列表（运行时选择器）
   const { data: buffs = [] } = useQuery({ queryKey: ['buffs'], queryFn: buffsApi.list })
+
+  // 深度档位（v0.3.10 可维护化）：来自深度库（编排页可增改）
+  const { data: depthLevels = [] } = useQuery({ queryKey: ['depths'], queryFn: depthsApi.list })
 
   // 默认选中第一个计划（AXIOM §2.5 体验）：进来不该让用户手动选；
   // 仅当未选/所选已不存在时才回退到首个，用户主动选过的保持不变
@@ -264,6 +267,7 @@ export function useStudioExecution() {
     setBuffKeys,
     depth,
     setDepth,
+    depthLevels,
   }
 }
 

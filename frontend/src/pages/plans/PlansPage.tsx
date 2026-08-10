@@ -15,11 +15,13 @@ import {
   briefsApi,
   buffsApi,
   crewsApi,
+  depthsApi,
   plansApi,
   rolesApi,
   type Brief,
   type Buff,
   type Crew,
+  type DepthLevel,
   type PhaseDef,
   type PhaseOrderItem,
   type Plan,
@@ -29,6 +31,7 @@ import { Badge, Button, Card, EmptyState, Icon, Input, Select, useToast } from '
 import { modelOptions, retryOptions, timeoutOptions } from '../../constants/llm'
 import { phaseLabel as phaseLabel } from '../../i18n'
 import { BuffsTab } from './BuffsTab'
+import { DepthTab } from './DepthTab'
 import { RolesTab } from './RolesTab'
 import { TeamsTab } from './TeamsTab'
 
@@ -96,7 +99,7 @@ function SortablePhaseRow({
   )
 }
 
-type LeftTab = 'plans' | 'phases' | 'briefs' | 'roles' | 'crews' | 'buffs' | 'debuffs'
+type LeftTab = 'plans' | 'phases' | 'briefs' | 'roles' | 'crews' | 'buffs' | 'debuffs' | 'depths'
 
 export function PlansPage() {
   const { t } = useTranslation()
@@ -107,6 +110,7 @@ export function PlansPage() {
   const { data: crews = [] } = useQuery({ queryKey: ['crews'], queryFn: crewsApi.list })
   const { data: roles = [] } = useQuery({ queryKey: ['roles'], queryFn: rolesApi.list })
   const { data: buffs = [] } = useQuery({ queryKey: ['buffs'], queryFn: buffsApi.list })
+  const { data: depths = [] } = useQuery({ queryKey: ['depths'], queryFn: depthsApi.list })
   const { data: briefs = [] } = useQuery({ queryKey: ['briefs'], queryFn: briefsApi.list })
   const { data: palette = [] } = useQuery({ queryKey: ['phases'], queryFn: plansApi.phases })
 
@@ -150,6 +154,9 @@ export function PlansPage() {
   // ---- Buff 库状态 ----
   const [buffSel, setBuffSel] = useState<string | null>(null)
   const [debuffSel, setDebuffSel] = useState<string | null>(null)
+
+  // ---- 深度库状态（v0.3.10）----
+  const [depthSel, setDepthSel] = useState<string | null>(null)
 
   const selected = plans.find((p) => p.id === selectedId) ?? null
   const selectedBrief = briefs.find((b) => b.id === briefSel) ?? null
@@ -412,6 +419,33 @@ export function PlansPage() {
     }
   }
 
+  // ---- 深度库 CRUD（v0.3.10）----
+  async function createDepth() {
+    try {
+      const level = await depthsApi.create({
+        key: `depth_${Date.now().toString(36)}`,
+        name: t('depths.new'),
+      })
+      await queryClient.invalidateQueries({ queryKey: ['depths'] })
+      setTab('depths')
+      setDepthSel(level.id)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  async function removeDepth(level: DepthLevel) {
+    if (!window.confirm(t('common.delete'))) return
+    try {
+      await depthsApi.remove(level.id)
+      await queryClient.invalidateQueries({ queryKey: ['depths'] })
+      if (depthSel === level.id) setDepthSel(null)
+      toast(t('buffs.deleted'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   // ---- Phase CRUD ----
   function loadPhase(def: PhaseDef | null) {
     if (!def) {
@@ -525,6 +559,7 @@ export function PlansPage() {
               tabs: [
                 { id: 'buffs', label: t('buffs.title') },
                 { id: 'debuffs', label: t('buffs.debuffTitle') },
+                { id: 'depths', label: t('depths.title') },
               ],
             },
           ].map((group) => {
@@ -777,6 +812,46 @@ export function PlansPage() {
                   </button>
                 </li>
               ))}
+          {tab === 'depths' && (
+            <li className="p-1">
+              <Button className="w-full" onClick={() => void createDepth()}>
+                <Icon name="plus" size={14} />
+                {t('depths.new')}
+              </Button>
+            </li>
+          )}
+          {tab === 'depths' &&
+            depths.map((level) => (
+              <li key={level.id}>
+                <button
+                  type="button"
+                  onClick={() => setDepthSel(level.id)}
+                  className={`flex w-full items-center justify-between gap-1 px-3 py-2 text-left text-sm transition-colors ${
+                    depthSel === level.id
+                      ? 'bg-surface-2 text-text-primary'
+                      : 'text-text-secondary hover:bg-surface-2/50'
+                  }`}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate">{level.name}</span>
+                    {level.builtin && (
+                      <span className="shrink-0 text-[9px] text-text-disabled">{t('phases.builtin')}</span>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={t('common.delete')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void removeDepth(level)
+                    }}
+                    className="shrink-0 p-0.5 text-text-disabled hover:text-error"
+                  >
+                    <Icon name="trash" size={12} />
+                  </button>
+                </button>
+              </li>
+            ))}
           {tab === 'briefs' && (
             <li className="p-1">
               <Button className="w-full" onClick={() => void createBrief()}>
@@ -857,9 +932,10 @@ export function PlansPage() {
           (tab === 'roles' && roles.length === 0) ||
           (tab === 'buffs' && buffs.filter((b) => b.polarity === 'buff').length === 0) ||
           (tab === 'debuffs' && buffs.filter((b) => b.polarity === 'debuff').length === 0) ||
+          (tab === 'depths' && depths.length === 0) ||
           (tab === 'crews' && crews.length === 0) ? (
             <p className="px-3 py-4 text-center text-xs text-text-disabled">
-              {tab === 'plans' ? t('plans.empty') : tab === 'briefs' ? t('briefs.empty') : tab === 'roles' ? t('roles.empty') : tab === 'buffs' ? t('buffs.empty') : tab === 'debuffs' ? t('buffs.debuffEmpty') : t('teams.empty')}
+              {tab === 'plans' ? t('plans.empty') : tab === 'briefs' ? t('briefs.empty') : tab === 'roles' ? t('roles.empty') : tab === 'buffs' ? t('buffs.empty') : tab === 'debuffs' ? t('buffs.debuffEmpty') : tab === 'depths' ? t('depths.empty') : t('teams.empty')}
             </p>
           ) : null}
         </ul>
@@ -1244,6 +1320,8 @@ export function PlansPage() {
         {tab === 'buffs' && <BuffsTab selectedId={buffSel} onSelect={setBuffSel} polarity="buff" />}
 
         {tab === 'debuffs' && <BuffsTab selectedId={debuffSel} onSelect={setDebuffSel} polarity="debuff" />}
+
+        {tab === 'depths' && <DepthTab selectedId={depthSel} onSelect={setDepthSel} />}
 
         {tab === 'crews' && (
           <TeamsTab selectedId={crewSel} onSelect={setCrewSel} />

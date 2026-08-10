@@ -51,6 +51,17 @@ export interface Buff {
   updated_at: string | null
 }
 
+/** 输出深度档位（v0.3.10 可维护化）：并列于 buff/debuff 的库条目 */
+export interface DepthLevel {
+  id: string
+  key: string
+  name: string
+  effect: string
+  enabled: boolean
+  builtin: boolean
+  sort_order: number
+}
+
 export interface PhaseDef {
   key: string
   name: string
@@ -150,6 +161,17 @@ export const buffsApi = {
   update: (id: string, body: Partial<Pick<Buff, 'name' | 'kind' | 'polarity' | 'effect' | 'category' | 'enabled'>>) =>
     api.put<Buff>(`/api/buffs/${id}`, body),
   remove: (id: string) => api.delete<{ ok: boolean }>(`/api/buffs/${id}`),
+}
+
+/** 深度档位库（v0.3.10）：输出深度五档可维护化 */
+export const depthsApi = {
+  list: () => api.get<DepthLevel[]>('/api/depths'),
+  create: (body: { key: string; name: string; effect?: string }) =>
+    api.post<DepthLevel>('/api/depths', body),
+  update: (id: string, body: Partial<Pick<DepthLevel, 'name' | 'effect' | 'enabled'>>) =>
+    api.put<DepthLevel>(`/api/depths/${id}`, body),
+  remove: (id: string) => api.delete<{ ok: boolean }>(`/api/depths/${id}`),
+  restoreDefaults: () => api.post<{ ok: boolean; count: number }>('/api/depths/restore-defaults'),
 }
 
 export const briefsApi = {

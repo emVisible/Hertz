@@ -22,6 +22,7 @@ from backend.infrastructure.storage import FileStore, file_store
 from backend.orchestration.briefs import BriefService
 from backend.orchestration.buffs import BuffService
 from backend.orchestration.crews import CrewService
+from backend.orchestration.depths import DepthService
 from backend.orchestration.phases_service import PhasesService
 from backend.orchestration.plans import PlanService
 from backend.orchestration.roles import RoleService
@@ -72,6 +73,7 @@ class ServiceRegistry:
         self.crews = CrewService()
         self.roles = RoleService()
         self.buffs = BuffService()
+        self.depths = DepthService()
         self.briefs = BriefService()
         self.plans = PlanService()
         self.phases = PhasesService()

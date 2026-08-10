@@ -139,6 +139,22 @@ class PhaseEngine:
         except Exception:  # noqa: BLE001 — buff 不可用时不影响运行
             self._buff_effects = []
 
+        # v0.3.10 输出深度：档位指令 DB 优先（可维护化），内置常量兜底。
+        # normal 档 effect 为空 = 不注入。
+        try:
+            from backend.orchestration.depths import DepthService
+
+            self._depth_effect = await DepthService().effect_for(self.depth)
+            if self._depth_effect:
+                self._emit(
+                    "log", None,
+                    message=f"Depth: {self.depth}",
+                )
+        except Exception:  # noqa: BLE001 — 深度不可用时不影响运行
+            from backend.ai.prompts.agent import DEPTH_INSTRUCTIONS
+
+            self._depth_effect = DEPTH_INSTRUCTIONS.get(self.depth, "")
+
         # 归一化历史/已移除工序（防御：start() 已持久化，这里兜底任何入口）。
         # 已移除工序被剔除，别名折叠到现行工序——不会再出现"工序已移除"跳过行。
         raw_order = plan.phase_order or []
@@ -291,7 +307,7 @@ class PhaseEngine:
             output_file=f"{key}.md",
             templates=self._prompt_templates,
             buffs=self._buff_effects,
-            depth=self.depth,
+            depth=self._depth_effect,  # 已解析的指令文本（空 = 不注入）
         )
         text = ""
         # Declared retries must have an executor: transient LLM failures get

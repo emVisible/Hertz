@@ -73,6 +73,7 @@ export function ExecutionPage() {
           setBuffKeys={studio.setBuffKeys}
           depth={studio.depth}
           setDepth={studio.setDepth}
+          depthLevels={studio.depthLevels}
         />
       ) : (
         <PipelineView

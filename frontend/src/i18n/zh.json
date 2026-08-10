@@ -459,7 +459,8 @@
     "depth.detailed.label": "详细",
     "depth.detailed.hint": "结构化展开：分点/表格，论据充分",
     "depth.deep.label": "深挖",
-    "depth.deep.hint": "垂直领域深度调研，言之有物"
+    "depth.deep.hint": "垂直领域深度调研，言之有物",
+    "depthNormalHint": "正常档：不注入额外指令"
   },
   "console": {
     "step": "步骤",
@@ -800,5 +801,14 @@
   },
   "audit": {
     "noMedia": "无成片"
+  },
+  "depths": {
+    "title": "深度",
+    "new": "新建档位",
+    "select": "选择一个深度档位，或新建",
+    "empty": "暂无深度档位",
+    "effect": "注入指令（MD）",
+    "effectPlaceholder": "该档位注入 system prompt 的指令。留空 = 不注入（默认「正常」档）。",
+    "hint": "档位列表（内置以代码为准，改档指令在运行前须重开一次）"
   }
 }

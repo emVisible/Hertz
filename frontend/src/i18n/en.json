@@ -444,7 +444,8 @@
     "depth.detailed.label": "Detailed",
     "depth.detailed.hint": "Structured: bullet points/tables, thorough",
     "depth.deep.label": "Deep dive",
-    "depth.deep.hint": "Vertical-domain research, substance over length"
+    "depth.deep.hint": "Vertical-domain research, substance over length",
+    "depthNormalHint": "Normal level: no extra instruction injected"
   },
   "console": {
     "step": "Step",
@@ -800,5 +801,14 @@
   },
   "audit": {
     "noMedia": "No video"
+  },
+  "depths": {
+    "title": "Depth levels",
+    "new": "New level",
+    "select": "Select a depth level, or create one",
+    "empty": "No depth levels yet",
+    "effect": "Injection instruction (MD)",
+    "effectPlaceholder": "Instruction injected into the system prompt. Empty = nothing injected (default \"normal\" level).",
+    "hint": "Levels (built-ins sync from code; edits apply on the next run)"
   }
 }

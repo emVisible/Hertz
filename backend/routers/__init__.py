@@ -9,6 +9,7 @@ from backend.routers import (
     canvas,
     config,
     crews,
+    depths,
     docs,
     downloads,
     health,
@@ -30,6 +31,7 @@ api_router.include_router(downloads.router)
 api_router.include_router(library.router)
 api_router.include_router(crews.router)
 api_router.include_router(buffs.router)
+api_router.include_router(depths.router)
 api_router.include_router(roles.router)
 api_router.include_router(briefs.router)
 api_router.include_router(plans.router)

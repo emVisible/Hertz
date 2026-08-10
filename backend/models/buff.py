@@ -32,3 +32,21 @@ class Buff(BaseModel):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     builtin: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DepthLevel(BaseModel):
+    """输出深度档位（v0.3.10 可维护化）：并列于 buff/debuff 的单选档位库。
+
+    每档 = key + 名称 + 注入指令（MD，拼进 system prompt）。
+    内置五档以代码为准（_seed 同步，扩写升级立即生效）；用户可增改自定义档。
+    """
+
+    __tablename__ = "ai_depth_levels"
+
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    # 注入指令（空 = 该档不注入任何指令，如「正常」档）
+    effect: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
