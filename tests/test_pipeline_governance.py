@@ -1025,3 +1025,18 @@ async def test_publish_one_with_target(client) -> None:
     # 非法目标 → 502
     resp = await client.post(f"/api/pipeline/items/{item_id}/publish", params={"target": "evil"})
     assert resp.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_reject_discovered_item(client) -> None:
+    """预处理拒绝（v0.3.4）：未下载（discovered）条目也可人工筛掉。"""
+    async with session_factory() as session:
+        item = Item(status=ItemStatus.DISCOVERED, source="reddit", source_id="rej-disc",
+                    title="预处理拒绝")
+        session.add(item)
+        await session.commit()
+        item_id = item.id
+
+    resp = await client.post(f"/api/pipeline/items/{item_id}/reject")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "rejected"

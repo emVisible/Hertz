@@ -326,3 +326,7 @@
   - **后端**：engine.process_one 单条处理 + POST /items/{id}/produce（未下载 409/raw 缺失 502）；publish_one 支持逐条分发目标 target（发布卡「分发目标」Select：noop/bilibili/export，随发布操作生效并记录 publish_json）
   - **全局活动浮窗**：AppShell 右下角 ActivityPanel（浏览器下载栏语义）——实时事件/最近任务/系统日志 三 tab，所有页面可见，Esc/点击外部关闭，运行中徽章脉冲
   - 清理 console.chain 死 key
+- **D-159 半自动重构查漏补缺 + 分发历史（v0.3.4）**——
+  - **reject 支持 discovered**：预处理「拒绝」对未下载条目 409 → engine.reject 放行 DISCOVERED（人工筛掉不想要的源）
+  - **分发历史徽章**：已发布区显示每条的分发目标（publish_json.target），导出包等目标一目了然
+  - **P2 规划（记录在案）**：多平台分发——PUBLISHERS 注册表扩展 + upload/export 双模式适配器（tiktok/youtube/小红书）；多源采集器插拔（SourceCollector 抽象已有）；已发布再分发 UI（发布历史区逐条目标）

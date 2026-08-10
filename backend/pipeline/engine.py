@@ -133,7 +133,10 @@ class StepEngine:
             item = await session.get(Item, item_id)
             if item is None:
                 raise ItemNotFoundError(item_id)
-            if item.status not in (ItemStatus.QUEUED, ItemStatus.SCORED, ItemStatus.DOWNLOADED):
+            # v0.3.4：预处理阶段的 discovered（未下载）也可拒绝——人工筛掉不想要的源
+            if item.status not in (
+                ItemStatus.QUEUED, ItemStatus.SCORED, ItemStatus.DOWNLOADED, ItemStatus.DISCOVERED,
+            ):
                 raise InvalidItemStateError(f"cannot reject item in state {item.status}")
             item.status = ItemStatus.REJECTED
             item.error = reason or "rejected at review"

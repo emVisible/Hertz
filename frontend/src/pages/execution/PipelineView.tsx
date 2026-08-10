@@ -566,7 +566,15 @@ export function PipelineView(p: PipelineViewProps) {
                     renderRow={(item) => (
                       <StageItemRow
                         item={item}
-                        badge={<Badge tone="success">published</Badge>}
+                        badge={
+                          <span className="flex items-center gap-1">
+                            <Badge tone="success">published</Badge>
+                            {/* 分发目标（v0.3.4）：发布记录的目标徽章 */}
+                            {(item.publish_json?.target ? (
+                              <Badge tone="neutral">{String(item.publish_json.target)}</Badge>
+                            ) : null)}
+                          </span>
+                        }
                         right={
                           <Button
                             size="sm"
