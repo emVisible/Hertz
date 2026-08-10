@@ -5,6 +5,7 @@ keeps the target table so future platforms plug in with one entry.
 """
 
 import asyncio
+import re
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -152,8 +153,14 @@ class BilibiliPublisher(Publisher):
             cmd += ["--timedpublish", item.scheduled_at.strftime("%Y-%m-%d %H:%M")]
         out = await _run_cmd(cmd)
         ctx.log(f"[publish] biliup ok: {title}")
-        tail = out.decode(errors="replace")[-200:]
-        return {"target": "bilibili", "title": title, "stdout_tail": tail}
+        full = out.decode(errors="replace")
+        tail = full[-200:]
+        # v0.4 C1：从 stdout 解析 BV 号（发布数据回捞的锚点）
+        m = re.search(r"BV[0-9A-Za-z]{10}", full)
+        result: dict = {"target": "bilibili", "title": title, "stdout_tail": tail}
+        if m:
+            result["bvid"] = m.group(0)
+        return result
 
 
 PUBLISHERS: dict[str, Publisher] = {

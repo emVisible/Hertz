@@ -13,6 +13,7 @@ import { useExecutionStore } from '../stores/execution'
 import { pipelineApi } from '../api'
 import { PageTransition } from '../components/PageTransition'
 import { AssetsPage } from '../pages/assets/AssetsPage'
+import { DashboardPage } from '../pages/dashboard/DashboardPage'
 import { PlansPage } from '../pages/plans/PlansPage'
 import { ExecutionPage } from '../pages/execution/ExecutionPage'
 import { CanvasPage } from '../pages/canvas/CanvasPage'
@@ -53,6 +54,8 @@ export function AppShell() {
     // 生产
     { to: '/execution', icon: 'console', label: t('nav.execution'), group: 'produce' },
     { to: '/plans', icon: 'plans', label: t('nav.plans'), group: 'produce' },
+    // 看板（v0.4 C2：漏斗/发布/AI 用量）
+    { to: '/dashboard', icon: 'whisper', label: t('nav.dashboard'), group: 'produce' },
     // 素材（唯一出口：下载/资源/文档）
     { to: '/assets', icon: 'box', label: t('nav.assets'), group: 'assets' },
     // 系统
@@ -107,6 +110,7 @@ export function AppShell() {
               <Route path="/studio" element={<Navigate to="/execution?mode=studio" replace />} />
               <Route path="/console" element={<Navigate to="/execution?mode=pipeline" replace />} />
               <Route path="/plans" element={<PlansPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/assets" element={<AssetsPage />} />
               <Route path="/config" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/canvas" replace />} />

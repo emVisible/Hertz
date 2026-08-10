@@ -10,7 +10,8 @@
     "plans": "Plans",
     "config": "Settings",
     "docs": "Docs",
-    "execution": "Execute"
+    "execution": "Execute",
+    "dashboard": "Dashboard"
   },
   "common": {
     "loading": "Loading…",
@@ -694,7 +695,13 @@
     "calendarBatchHint": "Click any day cell to schedule all (⌘/Shift multi-select)",
     "calendarBatchClear": "Clear schedules",
     "calendarBatchScheduled": "Scheduled {{n}} items",
-    "keyHint": "Shortcuts: j/k move · a approve · r reject · b back to preprocess · Esc exit"
+    "keyHint": "Shortcuts: j/k move · a approve · r reject · b back to preprocess · Esc exit",
+    "stats": "Stats",
+    "statsHint": "Fill in views/interactions (fallback when auto-fetch fails)",
+    "statsTitle": "views · likes · favorites · comments · shares",
+    "statsPrompt": "Stats (space separated): views likes favorites comments shares",
+    "statsPromptInvalid": "Expected 5 numbers separated by spaces",
+    "statsSaved": "Stats saved"
   },
   "canvas": {
     "tool": {
@@ -852,5 +859,16 @@
     "effect": "Injection instruction (MD)",
     "effectPlaceholder": "Instruction injected into the system prompt. Empty = nothing injected (default \"normal\" level).",
     "hint": "Levels (built-ins sync from code; edits apply on the next run)"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "funnel": "Pipeline funnel (current counts)",
+    "publish": "Publishing (last 30 days)",
+    "publish30d": "Total published",
+    "avgView": "Avg views",
+    "targetDist": "Targets",
+    "usage": "AI usage (by model, ms)",
+    "usageEmpty": "No calls yet",
+    "usageHint": "{{calls}} calls total (latest 500)"
   }
 }

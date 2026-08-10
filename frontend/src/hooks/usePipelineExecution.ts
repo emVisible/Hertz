@@ -312,6 +312,25 @@ export function usePipelineExecution() {
     }
   }
 
+  /** 发布数据补录（v0.4 C1）：自动回捞失败时手动填播放/互动（空格分隔）。 */
+  async function setPublishStats(item: PipelineItem) {
+    const raw = window.prompt(t('console.statsPrompt'))
+    if (raw === null) return
+    const parts = raw.trim().split(/\s+/).map(Number)
+    if (parts.length !== 5 || parts.some((n) => Number.isNaN(n))) {
+      toast(t('console.statsPromptInvalid'), 'warning')
+      return
+    }
+    try {
+      const [view, like, favorite, comment, share] = parts
+      await pipelineApi.setPublishStats(item.id, { view, like, favorite, comment, share })
+      refresh()
+      toast(t('console.statsSaved'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   async function saveMeta(item: PipelineItem, meta: Record<string, string | number | null>) {
     try {
       await pipelineApi.updateMeta(item.id, meta)
@@ -439,6 +458,7 @@ export function usePipelineExecution() {
     stop,
     act,
     batchAction,
+    setPublishStats,
     saveMeta,
     publishItem,
     publishStatus,

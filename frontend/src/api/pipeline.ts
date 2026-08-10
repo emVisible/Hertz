@@ -170,6 +170,12 @@ export const pipelineApi = {
   score: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/score`),
   /** 过期排期自动重排（v0.2.7）：进入审核时调用。 */
   rescheduleExpired: () => api.post<{ updated: number }>('/api/pipeline/reschedule-expired'),
+  /** 发布数据补录（v0.4 C1）：自动回捞失败时手动填播放/互动 */
+  setPublishStats: (id: string, stats: Record<string, number>) =>
+    api.post<{ id: string; ok: boolean; stats: Record<string, number> }>(
+      `/api/pipeline/items/${id}/publish-stats`,
+      stats,
+    ),
   /** 生产方式批量设置（v0.3.3，预处理人工选择）。 */
   setProduceOptions: (ids: string[], options: Partial<ProduceOptions>) =>
     api.post<{ updated: number }>('/api/pipeline/produce-options', { ids, options }),

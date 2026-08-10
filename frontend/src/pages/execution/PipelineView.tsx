@@ -62,6 +62,7 @@ interface PipelineViewProps {
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
   publishItem: (item: PipelineItem, selfmade?: boolean, target?: string) => void
+  setPublishStats: (item: PipelineItem) => void
   uploadCover: (item: PipelineItem, file: File) => void
   retryClass: (cls: string, n: number) => void
   backToPrep: (item: PipelineItem) => void
@@ -753,6 +754,20 @@ export function PipelineView(p: PipelineViewProps) {
                             {(item.publish_json?.target ? (
                               <Badge tone="neutral">{String(item.publish_json.target)}</Badge>
                             ) : null)}
+                            {/* 发布数据（v0.4 C1）：回捞/补录的播放·互动 */}
+                            {(() => {
+                              const stats = (item.publish_json?.stats ?? null) as
+                                | Record<string, number>
+                                | null
+                              if (!stats) return null
+                              return (
+                                <Badge tone="primary">
+                                  <span title={t('console.statsTitle')}>
+                                    ▶ {stats.view ?? 0}
+                                  </span>
+                                </Badge>
+                              )
+                            })()}
                             {/* 发布时间（v0.3.8） */}
                             {item.published_at && (
                               <span className="font-mono text-[10px] text-text-disabled">
@@ -763,6 +778,15 @@ export function PipelineView(p: PipelineViewProps) {
                         }
                         right={
                           <span className="flex items-center gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void p.setPublishStats(item)}
+                              title={t('console.statsHint')}
+                            >
+                              <Icon name="tag" size={12} />
+                              {t('console.stats')}
+                            </Button>
                             <Button
                               size="sm"
                               variant="ghost"

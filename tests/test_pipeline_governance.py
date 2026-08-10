@@ -1428,3 +1428,63 @@ def test_subtitle_style_injected() -> None:
     assert "Noto Sans CJK SC,26" in header
     assert ",1,2,1," in header
     assert ",2,40,40,26,1" in header
+
+
+# ---------- 发布数据回捞（v0.4 C1） ----------
+
+
+def test_extract_bvid_from_stdout() -> None:
+    """biliup stdout 解析 BV 号。"""
+    from backend.pipeline.publish_stats import extract_bvid
+
+    assert extract_bvid("upload success: BV1xx411c7mD view https://b23.tv/x") == "BV1xx411c7mD"
+    assert extract_bvid("no bvid here") is None
+
+
+def test_stats_expired_logic() -> None:
+    """stats 缺失/过期判定（回捞调度只处理该拉的条目）。"""
+    from datetime import UTC, datetime, timedelta
+
+    from backend.pipeline.publish_stats import stats_expired
+
+    assert stats_expired(None) is False  # 无 bvid 不拉
+    assert stats_expired({"bvid": "BV1xx411c7mD"}) is True  # 无 stats → 拉
+    assert stats_expired({"bvid": "BV1xx411c7mD", "stats": {"view": 1}}) is True
+    fresh = datetime.now(UTC) - timedelta(hours=1)
+    assert (
+        stats_expired(
+            {
+                "bvid": "BV1xx411c7mD",
+                "stats": {"view": 1},
+                "stats_at": fresh.isoformat(),
+            }
+        )
+        is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_set_publish_stats_endpoint(client) -> None:
+    """手动补录发布数据（回捞失败的降级入口）。"""
+    async with session_factory() as session:
+        item = Item(
+            status=ItemStatus.PUBLISHED, source="reddit", source_id="st-1", title="已发布",
+            publish_json={"target": "bilibili"},
+        )
+        session.add(item)
+        await session.commit()
+        item_id = item.id
+
+    resp = await client.post(
+        f"/api/pipeline/items/{item_id}/publish-stats",
+        json={"view": 1234, "like": 56, "favorite": 7, "comment": 8, "share": 9},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["stats"] == {"view": 1234, "like": 56, "favorite": 7, "comment": 8, "share": 9}
+
+    async with session_factory() as session:
+        row = await session.get(Item, item_id)
+        pub = row.publish_json or {}
+        assert pub["stats"]["view"] == 1234
+        assert "stats_at" in pub

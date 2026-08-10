@@ -216,6 +216,23 @@ async def delete_produce_template(template_id: uuid.UUID) -> dict:
     return {"ok": True}
 
 
+class PublishStatsBody(BaseModel):
+    view: int = 0
+    like: int = 0
+    favorite: int = 0
+    comment: int = 0
+    share: int = 0
+
+
+@router.post("/items/{item_id}/publish-stats")
+async def set_publish_stats(item_id: uuid.UUID, body: PublishStatsBody) -> dict:
+    """手动补录发布数据（v0.4 C1：自动回捞失败时的降级入口）。"""
+    try:
+        return await _pipe().set_publish_stats(item_id, body.model_dump())
+    except ItemNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/items/{item_id}/back-to-prep")
 async def back_to_prep(item_id: uuid.UUID):
     """审核打回预处理（v0.3.9 相邻双向）：queued → scored。"""

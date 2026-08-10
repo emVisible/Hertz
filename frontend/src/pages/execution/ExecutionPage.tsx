@@ -108,6 +108,7 @@ export function ExecutionPage() {
           act={pipeline.act}
           saveMeta={pipeline.saveMeta}
           publishItem={pipeline.publishItem}
+          setPublishStats={pipeline.setPublishStats}
           uploadCover={pipeline.uploadCover}
           retryClass={pipeline.retryClass}
           backToPrep={pipeline.backToPrep}

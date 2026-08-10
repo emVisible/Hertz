@@ -107,6 +107,13 @@ class ServiceRegistry:
             trigger="interval",
             minutes=5,
         )
+        # 发布数据回捞（v0.4 C1）：每 6 小时扫一次已发布条目拉播放/互动
+        self.scheduler.add_job(
+            "publish_stats",
+            self._publish_stats_tick,
+            trigger="interval",
+            hours=6,
+        )
         self.log.get().info("ServiceRegistry initialized (AI via ProviderRegistry)")
 
     async def _auto_approve_tick(self) -> None:
@@ -116,6 +123,16 @@ class ServiceRegistry:
                 self.log.get().info("auto_approve approved %d item(s)", result["approved"])
         except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
             self.log.get().exception("auto_approve tick failed (best effort)")
+
+    async def _publish_stats_tick(self) -> None:
+        try:
+            result = await self.pipeline.refresh_publish_stats()
+            if result.get("updated", 0) > 0:
+                self.log.get().info(
+                    "publish stats refreshed %d item(s)", result["updated"]
+                )
+        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+            self.log.get().exception("publish stats tick failed (best effort)")
 
     async def shutdown(self) -> None:
         # Cancel in-flight background work before releasing resources

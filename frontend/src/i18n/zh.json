@@ -10,7 +10,8 @@
     "plans": "编排",
     "config": "设置",
     "docs": "文档",
-    "execution": "执行"
+    "execution": "执行",
+    "dashboard": "看板"
   },
   "common": {
     "loading": "加载中…",
@@ -709,7 +710,13 @@
     "calendarBatchHint": "点击任意日期格统一落位（⌘/Shift 多选）",
     "calendarBatchClear": "批量清空排期",
     "calendarBatchScheduled": "已为 {{n}} 条设置排期",
-    "keyHint": "快捷键：j/k 移动 · a 通过 · r 拒绝 · b 打回预处理 · Esc 退出"
+    "keyHint": "快捷键：j/k 移动 · a 通过 · r 拒绝 · b 打回预处理 · Esc 退出",
+    "stats": "数据",
+    "statsHint": "补录播放/互动数据（自动回捞失败时）",
+    "statsTitle": "播放·点赞·收藏·评论·分享",
+    "statsPrompt": "补录数据（空格分隔）：播放 点赞 收藏 评论 分享",
+    "statsPromptInvalid": "格式应为 5 个数字（空格分隔）",
+    "statsSaved": "数据已保存"
   },
   "canvas": {
     "tool": {
@@ -852,5 +859,16 @@
     "effect": "注入指令（MD）",
     "effectPlaceholder": "该档位注入 system prompt 的指令。留空 = 不注入（默认「正常」档）。",
     "hint": "档位列表（内置以代码为准，改档指令在运行前须重开一次）"
+  },
+  "dashboard": {
+    "title": "看板",
+    "funnel": "漏斗水位（各阶段存量）",
+    "publish": "发布统计（近 30 天）",
+    "publish30d": "发布总数",
+    "avgView": "平均播放",
+    "targetDist": "平台分布",
+    "usage": "AI 用量（按模型耗时）",
+    "usageEmpty": "暂无调用记录",
+    "usageHint": "共 {{calls}} 次调用（最近 500 条）"
   }
 }
