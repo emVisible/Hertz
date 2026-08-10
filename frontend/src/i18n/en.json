@@ -148,7 +148,11 @@
     "pipeline": "Content pipeline",
     "minScore": "Min score",
     "collectLimit": "Collect limit",
-    "publishTarget": "Publish target"
+    "publishTarget": "Publish target",
+    "redditOAuth": "Reddit OAuth credentials",
+    "redditOAuthHint": "Anonymous collection often gets 403 Blocked (IP/TLS fingerprint). Create a free API app (reddit.com/prefs/apps → script), fill in the credentials and collection switches to the official authed channel.",
+    "redditClientId": "Client ID",
+    "redditClientSecret": "Client Secret (write-only)"
   },
   "execution": {
     "modeStudio": "Studio",
@@ -611,7 +615,8 @@
     "preSort": "Sort",
     "preSort.seq": "Inbound",
     "preSort.score": "Score",
-    "preSort.produce": "Produce mode"
+    "preSort.produce": "Produce mode",
+    "collectCooling": "Source cooling down, will auto-resume"
   },
   "canvas": {
     "tool": {

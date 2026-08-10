@@ -163,7 +163,11 @@
     "pipeline": "内容流水线",
     "minScore": "最低评分",
     "collectLimit": "采集上限",
-    "publishTarget": "发布目标"
+    "publishTarget": "发布目标",
+    "redditOAuth": "Reddit 采集凭证",
+    "redditOAuthHint": "匿名采集易被 Reddit 403 Blocked（IP/TLS 指纹）。创建免费 API 应用（reddit.com/prefs/apps → script）后填入凭证，采集走官方认证通道，403 不再命中。",
+    "redditClientId": "Client ID",
+    "redditClientSecret": "Client Secret（只写不读）"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -626,7 +630,8 @@
     "preSort": "排序",
     "preSort.seq": "入库序",
     "preSort.score": "评分",
-    "preSort.produce": "生产方式"
+    "preSort.produce": "生产方式",
+    "collectCooling": "采集源冷却中，稍后自动恢复"
   },
   "canvas": {
     "tool": {

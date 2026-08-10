@@ -30,9 +30,17 @@ RUNTIME_ALLOWLIST = {
     # They are never returned by GET — only set via PATCH.
     "deepseek_api_key",
     "llm_api_key",
+    "pipeline_reddit_client_id",
+    "pipeline_reddit_client_secret",
 }
 
-SECRET_FIELDS = {"deepseek_api_key", "llm_api_key", "secret_key", "database_url"}
+SECRET_FIELDS = {
+    "deepseek_api_key",
+    "llm_api_key",
+    "secret_key",
+    "database_url",
+    "pipeline_reddit_client_secret",
+}
 
 
 def _mask_secret(value: str) -> str | None:
@@ -53,6 +61,11 @@ async def get_config() -> dict:
     api_key = str(base.get("llm_api_key") or base.get("deepseek_api_key") or "")
     public["llm_api_key_masked"] = _mask_secret(api_key)
     public["llm_api_key_set"] = bool(api_key)
+    # Reddit OAuth（v0.3.5）：secret 只写不读（§8.2），UI 用 set 标志显示已配置
+    public["pipeline_reddit_client_id_set"] = bool(base.get("pipeline_reddit_client_id"))
+    public["pipeline_reddit_client_secret_set"] = bool(
+        base.get("pipeline_reddit_client_secret")
+    )
     return public
 
 

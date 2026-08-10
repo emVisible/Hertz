@@ -22,6 +22,9 @@ interface ConfigData {
   pipeline_min_score?: number
   pipeline_collect_limit?: number
   pipeline_publish_target?: string
+  pipeline_reddit_client_id?: string
+  pipeline_reddit_client_id_set?: boolean
+  pipeline_reddit_client_secret_set?: boolean
   llm_api_key_masked?: string | null
   llm_api_key_set?: boolean
 }
@@ -99,6 +102,8 @@ export function SettingsPage() {
       pipeline_min_score: String(cfg.pipeline_min_score ?? 6),
       pipeline_collect_limit: String(cfg.pipeline_collect_limit ?? 25),
       pipeline_publish_target: cfg.pipeline_publish_target ?? 'noop',
+      pipeline_reddit_client_id: cfg.pipeline_reddit_client_id ?? '',
+      pipeline_reddit_client_secret: '',
     })
   }, [cfg])
 
@@ -117,6 +122,10 @@ export function SettingsPage() {
       pipeline_collect_limit: Number(form.pipeline_collect_limit),
       pipeline_publish_target: form.pipeline_publish_target,
     }
+    if (form.pipeline_reddit_client_id?.trim())
+      overrides.pipeline_reddit_client_id = form.pipeline_reddit_client_id.trim()
+    if (form.pipeline_reddit_client_secret)
+      overrides.pipeline_reddit_client_secret = form.pipeline_reddit_client_secret
     try {
       await api.patch('/api/config', { overrides })
       setDirty(false)
@@ -293,6 +302,29 @@ export function SettingsPage() {
                         { value: 'noop', label: 'noop' },
                         { value: 'bilibili', label: 'Bilibili' },
                       ]}
+                    />
+                  </div>
+                </section>
+
+                <section className={section}>
+                  <h2 className={heading}>
+                    <Icon name="whisper" size={15} />
+                    {t('settings.redditOAuth')}
+                  </h2>
+                  <p className={sub}>{t('settings.redditOAuthHint')}</p>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    <Input
+                      label={t('settings.redditClientId')}
+                      value={form.pipeline_reddit_client_id ?? ''}
+                      onChange={(e) => set('pipeline_reddit_client_id', e.target.value)}
+                      placeholder={cfg?.pipeline_reddit_client_id ? '••••••••' : ''}
+                    />
+                    <Input
+                      label={t('settings.redditClientSecret')}
+                      type="password"
+                      value={form.pipeline_reddit_client_secret ?? ''}
+                      onChange={(e) => set('pipeline_reddit_client_secret', e.target.value)}
+                      placeholder={cfg?.pipeline_reddit_client_secret_set ? '••••••••' : ''}
                     />
                   </div>
                 </section>

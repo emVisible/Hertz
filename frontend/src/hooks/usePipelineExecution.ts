@@ -122,6 +122,8 @@ export function usePipelineExecution() {
       appendLog(`${t('console.item')} ${event.status}${event.error ? `: ${event.error}` : ''}`, event.status === 'rejected' || event.status === 'failed' ? 'done' : 'item')
     } else if (event.type === 'job_done') {
       const failed = event.status === 'failed'
+      // 冷却（v0.3.5）：源被拒后的静默分支——不算 ✓，标 ⚠ 提示原因
+      const cooling = Boolean(event.summary?.cooldown_s)
       const empty = Boolean(event.summary?.empty)
       // 完成摘要（v0.3.0，参考原项目 job_summary 中文摘要）
       const s = event.summary
@@ -129,6 +131,7 @@ export function usePipelineExecution() {
       if (event.job === 'collect') {
         summary = `采集 ${s?.collected ?? 0} 条 · 新入库 ${s?.inserted ?? 0} · 跳过 ${s?.skipped ?? 0}`
         if (empty) summary += ' ⚠ 源返回空，已进入冷却'
+        if (cooling) summary += ` ⏳ 源冷却中（${Math.ceil(Number(s?.cooldown_s ?? 0))}s）`
       } else if (s) {
         const parts = []
         if (s.processed !== undefined) parts.push(`处理 ${s.processed} 项`)
@@ -140,10 +143,11 @@ export function usePipelineExecution() {
           summary = t('console.noPending')
         }
       }
-      appendLog(`── [${event.job}] ${failed ? '✗' : empty ? '⚠' : '✓'}${summary ? ` ${summary}` : ''}${event.error ? `: ${event.error}` : ''} ──`, 'done')
+      appendLog(`── [${event.job}] ${failed ? '✗' : empty || cooling ? '⚠' : '✓'}${summary ? ` ${summary}` : ''}${event.error ? `: ${event.error}` : ''} ──`, 'done')
       void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
       if (failed) toast(event.error ?? `${event.job} failed`, 'error')
       else if (empty) toast(t('console.collectEmpty'), 'warning')
+      else if (cooling) toast(t('console.collectCooling'), 'warning')
     }
   }
 

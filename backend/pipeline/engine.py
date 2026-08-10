@@ -74,7 +74,10 @@ class StepEngine:
                 await session.merge(job)
                 await session.commit()
 
-        self._emit(str(job.id), {"type": "job_done", "job": job_name, "summary": summary})
+        self._emit(
+            str(job.id),
+            {"type": "job_done", "job": job_name, "status": job.status, "summary": summary},
+        )
         return {"job_id": str(job.id), "job": job_name, "status": job.status, "summary": summary}
 
     async def run_chain(self, *, limit: int = 10, channel: str = "") -> dict:

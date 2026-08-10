@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     # 仅当 reddit_score > 0 时生效（RSS/空分源防误杀）
     pipeline_prefilter_min_reddit_score: int = 50
     pipeline_prefilter_min_upvote_ratio: float = 0.85
+    # Reddit OAuth（v0.3.5）：匿名请求易被 403 Blocked（TLS/IP 指纹），
+    # 配置官方 API 凭证后走 oauth.reddit.com 认证通道（详见 collectors/reddit.py）
+    pipeline_reddit_client_id: str = ""
+    pipeline_reddit_client_secret: str = ""
     # Test/dev escape hatch: allow http(s) non-public URLs in the pipeline
     # download step (SSRF guard stays on by default — AXIOM §8.1).
     pipeline_allow_loopback_urls: bool = False

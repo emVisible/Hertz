@@ -1,9 +1,9 @@
-"""Reddit collector — JSON API with RSS fallback (v0.3.1).
+"""Reddit collector — OAuth JSON API with anonymous RSS fallback (v0.3.5).
 
-Primary: ``www.reddit.com/r/{sub}/{sort}.json`` (anonymous listings).
-Fallback（参考原项目 RSS 路径）：JSON 被 403/429 拒绝时降级
-``old.reddit.com/r/{sub}/{sort}.rss``——自定义 UA 的匿名 JSON 极易被
-Reddit 判定脚本而 Blocked，RSS 是更宽容的通道，避免采集断供。
+Primary: ``oauth.reddit.com/r/{sub}/{sort}`` with a Bearer token (official
+API). Anonymous www.reddit.com JSON 极易被 403 Blocked（TLS/IP 指纹），
+配置 ``pipeline_reddit_client_id/secret``（设置页）即自动启用认证通道；
+无凭证时降级匿名 JSON → RSS 兜底（参考原项目 RSS 路径）。
 媒体 URL 从 RSS 的 content:encoded 中正则提取（v.redd.it / i.redd.it）。
 """
 
@@ -11,11 +11,13 @@ import logging
 import random
 import re
 import time
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
 import httpx
 
+from backend.config import settings
 from backend.pipeline.collectors.base import RawPost, SourceCollector
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,13 @@ def _system_proxy() -> str | None:
     return proxies.get("https") or proxies.get("http") or None
 
 
+def _b64(data: bytes) -> bytes:
+    """Local base64 to keep this module free of import-time churn."""
+    import base64
+
+    return base64.b64encode(data)
+
+
 def classify_media(url: str, is_video: bool, extra: dict) -> str:
     """Route a post to the right production pipeline.
 
@@ -87,9 +96,40 @@ class RedditCollector(SourceCollector):
             timeout=20,
             proxy=proxy,
         )
+        self._token: str | None = None
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    async def _ensure_token(self) -> str | None:
+        """OAuth 凭证（设置页配置）→ Bearer token；未配置返回 None（走匿名通道）。"""
+        client_id = settings.pipeline_reddit_client_id
+        client_secret = settings.pipeline_reddit_client_secret
+        if not (client_id and client_secret):
+            return None
+        if self._token:
+            return self._token
+        basic = urllib.parse.quote(client_id, safe="") + ":" + urllib.parse.quote(
+            client_secret, safe=""
+        )
+        resp = await self._client.post(
+            "https://www.reddit.com/api/v1/access_token",
+            data={"grant_type": "client_credentials"},
+            headers={
+                "Authorization": "Basic " + _b64(basic.encode("utf-8")).decode("ascii"),
+                "User-Agent": _UA,
+            },
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Reddit OAuth 换取 token 失败 (HTTP {resp.status_code})——"
+                "请检查设置页的 client_id/client_secret"
+            )
+        body = resp.json()
+        self._token = str(body.get("access_token") or "")
+        if not self._token:
+            raise RuntimeError("Reddit OAuth 响应缺少 access_token")
+        return self._token
 
     async def collect(self, ctx, channel: str, limit: int) -> list[RawPost]:
         sort = channel.split(":", 1)[1] if ":" in channel else ""
@@ -98,6 +138,10 @@ class RedditCollector(SourceCollector):
             # 避免每次都打固定 hot 首页（反 429 熔断 + 供给多样化）
             sort = random.choice(_SORTS)
         sub = channel.split(":", 1)[0].strip("/") or "all"
+        token = await self._ensure_token()
+        if token:
+            # 认证通道（v0.3.5）：官方 API 对匿名 403 Blocked 免疫
+            return await self._collect_oauth(sub, sort, limit, token)
         try:
             return await self._collect_json(sub, sort, limit)
         except _JsonRejectedError as exc:
@@ -108,8 +152,38 @@ class RedditCollector(SourceCollector):
                 return await self._collect_rss(sub, sort, limit)
             except httpx.HTTPError as rss_exc:
                 raise RuntimeError(
-                    f"Reddit 采集失败: JSON {exc}；RSS 兜底也失败: {rss_exc}"
+                    f"Reddit 采集失败: JSON {exc}；RSS 兜底也失败: {rss_exc}。"
+                    "若持续被拒，请在设置页配置 Reddit OAuth 凭证（client_id/secret）"
                 ) from rss_exc
+
+    async def _collect_oauth(
+        self, sub: str, sort: str, limit: int, token: str
+    ) -> list[RawPost]:
+        """认证通道（v0.3.5）：oauth.reddit.com 走官方 API，匿名 403 不再命中。"""
+        url = f"https://oauth.reddit.com/r/{sub}/{sort}"
+        resp = await self._client.get(
+            url,
+            params={"limit": min(limit, 100), "raw_json": 1},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if resp.status_code in (401, 403):
+            self._token = None  # token 失效 → 下次重取
+            raise RuntimeError(
+                f"Reddit OAuth 通道被拒 (HTTP {resp.status_code})——"
+                "token 可能已失效，请重试；或检查 client_id/client_secret"
+            )
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"Reddit OAuth 采集失败: {exc}") from exc
+        body = resp.json()
+        posts: list[RawPost] = []
+        for child in (body.get("data") or {}).get("children") or []:
+            data = child.get("data") or {}
+            post = self._to_post(data)
+            if post is not None:
+                posts.append(post)
+        return posts
 
     async def _collect_json(self, sub: str, sort: str, limit: int) -> list[RawPost]:
         url = f"https://www.reddit.com/r/{sub}/{sort}.json"

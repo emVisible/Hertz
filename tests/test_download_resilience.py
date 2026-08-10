@@ -348,3 +348,81 @@ def test_looks_like_html_sniff() -> None:
     assert not looks_like_html(b"\x00\x00\x00\x18ftypmp42")
     assert not looks_like_html(b"\xff\xd8\xff\xe0")
     assert not looks_like_html(b"")
+
+
+# ---------- Reddit OAuth 通道（v0.3.5） ----------
+
+
+def test_oauth_disabled_without_credentials(monkeypatch) -> None:
+    """未配置凭证时 _ensure_token 返回 None（保持匿名通道）。"""
+    import httpx
+
+    from backend.pipeline.collectors.reddit import RedditCollector
+
+    class _Cfg:
+        pipeline_reddit_client_id = ""
+        pipeline_reddit_client_secret = ""
+
+    monkeypatch.setattr("backend.pipeline.collectors.reddit.settings", _Cfg())
+    c = RedditCollector(client=httpx.AsyncClient())
+    assert asyncio.run(c._ensure_token()) is None  # noqa: SLF001 — 直接探内部，无 IO
+
+
+@pytest.mark.asyncio
+async def test_oauth_channel_fetches_posts(monkeypatch) -> None:
+    """配置凭证后走 oauth.reddit.com 并解析 posts。"""
+    import httpx
+
+    from backend.pipeline.collectors.reddit import RedditCollector
+
+    class _Cfg:
+        pipeline_reddit_client_id = "cid"
+        pipeline_reddit_client_secret = "cs"
+
+    monkeypatch.setattr("backend.pipeline.collectors.reddit.settings", _Cfg())
+
+    class FakeTransport(httpx.AsyncBaseTransport):
+        def __init__(self) -> None:
+            self.token_req = False
+            self.list_req = False
+
+        async def handle_async_request(self, request):
+            if request.url.path == "/api/v1/access_token":
+                self.token_req = True
+                return httpx.Response(200, json={"access_token": "tok123"})
+            if request.url.host == "oauth.reddit.com":
+                self.list_req = True
+                assert request.headers["authorization"] == "Bearer tok123"
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": {
+                            "children": [
+                                {
+                                    "data": {
+                                        "id": "oa1",
+                                        "title": "OAuth 帖子",
+                                        "url": "https://i.redd.it/oa1.jpg",
+                                        "permalink": "/r/pics/comments/oa1/x/",
+                                        "score": 99,
+                                        "upvote_ratio": 0.9,
+                                        "num_comments": 7,
+                                        "created_utc": 1_700_000_000,
+                                        "is_video": False,
+                                        "stickied": False,
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                )
+            return httpx.Response(404)
+
+    transport = FakeTransport()
+    c = RedditCollector(client=httpx.AsyncClient(transport=transport))
+    posts = await c.collect(None, "pics", 10)
+    assert transport.token_req and transport.list_req
+    assert len(posts) == 1
+    assert posts[0].source_id == "oa1"
+    assert posts[0].item_type == "image_gallery"
+    await c.aclose()

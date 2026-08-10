@@ -29,7 +29,12 @@ export function ActivityPanel() {
   })
   const { data: sysLines = [] } = useQuery({
     queryKey: ['sys-logs-panel'],
-    queryFn: () => api.get<{ lines: string[] }>('/api/logs/buffer?limit=120').then((r) => r.lines),
+    queryFn: () =>
+      api
+        .get<{ lines: Array<{ ts: string; level: string; message: string }> }>(
+          '/api/logs/buffer?limit=120',
+        )
+        .then((r) => r.lines),
     refetchInterval: open ? 5000 : false,
   })
 
@@ -126,9 +131,30 @@ export function ActivityPanel() {
               </ul>
             )}
             {tab === 'system' && (
-              <pre className="whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-text-secondary">
-                {sysLines.length === 0 ? t('console.sysLogsEmpty') : sysLines.join('\n')}
-              </pre>
+              <div className="flex flex-col gap-0.5 font-mono text-[10px] leading-relaxed">
+                {sysLines.length === 0 && (
+                  <p className="p-2 text-text-disabled">{t('console.sysLogsEmpty')}</p>
+                )}
+                {sysLines.map((line, idx) => (
+                  <div key={idx} className="flex gap-1.5 px-1">
+                    <span className="shrink-0 select-none text-text-disabled">
+                      {line.ts.slice(11, 19)}
+                    </span>
+                    <span
+                      className={`w-10 shrink-0 select-none ${
+                        line.level === 'ERROR'
+                          ? 'text-error'
+                          : line.level === 'WARNING'
+                            ? 'text-warning'
+                            : 'text-text-disabled'
+                      }`}
+                    >
+                      {line.level}
+                    </span>
+                    <span className="min-w-0 break-all text-text-secondary">{line.message}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
