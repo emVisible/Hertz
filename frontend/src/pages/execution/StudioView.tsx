@@ -33,6 +33,15 @@ const RUN_TONE: Record<string, 'neutral' | 'success' | 'error' | 'warning' | 'pr
   cancelled: 'warning',
 }
 
+/** 输出深度五档（v0.3.10）：极简 → 简洁 → 正常 → 详细 → 深挖 */
+const DEPTHS: Array<{ id: string }> = [
+  { id: 'terse' },
+  { id: 'concise' },
+  { id: 'normal' },
+  { id: 'detailed' },
+  { id: 'deep' },
+]
+
 // ================= Studio 域 =================
 
 interface StudioViewProps {
@@ -62,6 +71,8 @@ interface StudioViewProps {
   buffs: ReturnType<typeof useStudioExecution>['buffs']
   buffKeys: string[]
   setBuffKeys: (v: string[]) => void
+  depth: string
+  setDepth: (v: string) => void
 }
 
 export function StudioView(p: StudioViewProps) {
@@ -172,6 +183,32 @@ export function StudioView(p: StudioViewProps) {
                         🎲 {t('studio.buffRandom')}
                       </button>
                     )}
+                  </div>
+                </div>
+                {/* 深度档位（v0.3.10）：并列于 buff/debuff 之间，单选五档 */}
+                <div className="flex items-center gap-2">
+                  <span className="w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">
+                    {t('studio.depth')}
+                  </span>
+                  <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
+                    {(DEPTHS).map((d) => {
+                      const active = p.depth === d.id
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => p.setDepth(d.id)}
+                          title={t(`studio.depth.${d.id}.hint`)}
+                          className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                            active
+                              ? 'border-primary/40 bg-primary/15 font-medium text-primary'
+                              : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
+                          }`}
+                        >
+                          {t(`studio.depth.${d.id}.label`)}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
                 {/* 第二行：Debuff（反向禁忌，中性色与 Buff 对齐） */}

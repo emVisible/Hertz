@@ -22,6 +22,8 @@ export interface StudioExecState {
    *  默认 = 随机应变（每次运行抽 3 个随机 buff）+ 禁用 AI 套话 debuff；
    *  用户取消全部选择后为空数组 = 跟随计划持久配置。 */
   buffKeys: string[]
+  /** 输出深度档位（v0.3.10）：terse/concise/normal/detailed/deep，默认 normal */
+  depth: string
 }
 
 export interface PipelineExecState {
@@ -54,6 +56,7 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
     fileContent: '',
     logSeq: 0,
     buffKeys: ['random', 'no_ai_phrases'],
+    depth: 'normal',
   },
   pipeline: {
     step: 'collect',

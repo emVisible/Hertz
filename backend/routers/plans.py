@@ -86,6 +86,7 @@ async def run_plan(plan_id: uuid.UUID, body: RunBody | None = None):
             plan_id,
             (body.input if body else "").strip(),
             buff_keys=(body.buff_keys if body else None),
+            depth=(body.depth if body else "normal"),
         )
     except OrchestrationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

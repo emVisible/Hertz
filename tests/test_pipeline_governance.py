@@ -1129,3 +1129,67 @@ async def test_publish_noop_marked(client) -> None:
         assert result["noop"] is True
     finally:
         settings.pipeline_publish_target = orig
+
+
+# ---------- 输出深度（v0.3.10，Studio 编排） ----------
+
+
+def test_depth_instruction_injection() -> None:
+    """深度档位注入 system prompt：normal 不注入，其余五档对应指令。"""
+    from backend.ai.prompts.agent import DEPTH_INSTRUCTIONS, build_agent_messages
+
+    assert DEPTH_INSTRUCTIONS["normal"] == ""  # 默认档不注入
+    assert "1" in DEPTH_INSTRUCTIONS["terse"] and "3" in DEPTH_INSTRUCTIONS["terse"]
+
+    msgs = build_agent_messages(
+        agent={"role": "writer", "method": "写", "style": []},
+        phase_name="copywriting",
+        topic="主题",
+        brief_excerpt="",
+        platform_id="",
+        prior="",
+        output_file="x.md",
+        depth="terse",
+    )
+    system = msgs[0].content
+    assert "极简" in system and "1–3 句话" in system
+
+    msgs = build_agent_messages(
+        agent={"role": "writer", "method": "写", "style": []},
+        phase_name="copywriting",
+        topic="主题",
+        brief_excerpt="",
+        platform_id="",
+        prior="",
+        output_file="x.md",
+        depth="deep",
+    )
+    assert "深挖" in msgs[0].content
+
+    # normal 不注入
+    msgs = build_agent_messages(
+        agent={"role": "writer", "method": "写", "style": []},
+        phase_name="copywriting",
+        topic="主题",
+        brief_excerpt="",
+        platform_id="",
+        prior="",
+        output_file="x.md",
+        depth="normal",
+    )
+    assert "输出深度" not in msgs[0].content
+
+
+@pytest.mark.asyncio
+async def test_run_plan_accepts_depth(client) -> None:
+    """run 端点接收 depth 参数（不破坏旧调用）。"""
+    from backend.models.plan import Plan
+
+    async with session_factory() as session:
+        plan = Plan(name="深度测试", phase_order=[])
+        session.add(plan)
+        await session.commit()
+        plan_id = plan.id
+
+    resp = await client.post(f"/api/plans/{plan_id}/run", json={"input": "x", "depth": "terse"})
+    assert resp.status_code in (200, 409)  # 409=已有运行中；端点接受参数即通过

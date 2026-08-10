@@ -433,7 +433,18 @@
       "distribution": "Distribution",
       "package": "Package",
       "content_pipeline": "Content pipeline"
-    }
+    },
+    "depth": "Depth",
+    "depth.terse.label": "Terse",
+    "depth.terse.hint": "1-3 sentences, straight to the point",
+    "depth.concise.label": "Concise",
+    "depth.concise.hint": "Short and punchy, no fluff",
+    "depth.normal.label": "Normal",
+    "depth.normal.hint": "Default balanced output",
+    "depth.detailed.label": "Detailed",
+    "depth.detailed.hint": "Structured: bullet points/tables, thorough",
+    "depth.deep.label": "Deep dive",
+    "depth.deep.hint": "Vertical-domain research, substance over length"
   },
   "console": {
     "step": "Step",

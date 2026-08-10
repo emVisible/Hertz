@@ -35,6 +35,8 @@ class PlanUpdate(BaseModel):
 class RunBody(BaseModel):
     input: str = Field(default="", max_length=MAX_TOPIC)
     buff_keys: list[str] | None = None  # 运行时 buff 覆盖（空则用计划配置）
+    # 输出深度档位（v0.3.10）：terse/concise/normal/detailed/deep
+    depth: str = Field(default="normal", max_length=16)
 
 
 class CrewBody(BaseModel):

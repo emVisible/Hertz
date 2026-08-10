@@ -184,8 +184,12 @@ export const plansApi = {
   create: (body: Partial<Plan>) => api.post<Plan>('/api/plans', body),
   update: (id: string, body: Partial<Plan>) => api.put<Plan>(`/api/plans/${id}`, body),
   remove: (id: string) => api.delete<{ ok: boolean }>(`/api/plans/${id}`),
-  run: (id: string, input: string, buffKeys?: string[]) =>
-    api.post<{ id: string }>(`/api/plans/${id}/run`, { input, buff_keys: buffKeys }),
+  run: (id: string, input: string, buffKeys?: string[], depth = 'normal') =>
+    api.post<{ id: string }>(`/api/plans/${id}/run`, {
+      input,
+      buff_keys: buffKeys,
+      depth,
+    }),
 }
 
 export const studioApi = {

@@ -448,7 +448,18 @@
       "distribution": "分发策略",
       "package": "打包交付",
       "content_pipeline": "内容流水线"
-    }
+    },
+    "depth": "深度",
+    "depth.terse.label": "极简",
+    "depth.terse.hint": "1-3 句话直接给结论，不铺垫",
+    "depth.concise.label": "简洁",
+    "depth.concise.hint": "短而有力，删掉一切废话",
+    "depth.normal.label": "正常",
+    "depth.normal.hint": "默认平衡输出",
+    "depth.detailed.label": "详细",
+    "depth.detailed.hint": "结构化展开：分点/表格，论据充分",
+    "depth.deep.label": "深挖",
+    "depth.deep.hint": "垂直领域深度调研，言之有物"
   },
   "console": {
     "step": "步骤",

@@ -71,6 +71,8 @@ export function ExecutionPage() {
           buffs={studio.buffs}
           buffKeys={studio.buffKeys}
           setBuffKeys={studio.setBuffKeys}
+          depth={studio.depth}
+          setDepth={studio.setDepth}
         />
       ) : (
         <PipelineView

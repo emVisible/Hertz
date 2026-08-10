@@ -91,6 +91,7 @@ class PhaseEngine:
         self.ai = ai
         self._prompt_templates: dict[str, str] = {}  # v2.4 模板快照（run 时刷新）
         self.buff_keys: list[str] = []  # v5.0 buff 引用（studio 设置）
+        self.depth: str = "normal"  # v0.3.10 输出深度档位（studio 设置，默认正常）
         self._buff_effects: list[dict] = []  # 解析后的注入指令（run 时刷新）
 
     # ---------- public ----------
@@ -290,6 +291,7 @@ class PhaseEngine:
             output_file=f"{key}.md",
             templates=self._prompt_templates,
             buffs=self._buff_effects,
+            depth=self.depth,
         )
         text = ""
         # Declared retries must have an executor: transient LLM failures get

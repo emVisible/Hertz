@@ -20,6 +20,30 @@ _PRIOR_HEAD_LEN = _PRIOR_FULL_LEN
 # 出厂默认在 templates.py；模板库可覆盖（key: agent.thinking_protocol）。
 _THINKING_PROTOCOL = factory.get_default("agent.thinking_protocol")
 
+# 输出深度五档（v0.3.10，并列于 buff/debuff 的单选档位）：
+# terse 极简（1-3 句）→ concise 简洁有力 → normal 正常（默认）→
+# detailed 结构化展开（分点/表格）→ deep 垂直领域深挖。空串 = 不注入。
+DEPTH_INSTRUCTIONS: dict[str, str] = {
+    "terse": (
+        "【输出深度·极简】只给结论，1–3 句话说完。不要小标题、不要分点、"
+        "不要铺垫，直接给最核心的判断。"
+    ),
+    "concise": (
+        "【输出深度·简洁】短而有力：每个要点不超过 3 行，删除一切废话、"
+        "客套与重复，直接给干货。"
+    ),
+    "normal": "",
+    "detailed": (
+        "【输出深度·详细】结构化展开：使用分点、分级小标题，必要时用表格，"
+        "把每个论点讲透，论据充分、层次清楚。"
+    ),
+    "deep": (
+        "【输出深度·深挖】深度调研模式：围绕主题主动展开垂直领域层面的挖掘——"
+        "背景脉络、关键概念、数据与来源、不同角度的观点、可执行的结论；"
+        "篇幅可以长，但必须言之有物，禁止空洞泛谈。"
+    ),
+}
+
 
 def build_agent_messages(
     *,
@@ -32,6 +56,7 @@ def build_agent_messages(
     output_file: str,
     templates: dict[str, str] | None = None,
     buffs: list[dict] | None = None,
+    depth: str = "normal",
 ) -> list[ChatMessage]:
     thinking = (templates or {}).get("agent.thinking_protocol", _THINKING_PROTOCOL)
     system_tpl = (templates or {}).get("agent.system_template", "")
@@ -53,6 +78,11 @@ def build_agent_messages(
             debuff_lines = "\n".join(f"【{b['name']}】{b['effect']}" for b in neg)
             debuff_lines = f"\n\n【禁忌】\n{debuff_lines}\n"
     extra = buff_lines + debuff_lines
+
+    # 输出深度（v0.3.10）：与 buff/debuff 并列的单选档位；normal 不注入
+    depth_line = DEPTH_INSTRUCTIONS.get(depth, "")
+    if depth_line:
+        extra += f"\n\n{depth_line}\n"
 
     if system_tpl:
         system = system_tpl.format(

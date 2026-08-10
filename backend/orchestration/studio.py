@@ -86,7 +86,8 @@ class StudioService:
     # ---------- run lifecycle ----------
 
     async def start(
-        self, plan_id: uuid.UUID, topic: str, buff_keys: list[str] | None = None
+        self, plan_id: uuid.UUID, topic: str, buff_keys: list[str] | None = None,
+        depth: str = "normal",
     ) -> dict:
         if self.running:
             raise AlreadyRunningError()
@@ -124,7 +125,10 @@ class StudioService:
         )
         self._current_run_id = run_id
         self._task = asyncio.create_task(
-            self._execute(run_id, plan, brief, topic, agents, buff_keys=effective_buffs),
+            self._execute(
+                run_id, plan, brief, topic, agents,
+                buff_keys=effective_buffs, depth=depth or "normal",
+            ),
             name=f"studio-run-{run_id}",
         )
         return {"id": str(run_id), "status": WorkflowRunStatus.RUNNING}
@@ -141,12 +145,14 @@ class StudioService:
     async def _execute(
         self, run_id: uuid.UUID, plan, brief, topic: str, agents: dict,
         buff_keys: list[str] | None = None,
+        depth: str = "normal",
     ) -> None:
         from backend.factory.registry import ServiceRegistry  # deferred: registry imports studio
 
         engine = PhaseEngine(self.files, self.hub, ai=ServiceRegistry.get().ai)
         engine.phases = ServiceRegistry.get().phases
         engine.buff_keys = buff_keys or []
+        engine.depth = depth or "normal"
         try:
             result = await engine.run(
                 run=await self._reload(run_id), plan=plan, topic=topic, brief=brief, agents=agents

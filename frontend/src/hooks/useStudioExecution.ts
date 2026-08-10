@@ -23,7 +23,7 @@ export function useStudioExecution() {
   const { data: runs = [] } = useQuery({ queryKey: ['studio-runs'], queryFn: () => studioApi.runs(20) })
 
   const store = useExecutionStore()
-  const { planId, topic, running, logs, phaseStates, activeRunId, activeFile, fileContent, buffKeys } = store.studio
+  const { planId, topic, running, logs, phaseStates, activeRunId, activeFile, fileContent, buffKeys, depth } = store.studio
   const setStudio = store.setStudio
 
   // ref 与 store 同步：切 tab/重挂载后 ref 恢复，SSE 事件不被丢弃
@@ -38,6 +38,7 @@ export function useStudioExecution() {
   const setActiveRunId = (v: string | null) => setStudio({ activeRunId: v })
   const setActiveFile = (v: string) => setStudio({ activeFile: v })
   const setBuffKeys = (v: string[]) => setStudio({ buffKeys: v })
+  const setDepth = (v: string) => setStudio({ depth: v })
 
   // buff 列表（运行时选择器）
   const { data: buffs = [] } = useQuery({ queryKey: ['buffs'], queryFn: buffsApi.list })
@@ -140,7 +141,7 @@ export function useStudioExecution() {
       store.resetStudioLogs()
       // 运行时 buff：非空则覆盖计划配置；空数组让后端用计划持久配置
       const runBuffs = buffKeys.length > 0 ? buffKeys : undefined
-      const resp = await plansApi.run(pid, topicText, runBuffs)
+      const resp = await plansApi.run(pid, topicText, runBuffs, depth)
       activeRunIdRef.current = resp.id
       setActiveRunId(resp.id)
       setRunning(true)
@@ -261,6 +262,8 @@ export function useStudioExecution() {
     buffs,
     buffKeys,
     setBuffKeys,
+    depth,
+    setDepth,
   }
 }
 
