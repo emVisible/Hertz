@@ -14,6 +14,8 @@ export type ItemStatus =
 
 export interface PipelineItem {
   id: string
+  /** 入库自增序号（v0.3.1）：真实入库顺序——同批 created_at 相同 */
+  seq: number | null
   status: ItemStatus
   item_type: string
   source: string

@@ -300,3 +300,7 @@
   - **collect 403 Blocked 根因**：自定义 UA（hertz/0.1）的匿名 JSON 请求被 Reddit 判定脚本 → 403。修复：UA 升级真实浏览器 Chrome/131；**JSON 403/429 → RSS 兜底**（old.reddit.com .rss，Atom 解析，媒体从 content:encoded 正则提取 v.redd.it/i.redd.it）；JSON+RSS 均失败才报错走健康度/冷却
   - **下载 v.redd.it 403/404**：候选链全失败后 **yt-dlp 兜底**（内置 Reddit 提取器，线程池，带真实 UA/referer）；内容嗅探扩展——**HTML 页面丢弃**（v.redd.it/{id} 分享页非媒体，此前可能被误存）
   - 测试 +2：RSS Atom 解析（媒体提取/纯文本过滤）、HTML 嗅探
+- **D-154 审核排序「最新/最旧」失效修复（v0.3.1）**——
+  - **根因**：PostgreSQL `now()` 是事务开始时间——一次 collect 批量插入的所有条目 created_at 完全相同，按时间戳排序全等 → newest/oldest 无效
+  - **修复**：items 加入库自增序号 seq（wave17 迁移，Identity 序列，参考原项目 SQLite rowid 语义）；serialize 输出 seq；前端排序改用 seq（旧数据回退 created_at 时间戳）；list_items 全局改 seq desc
+  - 迁移验证：存量 763 条自动回填 1..763，0 NULL；测试同批 created_at 相同 → seq 区分先后

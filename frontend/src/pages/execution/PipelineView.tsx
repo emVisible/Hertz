@@ -124,13 +124,10 @@ export function PipelineView(p: PipelineViewProps) {
   }
   const sortedQueued = useMemo(() => {
     const list = [...p.stageQueued]
-    const cmpTime = (a: PipelineItem, b: PipelineItem) =>
-      (a.created_at ?? '').localeCompare(b.created_at ?? '')
-    const byVideoFirst = (a: PipelineItem, b: PipelineItem) => {
-      const av = a.video_path ? 1 : 0
-      const bv = b.video_path ? 1 : 0
-      return bv - av || -cmpTime(a, b)
-    }
+    // 入库顺序（v0.3.1）：seq 自增序号优先（同批 created_at 相同无法区分先后），
+    // 旧数据无 seq 时回退 created_at 时间戳
+    const seqOf = (item: PipelineItem) => item.seq ?? (item.created_at ? Date.parse(item.created_at) : 0)
+    const cmpSeq = (a: PipelineItem, b: PipelineItem) => seqOf(a) - seqOf(b)
     switch (auditSort) {
       case 'random': {
         // 每次点击「随机」生成一次洗牌（seed 变化触发重排），而非每帧重排
@@ -142,7 +139,7 @@ export function PipelineView(p: PipelineViewProps) {
         return shuffled
       }
       case 'oldest':
-        return list.sort(cmpTime)
+        return list.sort(cmpSeq)
       case 'scoreDesc':
         return list.sort((a, b) => (b.score_total ?? -1) - (a.score_total ?? -1))
       case 'scoreAsc':
@@ -153,9 +150,13 @@ export function PipelineView(p: PipelineViewProps) {
       case 'title':
         return list.sort((a, b) => a.title.localeCompare(b.title, 'zh'))
       case 'newest':
-        return list.sort((a, b) => -cmpTime(a, b))
+        return list.sort((a, b) => -cmpSeq(a, b))
       default:
-        return list.sort(byVideoFirst)
+        return list.sort((a, b) => {
+          const av = a.video_path ? 1 : 0
+          const bv = b.video_path ? 1 : 0
+          return bv - av || -cmpSeq(a, b)
+        })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.stageQueued, auditSort, randomSeed])

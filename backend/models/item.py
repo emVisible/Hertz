@@ -8,7 +8,17 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Identity,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,6 +44,11 @@ class ItemType(StrEnum):
 
 class Item(BaseModel):
     __tablename__ = "items"
+
+    # 入库自增序号（v0.3.1，参考原项目 rowid 语义）：真实入库顺序——
+    # 同批插入的 created_at 相同（PostgreSQL now() 为事务时间），
+    # 审核「最新/最旧」排序依赖 seq 而非时间戳
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(), nullable=False)
 
     status: Mapped[str] = mapped_column(String(32), default=ItemStatus.DISCOVERED, index=True)
     item_type: Mapped[str] = mapped_column(String(32), default=ItemType.VIDEO_RAW)

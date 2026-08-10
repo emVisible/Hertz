@@ -887,3 +887,29 @@ def test_narration_start_offset() -> None:
     # 封顶 min(2.2, dur*0.15)
     assert narration_start_offset("watch", 4.0) <= 0.6
     assert narration_start_offset("whatever", 30.0) <= 2.2
+
+
+# ---------- 入库序号 seq（v0.3.1：同批 created_at 相同，seq 区分先后） ----------
+
+@pytest.mark.asyncio
+async def test_list_items_ordered_by_seq() -> None:
+    """同批插入（created_at 相同）→ list_items 按 seq desc（真·入库顺序）。"""
+    from datetime import UTC, datetime
+
+    from backend.factory.registry import ServiceRegistry
+
+    ts = datetime.now(UTC)
+    async with session_factory() as session:
+        first = Item(status=ItemStatus.QUEUED, source="reddit", source_id="seq-1",
+                     title="先入库", created_at=ts)
+        second = Item(status=ItemStatus.QUEUED, source="reddit", source_id="seq-2",
+                      title="后入库", created_at=ts)
+        session.add_all([first, second])
+        await session.commit()
+
+    rows = await ServiceRegistry.get().pipeline.list_items(status="queued", limit=50)
+    ids = [r["source_id"] for r in rows if r["source_id"].startswith("seq-")]
+    assert len(ids) == 2
+    # 后插入的 seq 更大 → desc 排前
+    assert ids == ["seq-2", "seq-1"]
+    assert rows[0]["seq"] is not None  # serialize 输出 seq

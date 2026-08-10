@@ -331,10 +331,11 @@ class PipelineService:
     async def list_items(
         self, status: str | None = None, limit: int = 50, source: str | None = None
     ) -> list[dict]:
-        """条目列表；status 支持逗号分隔多状态（wave13：前端单查询聚合阶段队列）。"""
+        """条目列表；status 支持逗号分隔多状态（wave13：前端单查询聚合阶段队列）。
+        排序：入库序号 seq desc（v0.3.1——同批 created_at 相同，seq 才是真实先后）。"""
         statuses = [s.strip() for s in (status or "").split(",") if s.strip()] or None
         async with session_factory() as session:
-            order = Item.created_at.desc()
+            order = Item.seq.desc().nulls_last()
             stmt = select(Item).order_by(order).limit(limit)
             conditions = []
             if statuses:
@@ -529,6 +530,7 @@ class PipelineService:
     def _serialize(item: Item) -> dict:
         return {
             "id": str(item.id),
+            "seq": item.seq,
             "status": item.status,
             "item_type": item.item_type,
             "source": item.source,
