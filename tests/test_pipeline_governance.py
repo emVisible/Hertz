@@ -1617,7 +1617,8 @@ async def test_usage_extraction_from_stream() -> None:
             body = (
                 'data: {"choices":[{"delta":{"content":"你"}}]}\n\n'
                 'data: {"choices":[{"delta":{"content":"好"}}]}\n\n'
-                'data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":12,"completion_tokens":5}}\n\n'
+                'data: {"choices":[{"delta":{}}],"usage":'
+                '{"prompt_tokens":12,"completion_tokens":5}}\n\n'
                 'data: [DONE]\n\n'
             )
             return httpx.Response(
@@ -1627,8 +1628,13 @@ async def test_usage_extraction_from_stream() -> None:
             )
 
     provider = OpenAICompatProvider(api_key="k", base_url="https://x/v1", model="m")
-    provider._client = httpx.AsyncClient(transport=FakeTransport())
-    chunks = [c async for c in provider.chat_stream([{"role": "user", "content": "hi"}])]
+    provider._client = httpx.AsyncClient(base_url="https://x/v1", transport=FakeTransport())
+    from backend.ai.types import ChatMessage
+    chunks = [
+        c async for c in provider.chat_stream(
+            [ChatMessage(role="user", content="hi")]
+        )
+    ]
     assert "".join(chunks) == "你好"
     assert provider.last_usage == {"prompt_tokens": 12, "completion_tokens": 5}
     await provider._client.aclose()
@@ -1646,12 +1652,17 @@ async def test_usage_absent_when_no_usage_chunk() -> None:
             return httpx.Response(
                 200,
                 headers={"Content-Type": "text/event-stream"},
-                content='data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n'.encode(),
+                content=b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n',
             )
 
     provider = OpenAICompatProvider(api_key="k", base_url="https://x/v1", model="m")
-    provider._client = httpx.AsyncClient(transport=FakeTransport())
-    chunks = [c async for c in provider.chat_stream([{"role": "user", "content": "hi"}])]
+    provider._client = httpx.AsyncClient(base_url="https://x/v1", transport=FakeTransport())
+    from backend.ai.types import ChatMessage
+    chunks = [
+        c async for c in provider.chat_stream(
+            [ChatMessage(role="user", content="hi")]
+        )
+    ]
     assert "".join(chunks) == "ok"
     assert provider.last_usage is None
     await provider._client.aclose()
