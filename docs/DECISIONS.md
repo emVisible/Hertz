@@ -296,3 +296,7 @@
   - **系统日志面板**：run tab 新增可折叠「系统日志」——/api/logs/buffer 5s 轮询；LogManager 将 uvicorn/apscheduler/httpx 日志接入 ring buffer（此前只有 hertz logger）——调度器与请求层信息可排查「立即完成/无明细」
   - **下载 403 可读**：错误附排查提示（CDN 拒绝——检查网络/代理/Reddit Cookie，参考原项目 AccessDenied 语义）
   - 说明：collect 0 条 → ⚠ + 冷却、produce 0 项 → 「无待处理条目」均为正常语义（v0.2.8 供给告警 + 状态不匹配），现已有明确文案
+- **D-153 采集/下载链路过硬拒绝修复（v0.3.1，参考原项目策略链）**——
+  - **collect 403 Blocked 根因**：自定义 UA（hertz/0.1）的匿名 JSON 请求被 Reddit 判定脚本 → 403。修复：UA 升级真实浏览器 Chrome/131；**JSON 403/429 → RSS 兜底**（old.reddit.com .rss，Atom 解析，媒体从 content:encoded 正则提取 v.redd.it/i.redd.it）；JSON+RSS 均失败才报错走健康度/冷却
+  - **下载 v.redd.it 403/404**：候选链全失败后 **yt-dlp 兜底**（内置 Reddit 提取器，线程池，带真实 UA/referer）；内容嗅探扩展——**HTML 页面丢弃**（v.redd.it/{id} 分享页非媒体，此前可能被误存）
+  - 测试 +2：RSS Atom 解析（媒体提取/纯文本过滤）、HTML 嗅探

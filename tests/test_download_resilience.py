@@ -297,3 +297,54 @@ async def _get_item(item_id):
 
     async with session_factory() as session:
         return await session.get(Item, item_id)
+
+
+# ---------- collect RSS 兜底 / HTML 嗅探（v0.3.1，参考原项目策略链） ----------
+
+RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>猫猫视频</title>
+    <link href="https://www.reddit.com/r/cats/comments/abc123/title/"/>
+    <content type="html">&lt;p&gt;&lt;a href="https://v.redd.it/xyz123/DASH_720.mp4"&gt;video&lt;/a&gt;&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <title>风景图</title>
+    <link href="https://www.reddit.com/r/pics/comments/def456/title/"/>
+    <content type="html">&lt;img src="https://i.redd.it/img789.jpg"/&gt;</content>
+  </entry>
+  <entry>
+    <title>纯文本</title>
+    <link href="https://www.reddit.com/r/ask/comments/ghi789/title/"/>
+    <content type="html">&lt;p&gt;no media&lt;/p&gt;</content>
+  </entry>
+</feed>"""
+
+
+def test_rss_to_post_extracts_media() -> None:
+    import xml.etree.ElementTree as ET
+
+    from backend.pipeline.collectors.reddit import RedditCollector
+
+    root = ET.fromstring(RSS_XML)
+    entries = root.findall("{http://www.w3.org/2005/Atom}entry")
+    posts = [RedditCollector._rss_to_post(e) for e in entries]
+    posts = [p for p in posts if p is not None]
+
+    assert len(posts) == 2  # 纯文本被过滤
+    video = next(p for p in posts if p.source_id == "abc123")
+    assert video.media_url == "https://v.redd.it/xyz123/DASH_720.mp4"
+    assert video.item_type == "video_raw"
+    img = next(p for p in posts if p.source_id == "def456")
+    assert img.media_url == "https://i.redd.it/img789.jpg"
+    assert img.item_type == "image_gallery"
+
+
+def test_looks_like_html_sniff() -> None:
+    from backend.pipeline.download import looks_like_html
+
+    assert looks_like_html(b"<!doctype html><html><body>x</body></html>")
+    assert looks_like_html(b"<html><head></head></html>")
+    assert not looks_like_html(b"\x00\x00\x00\x18ftypmp42")
+    assert not looks_like_html(b"\xff\xd8\xff\xe0")
+    assert not looks_like_html(b"")

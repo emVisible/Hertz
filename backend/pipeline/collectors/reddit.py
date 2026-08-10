@@ -1,14 +1,18 @@
-"""Reddit collector — single-strategy JSON API fetch with cursor tracking.
+"""Reddit collector — JSON API with RSS fallback (v0.3.1).
 
-Reads public listings (no OAuth needed for read-only anonymous access):
-``https://www.reddit.com/r/{sub}/{sort}.json?limit=``. Incremental cursor is
-the oldest ``created_utc`` seen, so each run only scans newer posts.
+Primary: ``www.reddit.com/r/{sub}/{sort}.json`` (anonymous listings).
+Fallback（参考原项目 RSS 路径）：JSON 被 403/429 拒绝时降级
+``old.reddit.com/r/{sub}/{sort}.rss``——自定义 UA 的匿名 JSON 极易被
+Reddit 判定脚本而 Blocked，RSS 是更宽容的通道，避免采集断供。
+媒体 URL 从 RSS 的 content:encoded 中正则提取（v.redd.it / i.redd.it）。
 """
 
 import logging
 import random
+import re
 import time
 import urllib.request
+import xml.etree.ElementTree as ET
 
 import httpx
 
@@ -16,8 +20,30 @@ from backend.pipeline.collectors.base import RawPost, SourceCollector
 
 logger = logging.getLogger(__name__)
 
-_UA = "hertz/0.1 (content pipeline collector)"
+# 真实浏览器 UA（v0.3.1）：自定义 UA 的匿名 JSON 请求会被 Reddit 403 Blocked
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
 _SORTS = ("hot", "new", "rising", "top")
+
+# RSS content:encoded 中的媒体链接（v.redd.it 视频 / i.redd.it 图 / preview）
+_MEDIA_RE = re.compile(
+    r"https://(?:v\.redd\.it/[A-Za-z0-9]+(?:/[A-Za-z0-9_.]+)?|"
+    r"i\.redd\.it/[A-Za-z0-9_.]+\.(?:jpg|jpeg|png|gif|webp)|"
+    r"preview\.redd\.it/[^\s\"'<>]+\.(?:jpg|jpeg|png|gif|webp))",
+    re.IGNORECASE,
+)
+_XMLNS = {"atom": "http://www.w3.org/2005/Atom", "media": "http://search.yahoo.com/mrss/"}
+_CONTENT_NS = "{http://www.w3.org/2005/Atom}"
+
+
+class _JsonRejectedError(RuntimeError):
+    """匿名 JSON 被 Reddit 拒绝（403/429）——触发 RSS 兜底。"""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(f"HTTP {status}")
+        self.status = status
 
 
 def _system_proxy() -> str | None:
@@ -72,12 +98,27 @@ class RedditCollector(SourceCollector):
             # 避免每次都打固定 hot 首页（反 429 熔断 + 供给多样化）
             sort = random.choice(_SORTS)
         sub = channel.split(":", 1)[0].strip("/") or "all"
-        url = f"https://www.reddit.com/r/{sub}/{sort}.json"
         try:
-            resp = await self._client.get(url, params={"limit": min(limit, 100)})
+            return await self._collect_json(sub, sort, limit)
+        except _JsonRejectedError as exc:
+            # JSON 被拒（403/429）→ RSS 兜底（v0.3.1，参考原项目 RSS 路径）：
+            # 匿名 JSON 易被 Blocked，RSS 更宽容；仍失败则如实报错（走健康度/冷却）
+            logger.warning("JSON rejected for r/%s (%s) — falling back to RSS", sub, exc)
+            try:
+                return await self._collect_rss(sub, sort, limit)
+            except httpx.HTTPError as rss_exc:
+                raise RuntimeError(
+                    f"Reddit 采集失败: JSON {exc}；RSS 兜底也失败: {rss_exc}"
+                ) from rss_exc
+
+    async def _collect_json(self, sub: str, sort: str, limit: int) -> list[RawPost]:
+        url = f"https://www.reddit.com/r/{sub}/{sort}.json"
+        resp = await self._client.get(url, params={"limit": min(limit, 100)})
+        if resp.status_code in (403, 429):
+            raise _JsonRejectedError(resp.status_code)
+        try:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
-            # 网络错误优雅降级：步骤失败但流水线继续（AXIOM §4.6 韧性）
             hint = ""
             if isinstance(exc, httpx.ConnectError):
                 hint = "（无法连接 Reddit——请检查网络或代理设置）"
@@ -90,6 +131,61 @@ class RedditCollector(SourceCollector):
             if post is not None:
                 posts.append(post)
         return posts
+
+    async def _collect_rss(self, sub: str, sort: str, limit: int) -> list[RawPost]:
+        """RSS 兜底（v0.3.1）：old.reddit.com 更宽容；媒体从 content:encoded 提取。"""
+        url = f"https://old.reddit.com/r/{sub}/{sort}.rss"
+        resp = await self._client.get(url, params={"limit": min(limit, 100)})
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        posts: list[RawPost] = []
+        for entry in root.findall(f"{_CONTENT_NS}entry"):
+            post = self._rss_to_post(entry)
+            if post is not None:
+                posts.append(post)
+        return posts
+
+    @classmethod
+    def _rss_to_post(cls, entry) -> RawPost | None:
+        def _text(tag: str) -> str:
+            node = entry.find(f"{_CONTENT_NS}{tag}")
+            return (node.text or "").strip() if node is not None else ""
+
+        # Atom link 是 href 属性（无文本节点）
+        link_node = entry.find(f"{_CONTENT_NS}link")
+        permalink = (link_node.get("href") or "").strip() if link_node is not None else ""
+        title = _text("title")
+        if not permalink:
+            return None
+        # /comments/{id}/ 提取 source_id
+        m = re.search(r"/comments/([a-z0-9]+)/", permalink)
+        source_id = m.group(1) if m else permalink.rstrip("/").rsplit("/", 1)[-1]
+        # 媒体从 content:encoded 正则提取（RSS 不直接给 media_url）
+        content = ""
+        for tag in (f"{_CONTENT_NS}content", f"{_CONTENT_NS}summary"):
+            node = entry.find(tag)
+            if node is not None:
+                content = node.text or ""
+                break
+        media = _MEDIA_RE.search(content)
+        media_url = media.group(0).rstrip("/") if media else ""
+        kind = classify_media(media_url, "v.redd.it" in media_url, {})
+        if kind == "text_only":
+            return None
+        created_utc = time.time()
+        return RawPost(
+            source_id=source_id,
+            title=title[:300],
+            source_url=permalink,
+            media_url=media_url or None,
+            author="",
+            score=0,
+            upvote_ratio=0.0,
+            num_comments=0,
+            created_utc=created_utc,
+            is_video="v.redd.it" in media_url,
+            item_type=kind,
+        )
 
     @staticmethod
     def _to_post(data: dict) -> RawPost | None:

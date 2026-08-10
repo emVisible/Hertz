@@ -69,6 +69,12 @@ def looks_like_manifest(content: bytes) -> bool:
     return head.startswith(b"<?xml") or head.startswith(b"#extm3u")
 
 
+def looks_like_html(content: bytes) -> bool:
+    """HTML 页面（v0.3.1）：候选链可能把 v.redd.it/{id} 分享页当媒体下载。"""
+    head = content[:512].lstrip().lower()
+    return head.startswith(b"<!doctype") or head.startswith(b"<html")
+
+
 # ---- 请求头 ----
 
 

@@ -2,12 +2,13 @@
 
 Reuses the Wave-2 ChunkedDownloader (Range-aware, resumable, SSRF-guarded).
 v0.2.9（参考原项目 Autarkeia download.py）：候选链降级 + CDN 熔断 +
-条间节奏 + 请求头补齐——单 URL 404 不再整条失败。
+条间节奏 + 请求头补齐；v0.3.1：候选链全失败后 yt-dlp 兜底（内置 Reddit
+提取器处理 v.redd.it）+ HTML 页面嗅探丢弃。
 
 流程：
 1. CDN 熔断中 → 条目保持 discovered（不 FAILED），保护队列
 2. 候选链（DASH 变体 → 原 URL → permalink）逐个尝试
-3. 403 → 熔断记账；404/网络 → 下一候选；全失败 → 可读 StepError
+3. 403 → 熔断记账；404/网络 → 下一候选；全失败 → yt-dlp 兜底
 4. 静图（image_gallery）：大小上限 + 最小字节校验 + 独立重试
 """
 
@@ -19,6 +20,43 @@ from backend.models.session import session_factory
 from backend.pipeline.base import Pipe, ProcessResult, StepContext, StepError
 
 logger = logging.getLogger(__name__)
+
+
+async def _ytdlp_download(url: str, dest: Path) -> Path:
+    """yt-dlp 兜底（v0.3.1，参考原项目）：内置 Reddit 提取器，线程池执行。
+
+    输出到 dest 同目录（扩展名由 yt-dlp 决定），返回实际产物路径。
+    """
+    import asyncio
+
+    from backend.pipeline.download import download_headers
+
+    def _run() -> Path:
+        import yt_dlp
+
+        template = str(dest.with_name(f"{dest.stem}.%(ext)s"))
+        opts = {
+            "format": "best[ext=mp4]/best",
+            "outtmpl": template,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "http_headers": download_headers(url),
+            "socket_timeout": 30,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([url])
+        # 产物 = template 的实际文件（去掉多余部分：best.xxx 或 url.xxx）
+        candidates = sorted(dest.parent.glob(f"{dest.stem}.*"))
+        media = [p for p in candidates if p.suffix.lower() in (".mp4", ".mkv", ".webm")]
+        if not media:
+            raise RuntimeError("yt-dlp produced no media file")
+        final = dest.with_suffix(media[0].suffix)
+        if final != media[0]:
+            media[0].replace(final)
+        return final
+
+    return await asyncio.to_thread(_run)
 
 
 class DownloadStep(Pipe):
@@ -36,6 +74,7 @@ class DownloadStep(Pipe):
             cdn_circuit_remaining,
             download_headers,
             download_pacing,
+            looks_like_html,
             looks_like_manifest,
             media_candidates,
             reset_cdn_circuit,
@@ -117,6 +156,11 @@ class DownloadStep(Pipe):
                         last_error = f"{cand[:48]}: manifest text, not media"
                         dest.unlink(missing_ok=True)
                         continue
+                    if looks_like_html(head):
+                        # v0.3.1：v.redd.it/{id} 分享页是 HTML 而非媒体 → 丢弃
+                        last_error = f"{cand[:48]}: html page, not media"
+                        dest.unlink(missing_ok=True)
+                        continue
                 if is_still and (size < STILL_MIN_BYTES or size > STILL_MAX_BYTES):
                     last_error = (
                         f"{cand[:48]}: still size {size} out of "
@@ -131,6 +175,25 @@ class DownloadStep(Pipe):
                 )
             if attempt < 1:
                 dest.unlink(missing_ok=True)  # 重试前清残留
+
+        # yt-dlp 兜底（v0.3.1，参考原项目）：候选链全失败后交给 yt-dlp——
+        # 内置 Reddit 提取器能处理 v.redd.it（带 UA/referer，走代理解析）
+        try:
+            ytdlp_path = await _ytdlp_download(item.source_url or url, dest)
+            size = ytdlp_path.stat().st_size if ytdlp_path.exists() else 0
+            if size < STILL_MIN_BYTES:
+                ytdlp_path.unlink(missing_ok=True)
+                raise RuntimeError("yt-dlp output too small")
+            ctx.log(
+                f"[download] yt-dlp fallback ✓ {item.title[:40]} → "
+                f"{ytdlp_path.name} ({size} bytes)"
+            )
+            return ProcessResult(
+                status="downloaded",
+                data={"raw_path": str(ytdlp_path.resolve())},
+            )
+        except Exception as exc:  # noqa: BLE001 — 兜底失败保留原错误
+            logger.info("yt-dlp fallback failed for %s: %s", item.title[:40], exc)
 
         raise StepError(f"download failed: {last_error or 'all candidates failed'}")
 
