@@ -633,6 +633,63 @@ class PipelineService:
                 counts[status] = counts.get(status, 0) + 1
             return counts
 
+    async def trends(self, days: int = 30) -> list[dict]:
+        """看板趋势（v0.5 B）：按天聚合 采集/入库（job_runs.summary）+ 发布（published_at）。
+
+        summary 为 JSONB：collect 任务含 collected/inserted；跨天任务记在 started_at 当天。
+        """
+        from datetime import UTC, datetime, timedelta
+
+        start = datetime.now(UTC) - timedelta(days=days - 1)
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        async with session_factory() as session:
+            # 采集/入库趋势：job_runs 中 collect 成功任务的 summary
+            runs = (
+                await session.execute(
+                    select(JobRun)
+                    .where(
+                        JobRun.job_name == "collect",
+                        JobRun.started_at >= start,
+                    )
+                )
+            ).scalars().all()
+            collect_by_day: dict[str, dict[str, int]] = {}
+            for run in runs:
+                summary = run.summary or {}
+                day = run.started_at.astimezone(UTC).strftime("%Y-%m-%d")
+                bucket = collect_by_day.setdefault(day, {"collected": 0, "inserted": 0})
+                bucket["collected"] += int(summary.get("collected") or 0)
+                bucket["inserted"] += int(summary.get("inserted") or 0)
+
+            # 发布趋势：published_at 按天计数
+            published_rows = (
+                await session.execute(
+                    select(Item.published_at)
+                    .where(
+                        Item.status == ItemStatus.PUBLISHED,
+                        Item.published_at.isnot(None),
+                        Item.published_at >= start,
+                    )
+                )
+            ).scalars().all()
+            published_by_day: dict[str, int] = {}
+            for ts in published_rows:
+                day = ts.astimezone(UTC).strftime("%Y-%m-%d")
+                published_by_day[day] = published_by_day.get(day, 0) + 1
+
+        out: list[dict] = []
+        for offset in range(days):
+            day = (start + timedelta(days=offset)).strftime("%Y-%m-%d")
+            cb = collect_by_day.get(day, {})
+            out.append({
+                "date": day,
+                "collected": cb.get("collected", 0),
+                "inserted": cb.get("inserted", 0),
+                "published": published_by_day.get(day, 0),
+            })
+        return out
+
     async def recent_jobs(self, limit: int = 20) -> list[dict]:
         async with session_factory() as session:
             result = await session.execute(

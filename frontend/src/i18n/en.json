@@ -885,7 +885,8 @@
     "targetDist": "Targets",
     "usage": "AI usage (by model, ms)",
     "usageEmpty": "No calls yet",
-    "usageHint": "{{calls}} calls total (latest 500)"
+    "usageHint": "{{calls}} calls total (latest 500)",
+    "trend": "Last 30 days (collect/insert/publish)"
   },
   "onboarding": {
     "title": "Welcome to Hertz",

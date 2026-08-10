@@ -31,6 +31,48 @@ function Bar({ value, max, tone, label }: { value: number; max: number; tone: st
   )
 }
 
+/** 趋势折线（v0.5 B）：纯 SVG 手写折线，零图表依赖。 */
+function TrendChart({ data }: { data: Array<{ date: string; collected: number; inserted: number; published: number }> }) {
+  const { t } = useTranslation()
+  const W = 600
+  const H = 160
+  const PAD = 8
+  const max = Math.max(...data.map((d) => d.collected), ...data.map((d) => d.inserted), 1)
+  const n = data.length
+  const x = (i: number) => (n <= 1 ? PAD : PAD + (i * (W - PAD * 2)) / (n - 1))
+  const y = (v: number) => H - PAD - (v / max) * (H - PAD * 2)
+  const path = (pick: (d: (typeof data)[number]) => number) =>
+    data.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(pick(d)).toFixed(1)}`).join(' ')
+  const labelEvery = Math.max(1, Math.ceil(n / 8))
+
+  return (
+    <div className="flex flex-col gap-1">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={t('dashboard.trend')}>
+        {/* 网格线 */}
+        {[0.25, 0.5, 0.75].map((f) => (
+          <line key={f} x1={PAD} x2={W - PAD} y1={y(max * f)} y2={y(max * f)} className="stroke-border/60" strokeWidth={0.5} />
+        ))}
+        <polyline points={path((d) => d.collected)} fill="none" stroke="var(--hz-primary, #888)" strokeWidth={1.6} strokeLinejoin="round" />
+        <polyline points={path((d) => d.inserted)} fill="none" stroke="#3b82f6" strokeWidth={1.6} strokeLinejoin="round" />
+        <polyline points={path((d) => d.published)} fill="none" stroke="#34d399" strokeWidth={1.6} strokeLinejoin="round" />
+        {/* 日期轴 */}
+        {data.map((d, i) =>
+          i % labelEvery === 0 ? (
+            <text key={d.date} x={x(i)} y={H - 2} textAnchor="middle" className="fill-text-disabled" fontSize={8}>
+              {d.date.slice(5)}
+            </text>
+          ) : null,
+        )}
+      </svg>
+      <div className="flex flex-wrap items-center gap-3 px-1 text-[10px] text-text-secondary">
+        <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-4 rounded bg-[var(--hz-primary,#888)]" />{t('console.collected')}</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-4 rounded bg-blue-500" />{t('console.inserted')}</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-4 rounded bg-emerald-400" />{t('console.published')}</span>
+      </div>
+    </div>
+  )
+}
+
 /**
  * 看板页（v0.4 C2）：漏斗水位 + 发布统计 + AI 用量聚合。
  * 数据全部来自既有端点（counts/items/trace），前端聚合展示，无新后端。
@@ -46,6 +88,11 @@ export function DashboardPage() {
   const { data: published = [] } = useQuery({
     queryKey: ['pipeline-stage', 'published'],
     queryFn: () => pipelineApi.items('published', 100),
+  })
+  const { data: trends = [] } = useQuery({
+    queryKey: ['pipeline-trends'],
+    queryFn: () => pipelineApi.trends(30),
+    refetchInterval: 60_000,
   })
   const { data: trace = [] } = useQuery({
     queryKey: ['ai-trace-summary'],
@@ -93,6 +140,12 @@ export function DashboardPage() {
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-6">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         <h1 className="text-base font-semibold text-text-primary">{t('dashboard.title')}</h1>
+
+        {/* 近 30 天趋势（v0.5 B） */}
+        <Card className="p-4">
+          <h2 className="mb-3 text-sm font-semibold text-text-primary">{t('dashboard.trend')}</h2>
+          <TrendChart data={trends} />
+        </Card>
 
         {/* 漏斗水位 */}
         <Card className="p-4">

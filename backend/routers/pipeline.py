@@ -47,6 +47,12 @@ async def counts():
     return await _pipe().counts()
 
 
+@router.get("/trends")
+async def trends(days: int = Query(30, ge=7, le=90)):
+    """看板趋势（v0.5 B）：采集/入库/发布 按天聚合。"""
+    return await _pipe().trends(days=days)
+
+
 @router.get("/calendar")
 async def calendar_items(
     from_: str = Query("", alias="from"),

@@ -885,7 +885,8 @@
     "targetDist": "平台分布",
     "usage": "AI 用量（按模型耗时）",
     "usageEmpty": "暂无调用记录",
-    "usageHint": "共 {{calls}} 次调用（最近 500 条）"
+    "usageHint": "共 {{calls}} 次调用（最近 500 条）",
+    "trend": "近 30 天趋势（采集/入库/发布）"
   },
   "onboarding": {
     "title": "欢迎使用 Hertz",

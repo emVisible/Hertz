@@ -141,6 +141,11 @@ export const pipelineApi = {
       `/api/pipeline/items?limit=${limit}${status ? `&status=${status}` : ''}`,
     ),
   counts: () => api.get<Record<string, number>>('/api/pipeline/items/counts'),
+  /** 看板趋势（v0.5 B）：采集/入库/发布按天聚合 */
+  trends: (days = 30) =>
+    api.get<Array<{ date: string; collected: number; inserted: number; published: number }>>(
+      `/api/pipeline/trends?days=${days}`,
+    ),
   calendar: (from: string, to: string) =>
     api.get<{ items: PipelineItem[]; unscheduled: PipelineItem[] }>(
       `/api/pipeline/calendar?from=${from}&to=${to}`,

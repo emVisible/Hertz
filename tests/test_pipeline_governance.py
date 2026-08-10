@@ -1571,3 +1571,32 @@ async def test_similar_annotations(client) -> None:
     sim_b = by_id[str(b_id)]["similar"]
     assert "第一条" in sim_b["queued"]
     assert "已发布相似" in sim_b["published"]
+
+
+# ---------- 看板趋势（v0.5 B） ----------
+
+
+@pytest.mark.asyncio
+async def test_trends_endpoint(client) -> None:
+    """趋势端点：按天返回 collected/inserted/published。"""
+    from datetime import UTC, datetime
+
+    from backend.models.system import JobRun, JobStatus
+
+    async with session_factory() as session:
+        session.add(JobRun(job_name="collect", status=JobStatus.COMPLETED,
+                           summary={"collected": 10, "inserted": 8},
+                           started_at=datetime.now(UTC)))
+        session.add(JobRun(job_name="collect", status=JobStatus.COMPLETED,
+                           summary={"collected": 5, "inserted": 3},
+                           started_at=datetime.now(UTC)))
+        await session.commit()
+
+    resp = await client.get("/api/pipeline/trends?days=7")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 7
+    today = rows[-1]
+    assert today["collected"] >= 15
+    assert today["inserted"] >= 11
+    assert isinstance(today["published"], int)
