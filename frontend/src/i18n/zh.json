@@ -167,7 +167,16 @@
     "redditOAuth": "Reddit 采集凭证",
     "redditOAuthHint": "匿名采集易被 Reddit 403 Blocked（IP/TLS 指纹）。创建免费 API 应用（reddit.com/prefs/apps → script）后填入凭证，采集走官方认证通道，403 不再命中。",
     "redditClientId": "Client ID",
-    "redditClientSecret": "Client Secret（只写不读）"
+    "redditClientSecret": "Client Secret（只写不读）",
+    "biliPublish": "B 站发布",
+    "biliPublishHint": "发布目标为 B 站时使用 biliup CLI 上传（cookie 认证）。先在终端执行下方命令扫码登录。",
+    "cookieReady": "cookie 已就绪",
+    "cookieMissing": "cookie 缺失",
+    "biliupMissing": "未安装 biliup",
+    "cookiePath": "cookie 路径",
+    "checkCookie": "检查 cookie",
+    "cookieChecked": "已重新检查",
+    "publishNoopWarn": "当前发布目标为 NOOP——发布只记录意图。请在下拉框选择 Bilibili 并完成 cookie 登录。"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -637,7 +646,14 @@
     "approved": "待发布",
     "rejected": "已驳回",
     "failed": "失败",
-    "delta": "变化"
+    "delta": "变化",
+    "publishNoop": "⚠ 发布目标为 NOOP——仅记录意图，未真正上传。请到 设置 → 流水线 配置 B 站",
+    "publishNoopTitle": "发布目标为 NOOP（未配置）",
+    "publishNoopHint": "点击发布只记录意图，不会上传到任何平台。请到 设置 → 流水线 选择 B 站并完成登录。",
+    "publishCookieMissing": "B 站 cookie 未就绪",
+    "publishCookieHint": "请在终端运行 biliup login 生成后重新检查",
+    "publishCookieReady": "cookie 已就绪",
+    "publishReady": "发布目标"
   },
   "canvas": {
     "tool": {

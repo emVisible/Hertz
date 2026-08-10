@@ -52,6 +52,7 @@ interface PipelineViewProps {
   sources: ReturnType<typeof usePipelineExecution>['sources']
   failures: Record<string, number>
   supplyWarnings: string[]
+  publishStatus?: ReturnType<typeof usePipelineExecution>['publishStatus']
   logs: ReturnType<typeof usePipelineExecution>['logs']
   run: () => void
   stop: () => void
@@ -513,6 +514,44 @@ export function PipelineView(p: PipelineViewProps) {
                 onSaveSchedule={(item, value) => p.saveMeta(item, { scheduled_at: value })}
               />
             ) : (              <>
+            {/* 发布目标状态（v0.3.8）：noop/缺 cookie 时醒目警示，避免「点了没反应」 */}
+            {p.publishStatus && (
+              <div
+                className={`mx-4 mt-3 flex items-start gap-2 rounded border px-3 py-2 text-xs ${
+                  p.publishStatus.noop
+                    ? 'border-warning/40 bg-warning/10 text-warning'
+                    : p.publishStatus.target === 'bilibili' && !p.publishStatus.cookie_exists
+                      ? 'border-warning/40 bg-warning/10 text-warning'
+                      : 'border-border bg-surface-1/60 text-text-secondary'
+                }`}
+              >
+                <Icon name="config" size={13} className="mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  {p.publishStatus.noop ? (
+                    <>
+                      <span className="font-medium">{t('console.publishNoopTitle')}</span>
+                      <span className="ml-2">{t('console.publishNoopHint')}</span>
+                    </>
+                  ) : p.publishStatus.target === 'bilibili' && !p.publishStatus.cookie_exists ? (
+                    <>
+                      <span className="font-medium">
+                        {t('console.publishCookieMissing')} — {p.publishStatus.cookie_path}
+                      </span>
+                      <span className="ml-2">{t('console.publishCookieHint')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium">
+                        {t('console.publishReady')} → {p.publishStatus.target}
+                      </span>
+                      {p.publishStatus.target === 'bilibili' && (
+                        <span className="ml-2">{t('console.publishCookieReady')}</span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
             {/* 审核后：approved（发布操作） */}
             <PipelineStage
               title={t('console.stagePublish')}

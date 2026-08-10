@@ -83,6 +83,12 @@ export function usePipelineExecution() {
     queryFn: pipelineApi.supply,
     refetchInterval: pollingInterval,
   })
+  // 发布健康状态（v0.3.8）：目标 + B 站 cookie 就绪度——noop 目标下发布仅记录意图
+  const { data: publishStatus } = useQuery({
+    queryKey: ['pipeline-publish-status'],
+    queryFn: pipelineApi.publishStatus,
+    refetchInterval: pollingInterval,
+  })
 
   const store = useExecutionStore()
   const { step, limit, logs, logSeq, tab } = store.pipeline
@@ -297,9 +303,14 @@ export function usePipelineExecution() {
 
   async function publishItem(item: PipelineItem, selfmade = false, target = '') {
     try {
-      await pipelineApi.publish(item.id, selfmade, target)
+      const res = await pipelineApi.publish(item.id, selfmade, target)
       refresh()
-      toast(t('console.published'), 'success')
+      // v0.3.8：noop 目标只记录意图——toast 明确警示，避免「点了发布=已上 B 站」误解
+      if (res.noop) {
+        toast(t('console.publishNoop'), 'warning')
+      } else {
+        toast(t('console.published'), 'success')
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }
@@ -397,6 +408,7 @@ export function usePipelineExecution() {
     act,
     saveMeta,
     publishItem,
+    publishStatus,
     uploadCover,
     retryClass,
     reprocess,

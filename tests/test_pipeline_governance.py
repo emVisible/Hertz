@@ -1084,3 +1084,42 @@ async def test_run_batch_delta_snapshot(client, monkeypatch) -> None:
             assert summary.get("delta", {}).get("discovered", 0) == 1
     finally:
         registry.pipeline.engine.collector = FakeRedditCollector([])  # 复原占位
+
+
+@pytest.mark.asyncio
+async def test_publish_status_endpoint(client) -> None:
+    """发布健康状态（v0.3.8）：目标/cookie/biliup 字段齐全。"""
+    resp = await client.get("/api/pipeline/publish/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["target"] in body["publishers"]
+    assert "biliup_available" in body
+    assert "cookie_exists" in body
+    assert "noop" in body
+
+
+@pytest.mark.asyncio
+async def test_publish_noop_marked(client) -> None:
+    """noop 目标发布（v0.3.8）：结果带 noop 标记，前端据此警示。"""
+    from backend.config import settings
+
+    orig = settings.pipeline_publish_target
+    settings.pipeline_publish_target = "noop"
+    try:
+        # 直接调 engine 方法不需要真实文件（noop 无 IO）
+        from backend.factory.registry import ServiceRegistry
+        from backend.models.item import Item, ItemStatus
+        from backend.models.session import session_factory
+
+        async with session_factory() as session:
+            item = Item(
+                status=ItemStatus.APPROVED, source="reddit", source_id="noop-1",
+                title="noop 发布测试", item_type="video_raw",
+            )
+            session.add(item)
+            await session.commit()
+            item_id = item.id
+        result = await ServiceRegistry.get().pipeline.publish_one(item_id)
+        assert result["noop"] is True
+    finally:
+        settings.pipeline_publish_target = orig

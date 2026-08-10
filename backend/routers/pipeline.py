@@ -1,14 +1,17 @@
 """Pipeline endpoints: item review board, batch runs, live event stream."""
 
 import json
+import shutil
 import uuid
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from backend.config import settings
 from backend.factory.registry import ServiceRegistry
 from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError
+from backend.pipeline.publishers.router import PUBLISHERS
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
@@ -219,6 +222,35 @@ async def publish_item(item_id: uuid.UUID, selfmade: int = 0, target: str = ""):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — 发布失败（缺 cookie/文件等）返回可读错误
         raise HTTPException(status_code=502, detail=f"发布失败：{exc}") from exc
+
+
+@router.get("/publish/status")
+async def publish_status() -> dict:
+    """发布健康状态（v0.3.8）：生效目标 + B 站 cookie 就绪度 + biliup 可用性。"""
+    from pathlib import Path
+
+    target = getattr(settings, "pipeline_publish_target", "noop")
+    cookie_path = Path(settings.data_dir) / "bilibili.cookie"
+    try:
+        cookie_exists = cookie_path.exists()
+        cookie_age_s = (
+            int(__import__("time").time() - cookie_path.stat().st_mtime)
+            if cookie_exists
+            else None
+        )
+    except Exception:  # noqa: BLE001 — 状态检查 best-effort
+        cookie_exists, cookie_age_s = False, None
+    biliup = shutil.which("biliup") is not None
+    return {
+        "target": target,
+        "biliup_available": biliup,
+        "cookie_exists": cookie_exists,
+        "cookie_path": str(cookie_path),
+        "cookie_age_s": cookie_age_s,
+        "publishers": list(PUBLISHERS),
+        # noop 目标下发布只是记录意图——前端据此刻意警示
+        "noop": target == "noop",
+    }
 
 
 @router.post("/items/{item_id}/cover")

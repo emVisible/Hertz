@@ -98,6 +98,7 @@ export function ExecutionPage() {
           sources={pipeline.sources}
           failures={pipeline.failures}
           supplyWarnings={pipeline.supplyWarnings}
+          publishStatus={pipeline.publishStatus}
           logs={pipeline.logs}
           run={pipeline.run}
           stop={pipeline.stop}

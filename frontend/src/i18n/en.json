@@ -152,7 +152,16 @@
     "redditOAuth": "Reddit OAuth credentials",
     "redditOAuthHint": "Anonymous collection often gets 403 Blocked (IP/TLS fingerprint). Create a free API app (reddit.com/prefs/apps → script), fill in the credentials and collection switches to the official authed channel.",
     "redditClientId": "Client ID",
-    "redditClientSecret": "Client Secret (write-only)"
+    "redditClientSecret": "Client Secret (write-only)",
+    "biliPublish": "Bilibili publishing",
+    "biliPublishHint": "With target Bilibili, uploads go through the biliup CLI (cookie auth). Run the login command below in terminal first.",
+    "cookieReady": "cookie ready",
+    "cookieMissing": "cookie missing",
+    "biliupMissing": "biliup not installed",
+    "cookiePath": "cookie path",
+    "checkCookie": "Check cookie",
+    "cookieChecked": "Re-checked",
+    "publishNoopWarn": "Target is NOOP — publishing only records intent. Pick Bilibili in the dropdown and finish cookie login."
   },
   "execution": {
     "modeStudio": "Studio",
@@ -622,7 +631,14 @@
     "approved": "Approved",
     "rejected": "Rejected",
     "failed": "Failed",
-    "delta": "delta"
+    "delta": "delta",
+    "publishNoop": "⚠ Publish target is NOOP — intent only, nothing uploaded. Configure Bilibili in Settings → Pipeline",
+    "publishNoopTitle": "Publish target: NOOP (unconfigured)",
+    "publishNoopHint": "Publishing only records intent — nothing is uploaded. Configure Bilibili + login in Settings → Pipeline.",
+    "publishCookieMissing": "Bilibili cookie not ready",
+    "publishCookieHint": "Run biliup login in terminal, then re-check",
+    "publishCookieReady": "cookie ready",
+    "publishReady": "Publish target"
   },
   "canvas": {
     "tool": {

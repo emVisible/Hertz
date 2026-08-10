@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
 import { api } from '../../api'
+import { pipelineApi } from '../../api/pipeline'
 import { aiRegistryApi } from '../../api/ai'
 import { Badge, Button, Icon, Input, QueryErrorState, Select, useToast } from '../../components/ui'
 import { setLanguage } from '../../i18n'
@@ -60,6 +61,74 @@ function PathField({
           {t('settings.browse')}
         </Button>
       ) : null}
+    </div>
+  )
+}
+
+/** B 站发布就绪状态（v0.3.8）：目标 + cookie 检查 + 登录引导。 */
+function PublishStatusCard({ onChanged }: { onChanged: () => void }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data, isError, refetch } = useQuery({
+    queryKey: ['pipeline-publish-status'],
+    queryFn: pipelineApi.publishStatus,
+    refetchInterval: 15_000,
+  })
+
+  if (isError || !data) {
+    return (
+      <p className="text-xs text-text-disabled">
+        {isError ? t('error.queryFailed', { detail: 'publish status' }) : '…'}
+      </p>
+    )
+  }
+
+  const age = data.cookie_age_s == null ? null : Math.round(data.cookie_age_s / 3600)
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge tone={data.noop ? 'warning' : 'success'}>{data.target}</Badge>
+        {data.target === 'bilibili' && (
+          <span className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${data.cookie_exists ? 'bg-success' : 'bg-error'}`} />
+            <span className="text-text-secondary">
+              {data.cookie_exists
+                ? `${t('settings.cookieReady')}${age != null ? `（${age} 小时前登录）` : ''}`
+                : t('settings.cookieMissing')}
+            </span>
+          </span>
+        )}
+        {data.target === 'bilibili' && !data.biliup_available && (
+          <Badge tone="warning">{t('settings.biliupMissing')}</Badge>
+        )}
+      </div>
+      {data.noop && (
+        <p className="text-xs leading-relaxed text-warning">{t('settings.publishNoopWarn')}</p>
+      )}
+      {data.target === 'bilibili' && (
+        <p className="text-xs leading-relaxed text-text-secondary">
+          {t('settings.cookiePath')}: <code className="font-mono text-text-primary">{data.cookie_path}</code>
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <code className="select-all rounded bg-surface-2 px-2 py-1 font-mono text-[11px] text-text-primary">
+          biliup -u {data.cookie_path} login
+        </code>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            void refetch().then(() => {
+              toast(t('settings.cookieChecked'), 'success')
+              onChanged()
+            })
+          }}
+        >
+          <Icon name="refresh" size={12} />
+          {t('settings.checkCookie')}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -308,7 +377,7 @@ export function SettingsPage() {
 
                 <section className={section}>
                   <h2 className={heading}>
-                    <Icon name="whisper" size={15} />
+                    <Icon name="config" size={15} />
                     {t('settings.redditOAuth')}
                   </h2>
                   <p className={sub}>{t('settings.redditOAuthHint')}</p>
@@ -327,6 +396,15 @@ export function SettingsPage() {
                       placeholder={cfg?.pipeline_reddit_client_secret_set ? '••••••••' : ''}
                     />
                   </div>
+                </section>
+
+                <section className={section}>
+                  <h2 className={heading}>
+                    <Icon name="box" size={15} />
+                    {t('settings.biliPublish')}
+                  </h2>
+                  <p className={sub}>{t('settings.biliPublishHint')}</p>
+                  <PublishStatusCard onChanged={() => void refetch()} />
                 </section>
 
                 <div className="flex justify-end gap-2">

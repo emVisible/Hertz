@@ -190,6 +190,9 @@ class PipelineService:
         if publisher is None:
             raise RuntimeError(f"unknown publish target '{target}'")
         result = await publisher.publish(ctx, item)
+        if target == "noop":
+            # v0.3.8：noop 只记录意图——明确标注，前端醒目警示「未真正上传」
+            result["noop"] = True
 
         async with session_factory() as session:
             row = await session.get(Item, item_id)
@@ -202,7 +205,13 @@ class PipelineService:
             "pipeline",
             {"type": "item", "item_id": str(item_id), "status": "published"},
         )
-        return {"id": str(item_id), "status": "published", "result": result}
+        return {
+            "id": str(item_id),
+            "status": "published",
+            "result": result,
+            # v0.3.8：noop 目标标记外提——前端直接判断，无需穿透 result
+            "noop": bool(result.get("noop")),
+        }
 
     async def score_one(self, item_id: uuid.UUID) -> dict:
         """单条评分（v0.3.5，预处理手动评分按钮）：仅已下载条目，成本可控。"""

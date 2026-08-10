@@ -119,6 +119,18 @@ export interface PipelineEvent {
 
 export const pipelineApi = {
   status: () => api.get<{ running: boolean; job: string | null }>('/api/pipeline/status'),
+
+  /** 发布健康状态（v0.3.8）：生效目标 + B 站 cookie 就绪度 + biliup 可用性 */
+  publishStatus: () =>
+    api.get<{
+      target: string
+      biliup_available: boolean
+      cookie_exists: boolean
+      cookie_path: string
+      cookie_age_s: number | null
+      publishers: string[]
+      noop: boolean
+    }>('/api/pipeline/publish/status'),
   steps: () => api.get<{ steps: string[] }>('/api/pipeline/steps'),
   items: (status?: string, limit = 50) =>
     api.get<PipelineItem[]>(
@@ -151,7 +163,7 @@ export const pipelineApi = {
   updateMeta: (id: string, meta: Record<string, string | number | null>) =>
     api.put<{ id: string; ok: boolean }>(`/api/pipeline/items/${id}/meta`, meta),
   publish: (id: string, selfmade = false, target = '') =>
-    api.post<{ id: string; status: string }>(
+    api.post<{ id: string; status: string; noop?: boolean }>(
       `/api/pipeline/items/${id}/publish?selfmade=${selfmade ? 1 : 0}&target=${encodeURIComponent(target)}`,
     ),
   /** 上传替换封面（v0.2.6）：FormData multipart。 */
