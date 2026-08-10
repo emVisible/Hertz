@@ -113,6 +113,19 @@ class DownloadStep(Pipe):
         if not candidates:
             raise StepError(f"download refused: unsafe media URL ({url[:64]})")
 
+        # OAuth 签名直链（v0.3.7）：v.redd.it 匿名 403 时用官方签名 URL 插到首位，
+        # 优先走签名链（CDN 放行），失败再落回匿名候选
+        try:
+            from backend.pipeline.reddit_media import _signed_url_safe, resolve_direct_video
+
+            signed = await resolve_direct_video(item.source_id, url)
+            if signed and _signed_url_safe(signed) and checker(signed):
+                if signed not in candidates:
+                    candidates.insert(0, signed)
+                    ctx.log(f"[download] OAuth signed direct link ✓ {signed[:64]}")
+        except Exception:  # noqa: BLE001 — 签名解析失败不阻塞匿名链
+            logger.info("oauth direct resolve failed for %s: skip", url[:48])
+
         root = Path(ctx.settings.data_dir) / "pipeline"
         if not item.output_dir:
             # 结构化命名：pipeline/2026-08-04-01（日期 + 当日第几次），并持久化供后续步骤复用

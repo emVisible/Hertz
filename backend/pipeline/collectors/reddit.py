@@ -68,6 +68,57 @@ def _b64(data: bytes) -> bytes:
     return base64.b64encode(data)
 
 
+# ---- Reddit OAuth token（v0.3.5 起采集/下载共用，模块级缓存） ----
+
+
+_token_holder: dict[str, str | None] = {"token": None}
+
+
+def invalidate_reddit_token() -> None:
+    """token 失效（401/403）→ 下次请求重新换取。"""
+    _token_holder["token"] = None
+
+
+async def ensure_reddit_token() -> str | None:
+    """OAuth 凭证（设置页配置）→ Bearer token；未配置返回 None（走匿名通道）。
+
+    采集与下载（v0.3.7 签名直链）共用：模块级缓存 + 失效重取。
+    """
+    client_id = settings.pipeline_reddit_client_id
+    client_secret = settings.pipeline_reddit_client_secret
+    if not (client_id and client_secret):
+        return None
+    if _token_holder["token"]:
+        return _token_holder["token"]
+    basic = urllib.parse.quote(client_id, safe="") + ":" + urllib.parse.quote(
+        client_secret, safe=""
+    )
+    async with httpx.AsyncClient(
+        headers={"User-Agent": _UA},
+        timeout=20,
+        proxy=_system_proxy(),
+    ) as client:
+        resp = await client.post(
+            "https://www.reddit.com/api/v1/access_token",
+            data={"grant_type": "client_credentials"},
+            headers={
+                "Authorization": "Basic " + _b64(basic.encode("utf-8")).decode("ascii"),
+                "User-Agent": _UA,
+            },
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Reddit OAuth 换取 token 失败 (HTTP {resp.status_code})——"
+            "请检查设置页的 client_id/client_secret"
+        )
+    body = resp.json()
+    token = str(body.get("access_token") or "")
+    if not token:
+        raise RuntimeError("Reddit OAuth 响应缺少 access_token")
+    _token_holder["token"] = token
+    return token
+
+
 def classify_media(url: str, is_video: bool, extra: dict) -> str:
     """Route a post to the right production pipeline.
 
@@ -96,40 +147,9 @@ class RedditCollector(SourceCollector):
             timeout=20,
             proxy=proxy,
         )
-        self._token: str | None = None
 
     async def aclose(self) -> None:
         await self._client.aclose()
-
-    async def _ensure_token(self) -> str | None:
-        """OAuth 凭证（设置页配置）→ Bearer token；未配置返回 None（走匿名通道）。"""
-        client_id = settings.pipeline_reddit_client_id
-        client_secret = settings.pipeline_reddit_client_secret
-        if not (client_id and client_secret):
-            return None
-        if self._token:
-            return self._token
-        basic = urllib.parse.quote(client_id, safe="") + ":" + urllib.parse.quote(
-            client_secret, safe=""
-        )
-        resp = await self._client.post(
-            "https://www.reddit.com/api/v1/access_token",
-            data={"grant_type": "client_credentials"},
-            headers={
-                "Authorization": "Basic " + _b64(basic.encode("utf-8")).decode("ascii"),
-                "User-Agent": _UA,
-            },
-        )
-        if resp.status_code != 200:
-            raise RuntimeError(
-                f"Reddit OAuth 换取 token 失败 (HTTP {resp.status_code})——"
-                "请检查设置页的 client_id/client_secret"
-            )
-        body = resp.json()
-        self._token = str(body.get("access_token") or "")
-        if not self._token:
-            raise RuntimeError("Reddit OAuth 响应缺少 access_token")
-        return self._token
 
     async def collect(self, ctx, channel: str, limit: int) -> list[RawPost]:
         sort = channel.split(":", 1)[1] if ":" in channel else ""
@@ -138,7 +158,7 @@ class RedditCollector(SourceCollector):
             # 避免每次都打固定 hot 首页（反 429 熔断 + 供给多样化）
             sort = random.choice(_SORTS)
         sub = channel.split(":", 1)[0].strip("/") or "all"
-        token = await self._ensure_token()
+        token = await ensure_reddit_token()
         if token:
             # 认证通道（v0.3.5）：官方 API 对匿名 403 Blocked 免疫
             return await self._collect_oauth(sub, sort, limit, token)
@@ -167,7 +187,7 @@ class RedditCollector(SourceCollector):
             headers={"Authorization": f"Bearer {token}"},
         )
         if resp.status_code in (401, 403):
-            self._token = None  # token 失效 → 下次重取
+            invalidate_reddit_token()  # token 失效 → 下次重取
             raise RuntimeError(
                 f"Reddit OAuth 通道被拒 (HTTP {resp.status_code})——"
                 "token 可能已失效，请重试；或检查 client_id/client_secret"

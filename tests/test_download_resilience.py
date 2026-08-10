@@ -354,18 +354,22 @@ def test_looks_like_html_sniff() -> None:
 
 
 def test_oauth_disabled_without_credentials(monkeypatch) -> None:
-    """未配置凭证时 _ensure_token 返回 None（保持匿名通道）。"""
-    import httpx
-
-    from backend.pipeline.collectors.reddit import RedditCollector
+    """未配置凭证时 ensure_reddit_token 返回 None（保持匿名通道）。"""
+    from backend.pipeline.collectors.reddit import ensure_reddit_token
 
     class _Cfg:
         pipeline_reddit_client_id = ""
         pipeline_reddit_client_secret = ""
 
     monkeypatch.setattr("backend.pipeline.collectors.reddit.settings", _Cfg())
-    c = RedditCollector(client=httpx.AsyncClient())
-    assert asyncio.run(c._ensure_token()) is None  # noqa: SLF001 — 直接探内部，无 IO
+    assert asyncio.run(ensure_reddit_token()) is None
+
+
+def _fake_token(token: str):
+    async def _inner() -> str:
+        return token
+
+    return _inner
 
 
 @pytest.mark.asyncio
@@ -380,6 +384,11 @@ async def test_oauth_channel_fetches_posts(monkeypatch) -> None:
         pipeline_reddit_client_secret = "cs"
 
     monkeypatch.setattr("backend.pipeline.collectors.reddit.settings", _Cfg())
+    # 模块级 token 获取跳过真实网络（v0.3.7 起 token 模块级共享）
+    monkeypatch.setattr(
+        "backend.pipeline.collectors.reddit.ensure_reddit_token",
+        _fake_token("tok123"),
+    )
 
     class FakeTransport(httpx.AsyncBaseTransport):
         def __init__(self) -> None:
@@ -421,7 +430,8 @@ async def test_oauth_channel_fetches_posts(monkeypatch) -> None:
     transport = FakeTransport()
     c = RedditCollector(client=httpx.AsyncClient(transport=transport))
     posts = await c.collect(None, "pics", 10)
-    assert transport.token_req and transport.list_req
+    assert transport.list_req  # v0.3.7：token 模块级共享，不再走 collector token 请求
+    assert len(posts) == 1
     assert len(posts) == 1
     assert posts[0].source_id == "oa1"
     assert posts[0].item_type == "image_gallery"
@@ -498,3 +508,87 @@ async def test_download_skips_frozen_domain() -> None:
     result = await DownloadStep().process(ctx, Item())
     assert result.status == "discovered"  # 保持状态，等待冷却到期自动重试
     assert result.skip is True  # 摘要计「跳过」而非「成功」
+
+
+# ---------- OAuth 签名直链（v0.3.7） ----------
+
+
+@pytest.mark.asyncio
+async def test_resolve_direct_video_no_oauth(monkeypatch) -> None:
+    """未配置 OAuth：签名直链解析直接 None（匿名链兜底，零网络）。"""
+    from backend.pipeline.reddit_media import resolve_direct_video
+
+    class _Cfg:
+        pipeline_reddit_client_id = ""
+        pipeline_reddit_client_secret = ""
+
+    monkeypatch.setattr("backend.pipeline.collectors.reddit.settings", _Cfg())
+    assert await resolve_direct_video("abc123", "https://v.redd.it/abc123/DASH_720.mp4") is None
+    # 非 v.redd.it 不解析
+    assert await resolve_direct_video("abc123", "https://i.redd.it/x.jpg") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_direct_video_signed(monkeypatch) -> None:
+    """OAuth 配置后：comments API 媒体元数据 → fallback_url 签名直链。"""
+    import httpx
+
+    from backend.pipeline.reddit_media import resolve_direct_video
+
+    class _Cfg:
+        pipeline_reddit_client_id = "cid"
+        pipeline_reddit_client_secret = "cs"
+
+    monkeypatch.setattr("backend.pipeline.collectors.reddit.settings", _Cfg())
+    monkeypatch.setattr(
+        "backend.pipeline.reddit_media.ensure_reddit_token",
+        _fake_token("tok123"),
+    )
+
+    class FakeTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            assert request.url.path.startswith("/comments/")
+            assert request.headers["authorization"] == "Bearer tok123"
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "data": {
+                            "children": [
+                                {
+                                    "data": {
+                                        "id": "abc123",
+                                        "media": {
+                                            "reddit_video": {
+                                                "fallback_url": (
+                                                    "https://v.redd.it/abc123/"
+                                                    "DASH_720.mp4?access_token=signed123"
+                                                )
+                                            }
+                                        },
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+            )
+
+    client = httpx.AsyncClient(transport=FakeTransport())
+    signed = await resolve_direct_video(
+        "abc123", "https://v.redd.it/abc123/DASH_720.mp4", client=client
+    )
+    assert signed == "https://v.redd.it/abc123/DASH_720.mp4?access_token=signed123"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_signed_url_safe_allowlist() -> None:
+    """签名直链白名单（SSRF 防线，AXIOM §8.1）：只放行 reddit 媒体域。"""
+    from backend.pipeline.reddit_media import _signed_url_safe
+
+    assert _signed_url_safe("https://v.redd.it/x/DASH_720.mp4?t=1")
+    assert _signed_url_safe("https://i.redd.it/x.jpg")
+    assert _signed_url_safe("https://preview.redd.it/x.jpg")
+    assert not _signed_url_safe("https://evil.com/x.mp4")
+    assert not _signed_url_safe("http://127.0.0.1/x")
