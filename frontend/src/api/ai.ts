@@ -1,6 +1,6 @@
 /** AI 底座 v2.0 API：Provider / 模型 / 角色 / 调用链管理。 */
 
-import { api } from './client'
+import { api, API_BASE } from './client'
 
 export interface AIProviderDTO {
   id: string
@@ -79,4 +79,23 @@ export const aiRegistryApi = {
   saveRoles: (roles: Record<string, string>) => api.put<{ roles: Record<string, string> }>('/api/ai/roles', { roles }),
   trace: (taskId?: string, limit = 50) =>
     api.get<AITraceCall[]>(`/api/ai/trace?limit=${limit}${taskId ? `&task_id=${taskId}` : ''}`),
+  /** TTS 试听（v0.4 B2）：短句合成返回 mpeg 音频二进制 */
+  ttsTest: async (text: string, voice: string) => {
+    const resp = await fetch(`${API_BASE}/api/ai/tts/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice }),
+    })
+    if (!resp.ok) {
+      let detail = resp.statusText
+      try {
+        const body = (await resp.json()) as { detail?: string }
+        detail = body.detail ?? detail
+      } catch {
+        /* keep statusText */
+      }
+      throw new Error(detail)
+    }
+    return new Uint8Array(await resp.arrayBuffer())
+  },
 }

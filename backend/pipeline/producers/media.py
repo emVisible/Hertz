@@ -216,7 +216,8 @@ async def apply_narration_delay(audio_path: Path, offset: float) -> Path:
 
 def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
     """SRT → ASS with fade-in/out (Autarkeia heritage: subtitles should feel
-    alive, not hard-clipped). Keeps SRT timing, adds \fad(200,200)."""
+    alive, not hard-clipped). Keeps SRT timing, adds \fad(200,200).
+    v0.4 B1：样式参数读配置（字号/描边/加粗/对齐），设置页可调。"""
     entries: list[tuple[int, int, str]] = []
     lines = srt_path.read_text(encoding="utf-8").splitlines()
     i = 0
@@ -231,6 +232,10 @@ def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
             i += 3
             continue
         i += 1
+    font_size = int(getattr(settings, "pipeline_subtitle_font_size", 26))
+    outline = int(getattr(settings, "pipeline_subtitle_outline", 2))
+    bold = "-1" if getattr(settings, "pipeline_subtitle_bold", True) else "0"
+    alignment = int(getattr(settings, "pipeline_subtitle_alignment", 2))
     header = (
         "[Script Info]\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\n"
         "WrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\n"
@@ -238,8 +243,9 @@ def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        "Style: Default,Noto Sans CJK SC,26,&H00FFFFFF,&H00FFFFFF,&H80000000,"
-        "&H64000000,-1,0,0,0,100,100,0,0,1,2,1,2,40,40,26,1\n\n[Events]\n"
+        f"Style: Default,Noto Sans CJK SC,{font_size},&H00FFFFFF,&H00FFFFFF,"
+        f"&H80000000,&H64000000,{bold},0,0,0,100,100,0,0,1,{outline},1,"
+        f"{alignment},40,40,26,1\n\n[Events]\n"
         "Format: Layer, Start, End, Style, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     events = []

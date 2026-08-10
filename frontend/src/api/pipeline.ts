@@ -173,6 +173,18 @@ export const pipelineApi = {
   /** 生产方式批量设置（v0.3.3，预处理人工选择）。 */
   setProduceOptions: (ids: string[], options: Partial<ProduceOptions>) =>
     api.post<{ updated: number }>('/api/pipeline/produce-options', { ids, options }),
+  /** 生产方式预设模板（v0.4 B3）：命名组合一键套用。 */
+  produceTemplates: () =>
+    api.get<Array<{ id: string; name: string; options: ProduceOptions; builtin: boolean }>>(
+      '/api/pipeline/produce-templates',
+    ),
+  createProduceTemplate: (name: string, options: Partial<ProduceOptions>) =>
+    api.post<{ id: string; name: string; options: ProduceOptions }>('/api/pipeline/produce-templates', {
+      name,
+      options,
+    }),
+  removeProduceTemplate: (id: string) =>
+    api.delete<{ ok: boolean }>(`/api/pipeline/produce-templates/${id}`),
   updateMeta: (id: string, meta: Record<string, string | number | null>) =>
     api.put<{ id: string; ok: boolean }>(`/api/pipeline/items/${id}/meta`, meta),
   publish: (id: string, selfmade = false, target = '') =>

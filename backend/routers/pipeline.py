@@ -166,6 +166,56 @@ async def batch_items(body: BatchBody):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+# ---------- 生产方式预设模板（v0.4 B3） ----------
+
+
+def _templates():
+    from backend.pipeline.templates import ProduceTemplateService
+
+    return ProduceTemplateService()
+
+
+class TemplateBody(BaseModel):
+    name: str
+    options: dict
+
+
+class TemplateUpdate(BaseModel):
+    name: str | None = None
+    options: dict | None = None
+
+
+@router.get("/produce-templates")
+async def list_produce_templates() -> list[dict]:
+    return await _templates().list_templates()
+
+
+@router.post("/produce-templates")
+async def create_produce_template(body: TemplateBody) -> dict:
+    try:
+        return await _templates().create(name=body.name, options=body.options)
+    except Exception as exc:  # noqa: BLE001 — 模板名冲突等返回可读错误
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/produce-templates/{template_id}")
+async def update_produce_template(template_id: uuid.UUID, body: TemplateUpdate) -> dict:
+    try:
+        fields = {k: v for k, v in body.model_dump().items() if v is not None}
+        return await _templates().update(template_id, **fields)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/produce-templates/{template_id}")
+async def delete_produce_template(template_id: uuid.UUID) -> dict:
+    try:
+        await _templates().delete(template_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True}
+
+
 @router.post("/items/{item_id}/back-to-prep")
 async def back_to_prep(item_id: uuid.UUID):
     """审核打回预处理（v0.3.9 相邻双向）：queued → scored。"""

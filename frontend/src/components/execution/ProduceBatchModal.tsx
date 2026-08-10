@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem, ProduceOptions } from '../../api/pipeline'
-import { Button, Icon, Modal, useToast } from '../ui'
+import { pipelineApi } from '../../api/pipeline'
+import { Button, Icon, Input, Modal, Select, useToast } from '../ui'
 import {
   DEFAULT_PRODUCE_OPTIONS,
   normalizeOptions,
   ProduceOptionsPicker,
 } from './ProduceOptionsPicker'
 
-/** 批量生产方式设置（v0.3.3）：多选条目 → 统一生产方式模块组合。 */
+/** 批量生产方式设置（v0.3.3）：多选条目 → 统一生产方式模块组合。
+ *  v0.4 B3：顶部模板行——命名组合一键套用 / 当前组合存为模板。 */
 export function ProduceBatchModal({
   open,
   onClose,
@@ -23,10 +26,51 @@ export function ProduceBatchModal({
 }) {
   const { t } = useTranslation()
   const toast = useToast()
+  const queryClient = useQueryClient()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [options, setOptions] = useState<ProduceOptions>({ ...DEFAULT_PRODUCE_OPTIONS })
+  const [templateId, setTemplateId] = useState('')
+  const [templateName, setTemplateName] = useState('')
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ['produce-templates'],
+    queryFn: pipelineApi.produceTemplates,
+  })
 
   const list = useMemo(() => items, [items])
+
+  function applyTemplate(id: string) {
+    const tpl = templates.find((x) => x.id === id)
+    if (!tpl) return
+    setOptions(normalizeOptions(tpl.options))
+  }
+
+  async function saveAsTemplate() {
+    const name = templateName.trim()
+    if (!name) {
+      toast(t('console.produce.templateNameEmpty'), 'warning')
+      return
+    }
+    try {
+      await pipelineApi.createProduceTemplate(name, normalizeOptions(options))
+      await queryClient.invalidateQueries({ queryKey: ['produce-templates'] })
+      setTemplateName('')
+      toast(t('console.produce.templateSaved'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  async function removeTemplate(id: string) {
+    if (!window.confirm(t('common.delete'))) return
+    try {
+      await pipelineApi.removeProduceTemplate(id)
+      await queryClient.invalidateQueries({ queryKey: ['produce-templates'] })
+      if (templateId === id) setTemplateId('')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
 
   function toggleAll() {
     setSelected((prev) => (prev.size === list.length ? new Set() : new Set(list.map((i) => i.id))))
@@ -56,6 +100,40 @@ export function ProduceBatchModal({
     <Modal open={open} onClose={onClose} title={t('console.produce.batch')} width={520}>
       <div className="flex flex-col gap-3">
         <p className="text-xs text-text-disabled">{t('console.produce.batchHint')}</p>
+
+        {/* 模板行（v0.4 B3）：命名组合一键套用 + 存为模板 */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Select
+            aria-label={t('console.produce.template')}
+            value={templateId}
+            onChange={(e) => {
+              setTemplateId(e.target.value)
+              if (e.target.value) applyTemplate(e.target.value)
+            }}
+            options={[
+              { value: '', label: t('console.produce.templateNone') },
+              ...templates.map((x) => ({ value: x.id, label: x.name })),
+            ]}
+            className="w-40"
+          />
+          <span className="flex min-w-0 flex-1 items-center gap-1">
+            <Input
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder={t('console.produce.templateNamePlaceholder')}
+              className="h-8 min-w-0 flex-1"
+            />
+            <Button size="sm" variant="secondary" onClick={() => void saveAsTemplate()}>
+              <Icon name="plus" size={12} />
+              {t('console.produce.templateSave')}
+            </Button>
+            {templateId && (
+              <Button size="sm" variant="ghost" onClick={() => void removeTemplate(templateId)}>
+                <Icon name="trash" size={12} />
+              </Button>
+            )}
+          </span>
+        </div>
 
         {/* 生产方式（应用到所有选中条目） */}
         <ProduceOptionsPicker value={options} onChange={setOptions} />

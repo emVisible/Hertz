@@ -27,6 +27,20 @@ export function RolesManager() {
     queryKey: ['ai-providers'],
     queryFn: aiRegistryApi.listProviders,
   })
+
+  /** TTS 试听（v0.4 B2）：短句合成 → 播放（复用 /api/ai/tts/test）。 */
+  async function previewTts(voice: string) {
+    if (!voice) return
+    try {
+      const audio = await aiRegistryApi.ttsTest(t('settings.ttsPreviewText'), voice)
+      const url = URL.createObjectURL(new Blob([audio], { type: 'audio/mpeg' }))
+      const player = new Audio(url)
+      player.onended = () => URL.revokeObjectURL(url)
+      void player.play()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
   const { data: models = [] } = useQuery({
     queryKey: ['ai-models'],
     queryFn: () => aiRegistryApi.listModels(),
@@ -193,6 +207,16 @@ export function RolesManager() {
             ]}
             className="flex-1"
           />
+          {/* TTS 试听（v0.4 B2）：选音色即点即听 */}
+          <button
+            type="button"
+            onClick={() => void previewTts(roles.tts)}
+            disabled={!roles.tts}
+            title={t('settings.ttsPreview')}
+            className="flex h-8 w-8 shrink-0 items-center justify-center border border-border text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Icon name="play" size={13} />
+          </button>
           <span className="hidden w-52 shrink-0 truncate text-right font-mono text-[10px] text-text-disabled sm:inline" title={labelFor('tts')}>
             {labelFor('tts')}
           </span>

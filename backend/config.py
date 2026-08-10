@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # subtitle_lang: 字幕目标语言（zh-CN = 中文字幕；可配 vi/id/fil/pt-BR 等）
     pipeline_narration_lang: str = "en-US"
     pipeline_subtitle_lang: str = "zh-CN"
+    # 字幕样式（v0.4 B1）：ASS 参数可调——字号/描边宽/加粗/对齐(1底2中3顶)
+    pipeline_subtitle_font_size: int = 26
+    pipeline_subtitle_outline: int = 2
+    pipeline_subtitle_bold: bool = True
+    pipeline_subtitle_alignment: int = 2
     # 下载韧性（v0.2.9，参考原项目 download.py）：条间延迟抖动 + CDN 403 熔断
     pipeline_download_delay_seconds: float = 1.2
     # 下载资源冷却（v0.3.6 冰川式）：按媒体域指数退避冻结，base 起步、max 封顶

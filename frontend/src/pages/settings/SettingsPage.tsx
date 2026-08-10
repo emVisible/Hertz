@@ -24,6 +24,10 @@ interface ConfigData {
   pipeline_collect_limit?: number
   pipeline_publish_target?: string
   pipeline_sources?: string[]
+  pipeline_subtitle_font_size?: number
+  pipeline_subtitle_outline?: number
+  pipeline_subtitle_bold?: boolean
+  pipeline_subtitle_alignment?: number
   pipeline_reddit_client_id?: string
   pipeline_reddit_client_id_set?: boolean
   pipeline_reddit_client_secret_set?: boolean
@@ -173,6 +177,10 @@ export function SettingsPage() {
       pipeline_collect_limit: String(cfg.pipeline_collect_limit ?? 25),
       pipeline_publish_target: cfg.pipeline_publish_target ?? 'noop',
       pipeline_sources: (cfg.pipeline_sources ?? ['hot']).join(', '),
+      pipeline_subtitle_font_size: String(cfg.pipeline_subtitle_font_size ?? 26),
+      pipeline_subtitle_outline: String(cfg.pipeline_subtitle_outline ?? 2),
+      pipeline_subtitle_bold: String(cfg.pipeline_subtitle_bold ?? true),
+      pipeline_subtitle_alignment: String(cfg.pipeline_subtitle_alignment ?? 2),
       pipeline_reddit_client_id: cfg.pipeline_reddit_client_id ?? '',
       pipeline_reddit_client_secret: '',
     })
@@ -196,6 +204,10 @@ export function SettingsPage() {
         ?.split(',')
         .map((s) => s.trim())
         .filter(Boolean) || ['hot'],
+      pipeline_subtitle_font_size: Number(form.pipeline_subtitle_font_size) || 26,
+      pipeline_subtitle_outline: Number(form.pipeline_subtitle_outline) || 2,
+      pipeline_subtitle_bold: form.pipeline_subtitle_bold === 'true',
+      pipeline_subtitle_alignment: Number(form.pipeline_subtitle_alignment) || 2,
     }
     if (form.pipeline_reddit_client_id?.trim())
       overrides.pipeline_reddit_client_id = form.pipeline_reddit_client_id.trim()
@@ -390,6 +402,50 @@ export function SettingsPage() {
                       {t('settings.sourcesHint')}
                     </p>
                   </div>
+                </section>
+
+                <section className={section}>
+                  <h2 className={heading}>
+                    <Icon name="layers" size={15} />
+                    {t('settings.subtitleStyle')}
+                  </h2>
+                  <p className={sub}>{t('settings.subtitleStyleHint')}</p>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-4">
+                    <Input
+                      label={t('settings.subtitleFontSize')}
+                      type="number"
+                      value={form.pipeline_subtitle_font_size ?? '26'}
+                      onChange={(e) => set('pipeline_subtitle_font_size', e.target.value)}
+                    />
+                    <Input
+                      label={t('settings.subtitleOutline')}
+                      type="number"
+                      value={form.pipeline_subtitle_outline ?? '2'}
+                      onChange={(e) => set('pipeline_subtitle_outline', e.target.value)}
+                    />
+                    <Select
+                      label={t('settings.subtitleBold')}
+                      value={form.pipeline_subtitle_bold ?? 'true'}
+                      onChange={(e) => set('pipeline_subtitle_bold', e.target.value)}
+                      options={[
+                        { value: 'true', label: t('common.yes') },
+                        { value: 'false', label: t('common.no') },
+                      ]}
+                    />
+                    <Select
+                      label={t('settings.subtitleAlign')}
+                      value={form.pipeline_subtitle_alignment ?? '2'}
+                      onChange={(e) => set('pipeline_subtitle_alignment', e.target.value)}
+                      options={[
+                        { value: '1', label: t('settings.subtitleAlignBottom') },
+                        { value: '2', label: t('settings.subtitleAlignMiddle') },
+                        { value: '3', label: t('settings.subtitleAlignTop') },
+                      ]}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">
+                    {t('settings.subtitleEffectHint')}
+                  </p>
                 </section>
 
                 <section className={section}>

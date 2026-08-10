@@ -1376,3 +1376,55 @@ def test_config_allowlist_has_sources() -> None:
     from backend.routers.config import RUNTIME_ALLOWLIST
 
     assert "pipeline_sources" in RUNTIME_ALLOWLIST
+
+
+# ---------- 生产方式模板（v0.4 B3） ----------
+
+
+@pytest.mark.asyncio
+async def test_produce_templates_seed_and_crud(client) -> None:
+    """模板库：内置 4 模板 seed + 新建/删除。"""
+    resp = await client.get("/api/pipeline/produce-templates")
+    assert resp.status_code == 200
+    tpls = resp.json()
+    names = [x["name"] for x in tpls]
+    assert {"直发", "配音+字幕", "翻译+字幕", "静音直发"} <= set(names)
+    direct = next(x for x in tpls if x["name"] == "直发")
+    assert direct["options"] == {"passthrough": True}
+
+    # 新建自定义
+    resp = await client.post(
+        "/api/pipeline/produce-templates",
+        json={"name": "搬运风", "options": {"voice": True, "subtitle": True}},
+    )
+    assert resp.status_code == 200
+    created = resp.json()
+    assert created["builtin"] is False
+
+    # 删除
+    resp = await client.delete(f"/api/pipeline/produce-templates/{created['id']}")
+    assert resp.status_code == 200
+
+
+# ---------- 字幕样式（v0.4 B1） ----------
+
+
+def test_subtitle_style_injected() -> None:
+    """srt_to_ass 输出样式行跟随配置（字号/描边/加粗/对齐）。"""
+    from pathlib import Path
+
+    from backend.pipeline.producers.media import srt_to_ass
+
+    src = Path("/tmp/hz_sub_test.srt")
+    out = Path("/tmp/hz_sub_test.ass")
+    src.write_text(
+        "1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8"
+    )
+    srt_to_ass(src, out)
+    header = out.read_text(encoding="utf-8")
+    src.unlink(missing_ok=True)
+    out.unlink(missing_ok=True)
+    # 默认：字号 26 / 描边 2 / 加粗 -1 / 对齐 2（底部）
+    assert "Noto Sans CJK SC,26" in header
+    assert ",1,2,1," in header
+    assert ",2,40,40,26,1" in header

@@ -6,7 +6,7 @@ The JobRun audit trail lives in backend.models.system (job_runs table).
 import json
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import BaseModel
@@ -73,3 +73,18 @@ class ResourceCooldown(BaseModel):
     domain: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     fail_level: Mapped[int] = mapped_column(Integer, default=1)
     until_epoch: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class ProduceTemplate(BaseModel):
+    """生产方式预设模板（v0.4 B3）：命名组合一键套用批量生产方式。
+
+    内置四模板以代码为准（seed 同步）；用户可增改自定义模板。
+    options_json = 生产方式模块组合（passthrough/voice/subtitle/translate/mute）。
+    """
+
+    __tablename__ = "produce_templates"
+
+    name: Mapped[str] = mapped_column(String(120))
+    options_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
