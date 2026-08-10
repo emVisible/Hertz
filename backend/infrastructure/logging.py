@@ -80,6 +80,14 @@ class LogManager:
         buffer_handler.buffer = self.buffer
         self.logger.addHandler(buffer_handler)
 
+        # 系统日志面板（v0.3.0）：uvicorn/apscheduler 日志同样进 buffer——
+        # 排查「立即完成/无明细」需要看到调度器与请求层信息
+        for name in ("uvicorn", "uvicorn.error", "apscheduler", "httpx"):
+            extra = logging.getLogger(name)
+            extra.setLevel(logging.INFO)
+            extra.addHandler(buffer_handler)
+            extra.propagate = False
+
     def get(self) -> logging.Logger:
         return self.logger
 

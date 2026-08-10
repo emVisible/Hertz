@@ -22,14 +22,25 @@ export interface TerminalProps {
 
 /**
  * 实时日志终端（Studio/Pipeline 共用）：
- * 深底 + 时间戳 + 行 hover + 自动滚动 + 行数统计；
- * bottom 区域（运行记录等）融入卡片底部。
+ * 深底 + 时间戳 + 行 hover + 内部滚动（v0.3.0：固定视口高度 max-h，
+ * 不再随内容无限向下）+ 智能自动滚底（用户上滚时暂停，滚回底部恢复）。
  */
 export function Terminal({ title, lines, kindClass, streaming, onClear, bottom }: TerminalProps) {
-  const endRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const stickBottom = useRef(true)
+
+  // 滚动位置判定：接近底部 → 保持自动滚底；用户上滚 → 暂停
+  function onScroll() {
+    const el = scrollRef.current
+    if (!el) return
+    stickBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+  }
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = scrollRef.current
+    if (el && stickBottom.current) {
+      el.scrollTop = el.scrollHeight
+    }
   }, [lines])
 
   return (
@@ -54,7 +65,12 @@ export function Terminal({ title, lines, kindClass, streaming, onClear, bottom }
           <span className="font-mono text-[10px] text-text-disabled">{lines.length} lines</span>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto bg-surface-2/50 p-2 font-mono text-[11px] leading-relaxed">
+      {/* 固定视口高度 + 内部滚动：内容再多也不把页面撑无限长（v0.3.0） */}
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="h-72 min-h-0 overflow-y-auto bg-surface-2/50 p-2 font-mono text-[11px] leading-relaxed"
+      >
         {lines.length === 0 ? (
           <p className="p-2 text-text-disabled">—</p>
         ) : (
@@ -65,7 +81,6 @@ export function Terminal({ title, lines, kindClass, streaming, onClear, bottom }
             </div>
           ))
         )}
-        <div ref={endRef} />
       </div>
       {bottom && <div className="shrink-0 border-t border-border">{bottom}</div>}
     </Card>

@@ -554,7 +554,12 @@
       "emotion": "Emotion",
       "safety": "Safety"
     },
-    "collectEmpty": "Collected 0 items — source may be down, cooling down"
+    "collectEmpty": "Collected 0 items — source may be down, cooling down",
+    "inserted": "inserted {{n}}",
+    "skipped": "skipped {{n}}",
+    "noPending": "No pending items",
+    "sysLogs": "System logs (backend/Scheduler)",
+    "sysLogsEmpty": "No system logs yet"
   },
   "canvas": {
     "tool": {

@@ -106,15 +106,41 @@ export function usePipelineExecution() {
 
   function handleEvent(event: PipelineEvent) {
     if (event.type === 'job_step') {
-      const text = `[${event.step}] ${event.step === 'collect' ? `${t('console.collected', { n: event.count ?? 0 })}` : `${t('console.processed', { n: event.count ?? 0 })}`}`
-      appendLog(text, 'job')
+      // 明细（v0.3.0，参考原项目 job_summary）：collect 显示采集/入库/跳过
+      if (event.step === 'collect') {
+        const details = [
+          t('console.collected', { n: event.collected ?? event.count ?? 0 }),
+          t('console.inserted', { n: event.inserted ?? 0 }),
+          t('console.skipped', { n: event.skipped ?? 0 }),
+        ]
+        if (event.cooldown_s) details.push(`⏳ ${Math.ceil(event.cooldown_s)}s`)
+        appendLog(`[collect] ${details.join(' · ')}`, 'job')
+      } else {
+        appendLog(`[${event.step}] ${t('console.processed', { n: event.count ?? 0 })}`, 'job')
+      }
     } else if (event.type === 'item') {
       appendLog(`${t('console.item')} ${event.status}${event.error ? `: ${event.error}` : ''}`, event.status === 'rejected' || event.status === 'failed' ? 'done' : 'item')
     } else if (event.type === 'job_done') {
       const failed = event.status === 'failed'
       const empty = Boolean(event.summary?.empty)
-      // 采集 0 条（v0.2.8）：⚠ 警示而非静默 ✓——源可能异常，已进入冷却
-      appendLog(`── [${event.job}] ${failed ? '✗' : empty ? '⚠' : '✓'}${event.error ? `: ${event.error}` : ''} ──`, 'done')
+      // 完成摘要（v0.3.0，参考原项目 job_summary 中文摘要）
+      const s = event.summary
+      let summary = ''
+      if (event.job === 'collect') {
+        summary = `采集 ${s?.collected ?? 0} 条 · 新入库 ${s?.inserted ?? 0} · 跳过 ${s?.skipped ?? 0}`
+        if (empty) summary += ' ⚠ 源返回空，已进入冷却'
+      } else if (s) {
+        const parts = []
+        if (s.processed !== undefined) parts.push(`处理 ${s.processed} 项`)
+        if (s.ok !== undefined) parts.push(`成功 ${s.ok}`)
+        if (s.rejected !== undefined) parts.push(`拒绝 ${s.rejected}`)
+        if (s.failed !== undefined) parts.push(`失败 ${s.failed}`)
+        if (parts.length) summary = parts.join(' · ')
+        if (!summary && (s.processed ?? 0) === 0) {
+          summary = t('console.noPending')
+        }
+      }
+      appendLog(`── [${event.job}] ${failed ? '✗' : empty ? '⚠' : '✓'}${summary ? ` ${summary}` : ''}${event.error ? `: ${event.error}` : ''} ──`, 'done')
       void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
       if (failed) toast(event.error ?? `${event.job} failed`, 'error')
       else if (empty) toast(t('console.collectEmpty'), 'warning')

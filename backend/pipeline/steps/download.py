@@ -94,7 +94,11 @@ class DownloadStep(Pipe):
                     last_error = f"{cand[:48]}: {exc}"
                     continue
                 if not result.ok:
-                    last_error = f"{cand[:48]}: {result.error}"
+                    # 403 附排查提示（v0.3.0，参考原项目 AccessDenied 语义）
+                    hint = ""
+                    if result.status == 403:
+                        hint = "（CDN 拒绝——检查网络/代理/Reddit Cookie）"
+                    last_error = f"{cand[:48]}: {result.error}{hint}"
                     status = result.status
                     if status == 403:
                         if trip_cdn_circuit():

@@ -290,3 +290,9 @@
   - **字幕**：按句长加权分配时间（中文按字符/英文按词数，0.45s 最小可读）+ 旁白起始延迟（watch/look 0.45s、slow 1.1s、默认 0.75s，封顶 min(2.2, dur*0.15)）音频 adelay 对齐
   - **封面**：5 位置采样（短片 3 个）signalstats 兴趣评分（对比度主分 + 暗/过曝惩罚）取最高，全失败首帧兜底
   - 测试 +7（预过滤拒绝/服务端重算/safety 红线/标题指纹与排除未评分/phash 距离/字幕加权偏移/旁白延迟）
+- **D-152 执行工作台日志与终端修复（v0.3.0，参考原项目 job_summary/logbuf）**——
+  - **Terminal 无限向下**：内容区改固定视口（h-72）+ 内部滚动，页面不再被日志撑无限长；智能自动滚底（用户上滚暂停、回底部恢复）
+  - **事件明细**：collect 的 job_step 显示「采集/新入库/跳过（含冷却倒计时）」；job_done 中文摘要（参考原项目 job_summary）：collect「采集 N · 新入库 M · 跳过 K」，其他步骤「处理 N · 成功 X · 拒绝 Y · 失败 Z」，0 项时提示「无待处理条目」
+  - **系统日志面板**：run tab 新增可折叠「系统日志」——/api/logs/buffer 5s 轮询；LogManager 将 uvicorn/apscheduler/httpx 日志接入 ring buffer（此前只有 hertz logger）——调度器与请求层信息可排查「立即完成/无明细」
+  - **下载 403 可读**：错误附排查提示（CDN 拒绝——检查网络/代理/Reddit Cookie，参考原项目 AccessDenied 语义）
+  - 说明：collect 0 条 → ⚠ + 冷却、produce 0 项 → 「无待处理条目」均为正常语义（v0.2.8 供给告警 + 状态不匹配），现已有明确文案

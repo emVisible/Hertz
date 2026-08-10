@@ -569,7 +569,12 @@
       "emotion": "情感共鸣",
       "safety": "安全性"
     },
-    "collectEmpty": "采集 0 条——源可能异常，已进入冷却"
+    "collectEmpty": "采集 0 条——源可能异常，已进入冷却",
+    "inserted": "新入库 {{n}}",
+    "skipped": "跳过 {{n}}",
+    "noPending": "无待处理条目",
+    "sysLogs": "系统日志（后端/Scheduler）",
+    "sysLogsEmpty": "暂无系统日志"
   },
   "canvas": {
     "tool": {

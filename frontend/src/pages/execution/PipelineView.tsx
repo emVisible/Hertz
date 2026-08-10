@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { PipelineItem } from '../../api'
+import { api, type PipelineItem } from '../../api'
 import {
   Badge,
   Button,
@@ -109,6 +109,9 @@ export function PipelineView(p: PipelineViewProps) {
   const { t } = useTranslation()
   // 发布 tab 视图：列表（默认）｜内容日历（v0.2.3）
   const [calendarView, setCalendarView] = useState(false)
+  // 系统日志（v0.3.0）：/api/logs/buffer 轮询，可折叠
+  const [sysLogsOpen, setSysLogsOpen] = useState(false)
+  const [sysLogs, setSysLogs] = useState<string[]>([])
   // 审核排序（v0.2.6）：默认「有成片优先」（可预览的在前面）；随机=每次点击重新洗牌
   const [auditSort, setAuditSort] = useState<AuditSort>('videoFirst')
   const [randomSeed, setRandomSeed] = useState(0)
@@ -170,6 +173,20 @@ export function PipelineView(p: PipelineViewProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pTab])
+
+  // 系统日志（v0.3.0）：/api/logs/buffer 轮询，可折叠（pTab 声明后）
+  useEffect(() => {
+    if (pTab !== 'run' || !sysLogsOpen) return
+    const load = () => {
+      void api
+        .get<{ lines: string[] }>('/api/logs/buffer?limit=200')
+        .then((r) => setSysLogs(r.lines))
+        .catch(() => {})
+    }
+    load()
+    const timer = setInterval(load, 5000)
+    return () => clearInterval(timer)
+  }, [pTab, sysLogsOpen])
 
   const tabItems = PIPELINE_TABS.map((tb) => ({
     id: tb.id,
@@ -295,6 +312,33 @@ export function PipelineView(p: PipelineViewProps) {
                   emptyText={t('console.noJobs')}
                   onSelect={() => undefined}
                 />
+                {/* 系统日志（v0.3.0，参考原项目 logbuf）：后端/scheduler 日志尾部，
+                    可折叠 + 5s 轮询——排查「立即完成/无明细」的底层信息 */}
+                <SectionCard
+                  title={
+                    <button
+                      type="button"
+                      onClick={() => setSysLogsOpen((v) => !v)}
+                      aria-expanded={sysLogsOpen}
+                      className="flex w-full items-center justify-between text-left text-sm font-semibold text-text-primary transition-colors hover:text-primary"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Icon name="console" size={13} className="text-text-secondary" />
+                        {t('console.sysLogs')}
+                      </span>
+                      <Icon name="chevron-down" size={13} className={`shrink-0 text-text-disabled transition-transform ${sysLogsOpen ? '' : '-rotate-90'}`} />
+                    </button>
+                  }
+                  padded={false}
+                >
+                  {sysLogsOpen && (
+                    <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-all p-2.5 font-mono text-[10px] leading-relaxed text-text-secondary">
+                      {sysLogs.length === 0
+                        ? t('console.sysLogsEmpty')
+                        : sysLogs.join('\n')}
+                    </pre>
+                  )}
+                </SectionCard>
               </div>
             </div>
           </div>

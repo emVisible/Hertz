@@ -97,6 +97,16 @@ export interface PipelineEvent {
   count?: number
   channel?: string
   message?: string
+  /** collect 明细（v0.3.0，job_step 事件平铺 summary 字段） */
+  collected?: number
+  inserted?: number
+  skipped?: number
+  empty?: boolean
+  cooldown_s?: number
+  /** 单步结果明细（ok/rejected/failed） */
+  ok?: number
+  rejected?: number
+  failed?: number
 }
 
 export const pipelineApi = {
