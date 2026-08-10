@@ -66,6 +66,7 @@ interface PipelineViewProps {
   retryClass: (cls: string, n: number) => void
   backToPrep: (item: PipelineItem) => void
   backToCollect: (item: PipelineItem) => void
+  batchAction: (action: 'approve' | 'reject' | 'back_to_prep', ids: string[]) => void
   rescheduleExpired: () => Promise<void>
   setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
   produceOne: (item: PipelineItem) => Promise<void>
@@ -197,6 +198,103 @@ export function PipelineView(p: PipelineViewProps) {
   const pTab: PipelineTabId = PIPELINE_TABS.some((tb) => tb.id === p.tab)
     ? (p.tab as PipelineTabId)
     : 'inReview'
+
+  // ---- 审核效率（v0.4 A1 快捷键 / A2 批量） ----
+  const [auditFocus, setAuditFocus] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const toggleSelect = (item: PipelineItem) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(item.id)) next.delete(item.id)
+      else next.add(item.id)
+      return next
+    })
+  }
+  const clearSelection = () => setSelectedIds(new Set())
+
+  // j/k 导航 + a/r/b 操作（仅 inReview tab；输入框/⌘ 组合键不拦截）
+  useEffect(() => {
+    if (pTab !== 'inReview') {
+      setAuditFocus(null)
+      return
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const tgt = e.target
+      if (
+        tgt instanceof HTMLInputElement ||
+        tgt instanceof HTMLTextAreaElement ||
+        tgt instanceof HTMLSelectElement
+      ) {
+        return
+      }
+      const list = sortedQueued
+      if (list.length === 0) return
+      let idx = auditFocus ? list.findIndex((i) => i.id === auditFocus) : -1
+      const move = (next: number) => {
+        e.preventDefault()
+        setAuditFocus(list[Math.max(0, Math.min(next, list.length - 1))].id)
+      }
+      switch (e.key) {
+        case 'j':
+        case 'J':
+        case 'ArrowDown':
+          move(idx + 1)
+          break
+        case 'k':
+        case 'K':
+        case 'ArrowUp':
+          move(idx < 0 ? 0 : idx - 1)
+          break
+        case 'a':
+        case 'A':
+          if (idx >= 0) {
+            e.preventDefault()
+            void p.act(list[idx], 'approve')
+            setAuditFocus(null)
+          }
+          break
+        case 'r':
+        case 'R':
+          if (idx >= 0) {
+            e.preventDefault()
+            void p.act(list[idx], 'reject')
+            setAuditFocus(null)
+          }
+          break
+        case 'b':
+        case 'B':
+          if (idx >= 0) {
+            e.preventDefault()
+            void p.backToPrep(list[idx])
+            setAuditFocus(null)
+          }
+          break
+        case 'Escape':
+          setAuditFocus(null)
+          setSelectedIds(new Set())
+          break
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pTab, sortedQueued, auditFocus])
+
+  // 焦点项滚动到可视区（列表长时 j/k 不迷路）
+  useEffect(() => {
+    if (!auditFocus) return
+    document
+      .getElementById(`audit-item-${auditFocus}`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [auditFocus])
+
+  // 批量操作（v0.4 A2）
+  const selectedItems = sortedQueued.filter((i) => selectedIds.has(i.id))
+  function batchRun(action: 'approve' | 'reject' | 'back_to_prep') {
+    void p.batchAction(action, [...selectedIds])
+    clearSelection()
+  }
 
   // 进入审核自动维护排期（v0.2.7）：过期重排 + 未排期自动分配。
   // 会话内只触发一次（v0.2.8）——切 tab 往返不再重复分配，避免排期越排越远
@@ -438,6 +536,32 @@ export function PipelineView(p: PipelineViewProps) {
                 </span>
               }
             >
+              {/* 批量操作条（v0.4 A2）：选中 ≥1 时浮现 */}
+              {selectedItems.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface-2/60 px-3 py-2 text-xs">
+                  <span className="font-medium text-text-primary">
+                    {t('console.batchSelected', { n: selectedItems.length })}
+                  </span>
+                  <span className="text-text-disabled">{t('console.batchHint')}</span>
+                  <span className="ml-auto flex items-center gap-1.5">
+                    <Button size="sm" onClick={() => batchRun('approve')}>
+                      <Icon name="check" size={12} />
+                      {t('console.batchApprove')}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => batchRun('back_to_prep')}>
+                      <Icon name="rewind" size={12} />
+                      {t('console.batchBackToPrep')}
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => batchRun('reject')}>
+                      <Icon name="close" size={12} />
+                      {t('console.batchReject')}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={clearSelection}>
+                      {t('console.batchClear')}
+                    </Button>
+                  </span>
+                </div>
+              )}
               <ul className="divide-y divide-border/60">
                 {sortedQueued.map((item) => (
                     <AuditCard
@@ -447,9 +571,15 @@ export function PipelineView(p: PipelineViewProps) {
                       onReject={(i) => void p.act(i, 'reject')}
                       onUploadCover={(i, file) => void p.uploadCover(i, file)}
                       onBackToPrep={(i) => void p.backToPrep(i)}
+                      focused={auditFocus === item.id}
+                      selected={selectedIds.has(item.id)}
+                      onSelect={toggleSelect}
                     />
                 ))}
               </ul>
+              <p className="border-t border-border/60 px-3 py-2 text-[10px] text-text-disabled">
+                {t('console.keyHint')}
+              </p>
             </PipelineStage>
           </div>
         )}

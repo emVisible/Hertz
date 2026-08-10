@@ -25,6 +25,8 @@ RUNTIME_ALLOWLIST = {
     "pipeline_min_score",
     "pipeline_collect_limit",
     "pipeline_publish_target",
+    # 采集源列表（v0.4 A4）：设置页增删 subreddit 源
+    "pipeline_sources",
     # 角色分配经 PUT /api/ai/roles 写入（唯一写入口，见 routers/ai.py）
     # Single-user desktop: API keys live in the local runtime.yaml.
     # They are never returned by GET — only set via PATCH.

@@ -75,6 +75,34 @@ export function CalendarView({
     }
   }
 
+  // ---- 批量排期（v0.4 A3）：⌘/Shift 多选条目 → 点日期格统一落位 ----
+  const [multiIds, setMultiIds] = useState<Set<string>>(new Set())
+  const multiItems = useMemo(
+    () => [...items, ...unscheduled].filter((i) => multiIds.has(i.id)),
+    [items, unscheduled, multiIds],
+  )
+  function toggleMulti(item: PipelineItem) {
+    setMultiIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(item.id)) next.delete(item.id)
+      else next.add(item.id)
+      return next
+    })
+  }
+  async function batchSchedule(dateIso: string | null) {
+    if (multiItems.length === 0) return
+    try {
+      for (const item of multiItems) {
+        await onSaveSchedule(item, dateIso ? `${dateIso}T10:00` : '')
+      }
+      await refetch()
+      setMultiIds(new Set())
+      toast(t('console.calendarBatchScheduled', { n: multiItems.length }), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   function onDrop(e: React.DragEvent, dateIso: string | null) {
     e.preventDefault()
     const id = e.dataTransfer.getData('text/plain') || dragId
@@ -117,6 +145,23 @@ export function CalendarView({
         <p className="ml-auto text-[10px] text-text-disabled">{t('console.calendarDropHint')}</p>
       </div>
 
+      {/* 批量排期条（v0.4 A3）：多选后点日期格统一落位 */}
+      {multiItems.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
+          <span className="font-medium text-text-primary">
+            {t('console.calendarBatchSelected', { n: multiItems.length })}
+          </span>
+          <span className="text-text-disabled">{t('console.calendarBatchHint')}</span>
+          <button
+            type="button"
+            onClick={() => void batchSchedule(null)}
+            className="ml-auto text-text-secondary underline-offset-2 hover:text-text-primary hover:underline"
+          >
+            {t('console.calendarBatchClear')}
+          </button>
+        </div>
+      )}
+
       {/* 月网格 */}
       <div className="grid grid-cols-7 gap-px border border-border bg-border">
         {WEEKDAYS.map((w) => (
@@ -132,7 +177,11 @@ export function CalendarView({
               key={cell.iso}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => onDrop(e, cell.iso)}
-              className={`min-h-24 bg-surface-1 p-1 ${cell.inMonth ? '' : 'opacity-40'}`}
+              onClick={() => {
+                // 批量落位（v0.4 A3）：无多选时点击不做事
+                if (multiItems.length > 0) void batchSchedule(cell.iso)
+              }}
+              className={`min-h-24 cursor-default bg-surface-1 p-1 ${cell.inMonth ? '' : 'opacity-40'}`}
             >
               <div className={`flex items-center justify-between px-0.5 text-[10px] ${today ? 'font-bold text-primary' : 'text-text-disabled'}`}>
                 {cell.day}
@@ -149,11 +198,21 @@ export function CalendarView({
                       setDragId(item.id)
                     }}
                     onDragEnd={() => setDragId(null)}
+                    onClick={(e) => {
+                      // 批量多选（v0.4 A3）：⌘/Shift+点击切换选中
+                      if (e.metaKey || e.ctrlKey || e.shiftKey) {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        toggleMulti(item)
+                      }
+                    }}
                     title={`${item.title}\n${itemDate(item) ?? ''}`}
                     className={`flex cursor-grab items-center gap-1 truncate border-l-2 px-1 py-0.5 text-[10px] transition-colors hover:bg-surface-2 ${
-                      item.status === 'published'
-                        ? 'border-emerald-400 text-text-secondary'
-                        : 'border-warning text-text-primary'
+                      multiIds.has(item.id)
+                        ? 'border-primary bg-primary/15 text-text-primary'
+                        : item.status === 'published'
+                          ? 'border-emerald-400 text-text-secondary'
+                          : 'border-warning text-text-primary'
                     }`}
                   >
                     {itemTime(item) && <span className="shrink-0 font-mono text-text-disabled">{itemTime(item)}</span>}

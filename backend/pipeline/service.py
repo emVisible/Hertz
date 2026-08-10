@@ -97,6 +97,37 @@ class PipelineService:
     async def requeue(self, item_id: uuid.UUID) -> dict:
         return await self.engine.requeue(item_id)
 
+    async def batch_action(
+        self, action: str, ids: list[uuid.UUID]
+    ) -> dict:
+        """批量审核操作（v0.4 A2）：逐条走现有引擎方法，单条失败不中断。
+
+        action: approve | reject | back_to_prep | back_to_collect | requeue
+        """
+        from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError
+
+        actions = {"approve", "reject", "back_to_prep", "back_to_collect", "requeue"}
+        if action not in actions:
+            raise ValueError(f"unknown batch action: {action}")
+
+        ok, failed = 0, []
+        for item_id in ids:
+            try:
+                if action == "approve":
+                    await self.approve(item_id)
+                elif action == "reject":
+                    await self.reject(item_id)
+                elif action == "back_to_prep":
+                    await self.back_to_prep(item_id)
+                elif action == "back_to_collect":
+                    await self.back_to_collect(item_id)
+                else:
+                    await self.requeue(item_id)
+                ok += 1
+            except (InvalidItemStateError, ItemNotFoundError) as exc:
+                failed.append({"id": str(item_id), "error": str(exc)})
+        return {"ok": ok, "failed": failed}
+
     # ---------- publish (独立人工环节，v5.10) ----------
 
     async def update_meta(

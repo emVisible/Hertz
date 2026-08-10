@@ -157,6 +157,13 @@ export const pipelineApi = {
   /** 预处理打回采集（v0.3.9）：downloaded/scored → discovered */
   backToCollect: (id: string) =>
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/back-to-collect`),
+
+  /** 批量审核操作（v0.4 A2）：逐条执行，失败不中断 */
+  batch: (action: string, ids: string[]) =>
+    api.post<{ ok: number; failed: Array<{ id: string; error: string }> }>(
+      '/api/pipeline/items/batch',
+      { action, ids },
+    ),
   /** 单条制作（v0.3.4，预处理「制作」按钮）。 */
   produce: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/produce`),
   /** 单条评分（v0.3.5，预处理手动评分按钮）。 */

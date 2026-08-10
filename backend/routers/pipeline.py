@@ -149,6 +149,23 @@ async def requeue_item(item_id: uuid.UUID):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+class BatchBody(BaseModel):
+    action: str
+    ids: list[uuid.UUID]
+
+
+@router.post("/items/batch")
+async def batch_items(body: BatchBody):
+    """批量审核操作（v0.4 A2）：approve/reject/back_to_prep/back_to_collect/requeue。
+    逐条执行，失败条目标记不中断；空列表直接返回 0。"""
+    if not body.ids:
+        return {"ok": 0, "failed": []}
+    try:
+        return await _pipe().batch_action(body.action, body.ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/items/{item_id}/back-to-prep")
 async def back_to_prep(item_id: uuid.UUID):
     """审核打回预处理（v0.3.9 相邻双向）：queued → scored。"""

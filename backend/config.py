@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     pipeline_publish_target: str = "noop"  # noop | bilibili | export
     pipeline_min_score: float = 6.0
     pipeline_collect_limit: int = 25
+    # 采集源列表（v0.4 A4）：默认 "hot" 兜底；设置页可增删（如 pics/MadeMeSmile）。
+    # 采集时逐源独立健康度/冷却记账，一个源失败不影响其他。
+    pipeline_sources: list[str] = ["hot"]
     # 评分成本闸门（v0.2.1，参考原项目 Autarkeia）：单次运行 / 单日 LLM 评分硬限额，
     # 超限跳过评分（条目保持 downloaded，下轮或次日再评）——防 API 费用失控
     pipeline_score_max_per_run: int = 50

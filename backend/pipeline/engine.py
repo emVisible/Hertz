@@ -227,30 +227,59 @@ class StepEngine:
         if job_name == "collect":
             if self.collector is None:
                 raise RuntimeError("no collector configured")
-            ctx.log(f"[collect] channel={channel or 'hot'} limit={limit}")
-            # 采集韧性（v0.2.1，参考原项目冷却/熔断）：失败后进入冷却期，冷却中跳过
-            cooldown_s = await self._collect_cooldown_left(self.collector.name, channel or "hot")
-            if cooldown_s > 0:
-                ctx.log(f"[collect] {channel or 'hot'} cooling down ({cooldown_s}s left)")
-                summary = {"channel": channel or "hot", "cooldown_s": cooldown_s}
-                self._emit(ctx.run_id, {"type": "job_step", "step": "collect", **summary})
-                return summary
-            try:
-                summary = await run_collect(ctx, channel or "hot", limit, self.collector)
-            except Exception as exc:  # noqa: BLE001 — 记录失败到数据源健康度后重抛
-                await self._record_collect_failure(self.collector.name, channel or "hot", str(exc))
-                raise
-            if summary.get("collected", 0) == 0:
-                # 接口正常但 0 条（v0.2.8，参考原项目 failed_subs/供给告警）：
-                # 源可能挂/被 block 返回空列表——记健康度 + 冷却，不静默标 ✓
-                await self._record_collect_empty(
-                    self.collector.name, channel or "hot", summary
+            # 采集源（v0.4 A4）：遍历配置源列表，逐源独立健康度/冷却；
+            # channel 参数显式指定时只采该源（单源手动采集）
+            sources = [channel] if channel else list(
+                getattr(self.settings, "pipeline_sources", []) or ["hot"]
+            )
+            ctx.log(f"[collect] sources={sources} limit={limit}")
+            summaries: list[dict] = []
+            for src in sources:
+                cooldown_s = await self._collect_cooldown_left(
+                    self.collector.name, src
                 )
-                summary["empty"] = True
-            else:
-                await self._clear_collect_cooldown(self.collector.name, channel or "hot")
-            self._emit(ctx.run_id, {"type": "job_step", "step": "collect", **summary})
-            return summary
+                if cooldown_s > 0:
+                    ctx.log(f"[collect] {src} cooling down ({cooldown_s}s left)")
+                    summaries.append({"channel": src, "cooldown_s": cooldown_s})
+                    continue
+                try:
+                    summary = await run_collect(ctx, src, limit, self.collector)
+                except Exception as exc:  # noqa: BLE001 — 单源失败不中断其他源
+                    logger.warning("collect %s failed: %s", src, exc)
+                    await self._record_collect_failure(
+                        self.collector.name, src, str(exc)
+                    )
+                    summaries.append({"channel": src, "error": str(exc)[:200]})
+                    continue
+                if summary.get("collected", 0) == 0:
+                    # 接口正常但 0 条（v0.2.8）：源挂/被 block 返回空——健康度+冷却
+                    await self._record_collect_empty(
+                        self.collector.name, src, summary
+                    )
+                    summary["empty"] = True
+                else:
+                    await self._clear_collect_cooldown(
+                        self.collector.name, src
+                    )
+                summaries.append(summary)
+            total: dict = {
+                "collected": sum(s.get("collected", 0) for s in summaries),
+                "inserted": sum(s.get("inserted", 0) for s in summaries),
+                "skipped": sum(s.get("skipped", 0) for s in summaries),
+            }
+            failed = [s for s in summaries if s.get("error")]
+            cooling = [s for s in summaries if s.get("cooldown_s")]
+            if failed:
+                total["failed_sources"] = len(failed)
+            if any(s.get("empty") for s in summaries):
+                total["empty"] = True
+            if cooling:
+                total["cooldown_s"] = max(
+                    c["cooldown_s"] for c in cooling
+                )
+            total["sources"] = summaries
+            self._emit(ctx.run_id, {"type": "job_step", "step": "collect", **total})
+            return total
 
         step_cls = get_step(job_name)
         step = step_cls()

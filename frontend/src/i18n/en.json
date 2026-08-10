@@ -161,7 +161,9 @@
     "cookiePath": "cookie path",
     "checkCookie": "Check cookie",
     "cookieChecked": "Re-checked",
-    "publishNoopWarn": "Target is NOOP — publishing only records intent. Pick Bilibili in the dropdown and finish cookie login."
+    "publishNoopWarn": "Target is NOOP — publishing only records intent. Pick Bilibili in the dropdown and finish cookie login.",
+    "sources": "Collect sources (comma separated)",
+    "sourcesHint": "Reddit subreddit list; each source cools down independently. Empty falls back to hot."
   },
   "execution": {
     "modeStudio": "Studio",
@@ -661,7 +663,20 @@
     "sort.videoFirstHint": "Items with finished video first (previewable)",
     "sort.random": "Shuffle",
     "sort.randomHint": "Random shuffle (reshuffles on each toggle)",
-    "scrollMore": "Scroll for more (showing {{shown}} / {{total}})"
+    "scrollMore": "Scroll for more (showing {{shown}} / {{total}})",
+    "batchSelected": "{{n}} selected",
+    "batchHint": "Batch actions on selection",
+    "batchApprove": "Approve all",
+    "batchReject": "Reject all",
+    "batchBackToPrep": "Back to preprocess",
+    "batchClear": "Clear selection",
+    "batchDone": "Batch done: {{n}} succeeded",
+    "batchDoneWithErrors": "Batch done: {{ok}} ok / {{failed}} failed (skipped)",
+    "calendarBatchSelected": "{{n}} selected",
+    "calendarBatchHint": "Click any day cell to schedule all (⌘/Shift multi-select)",
+    "calendarBatchClear": "Clear schedules",
+    "calendarBatchScheduled": "Scheduled {{n}} items",
+    "keyHint": "Shortcuts: j/k move · a approve · r reject · b back to preprocess · Esc exit"
   },
   "canvas": {
     "tool": {

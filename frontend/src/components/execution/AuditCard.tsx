@@ -16,12 +16,21 @@ export function AuditCard({
   onReject,
   onUploadCover,
   onBackToPrep,
+  focused,
+  onSelect,
+  selected,
 }: {
   item: PipelineItem
   onApprove: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
   onUploadCover: (item: PipelineItem, file: File) => void
   onBackToPrep: (item: PipelineItem) => void
+  /** 键盘导航焦点（v0.4 A1）：j/k 移动，a/r/b 操作 */
+  focused?: boolean
+  /** 多选切换（v0.4 A2）：⌘/Shift+点击；传了才可批量 */
+  onSelect?: (item: PipelineItem) => void
+  /** 已勾选（v0.4 A2）：左侧高亮竖条 */
+  selected?: boolean
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -29,7 +38,18 @@ export function AuditCard({
   const script = item.script_json
 
   return (
-    <li className="group flex gap-5 px-4 py-4">
+    <li
+      id={`audit-item-${item.id}`}
+      onClick={(e) => {
+        if (onSelect && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+          e.preventDefault()
+          onSelect(item)
+        }
+      }}
+      className={`group flex gap-5 px-4 py-4 transition-shadow ${
+        focused ? 'ring-2 ring-primary/60 ring-inset' : ''
+      } ${selected ? 'bg-primary/5' : ''} ${onSelect ? 'cursor-default' : ''}`}
+    >
       {/* 媒体区（相册感）：w-1/3 宽度，16:9 圆角卡片 + 柔和阴影 + 留白 */}
       <div className="group/cover relative aspect-video w-1/3 shrink-0">
         <div className="aspect-video overflow-hidden rounded-lg shadow-sm">

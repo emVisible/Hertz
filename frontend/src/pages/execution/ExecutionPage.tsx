@@ -112,6 +112,7 @@ export function ExecutionPage() {
           retryClass={pipeline.retryClass}
           backToPrep={pipeline.backToPrep}
           backToCollect={pipeline.backToCollect}
+          batchAction={pipeline.batchAction}
           rescheduleExpired={pipeline.rescheduleExpired}
           setProduceOptions={pipeline.setProduceOptions}
           produceOne={pipeline.produceOne}

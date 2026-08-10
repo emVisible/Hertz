@@ -142,6 +142,7 @@ export function usePipelineExecution() {
       let summary = ''
       if (event.job === 'collect') {
         summary = `采集 ${s?.collected ?? 0} 条 · 新入库 ${s?.inserted ?? 0} · 跳过 ${s?.skipped ?? 0}`
+        if (s?.failed_sources) summary += ` ⚠ ${s.failed_sources} 个源失败`
         if (empty) summary += ' ⚠ 源返回空，已进入冷却'
         if (cooling) summary += ` ⏳ 源冷却中（${Math.ceil(Number(s?.cooldown_s ?? 0))}s）`
       } else if (s) {
@@ -292,6 +293,25 @@ export function usePipelineExecution() {
     }
   }
 
+  /** 批量操作（v0.4 A2）：多选后一次处理——成功/失败计数 + 逐条错误。 */
+  async function batchAction(
+    action: 'approve' | 'reject' | 'back_to_prep',
+    ids: string[],
+  ) {
+    if (ids.length === 0) return
+    try {
+      const res = await pipelineApi.batch(action, ids)
+      refresh()
+      const hint =
+        res.failed.length > 0
+          ? t('console.batchDoneWithErrors', { ok: res.ok, failed: res.failed.length })
+          : t('console.batchDone', { n: res.ok })
+      toast(hint, res.failed.length > 0 ? 'warning' : 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   async function saveMeta(item: PipelineItem, meta: Record<string, string | number | null>) {
     try {
       await pipelineApi.updateMeta(item.id, meta)
@@ -418,6 +438,7 @@ export function usePipelineExecution() {
     run,
     stop,
     act,
+    batchAction,
     saveMeta,
     publishItem,
     publishStatus,

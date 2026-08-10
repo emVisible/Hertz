@@ -23,6 +23,7 @@ interface ConfigData {
   pipeline_min_score?: number
   pipeline_collect_limit?: number
   pipeline_publish_target?: string
+  pipeline_sources?: string[]
   pipeline_reddit_client_id?: string
   pipeline_reddit_client_id_set?: boolean
   pipeline_reddit_client_secret_set?: boolean
@@ -171,6 +172,7 @@ export function SettingsPage() {
       pipeline_min_score: String(cfg.pipeline_min_score ?? 6),
       pipeline_collect_limit: String(cfg.pipeline_collect_limit ?? 25),
       pipeline_publish_target: cfg.pipeline_publish_target ?? 'noop',
+      pipeline_sources: (cfg.pipeline_sources ?? ['hot']).join(', '),
       pipeline_reddit_client_id: cfg.pipeline_reddit_client_id ?? '',
       pipeline_reddit_client_secret: '',
     })
@@ -190,6 +192,10 @@ export function SettingsPage() {
       pipeline_min_score: Number(form.pipeline_min_score),
       pipeline_collect_limit: Number(form.pipeline_collect_limit),
       pipeline_publish_target: form.pipeline_publish_target,
+      pipeline_sources: form.pipeline_sources
+        ?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean) || ['hot'],
     }
     if (form.pipeline_reddit_client_id?.trim())
       overrides.pipeline_reddit_client_id = form.pipeline_reddit_client_id.trim()
@@ -372,6 +378,17 @@ export function SettingsPage() {
                         { value: 'bilibili', label: 'Bilibili' },
                       ]}
                     />
+                  </div>
+                  <div className="mt-3">
+                    <Input
+                      label={t('settings.sources')}
+                      value={form.pipeline_sources ?? ''}
+                      onChange={(e) => set('pipeline_sources', e.target.value)}
+                      placeholder="pics, MadeMeSmile, Damnthatsinteresting"
+                    />
+                    <p className="mt-1 text-xs leading-relaxed text-text-disabled">
+                      {t('settings.sourcesHint')}
+                    </p>
                   </div>
                 </section>
 

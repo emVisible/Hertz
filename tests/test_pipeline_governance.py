@@ -1296,3 +1296,83 @@ async def test_updated_at_refreshes_on_requeue(client) -> None:
     assert resp.status_code == 200
     serialized = resp.json()
     assert all("updated_at" in i for i in serialized)
+
+
+# ---------- 批量审核（v0.4 A2） ----------
+
+
+@pytest.mark.asyncio
+async def test_batch_action_mixed(client) -> None:
+    """批量审核：合法条目成功、非法条目记 failed 不中断。"""
+    async with session_factory() as session:
+        good = Item(status=ItemStatus.QUEUED, source="reddit", source_id="ba-1", title="可过")
+        bad = Item(status=ItemStatus.PUBLISHED, source="reddit", source_id="ba-2", title="不可过")
+        session.add_all([good, bad])
+        await session.commit()
+        good_id, bad_id = good.id, bad.id
+
+    resp = await client.post(
+        "/api/pipeline/items/batch", json={"action": "approve", "ids": [str(good_id), str(bad_id)]}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] == 1
+    assert len(body["failed"]) == 1
+    assert body["failed"][0]["id"] == str(bad_id)
+
+    async with session_factory() as session:
+        row = await session.get(Item, good_id)
+        assert row.status == "approved"
+
+    # 空列表
+    resp = await client.post("/api/pipeline/items/batch", json={"action": "approve", "ids": []})
+    assert resp.json() == {"ok": 0, "failed": []}
+
+    # 未知 action
+    resp = await client.post(
+        "/api/pipeline/items/batch",
+        json={"action": "explode", "ids": [str(good_id)]},
+    )
+    assert resp.status_code == 422
+
+
+# ---------- 多源采集（v0.4 A4） ----------
+
+
+@pytest.mark.asyncio
+async def test_collect_multiple_sources(monkeypatch) -> None:
+    """配置多个采集源：逐源独立汇总，单源失败不中断。"""
+    from backend.factory.registry import ServiceRegistry
+    from backend.pipeline.collectors.reddit import FakeRedditCollector
+
+    class _Cfg:
+        pipeline_sources = ["pics", "MadeMeSmile"]
+
+    registry = ServiceRegistry.get()
+    original_cfg = registry.pipeline.engine.settings
+    original = registry.pipeline.engine.collector
+    try:
+        registry.pipeline.engine.settings = _Cfg()
+        registry.pipeline.engine.collector = FakeRedditCollector([])
+
+        class Ctx:
+            run_id = "multi-test"
+
+            def log(self, message, level="info"):
+                pass
+
+        engine = registry.pipeline.engine
+        summary = await engine._run_step(Ctx(), "collect", limit=5, channel="")
+        assert len(summary["sources"]) == 2  # 逐源独立记账
+        assert summary["collected"] == 0
+        assert summary["empty"] is True  # 全空 → 整体标记
+    finally:
+        registry.pipeline.engine.collector = original
+        registry.pipeline.engine.settings = original_cfg
+
+
+def test_config_allowlist_has_sources() -> None:
+    """pipeline_sources 可运行时覆盖（设置页写入口）。"""
+    from backend.routers.config import RUNTIME_ALLOWLIST
+
+    assert "pipeline_sources" in RUNTIME_ALLOWLIST

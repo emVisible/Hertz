@@ -176,7 +176,9 @@
     "cookiePath": "cookie 路径",
     "checkCookie": "检查 cookie",
     "cookieChecked": "已重新检查",
-    "publishNoopWarn": "当前发布目标为 NOOP——发布只记录意图。请在下拉框选择 Bilibili 并完成 cookie 登录。"
+    "publishNoopWarn": "当前发布目标为 NOOP——发布只记录意图。请在下拉框选择 Bilibili 并完成 cookie 登录。",
+    "sources": "采集源（逗号分隔）",
+    "sourcesHint": "Reddit subreddit 列表，采集时逐源独立冷却。留空回退 hot。"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -676,7 +678,20 @@
     "sort.videoFirstHint": "有成片的排在前面（可预览优先）",
     "sort.random": "随机",
     "sort.randomHint": "随机洗牌（每次开启重新洗牌）",
-    "scrollMore": "滚动加载更多（已显示 {{shown}} / {{total}}）"
+    "scrollMore": "滚动加载更多（已显示 {{shown}} / {{total}}）",
+    "batchSelected": "已选 {{n}} 条",
+    "batchHint": "批量处理所选条目",
+    "batchApprove": "批量通过",
+    "batchReject": "批量拒绝",
+    "batchBackToPrep": "批量打回预处理",
+    "batchClear": "取消选择",
+    "batchDone": "批量完成：{{n}} 条成功",
+    "batchDoneWithErrors": "批量完成：{{ok}} 成功 / {{failed}} 失败（已跳过）",
+    "calendarBatchSelected": "已选 {{n}} 条排期",
+    "calendarBatchHint": "点击任意日期格统一落位（⌘/Shift 多选）",
+    "calendarBatchClear": "批量清空排期",
+    "calendarBatchScheduled": "已为 {{n}} 条设置排期",
+    "keyHint": "快捷键：j/k 移动 · a 通过 · r 拒绝 · b 打回预处理 · Esc 退出"
   },
   "canvas": {
     "tool": {
