@@ -67,36 +67,13 @@ class DepthService(BaseCrudService):
     model = DepthLevel
 
     async def _seed(self) -> None:
-        """种入内置档位并同步代码版本（AXIOM §1.2 单一真相源）。"""
-        async with session_factory() as session:
-            rows = (await session.execute(select(DepthLevel))).scalars().all()
-            by_key = {r.key: r for r in rows}
-            changed = 0
-            for i, depth in enumerate(BUILTIN_DEPTHS):
-                row = by_key.get(depth["key"])
-                if row is None:
-                    session.add(
-                        DepthLevel(
-                            key=depth["key"],
-                            name=depth["name"],
-                            effect=depth["effect"],
-                            builtin=True,
-                            sort_order=i,
-                        )
-                    )
-                    changed += 1
-                elif row.builtin and (
-                    row.name != depth["name"]
-                    or row.effect != depth["effect"]
-                    or row.sort_order != i
-                ):
-                    row.name = depth["name"]
-                    row.effect = depth["effect"]
-                    row.sort_order = i
-                    changed += 1
-            if changed:
-                await session.commit()
-                logger.info("synced %d builtin depth level(s)", changed)
+        """种入内置档位并同步代码版本（v0.8：通用 seed 工具）。"""
+        from backend.orchestration.seed import builtin_seed
+
+        await builtin_seed(
+            DepthLevel, BUILTIN_DEPTHS, key_field="key",
+            sync=["name", "effect"], builtin_only=True, log_name="depth level(s)",
+        )
 
     async def list_levels(self) -> list[dict]:
         """全部档位（enabled 优先 + sort_order 排序）。"""

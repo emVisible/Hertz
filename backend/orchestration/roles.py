@@ -66,41 +66,32 @@ class RoleService(BaseCrudService):
     model = Role
 
     async def _seed(self) -> None:
-        """首次访问：种入默认角色 + 内置专职角色（幂等，已存在跳过）。"""
-        async with session_factory() as session:
-            existing = set((await session.execute(select(Role.key))).scalars().all())
-            agents = [p for p in PHASES if p.phase_type == "agent"]
-            missing = [a for a in agents if a.key not in existing]
-            for i, agent in enumerate(missing):
-                parts = [f"# {agent.role or agent.name}"]
-                if agent.method:
-                    parts.append(f"## 方法论\n\n{agent.method}")
-                if agent.style:
-                    parts.append(f"## 风格\n\n{', '.join(agent.style)}")
-                session.add(
-                    Role(
-                        key=agent.key,
-                        name=agent.key,
-                        role_name=agent.role or agent.name,
-                        description="\n\n".join(parts),
-                        sort_order=i,
-                    )
-                )
-            for i, role in enumerate(BUILTIN_ROLES):
-                if role["key"] in existing:
-                    continue
-                session.add(
-                    Role(
-                        key=role["key"],
-                        name=role["name"],
-                        role_name=role["role_name"],
-                        description=role["description"],
-                        sort_order=100 + i,
-                    )
-                )
-                existing.add(role["key"])
-            await session.commit()
-            logger.info("seeded %d default role(s)", len(missing))
+        """首次访问：种入默认角色 + 内置专职角色（v0.8：通用 seed 工具）。
+
+        默认角色由内置 agent 工序（PHASES）派生；AI 调和工程师等专职角色
+        来自 BUILTIN_ROLES。已存在跳过（不覆盖用户编辑）。
+        """
+        from backend.orchestration.seed import builtin_seed
+
+        agents = [p for p in PHASES if p.phase_type == "agent"]
+        derived = []
+        for i, agent in enumerate(agents):
+            parts = [f"# {agent.role or agent.name}"]
+            if agent.method:
+                parts.append(f"## 方法论\n\n{agent.method}")
+            if agent.style:
+                parts.append(f"## 风格\n\n{', '.join(agent.style)}")
+            derived.append({
+                "key": agent.key,
+                "name": agent.key,
+                "role_name": agent.role or agent.name,
+                "description": "\n\n".join(parts),
+                "sort_order": i,
+            })
+        await builtin_seed(
+            Role, derived + BUILTIN_ROLES, key_field="key",
+            sync=None, log_name="role(s)",
+        )
 
     async def list_roles(self) -> list[dict]:
         await self._seed()

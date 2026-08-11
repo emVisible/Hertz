@@ -17,32 +17,15 @@ class BriefService(BaseCrudService):
     model = Brief
 
     async def _seed(self) -> None:
-        """内置策略 seed（v0.7）：以 name 为锚（幂等，已有同名跳过/同步内容）。
+        """内置策略 seed（v0.8：通用 seed 工具，name 锚 + content 同步）。"""
+        from backend.orchestration.seed import builtin_seed
 
-        内置以代码为准：同名内置策略内容随代码升级同步（扩写立即生效）；
-        用户改过的同名内置策略会被覆盖——自定义请改名。
-        """
-        async with session_factory() as session:
-            rows = (await session.execute(select(Brief))).scalars().all()
-            by_name = {r.name: r for r in rows}
-            changed = 0
-            for brief in BUILTIN_BRIEFS:
-                row = by_name.get(brief["name"])
-                if row is None:
-                    session.add(
-                        Brief(
-                            name=brief["name"],
-                            content=brief["content"],
-                            platform_id=brief.get("platform_id", ""),
-                        )
-                    )
-                    changed += 1
-                elif row.content != brief["content"]:
-                    row.content = brief["content"]
-                    changed += 1
-            if changed:
-                await session.commit()
-                logger.info("synced %d builtin brief(s)", changed)
+        rows = [{k: v for k, v in b.items() if k != "key"} for b in BUILTIN_BRIEFS]
+        await builtin_seed(
+            Brief, rows, key_field="name",
+            sync=["content", "platform_id"], builtin_only=False,
+            sort=False, log_name="brief(s)",
+        )
 
     async def list(self, limit: int = 100) -> list[dict]:
         await self._seed()

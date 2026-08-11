@@ -28,30 +28,18 @@ class ProduceTemplateService(BaseCrudService):
     model = ProduceTemplate
 
     async def _seed(self) -> None:
-        async with session_factory() as session:
-            rows = (await session.execute(select(ProduceTemplate))).scalars().all()
-            by_name = {r.name: r for r in rows if r.builtin}
-            changed = 0
-            for i, tpl in enumerate(BUILTIN_TEMPLATES):
-                row = by_name.get(tpl["name"])
-                raw = json.dumps(tpl["options"], ensure_ascii=False)
-                if row is None:
-                    session.add(
-                        ProduceTemplate(
-                            name=tpl["name"],
-                            options_json=raw,
-                            builtin=True,
-                            sort_order=i,
-                        )
-                    )
-                    changed += 1
-                elif row.options_json != raw or row.sort_order != i:
-                    row.options_json = raw
-                    row.sort_order = i
-                    changed += 1
-            if changed:
-                await session.commit()
-                logger.info("synced %d builtin produce template(s)", changed)
+        """内置模板 seed（v0.8：通用 seed 工具，name 锚 + options 同步）。"""
+        from backend.orchestration.seed import builtin_seed
+
+        rows = []
+        for tpl in BUILTIN_TEMPLATES:
+            row = dict(tpl)
+            row["options_json"] = json.dumps(row.pop("options"), ensure_ascii=False)
+            rows.append(row)
+        await builtin_seed(
+            ProduceTemplate, rows, key_field="name",
+            sync=["options_json"], builtin_only=True, log_name="produce template(s)",
+        )
 
     async def list_templates(self) -> list[dict]:
         await self._seed()

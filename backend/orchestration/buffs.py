@@ -25,49 +25,15 @@ class BuffService(BaseCrudService):
     model = Buff
 
     async def _seed(self) -> None:
-        """种入内置 buff/debuff 并同步代码版本（AXIOM §1.2 单一真相源）。
+        """种入内置 buff/debuff 并同步代码版本（v0.8：通用 seed 工具）。"""
+        from backend.orchestration.seed import builtin_seed
 
-        内置以代码为准：新增的插入，已有的 builtin 行同步更新
-        name/kind/polarity/effect/category（扩写升级立即生效）；用户自定义不受影响。
-        """
-        async with session_factory() as session:
-            rows = (await session.execute(select(Buff))).scalars().all()
-            by_key = {r.key: r for r in rows}
-            changed = 0
-            all_builtins = [*BUILTIN_BUFFS, *RANDOM_BUFFS, *BUILTIN_DEBUFFS]
-            for i, buff in enumerate(all_builtins):
-                row = by_key.get(buff["key"])
-                polarity = buff.get("polarity", "buff")
-                if row is None:
-                    session.add(
-                        Buff(
-                            key=buff["key"],
-                            name=buff["name"],
-                            kind=buff.get("kind", "lightweight"),
-                            effect=buff["effect"],
-                            category=buff.get("category", "stable"),
-                            polarity=polarity,
-                            builtin=True,
-                            sort_order=i,
-                        )
-                    )
-                    changed += 1
-                elif row.builtin and (
-                    row.name != buff["name"]
-                    or row.effect != buff["effect"]
-                    or row.kind != buff.get("kind", "lightweight")
-                    or row.category != buff.get("category", "stable")
-                    or row.polarity != polarity
-                ):
-                    row.name = buff["name"]
-                    row.effect = buff["effect"]
-                    row.kind = buff.get("kind", "lightweight")
-                    row.category = buff.get("category", "stable")
-                    row.polarity = polarity
-                    changed += 1
-            if changed:
-                await session.commit()
-                logger.info("synced %d builtin buff(s)", changed)
+        all_builtins = [*BUILTIN_BUFFS, *RANDOM_BUFFS, *BUILTIN_DEBUFFS]
+        await builtin_seed(
+            Buff, all_builtins, key_field="key",
+            sync=["name", "kind", "polarity", "effect", "category"],
+            builtin_only=True, log_name="buff(s)",
+        )
 
     async def list_buffs(self) -> list[dict]:
         await self._seed()
