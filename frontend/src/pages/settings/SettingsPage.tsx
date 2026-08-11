@@ -30,6 +30,8 @@ interface ConfigData {
   pipeline_subtitle_alignment?: number
   pipeline_reddit_client_id?: string
   pipeline_reddit_client_id_set?: boolean
+  pipeline_reddit_cookie?: string
+  pipeline_reddit_cookies_browser?: string
   pipeline_reddit_client_secret_set?: boolean
   ai_model_prices?: Record<string, { prompt?: number; completion?: number }>
   llm_api_key_masked?: string | null
@@ -67,6 +69,66 @@ function PathField({
           {t('settings.browse')}
         </Button>
       ) : null}
+    </div>
+  )
+}
+
+/** Reddit Cookie 状态卡（v0.8.1）：存在性/年龄 + 一键浏览器导出。 */
+function RedditCookieCard() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data, isError, refetch } = useQuery({
+    queryKey: ['reddit-cookie-status'],
+    queryFn: () => api.get<{ exists: boolean; age_s: number | null; path: string; cookie_set: boolean }>('/api/pipeline/reddit-cookie/status'),
+    refetchInterval: 15_000,
+  })
+  const [busy, setBusy] = useState(false)
+
+  async function exportCookie(force = false) {
+    setBusy(true)
+    try {
+      const res = await api.post<{ ok: boolean; source: string }>(
+        `/api/pipeline/reddit-cookie/export${force ? '?force=true' : ''}`,
+      )
+      if (res.ok) {
+        toast(t('settings.cookieExported', { source: res.source }), 'success')
+      } else {
+        toast(t('settings.cookieExportFailed'), 'warning')
+      }
+      await refetch()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const ageH = data?.age_s == null ? null : Math.round(data.age_s / 3600)
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge tone={data?.exists ? 'success' : 'warning'}>
+          {data?.exists ? t('settings.cookieReady') : t('settings.cookieMissing')}
+        </Badge>
+        {data?.exists && ageH != null && (
+          <span className="text-text-secondary">{t('settings.cookieAge', { h: ageH })}</span>
+        )}
+        {data?.cookie_set && <Badge tone="neutral">{t('settings.cookieRawSet')}</Badge>}
+      </div>
+      <p className="text-xs leading-relaxed text-text-secondary">
+        {t('settings.cookiePath')}:{' '}
+        <code className="font-mono text-text-primary">{data?.path ?? '…'}</code>
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={() => void exportCookie()} loading={busy}>
+          <Icon name="downloads" size={12} />
+          {t('settings.cookieExport')}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => void exportCookie(true)} disabled={busy}>
+          {t('settings.cookieExportForce')}
+        </Button>
+      </div>
+      {isError && <p className="text-xs text-error">{t('error.queryFailed', { detail: 'cookie' })}</p>}
     </div>
   )
 }
@@ -239,6 +301,8 @@ export function SettingsPage() {
       pipeline_subtitle_alignment: String(cfg.pipeline_subtitle_alignment ?? 2),
       pipeline_reddit_client_id: cfg.pipeline_reddit_client_id ?? '',
       pipeline_reddit_client_secret: '',
+      pipeline_reddit_cookie: '',
+      pipeline_reddit_cookies_browser: cfg.pipeline_reddit_cookies_browser ?? '',
     })
   }, [cfg])
 
@@ -269,6 +333,10 @@ export function SettingsPage() {
       overrides.pipeline_reddit_client_id = form.pipeline_reddit_client_id.trim()
     if (form.pipeline_reddit_client_secret)
       overrides.pipeline_reddit_client_secret = form.pipeline_reddit_client_secret
+    if (form.pipeline_reddit_cookie)
+      overrides.pipeline_reddit_cookie = form.pipeline_reddit_cookie
+    if (form.pipeline_reddit_cookies_browser)
+      overrides.pipeline_reddit_cookies_browser = form.pipeline_reddit_cookies_browser
     try {
       await api.patch('/api/config', { overrides })
       setDirty(false)
@@ -533,6 +601,30 @@ export function SettingsPage() {
                       placeholder={cfg?.pipeline_reddit_client_secret_set ? '••••••••' : ''}
                     />
                   </div>
+                </section>
+
+                {/* Reddit Cookie 方案（v0.8.1）：OAuth 个人拿不到 → 浏览器登录 Cookie */}
+                <section className={section}>
+                  <h2 className={heading}>
+                    <Icon name="downloads" size={15} />
+                    {t('settings.redditCookie')}
+                  </h2>
+                  <p className={sub}>{t('settings.redditCookieHint')}</p>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    <Input
+                      label={t('settings.redditCookieRaw')}
+                      value={form.pipeline_reddit_cookie ?? ''}
+                      onChange={(e) => set('pipeline_reddit_cookie', e.target.value)}
+                      placeholder="token_v2=…; session_tracker=…（登录 Reddit 后从浏览器复制）"
+                    />
+                    <Input
+                      label={t('settings.redditCookieBrowser')}
+                      value={form.pipeline_reddit_cookies_browser ?? ''}
+                      onChange={(e) => set('pipeline_reddit_cookies_browser', e.target.value)}
+                      placeholder="chrome, safari, edge（逗号分隔，空=自动）"
+                    />
+                  </div>
+                  <RedditCookieCard />
                 </section>
 
                 <section className={section}>

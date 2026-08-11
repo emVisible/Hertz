@@ -1568,3 +1568,56 @@ async def test_usage_absent_when_no_usage_chunk() -> None:
     assert provider.last_usage is None
     await provider._client.aclose()
 
+
+
+# ---------- Reddit Cookie 方案（v0.8.1，参考原项目） ----------
+
+
+def test_cookie_header_from_netscape(tmp_path, monkeypatch) -> None:
+    """Netscape cookies.txt → Cookie header（reddit 域过滤 + 去重）。"""
+    from backend.config import settings
+    from backend.pipeline.reddit_cookies import _netscape_cookie_header
+
+    path = tmp_path / "reddit_cookies.txt"
+    path.write_text(
+        "# Netscape HTTP Cookie File\n"
+        ".reddit.com\tTRUE\t/\tFALSE\t0\ttoken_v2\tabc123\n"
+        ".redd.it\tTRUE\t/\tFALSE\t0\tsession_tracker\ttrk\n"
+        ".google.com\tTRUE\t/\tFALSE\t0\tNID\tnope\n"
+        ".reddit.com\tTRUE\t/\tFALSE\t0\ttoken_v2\tdef456\n",
+        encoding="utf-8",
+    )
+    header = _netscape_cookie_header(path)
+    assert "token_v2=def456" in header  # 同名去重（last wins）
+    assert "session_tracker=trk" in header
+    assert "NID" not in header  # 非 reddit 域过滤
+
+
+@pytest.mark.asyncio
+async def test_cookie_status_and_export_endpoint(client, tmp_path, monkeypatch) -> None:
+    """状态端点只报存在性不报内容；导出端点软降级（无 yt-dlp 时 ok=False）。"""
+    from backend.config import settings
+    from backend.pipeline import reddit_cookies
+
+    monkeypatch.setattr(reddit_cookies, "cookies_file_path", lambda: tmp_path / "rc.txt")
+    monkeypatch.setattr(settings, "pipeline_reddit_cookie", "")
+
+    resp = await client.get("/api/pipeline/reddit-cookie/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["exists"] is False  # 文件不存在
+    assert "token" not in str(body)  # 不返回任何 cookie 内容
+
+    # 导出：yt-dlp 不可用 → ok=False 软降级（不抛 500）
+    async def fake_run(cmd):
+        import subprocess
+
+        class P:
+            returncode = 127
+
+        return P()
+
+    monkeypatch.setattr(reddit_cookies, "_run_export", fake_run)
+    resp = await client.post("/api/pipeline/reddit-cookie/export")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is False

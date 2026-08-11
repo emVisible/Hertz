@@ -102,6 +102,15 @@ def download_headers(url: str) -> dict[str, str]:
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Dest": "empty",
         })
+        # v0.8.1 Reddit Cookie 方案（参考原项目）：登录 Cookie 解锁 CDN 403
+        try:
+            from backend.pipeline.reddit_cookies import cookie_header_for_http
+
+            cookie = cookie_header_for_http()
+            if cookie:
+                headers["Cookie"] = cookie
+        except Exception:  # noqa: BLE001 — cookie 读取失败不影响匿名链
+            pass
     return headers
 
 

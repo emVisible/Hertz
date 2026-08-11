@@ -147,6 +147,15 @@ class RedditCollector(SourceCollector):
             timeout=20,
             proxy=proxy,
         )
+        # v0.8.1 Cookie 方案（参考原项目）：登录 Cookie 降低采集 403 概率
+        try:
+            from backend.pipeline.reddit_cookies import cookie_header_for_http
+
+            cookie = cookie_header_for_http()
+            if cookie:
+                self._client.headers["Cookie"] = cookie
+        except Exception:  # noqa: BLE001 — cookie 不可用不影响匿名采集
+            pass
 
     async def aclose(self) -> None:
         await self._client.aclose()

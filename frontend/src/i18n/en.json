@@ -179,7 +179,17 @@
     "ttsPreview": "Preview",
     "ttsPreviewText": "This is a voice preview. Welcome.",
     "prices": "Model prices",
-    "pricesHint": "One per line: `model: input/output` (USD per million tokens), used for dashboard cost estimates. e.g. deepseek-chat: 0.27/1.10"
+    "pricesHint": "One per line: `model: input/output` (USD per million tokens), used for dashboard cost estimates. e.g. deepseek-chat: 0.27/1.10",
+    "redditCookie": "Reddit Cookie (login unlock)",
+    "redditCookieHint": "OAuth apps are hard for individuals — use browser login cookies instead: download/collect requests carry the Cookie header and CDN 403s stop. Paste raw cookies or auto-export from browser (yt-dlp).",
+    "redditCookieRaw": "Cookie string (optional)",
+    "redditCookieBrowser": "Browser (auto-export)",
+    "cookieRawSet": "raw set",
+    "cookieAge": "exported {{h}}h ago",
+    "cookieExport": "Export from browser",
+    "cookieExportForce": "Force re-export",
+    "cookieExported": "Cookie ready (source: {{source}})",
+    "cookieExportFailed": "Export failed — browser not logged into Reddit or yt-dlp missing"
   },
   "execution": {
     "modeStudio": "Studio",

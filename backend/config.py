@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     # 配置官方 API 凭证后走 oauth.reddit.com 认证通道（详见 collectors/reddit.py）
     pipeline_reddit_client_id: str = ""
     pipeline_reddit_client_secret: str = ""
+    # Reddit Cookie 方案（v0.8.1，参考原项目）：OAuth 个人申请困难——
+    # 用浏览器登录 Cookie（字符串直填 / yt-dlp 自动导出 Netscape 文件）
+    pipeline_reddit_cookie: str = ""
+    pipeline_reddit_cookies_browser: str = ""  # 逗号分隔候选，空=自动 chrome/safari/edge…
     # Test/dev escape hatch: allow http(s) non-public URLs in the pipeline
     # download step (SSRF guard stays on by default — AXIOM §8.1).
     pipeline_allow_loopback_urls: bool = False

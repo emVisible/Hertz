@@ -48,6 +48,25 @@ async def counts():
     return await _pipe().counts()
 
 
+# ---------- Reddit Cookie（v0.8.1，参考原项目：OAuth 个人拿不到→登录 Cookie） ----------
+
+
+@router.get("/reddit-cookie/status")
+async def reddit_cookie_status() -> dict:
+    """Cookie 状态（只报存在性/年龄/来源，绝不返回内容）。"""
+    from backend.pipeline.reddit_cookies import cookies_status
+
+    return cookies_status()
+
+
+@router.post("/reddit-cookie/export")
+async def reddit_cookie_export(force: bool = False) -> dict:
+    """触发浏览器 cookie 自动导出（yt-dlp --cookies-from-browser）。"""
+    from backend.pipeline.reddit_cookies import ensure_reddit_cookies
+
+    return await ensure_reddit_cookies(force=force)
+
+
 @router.get("/trends")
 async def trends(days: int = Query(30, ge=7, le=90)):
     """看板趋势（v0.5 B）：采集/入库/发布 按天聚合。"""

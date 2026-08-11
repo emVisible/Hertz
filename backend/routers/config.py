@@ -41,6 +41,7 @@ RUNTIME_ALLOWLIST = {
     "llm_api_key",
     "pipeline_reddit_client_id",
     "pipeline_reddit_client_secret",
+    "pipeline_reddit_cookie",
 }
 
 SECRET_FIELDS = {
@@ -49,6 +50,7 @@ SECRET_FIELDS = {
     "secret_key",
     "database_url",
     "pipeline_reddit_client_secret",
+    "pipeline_reddit_cookie",
 }
 
 

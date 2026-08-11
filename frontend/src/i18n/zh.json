@@ -172,7 +172,7 @@
     "redditClientSecret": "Client Secret（只写不读）",
     "biliPublish": "B 站发布",
     "biliPublishHint": "发布目标为 B 站时使用 biliup CLI 上传（cookie 认证）。先在终端执行下方命令扫码登录。",
-    "cookieReady": "cookie 已就绪",
+    "cookieReady": "cookie 就绪",
     "cookieMissing": "cookie 缺失",
     "biliupMissing": "未安装 biliup",
     "cookiePath": "cookie 路径",
@@ -194,7 +194,17 @@
     "ttsPreview": "试听",
     "ttsPreviewText": "这是一段语音试听。欢迎使用。",
     "prices": "模型单价",
-    "pricesHint": "每行 `模型: 输入价/输出价`（美元/百万 tokens），用于看板成本估算。如 deepseek-chat: 0.27/1.10"
+    "pricesHint": "每行 `模型: 输入价/输出价`（美元/百万 tokens），用于看板成本估算。如 deepseek-chat: 0.27/1.10",
+    "redditCookie": "Reddit Cookie（登录解锁）",
+    "redditCookieHint": "Reddit OAuth 个人应用申请困难——改用浏览器登录 Cookie：下载/采集请求带 Cookie，CDN 403 消失。可字符串直填，或一键从浏览器自动导出（yt-dlp）。",
+    "redditCookieRaw": "Cookie 字符串（可选）",
+    "redditCookieBrowser": "浏览器（自动导出）",
+    "cookieRawSet": "已直填",
+    "cookieAge": "{{h}} 小时前导出",
+    "cookieExport": "从浏览器导出",
+    "cookieExportForce": "强制重新导出",
+    "cookieExported": "cookie 已就绪（来源：{{source}}）",
+    "cookieExportFailed": "导出失败——浏览器未登录 Reddit 或 yt-dlp 不可用"
   },
   "execution": {
     "modeStudio": "Studio 编排",
