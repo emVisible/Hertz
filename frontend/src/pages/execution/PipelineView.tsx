@@ -50,6 +50,7 @@ interface PipelineViewProps {
   sources: ReturnType<typeof usePipelineExecution>['sources']
   failures: Record<string, number>
   publishStatus?: ReturnType<typeof usePipelineExecution>['publishStatus']
+  autoCollectMinutes: number
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
   publishItem: (item: PipelineItem, selfmade?: boolean, target?: string) => void
@@ -334,36 +335,28 @@ export function PipelineView(p: PipelineViewProps) {
                   <Icon name="downloads" size={14} />
                   {t('console.stageCollect')}
                 </Button>
-                <Button
-                  size="md"
-                  variant="secondary"
-                  onClick={() => void p.runStep('download')}
-                  disabled={p.running}
-                  title={t('console.downloadHint')}
-                >
-                  <Icon name="downloads" size={14} />
-                  {t('console.stageDownload')}
-                  <span className="font-mono text-[10px] text-text-disabled">{p.counts.discovered ?? 0}</span>
-                </Button>
-                <Button
-                  size="md"
-                  variant="ghost"
-                  onClick={() => void p.collectAndDownload()}
-                  disabled={p.running}
-                  title={t('console.collectAllHint')}
-                >
-                  <Icon name="play" size={14} />
-                  {t('console.collectAll')}
-                </Button>
-                <Select
-                  label={t('console.limit')}
-                  value={String(p.limit)}
-                  onChange={(e) => p.setLimit(Number(e.target.value))}
-                  options={[5, 10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))}
-                  className="w-28"
-                />
+                <span className="flex items-center gap-1.5 text-xs">
+                  <Icon name="downloads" size={13} className="text-text-disabled" />
+                  <span className="text-text-secondary">
+                    {t('console.pendingDownloads')}: {p.counts.discovered ?? 0}
+                  </span>
+                </span>
+                {/* 自动采集状态（v0.8.1）：scheduler 周期自动入库，0=关闭 */}
+                {p.autoCollectMinutes > 0 ? (
+                  <Badge tone="success">
+                    <span title={t('console.autoCollectHint')}>
+                      {t('console.autoCollectOn', { n: p.autoCollectMinutes })}
+                    </span>
+                  </Badge>
+                ) : (
+                  <Badge tone="neutral">
+                    <span title={t('console.autoCollectHint')}>
+                      {t('console.autoCollectOff')}
+                    </span>
+                  </Badge>
+                )}
                 {p.running && (
-                  <p className="pb-1 text-xs text-text-secondary">{p.statusJob}</p>
+                  <p className="text-xs text-text-secondary">{p.statusJob}</p>
                 )}
               </div>
             </SectionCard>
@@ -450,6 +443,25 @@ export function PipelineView(p: PipelineViewProps) {
                     sort={preSort}
                     onSort={setPreSort}
                   />
+                  {/* 下载 N 条（v0.8.1 职责重组：下载从采集 menu 移到预处理，
+                      每次下载量人工可控） */}
+                  <Select
+                    aria-label={t('console.limit')}
+                    value={String(p.limit)}
+                    onChange={(e) => p.setLimit(Number(e.target.value))}
+                    options={[5, 10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))}
+                    className="w-20"
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void p.runStep('download')}
+                    disabled={p.running}
+                    title={t('console.downloadHint')}
+                  >
+                    <Icon name="downloads" size={12} />
+                    {t('console.downloadN', { n: p.limit })}
+                  </Button>
                   <Button
                     size="sm"
                     onClick={() => void p.scoreBatch()}

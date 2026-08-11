@@ -22,6 +22,7 @@ interface ConfigData {
   assets_root?: string | null
   pipeline_min_score?: number
   pipeline_collect_limit?: number
+  pipeline_auto_collect_minutes?: number
   pipeline_publish_target?: string
   pipeline_sources?: string[]
   pipeline_subtitle_font_size?: number
@@ -293,6 +294,7 @@ export function SettingsPage() {
       assets_root: cfg.assets_root ?? '',
       pipeline_min_score: String(cfg.pipeline_min_score ?? 6),
       pipeline_collect_limit: String(cfg.pipeline_collect_limit ?? 25),
+      pipeline_auto_collect_minutes: String(cfg.pipeline_auto_collect_minutes ?? 30),
       pipeline_publish_target: cfg.pipeline_publish_target ?? 'noop',
       pipeline_sources: (cfg.pipeline_sources ?? ['hot']).join(', '),
       pipeline_subtitle_font_size: String(cfg.pipeline_subtitle_font_size ?? 26),
@@ -319,6 +321,7 @@ export function SettingsPage() {
       assets_root: form.assets_root?.trim() || null,
       pipeline_min_score: Number(form.pipeline_min_score),
       pipeline_collect_limit: Number(form.pipeline_collect_limit),
+      pipeline_auto_collect_minutes: Number(form.pipeline_auto_collect_minutes) || 0,
       pipeline_publish_target: form.pipeline_publish_target,
       pipeline_sources: form.pipeline_sources
         ?.split(',')
@@ -532,6 +535,17 @@ export function SettingsPage() {
                     />
                     <p className="mt-1 text-xs leading-relaxed text-text-disabled">
                       {t('settings.sourcesHint')}
+                    </p>
+                  </div>
+                  <div className="mt-3">
+                    <Input
+                      label={t('settings.autoCollect')}
+                      type="number"
+                      value={form.pipeline_auto_collect_minutes ?? '30'}
+                      onChange={(e) => set('pipeline_auto_collect_minutes', e.target.value)}
+                    />
+                    <p className="mt-1 text-xs leading-relaxed text-text-disabled">
+                      {t('settings.autoCollectHint')}
                     </p>
                   </div>
                 </section>

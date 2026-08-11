@@ -24,6 +24,7 @@ RUNTIME_ALLOWLIST = {
     "assets_root",
     "pipeline_min_score",
     "pipeline_collect_limit",
+    "pipeline_auto_collect_minutes",
     "pipeline_publish_target",
     # 采集源列表（v0.4 A4）：设置页增删 subreddit 源
     "pipeline_sources",

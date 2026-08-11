@@ -189,7 +189,9 @@
     "cookieExport": "Export from browser",
     "cookieExportForce": "Force re-export",
     "cookieExported": "Cookie ready (source: {{source}})",
-    "cookieExportFailed": "Export failed — browser not logged into Reddit or yt-dlp missing"
+    "cookieExportFailed": "Export failed — browser not logged into Reddit or yt-dlp missing",
+    "autoCollect": "Auto collect interval (min, 0=off)",
+    "autoCollectHint": "Scheduler auto-collects all sources into the DB — small data, no manual care needed; download volume stays manual in the preprocess tab"
   },
   "execution": {
     "modeStudio": "Studio",
@@ -745,7 +747,11 @@
     "typeVideo": "Video",
     "typeImage": "Image",
     "typeText": "Text",
-    "preReviewCount": "{{done}} / {{total}}"
+    "preReviewCount": "{{done}} / {{total}}",
+    "autoCollectOn": "Auto collect {n}m",
+    "autoCollectOff": "Auto collect off",
+    "autoCollectHint": "Scheduler collects periodically (0=off, manual only); download & processing stay manual in preprocess",
+    "downloadN": "Download {n}"
   },
   "canvas": {
     "tool": {

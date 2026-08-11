@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     pipeline_publish_target: str = "noop"  # noop | bilibili | export
     pipeline_min_score: float = 6.0
     pipeline_collect_limit: int = 25
+    # 自动采集间隔（v0.8.1）：scheduler 周期自动入库（0=关闭，仅手动）
+    pipeline_auto_collect_minutes: int = 30
     # 采集源列表（v0.4 A4）：默认 "hot" 兜底；设置页可增删（如 pics/MadeMeSmile）。
     # 采集时逐源独立健康度/冷却记账，一个源失败不影响其他。
     pipeline_sources: list[str] = ["hot"]

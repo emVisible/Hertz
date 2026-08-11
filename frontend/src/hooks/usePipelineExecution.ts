@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
-import { pipelineApi, type PipelineEvent, type PipelineItem } from '../api'
+import { api, pipelineApi, type PipelineEvent, type PipelineItem } from '../api'
 import { useEventSource } from './useEventSource'
 import { useToast } from '../components/ui'
 import { useExecutionStore } from '../stores/execution'
@@ -81,6 +81,12 @@ export function usePipelineExecution() {
     queryFn: pipelineApi.publishStatus,
     refetchInterval: pollingInterval,
   })
+  // 自动采集配置（v0.8.1）：间隔分钟（0=关闭）——采集 tab 状态徽章
+  const { data: cfg } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => api.get<{ pipeline_auto_collect_minutes?: number }>('/api/config'),
+  })
+  const autoCollectMinutes = cfg?.pipeline_auto_collect_minutes ?? 30
 
   const store = useExecutionStore()
   const { limit, logSeq, tab } = store.pipeline
@@ -427,6 +433,7 @@ export function usePipelineExecution() {
     saveMeta,
     publishItem,
     publishStatus,
+    autoCollectMinutes,
     uploadCover,
     retryClass,
     backToPrep,

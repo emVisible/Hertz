@@ -1655,3 +1655,73 @@ def test_dead_media_detects_misaligned_permalink() -> None:
         is_dead_reddit_media("", "https://www.reddit.com/r/x/comments/abc123/t/", "abc123")
         is False
     )
+
+
+# ---------- 越界 raw_path 迁移（v0.8.1 成片缺失修复） ----------
+
+
+def test_legacy_path_migration(tmp_path, monkeypatch) -> None:
+    """越界 raw_path 迁移到数据根（幂等）+ 相对 legacy 路径重写为绝对。"""
+    import scripts.migrate_legacy_raw_paths as mig
+    from backend.config import settings
+    from scripts.migrate_legacy_raw_paths import _is_outside, _migrate_one
+
+    outside_dir = tmp_path.parent / "outside_assets"
+    outside = str(outside_dir / "x.mp4")
+    outside_dir.mkdir(exist_ok=True)
+    (outside_dir / "x.mp4").write_bytes(b"media")
+
+    class Item:
+        def __init__(self):
+            self.raw_path = None
+
+    item = Item()
+    item.raw_path = outside  # 越界绝对路径
+    # 绝对越界 → 复制到目标并存绝对路径
+    monkeypatch.setattr(mig, "_TARGET_ROOT", tmp_path / "legacy-raw")
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    changed = _migrate_one(item, "raw_path", 42)
+    assert changed is True
+    assert item.raw_path.startswith(str(tmp_path / "legacy-raw" / "42"))
+    assert Path(item.raw_path).exists()
+    assert _is_outside(item.raw_path) is False  # 迁移后不再越界
+
+    # 相对 legacy 路径（v0.8.1 曾误存）→ 判定为需重写
+    assert _is_outside("data/pipeline/legacy-raw/42/x.mp4") is True
+
+
+# ---------- 自动采集 scheduler（v0.8.1 职责重组） ----------
+
+
+@pytest.mark.asyncio
+async def test_auto_collect_tick_calls_collect(monkeypatch) -> None:
+    """自动采集 tick：调 run_batch('collect')，手动运行中跳过。"""
+    from backend.factory.registry import ServiceRegistry
+
+    reg = ServiceRegistry.get()
+    calls = {"n": 0, "busy": False}
+
+    async def fake_run_batch(job):
+        calls["n"] += 1
+        return {"summary": {"collected": 3, "sources": [{"channel": "pics"}]}}
+
+    async def fake_busy_run_batch(job):
+        raise RuntimeError("pipeline busy")
+
+    monkeypatch.setattr(reg.pipeline, "run_batch", fake_run_batch)
+    await reg._collect_tick()
+    assert calls["n"] == 1
+
+    # 手动运行中 → tick 失败不拖垮（记日志返回）
+    monkeypatch.setattr(reg.pipeline, "run_batch", fake_busy_run_batch)
+    await reg._collect_tick()  # 不抛异常
+    assert calls["n"] == 1  # busy 不计数（fake 直接抛，走 except 路径）
+
+
+def test_auto_collect_config_default() -> None:
+    """默认 30 分钟自动采集；0=关闭。"""
+    from backend.config import settings
+    from backend.routers.config import RUNTIME_ALLOWLIST
+
+    assert settings.pipeline_auto_collect_minutes == 30
+    assert "pipeline_auto_collect_minutes" in RUNTIME_ALLOWLIST

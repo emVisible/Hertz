@@ -93,6 +93,7 @@ class ServiceRegistry:
         self.providers = ProviderRegistry()
 
     def initialize(self, settings: Settings) -> None:
+        self.settings = settings
         self._migrate_legacy_output()
         # v3.0：图像/TTS 全部走 Provider 注册表（TaskRouter 按角色解析）。
         # 无构造注入——应用层只依赖 TaskRouter 的稳定接口。
@@ -116,7 +117,30 @@ class ServiceRegistry:
             trigger="interval",
             hours=6,
         )
+        # 自动采集（v0.8.1 职责重组）：采集只入 DB 数据量小，无需手动操心——
+        # 周期自动跑全部配置源（多源遍历 + 逐源冷却），0=关闭仅手动
+        auto_min = int(getattr(self.settings, "pipeline_auto_collect_minutes", 30) or 0)
+        if auto_min > 0:
+            self.scheduler.add_job(
+                "collect_auto",
+                self._collect_tick,
+                trigger="interval",
+                minutes=auto_min,
+            )
         self.log.get().info("ServiceRegistry initialized (AI via ProviderRegistry)")
+
+    async def _collect_tick(self) -> None:
+        """自动采集：手动运行中跳过（running 守卫）；多源遍历由引擎完成。"""
+        try:
+            result = await self.pipeline.run_batch("collect")
+            summary = result.get("summary") or {}
+            if summary.get("collected", 0) > 0:
+                self.log.get().info(
+                    "auto collect: %d item(s) from %s",
+                    summary["collected"], summary.get("sources", []),
+                )
+        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+            self.log.get().exception("auto collect tick failed (best effort)")
 
     async def _auto_approve_tick(self) -> None:
         try:

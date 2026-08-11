@@ -204,7 +204,9 @@
     "cookieExport": "从浏览器导出",
     "cookieExportForce": "强制重新导出",
     "cookieExported": "cookie 已就绪（来源：{{source}}）",
-    "cookieExportFailed": "导出失败——浏览器未登录 Reddit 或 yt-dlp 不可用"
+    "cookieExportFailed": "导出失败——浏览器未登录 Reddit 或 yt-dlp 不可用",
+    "autoCollect": "自动采集间隔（分钟，0=关闭）",
+    "autoCollectHint": "scheduler 周期自动采集全部源入数据库——数据量小无需手动操心；下载量在预处理 tab 人工控制"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -760,7 +762,11 @@
     "typeVideo": "视频",
     "typeImage": "图片",
     "typeText": "文本",
-    "preReviewCount": "{{done}} / {{total}}"
+    "preReviewCount": "{{done}} / {{total}}",
+    "autoCollectOn": "自动采集 {n} 分钟",
+    "autoCollectOff": "自动采集关闭",
+    "autoCollectHint": "scheduler 周期自动采集入数据库（0=关闭仅手动）；下载与处理仍在预处理人工控制",
+    "downloadN": "下载 {n} 条"
   },
   "canvas": {
     "tool": {
