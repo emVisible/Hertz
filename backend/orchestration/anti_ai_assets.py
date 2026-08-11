@@ -17,6 +17,7 @@ ANTI_AI_BRIEF_CONTENT = """## 用途
 本策略适用于需要「人味」输出的创作任务（正文/标题/脚本/成片文案）。
 执行前把本策略注入为创作方向的最高优先级约束；与素材策略冲突时，
 本策略只约束「怎么说不像 AI」，不改变「说什么」。
+下面每一层规则都是可直接执行的准则，不需要任何外部参考。
 
 ## 核心原理：均值回归
 
@@ -168,8 +169,7 @@ BUILTIN_BRIEF_GROUPS: list[dict] = [
     {
         "key": "anti_ai_group",
         "name": "反 AI 策略组",
-        "description": "人味输出约束：均值回归原理 + 四层排查 + 五维自检（依据 "
-        "Wikipedia:Signs of AI writing / humanizer / stop-slop）。",
+        "description": "人味输出约束：均值回归原理 + 四层排查 + 五维自检。",
         "brief_keys": ["反 AI 策略"],  # 按 name 锚定（seed 幂等）
     },
 ]

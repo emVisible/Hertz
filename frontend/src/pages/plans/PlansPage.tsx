@@ -153,6 +153,7 @@ export function PlansPage() {
   const [phaseStyle, setPhaseStyle] = useState('')
   const [phaseModel, setPhaseModel] = useState('')
   const [phaseRetries, setPhaseRetries] = useState(0)
+  const [phaseReference, setPhaseReference] = useState('')
   const [phaseTimeout, setPhaseTimeout] = useState(300)
   const [phaseDirty, setPhaseDirty] = useState(false)
 
@@ -578,6 +579,7 @@ export function PlansPage() {
     setPhaseStyle(def.style?.join('\n') ?? '')
     setPhaseModel(def.model ?? '')
     setPhaseRetries(def.retries ?? 0)
+    setPhaseReference((def.reference ?? []).join(', '))
     setPhaseTimeout(def.timeout ?? 300)
     setPhaseDirty(false)
   }
@@ -605,6 +607,7 @@ export function PlansPage() {
         model: phaseModel,
         retries: phaseRetries,
         timeout: phaseTimeout,
+        reference: phaseReference.split(',').map((s) => s.trim()).filter(Boolean),
       })
       await queryClient.invalidateQueries({ queryKey: ['phases'] })
       setPhaseDirty(false)
@@ -1464,6 +1467,18 @@ export function PlansPage() {
                           className="w-28"
                           options={timeoutOptions(phaseTimeout)}
                         />
+                      </div>
+                      {/* 参考素材文件（v0.7.2）：相对 data_dir 路径，运行时注入 system prompt */}
+                      <div className="md:col-span-2">
+                        <Input
+                          label={t('phases.reference')}
+                          value={phaseReference}
+                          onChange={(e) => { setPhaseReference(e.target.value); setPhaseDirty(true) }}
+                          placeholder="reference/33-anti-ai-rules.md"
+                        />
+                        <p className="mt-1 text-[10px] leading-relaxed text-text-disabled">
+                          {t('phases.referenceHint')}
+                        </p>
                       </div>
                     </div>
                   </Card>

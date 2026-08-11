@@ -1842,7 +1842,72 @@ async def test_ai_harmonizer_role_seeded(client) -> None:
     harmonizer = next((r for r in roles if r["key"] == "ai_harmonizer"), None)
     assert harmonizer is not None
     assert harmonizer["role_name"] == "AI 调和工程师"
-    assert (
-        "均值回归" in harmonizer["description"]
-        or "Signs of AI writing" in harmonizer["description"]
-    )
+    assert "工作准则如下" in harmonizer["description"]  # 去索引：内容自包含
+    assert "Wikipedia" not in harmonizer["description"]  # 不再引用外部文档
+
+
+# ---------- 33 条铁律 reference 机制（v0.7.2） ----------
+
+
+@pytest.mark.asyncio
+async def test_reference_injection_and_path_guard(tmp_path) -> None:
+    """reference 文件读取注入 + ../ 越界拒绝。"""
+    from backend.orchestration.engine import PhaseEngine
+
+    rules = tmp_path / "reference" / "rules.md"
+    rules.parent.mkdir(parents=True)
+    rules.write_text("# 铁律\n\n1. 具体。", encoding="utf-8")
+    (tmp_path / "secret.txt").write_text("越界", encoding="utf-8")
+
+    engine = PhaseEngine(files=_FakeFiles2(tmp_path), hub=None, ai=None)  # type: ignore[arg-type]
+
+    ok = await engine._read_reference("reference/rules.md")
+    assert "铁律" in ok
+
+    escaped = await engine._read_reference("../secret.txt")
+    assert escaped == ""  # 越界拒绝
+
+
+class _FakeFiles2:
+    """指向 tmp_path 的最小 FileStore 桩（data_dir 可被 _read_reference 使用）。"""
+
+    def __init__(self, root) -> None:
+        self.data_dir = root
+
+    async def safe_read(self, path):
+        import asyncio
+        from pathlib import Path
+
+        def _read() -> bytes:
+            if Path(path).exists():
+                return Path(path).read_bytes()
+            return b""
+
+        return await asyncio.to_thread(_read)
+
+
+def test_33_rules_file_generated() -> None:
+    """33 条铁律文件存在且覆盖 33 个编号。"""
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "data" / "reference" / "33-anti-ai-rules.md"
+    assert path.exists(), "33-anti-ai-rules.md 缺失"
+    content = path.read_text(encoding="utf-8")
+    import re
+
+    numbers = [int(m) for m in re.findall(r"^### (\d+)\.", content, re.M)]
+    assert len(numbers) == 33, f"应为 33 条，实际 {len(numbers)}"
+    assert set(numbers) == set(range(1, 34))  # humanizer 原始编号（1-19、26-33、20-25）
+
+
+def test_de_indexed_assets() -> None:
+    """去索引化：注入内容不再引用外部文档。"""
+    from backend.orchestration.anti_ai_assets import ANTI_AI_BRIEF_CONTENT
+    from backend.orchestration.buffs import BUILTIN_DEBUFFS
+    from backend.orchestration.phases import PHASE_INDEX
+
+    assert "Wikipedia" not in ANTI_AI_BRIEF_CONTENT
+    assert "Wikipedia" not in PHASE_INDEX["finetune"].description
+    assert "Wikipedia" not in PHASE_INDEX["finetune"].method
+    for buff in BUILTIN_DEBUFFS:
+        assert "Wikipedia" not in buff["effect"]

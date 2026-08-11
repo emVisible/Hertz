@@ -57,6 +57,7 @@ def build_agent_messages(
     templates: dict[str, str] | None = None,
     buffs: list[dict] | None = None,
     depth: str = "",
+    reference: str = "",
 ) -> list[ChatMessage]:
     thinking = (templates or {}).get("agent.thinking_protocol", _THINKING_PROTOCOL)
     system_tpl = (templates or {}).get("agent.system_template", "")
@@ -84,6 +85,10 @@ def build_agent_messages(
     depth_line = DEPTH_INSTRUCTIONS.get(depth, "") or depth
     if depth_line:
         extra += f"\n\n{depth_line}\n"
+
+    # 参考素材文件（v0.7.2）：engine 已读取文件内容，作为【参考规则】段注入
+    if reference.strip():
+        extra += f"\n\n{reference.strip()}\n"
 
     if system_tpl:
         system = system_tpl.format(

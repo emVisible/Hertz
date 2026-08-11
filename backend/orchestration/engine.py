@@ -269,6 +269,35 @@ class PhaseEngine:
 
     # ---------- agent phases ----------
 
+    async def _read_reference(self, rel_path: str) -> str:
+        """读取参考素材文件（v0.7.2）：相对 data_dir 锚定，防 ../ 越界。
+
+        文件缺失/越界 → 记日志返回空（不阻塞工序）。
+        """
+        import asyncio
+        from pathlib import Path
+
+        def _resolve(root: Path, rel: str) -> Path | None:
+            target = (root / rel).resolve()
+            if root not in target.parents and target != root:
+                return None
+            return target
+
+        try:
+            root = await asyncio.to_thread(Path(self.files.data_dir).resolve)
+            target = await asyncio.to_thread(_resolve, root, rel_path)
+            if target is None:
+                logger.warning("reference path escapes data_dir: %s", rel_path)
+                return ""
+            raw = await self.files.safe_read(target)
+            if not raw:
+                logger.warning("reference file missing: %s", rel_path)
+                return ""
+            return raw.decode("utf-8", "replace").strip()
+        except Exception:  # noqa: BLE001 — 参考文件读取失败不阻塞
+            logger.warning("reference read failed: %s", rel_path)
+            return ""
+
     async def _run_agent(
         self,
         key: str,
@@ -297,6 +326,15 @@ class PhaseEngine:
         # 空串视为未配置——这正是 Studio 模型下拉真正生效的路径。
         configured_model = (agent.get("model") or getattr(phase, "model", "") or "").strip()
         self._emit("log", None, message=f"[{index}/{total}] → Agent: {key} ({role})")
+        # v0.7.2 参考素材文件：相对 data_dir 路径，运行时读取注入【参考规则】段。
+        # 文件是单一真相源——改文件即改规则，下次运行自动生效。
+        reference_text = ""
+        for ref in getattr(phase, "reference", None) or []:
+            if not isinstance(ref, str) or not ref.strip():
+                continue
+            content = await self._read_reference(ref.strip())
+            if content:
+                reference_text += f"\n\n【参考规则 · {ref.strip()}】\n{content}"
         messages = build_agent_messages(
             agent={**agent, "role": role, "method": method, "style": style},
             phase_name=phase.name,
@@ -308,6 +346,7 @@ class PhaseEngine:
             templates=self._prompt_templates,
             buffs=self._buff_effects,
             depth=self._depth_effect,  # 已解析的指令文本（空 = 不注入）
+            reference=reference_text,
         )
         text = ""
         # Declared retries must have an executor: transient LLM failures get

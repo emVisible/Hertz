@@ -77,6 +77,8 @@ export interface PhaseDef {
   style?: string[]
   model?: string
   retries?: number
+  /** 参考素材文件（v0.7.2）：相对 data_dir 路径列表，运行时注入 system prompt */
+  reference?: string[]
 }
 
 export interface PhaseOrderItem {
@@ -220,6 +222,7 @@ export const plansApi = {
       model?: string
       retries?: number
       timeout?: number
+      reference?: string[]
     },
   ) => api.put<PhaseDef>(`/api/phases/${key}`, body),
   removePhase: (key: string) => api.delete<{ ok: boolean }>(`/api/phases/${key}`),

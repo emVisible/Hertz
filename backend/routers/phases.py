@@ -46,6 +46,7 @@ async def update_phase(phase_key: str, body: dict):
             model=body.get("model"),
             retries=body.get("retries"),
             timeout_s=body.get("timeout"),
+            reference=body.get("reference"),
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

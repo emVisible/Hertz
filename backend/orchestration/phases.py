@@ -27,6 +27,10 @@ class PhaseDef:
     style: list[str] = field(default_factory=list)
     model: str = ""
     retries: int = 0
+    # 参考素材文件（v0.7.2）：相对 data_dir 的路径列表，运行时读取注入
+    # system prompt【参考规则】段——如 ["reference/33-anti-ai-rules.md"]。
+    # 文件是单一真相源：改文件即改规则，下次运行自动生效。
+    reference: list[str] = field(default_factory=list)
 
 
 PHASES: tuple[PhaseDef, ...] = (
@@ -123,9 +127,8 @@ PHASES: tuple[PhaseDef, ...] = (
         description=(
             "Finetune（v0.6）：识别并清除 AI 生成痕迹——"
             "词汇/句式/内容膨胀/格式四层排查，重写正文为「人写的」版本。"
-            "依据 Wikipedia:Signs of AI writing 与 WikiProject AI Cleanup 指南"
-            "（均值回归、AI 词汇密度、系动词回避、否定排比、三法则、意义膨胀、"
-            "推销语、模糊归因、挑战公式、破折号/粗体/emoji 痕迹、对话残留等）。"
+            "执行准则见参考素材文件 33-anti-ai-rules.md（33 条铁律，"
+            "改文件即改规则）。"
         ),
         phase_type="agent",
         agent_key="finetune",
@@ -185,6 +188,7 @@ PHASES: tuple[PhaseDef, ...] = (
         ),
         style=["人味", "具体", "直白"],
         retries=2,
+        reference=["reference/33-anti-ai-rules.md"],
     ),
     PhaseDef(
         key="distribution",
@@ -260,6 +264,7 @@ def phase_agent_config(p: PhaseDef) -> dict:
         "model": p.model,
         "timeout": p.timeout,
         "retries": p.retries,
+        "reference": list(p.reference),
     }
 
 

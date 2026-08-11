@@ -70,8 +70,7 @@ BUILTIN_DEBUFFS: list[dict] = [
         "name": "禁止 AI 句式",
         "kind": "heavy",
         "effect": (
-            "以下 AI 典型句式结构一律禁止（依据 Wikipedia:Signs of AI writing），"
-            "每类附「AI 版 → 人写版」示例：\n"
+            "以下 AI 典型句式结构一律禁止，每类附「AI 版 → 人写版」示例：\n"
             "① 系动词回避：serves as/represents/marks/functions as/boasts/features "
             "替代简单 is/has。\n"
             "　AI：这座建筑 serves as 城市的艺术展馆，features 四个独立展厅\n"

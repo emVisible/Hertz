@@ -70,6 +70,7 @@ class PhasesService:
                         style=conf["style"],
                         model=conf["model"],
                         retries=conf["retries"],
+                        reference=conf["reference"],
                     )
                 )
             # 存量内置工序补齐 role/method/style（升级时 seed 已存在行；归档的不复活）
@@ -89,6 +90,8 @@ class PhasesService:
                     row.style = conf["style"]
                     row.model = conf["model"]
                     row.retries = conf["retries"]
+                if not row.reference and conf["reference"]:
+                    row.reference = conf["reference"]  # v0.7.2 参考文件同步
                 elif row.role in _LEGACY_EN_ROLES:
                     # 语言统一：旧英文 role 迁移为中文（用户已自定义的跳过）
                     row.role = _LEGACY_EN_ROLES[row.role]
@@ -122,6 +125,7 @@ class PhasesService:
                 "style": r.style,
                 "model": r.model,
                 "retries": r.retries,
+                "reference": list(r.reference or []),
             }
             for r in rows
         ]
@@ -154,6 +158,7 @@ class PhasesService:
                 style=r.style or [],
                 model=r.model,
                 retries=r.retries,
+                reference=list(r.reference or []),
             )
         self._index = index
         return index
@@ -208,6 +213,7 @@ class PhasesService:
         model: str | None = None,
         retries: int | None = None,
         timeout_s: int | None = None,
+        reference: list | None = None,
     ) -> dict:
         async with session_factory() as session:
             row = (await session.execute(
@@ -231,6 +237,8 @@ class PhasesService:
                 row.retries = int(retries)
             if timeout_s is not None:
                 row.timeout = int(timeout_s)
+            if reference is not None:
+                row.reference = [str(r).strip() for r in reference if str(r).strip()]
             await session.commit()
         self._index = None
         return {

@@ -865,7 +865,9 @@
     "restoreDefault": "Restore default catalog",
     "archived": "Archived",
     "confirmRemoveBuiltin": "Remove built-in phase? Restore via 'Restore default catalog'.",
-    "confirmRestore": "Reset all built-in phases and delete custom ones. Continue?"
+    "confirmRestore": "Reset all built-in phases and delete custom ones. Continue?",
+    "reference": "Reference files",
+    "referenceHint": "Paths relative to data_dir (comma separated). Content is injected into the system prompt as rules at runtime — edit the file to change the rules."
   },
   "phaseGroups": {
     "infrastructure": "Infrastructure",

@@ -35,6 +35,8 @@ class PhaseStore(BaseModel):
     style: Mapped[list] = mapped_column(JSONB, default=list)
     model: Mapped[str] = mapped_column(String(64), default="")
     retries: Mapped[int] = mapped_column(Integer, default=0)
+    # 参考素材文件（v0.7.2）：相对 data_dir 路径列表，运行时注入 system prompt
+    reference: Mapped[list] = mapped_column(JSONB, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

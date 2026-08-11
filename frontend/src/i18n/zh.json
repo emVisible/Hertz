@@ -865,7 +865,9 @@
     "restoreDefault": "恢复默认工序库",
     "archived": "已移除",
     "confirmRemoveBuiltin": "移除内置工序？可用「恢复默认工序库」复原。",
-    "confirmRestore": "将重置所有内置工序并删除自定义工序，确认？"
+    "confirmRestore": "将重置所有内置工序并删除自定义工序，确认？",
+    "reference": "参考素材文件",
+    "referenceHint": "相对 data_dir 的路径（逗号分隔多个）。运行时读取内容注入 system prompt【参考规则】段——改文件即改规则。"
   },
   "phaseGroups": {
     "infrastructure": "基础设施",
