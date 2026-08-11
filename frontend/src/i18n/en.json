@@ -731,7 +731,10 @@
     "lowScorePool": "Low-score pool",
     "lowScorePoolHint": "Items marked low score — review & decide, or restore",
     "lowScoreRestoreAll": "Restore all ({{n}})",
-    "previewMedia": "Preview media (play video / view image)"
+    "previewMedia": "Preview media (play video / view image)",
+    "typeVideo": "Video",
+    "typeImage": "Image",
+    "typeText": "Text"
   },
   "canvas": {
     "tool": {

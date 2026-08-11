@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
 import { Badge, Button, CopyButton, Icon } from '../ui'
-import { MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
+import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { ScoreDims } from './ScoreDims'
 
 /** 审核卡片（v0.3.2 重构：内容审核专用——发布元数据全部移到发布卡）：
@@ -82,6 +82,12 @@ export function AuditCard({
           <p className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary" title={item.title}>
             {item.title}
           </p>
+          {/* 类型徽章（v0.8）：图片/视频一眼区分 */}
+          {ITEM_TYPE_BADGE[item.item_type] && (
+            <Badge tone={ITEM_TYPE_BADGE[item.item_type].tone}>
+              {t(ITEM_TYPE_BADGE[item.item_type].labelKey)}
+            </Badge>
+          )}
           <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-text-secondary">

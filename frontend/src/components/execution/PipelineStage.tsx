@@ -9,13 +9,20 @@ import { Icon, Modal, type BadgeTone } from '../ui'
 /** 流水线状态 → 徽章色调（单一真相源，wave12 合并各组件重复定义）。 */
 export const PIPELINE_ITEM_TONE: Record<string, BadgeTone> = {
   discovered: 'neutral',
-  downloaded: 'primary',
-  scored: 'warning',
-  queued: 'primary',
+  downloaded: 'neutral',
+  scored: 'primary',
+  queued: 'warning',
   approved: 'success',
+  published: 'success',
   rejected: 'error',
   failed: 'error',
-  published: 'success',
+}
+
+/** 条目类型徽章（v0.8）：视频/图片/文本——标题旁一眼区分，方便工作流筛选。 */
+export const ITEM_TYPE_BADGE: Record<string, { labelKey: string; tone: BadgeTone }> = {
+  video_raw: { labelKey: 'console.typeVideo', tone: 'primary' },
+  image_gallery: { labelKey: 'console.typeImage', tone: 'success' },
+  text_only: { labelKey: 'console.typeText', tone: 'neutral' },
 }
 
 /** 卡片级缩略图尺寸（审核/预处理/发布卡片共用，避免魔数重复）。 */

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem, ProduceOptions } from '../../api'
 import { Badge, Button, Icon } from '../ui'
-import { MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
+import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { normalizeOptions, ProduceOptionsPicker } from './ProduceOptionsPicker'
 
 /** 预处理卡片（v0.3.4 重构，对齐审核卡相册感）：
@@ -68,6 +68,12 @@ export function PreReviewCard({
           <p className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary" title={item.title}>
             {item.title}
           </p>
+          {/* 类型徽章（v0.8）：图片/视频一眼区分 */}
+          {ITEM_TYPE_BADGE[item.item_type] && (
+            <Badge tone={ITEM_TYPE_BADGE[item.item_type].tone}>
+              {t(ITEM_TYPE_BADGE[item.item_type].labelKey)}
+            </Badge>
+          )}
           <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>
           {item.is_lowscore && (
             <span className="shrink-0 border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning">
