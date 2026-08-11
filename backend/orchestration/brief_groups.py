@@ -1,21 +1,15 @@
 """BriefGroupService — 策略组 CRUD（v0.7）。
 
-import uuid
-
-
 策略组 = 策略的集合（brief_ids 引用列表），类比「团队 = 角色的集合」。
 计划挂策略组时，组内策略按序拼接注入（组优先于单个 brief）。
 """
 
-import logging
 import uuid
 
 from sqlalchemy import select
 
 from backend.models.brief import Brief, BriefGroup
 from backend.models.session import session_factory
-
-logger = logging.getLogger(__name__)
 
 
 class BriefGroupService:

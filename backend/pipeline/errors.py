@@ -50,11 +50,13 @@ def classify_error(error: str, step: str = "") -> str:
         return "blocked"
     if any(k in text for k in ("429", "rate limit", "too many")):
         return "rate_limit"
+    if "command timed out" in text:
+        return "ffmpeg"  # ffmpeg 命令超时归媒体处理
     if "timeout" in text or "timed out" in text:
         return "timeout"
     if any(k in text for k in ("edge_tts", "edge-tts", "tts ")):
         return "tts"
-    if "ffmpeg" in text or "command timed out" in text:
+    if "ffmpeg" in text:
         return "ffmpeg"
     if any(k in text for k in ("llm", "provider", "not configured")):
         return "llm"

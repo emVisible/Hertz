@@ -25,7 +25,8 @@ def test_classify_error_categories() -> None:
     assert classify_error("HTTP 403 Forbidden") == "blocked"
     assert classify_error("429 Too Many Requests") == "rate_limit"
     assert classify_error("rate limit exceeded") == "rate_limit"
-    assert classify_error("command timed out after 300s") == "timeout"
+    assert classify_error("command timed out after 300s") == "ffmpeg"  # 命令超时归媒体处理
+    assert classify_error("request timed out") == "timeout"
     assert classify_error("TTS provider not configured") == "tts"
     assert classify_error("edge-tts failed") == "tts"
     assert classify_error("ffmpeg failed (1): boom") == "ffmpeg"

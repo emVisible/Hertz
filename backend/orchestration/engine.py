@@ -34,10 +34,7 @@ logger = logging.getLogger(__name__)
 
 _STYLE_BLOCK_RE = re.compile(r"^## Style \d+[^\n]*\n(.+?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 # Phase outputs consumed by the package step
-_PACKAGE_SOURCES = (
-    ("editor.md", "审校意见"),
-    ("distribution.md", "分发策略"),
-)
+_PACKAGE_SOURCES = ("editor.md", "distribution.md")
 
 # System phases and the artifact files they produce (package gate checks these)
 _SYSTEM_ARTIFACTS = {
@@ -532,7 +529,7 @@ class PhaseEngine:
         if raw_visual:
             visual = raw_visual.decode("utf-8", "replace")
         distribution = "\n\n".join(
-            [await self._read_or(run_dir, path) for path, _ in _PACKAGE_SOURCES]
+            [await self._read_or(run_dir, path) for path in _PACKAGE_SOURCES]
         )
         title = self._pick_title(topic, body)
 

@@ -1,6 +1,7 @@
 """Content item model — the entity flowing through the execution pipeline.
 
-Lifecycle: discovered → scored → downloaded → queued → approved → published
+Lifecycle: discovered → downloaded → scored → queued → approved → published
+（v5.9：下载在评分之前；评分/制作手动触发，半自动流水线）
 Any stage may fail → failed; rejected at review.
 """
 
