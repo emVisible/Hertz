@@ -26,16 +26,12 @@ import {
 import { CalendarView } from './CalendarView'
 import { ProduceBatchModal } from '../../components/execution/ProduceBatchModal'
 import { usePipelineExecution } from '../../hooks/usePipelineExecution'
-import { useModelSwitch } from '../../hooks/useModelSwitch'
 
 // ================= Pipeline 域 =================
 
 interface PipelineViewProps {
-  step: string
-  setStep: (v: string) => void
   limit: number
   setLimit: (v: number) => void
-  steps: string[]
   running: boolean
   statusJob: string
   counts: Record<string, number>
@@ -51,14 +47,9 @@ interface PipelineViewProps {
   stagePublished: ReturnType<typeof usePipelineExecution>['stagePublished']
   tab: string
   setTab: (v: string) => void
-  jobs: ReturnType<typeof usePipelineExecution>['jobs']
   sources: ReturnType<typeof usePipelineExecution>['sources']
   failures: Record<string, number>
-  supplyWarnings: string[]
   publishStatus?: ReturnType<typeof usePipelineExecution>['publishStatus']
-  logs: ReturnType<typeof usePipelineExecution>['logs']
-  run: () => void
-  stop: () => void
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
   publishItem: (item: PipelineItem, selfmade?: boolean, target?: string) => void
@@ -76,7 +67,6 @@ interface PipelineViewProps {
   scoreOne: (item: PipelineItem) => Promise<void>
   scoreBatch: () => Promise<void>
   runStep: (stepName: string, channel?: string) => Promise<void>
-  modelSwitch: ReturnType<typeof useModelSwitch>
 }
 
 type PipelineTabId = 'run' | 'preReview' | 'inReview' | 'postReview' | 'exceptions'

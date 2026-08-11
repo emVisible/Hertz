@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
@@ -37,7 +37,7 @@ export function ProduceBatchModal({
     queryFn: pipelineApi.produceTemplates,
   })
 
-  const list = useMemo(() => items, [items])
+  const list = items
 
   function applyTemplate(id: string) {
     const tpl = templates.find((x) => x.id === id)
@@ -169,7 +169,7 @@ export function ProduceBatchModal({
 
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="ghost" onClick={onClose}>
-            {t('docs.cancel')}
+            {t('common.cancel')}
           </Button>
           <Button size="sm" disabled={selected.size === 0} onClick={apply}>
             <Icon name="check" size={12} />

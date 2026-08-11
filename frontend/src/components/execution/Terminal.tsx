@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Card, Icon } from '../ui'
 
@@ -26,6 +27,7 @@ export interface TerminalProps {
  * 不再随内容无限向下）+ 智能自动滚底（用户上滚时暂停，滚回底部恢复）。
  */
 export function Terminal({ title, lines, kindClass, streaming, onClear, bottom }: TerminalProps) {
+  const { t } = useTranslation()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickBottom = useRef(true)
 
@@ -54,7 +56,7 @@ export function Terminal({ title, lines, kindClass, streaming, onClear, bottom }
               onClick={onClear}
               className="border border-border px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:border-text-disabled"
             >
-              清空
+              {t('common.clear')}
             </button>
           )}
           {streaming && (

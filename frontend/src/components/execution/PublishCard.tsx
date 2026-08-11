@@ -64,7 +64,7 @@ export function PublishCard({
                 {t('common.save')}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setTitleDraft(null)}>
-                {t('docs.cancel')}
+                {t('common.cancel')}
               </Button>
             </div>
           ) : (
@@ -99,7 +99,7 @@ export function PublishCard({
                 {t('common.save')}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setTagsDraft(null)}>
-                {t('docs.cancel')}
+                {t('common.cancel')}
               </Button>
             </div>
           ) : (
@@ -156,7 +156,7 @@ export function PublishCard({
           )}
           {tidDraft !== null && (
             <Button size="sm" variant="ghost" onClick={() => setTidDraft(null)}>
-              {t('docs.cancel')}
+              {t('common.cancel')}
             </Button>
           )}
         </div>

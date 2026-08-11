@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
-import { pipelineApi, API_BASE } from '../../api'
+import { api, pipelineApi } from '../../api'
 import { aiRegistryApi } from '../../api/ai'
 import type { PipelineItem } from '../../api/pipeline'
 import { Card } from '../../components/ui'
@@ -98,13 +98,13 @@ export function DashboardPage() {
     queryKey: ['ai-trace-summary'],
     queryFn: () => aiRegistryApi.trace(undefined, 500),
   })
-  // 模型单价（v0.5 E 成本估算）
+  // 模型单价（v0.5 E 成本估算）：与设置页共享 ['config'] 缓存
   const { data: cfg } = useQuery({
     queryKey: ['config'],
     queryFn: () =>
-      fetch(`${API_BASE}/api/config`).then((r) => r.json()) as Promise<{
-        ai_model_prices?: Record<string, { prompt?: number; completion?: number }>
-      }>,
+      api.get<{ ai_model_prices?: Record<string, { prompt?: number; completion?: number }> }>(
+        '/api/config',
+      ),
   })
 
   const maxCount = useMemo(

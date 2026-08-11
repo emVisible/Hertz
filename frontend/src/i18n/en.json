@@ -30,7 +30,8 @@
     "showInFolder": "Show in folder",
     "copy": "Copy",
     "copied": "Copied",
-    "copyFailed": "Copy failed"
+    "copyFailed": "Copy failed",
+    "clear": "Clear"
   },
   "error": {
     "title": "Something went wrong",
@@ -476,7 +477,8 @@
     "compareFile": "File",
     "compareHint": "red = removed · green = added",
     "compareNoCommon": "No common output files between the two runs",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "phaseDetail": "phase detail"
   },
   "console": {
     "step": "Step",
@@ -647,7 +649,7 @@
     "produceOneDone": "Producing started — will return to review",
     "act": {
       "title": "Activity",
-      "events": "Live events",
+      "events": "{{n}} events",
       "toggle": "Toggle"
     },
     "publishTarget": "Publish target",
@@ -789,7 +791,10 @@
       "bankPlaceholder": "Comma separated words",
       "bankSave": "Save wordbank",
       "bankSaved": "Wordbank saved"
-    }
+    },
+    "studioArtifacts": "Studio artifacts",
+    "whisperPanel": "Whisper panel",
+    "cardCount": "{{n}} cards"
   },
   "whisper": {
     "title": "Whispers",
@@ -887,7 +892,8 @@
     "empty": "No depth levels yet",
     "effect": "Injection instruction (MD)",
     "effectPlaceholder": "Instruction injected into the system prompt. Empty = nothing injected (default \"normal\" level).",
-    "hint": "Levels (built-ins sync from code; edits apply on the next run)"
+    "hint": "Levels (built-ins sync from code; edits apply on the next run)",
+    "deleted": "Depth level deleted"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -927,6 +933,7 @@
     "members": "Member briefs (injected in order)",
     "membersHint": "{{n}} selected",
     "hint": "A brief group is a collection of briefs (like Team = collection of Roles). Plans using a group get all member briefs concatenated in order.",
-    "priorityHint": "Plans with a group: member briefs are concatenated in order; the single brief selection is ignored (group wins)."
+    "priorityHint": "Plans with a group: member briefs are concatenated in order; the single brief selection is ignored (group wins).",
+    "saved": "Brief group saved"
   }
 }

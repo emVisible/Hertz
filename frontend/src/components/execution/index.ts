@@ -1,6 +1,5 @@
 export { CommandDeck, type CommandDeckProps } from './CommandDeck'
 export { Terminal, type LogLine, type TerminalProps } from './Terminal'
-export { HistoryList, type HistoryItem, type HistoryListProps } from './HistoryList'
 export { SectionCard, type SectionCardProps } from './SectionCard'
 export { ProgressStrip, type ProgressStripProps } from './ProgressStrip'
 export { StatusSteps, type StatusStepsProps, type StatusStepItem } from './StatusSteps'

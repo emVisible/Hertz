@@ -82,8 +82,6 @@ export function CanvasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useKeyboard()
-
   function importFromFile(file: File) {
     if (!file.name.endsWith('.revel.json') && !file.name.endsWith('.ravel.json')) {
       toast(t('canvas.importBadType'), 'warning')
@@ -225,7 +223,7 @@ export function CanvasPage() {
             <button
               type="button"
               onClick={() => setInspectorOpen((v) => !v)}
-              title="Studio 产物"
+              title={t('canvas.studioArtifacts')}
               className={` p-1.5 transition-colors ${
                 inspectorOpen
                   ? 'bg-surface-2 text-text-primary'
@@ -237,7 +235,7 @@ export function CanvasPage() {
             <button
               type="button"
               onClick={() => setWhisperOpen((v) => !v)}
-              title="低语栏"
+              title={t('canvas.whisperPanel')}
               className=" p-1.5 text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
             >
               <Icon name="whisper" size={16} />

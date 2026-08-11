@@ -21,8 +21,6 @@ export function ExecutionPage() {
   const studio = useStudioExecution()
   const pipeline = usePipelineExecution()
   const modelSwitch = useModelSwitch()
-  // 流水线运行时默认 AI（评分角色 fast，v0.2.0）
-  const pipelineModelSwitch = useModelSwitch('fast')
 
   function setMode(m: Mode) {
     setModeState(m)
@@ -77,11 +75,8 @@ export function ExecutionPage() {
         />
       ) : (
         <PipelineView
-          step={pipeline.step}
-          setStep={pipeline.setStep}
           limit={pipeline.limit}
           setLimit={pipeline.setLimit}
-          steps={pipeline.steps}
           running={pipeline.running}
           statusJob={pipeline.status?.job ?? ''}
           counts={pipeline.counts}
@@ -97,14 +92,9 @@ export function ExecutionPage() {
           stagePublished={pipeline.stagePublished}
           tab={pipeline.tab}
           setTab={pipeline.setTab}
-          jobs={pipeline.jobs}
           sources={pipeline.sources}
           failures={pipeline.failures}
-          supplyWarnings={pipeline.supplyWarnings}
           publishStatus={pipeline.publishStatus}
-          logs={pipeline.logs}
-          run={pipeline.run}
-          stop={pipeline.stop}
           act={pipeline.act}
           saveMeta={pipeline.saveMeta}
           publishItem={pipeline.publishItem}
@@ -122,7 +112,6 @@ export function ExecutionPage() {
           scoreOne={pipeline.scoreOne}
           scoreBatch={pipeline.scoreBatch}
           runStep={pipeline.runStep}
-          modelSwitch={pipelineModelSwitch}
         />
       )}
     </div>

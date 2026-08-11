@@ -56,7 +56,7 @@ export function BoardTabs() {
                 type="button"
                 onClick={() => switchBoard(b.id)}
                 className="max-w-40 truncate"
-                title={`${b.name} — ${b.cards.length} 卡`}
+                title={`${b.name} — ${t('canvas.cardCount', { n: b.cards.length })}`}
               >
                 {b.name}
               </button>

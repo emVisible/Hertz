@@ -30,7 +30,8 @@
     "showInFolder": "在文件夹中显示",
     "copy": "复制",
     "copied": "已复制",
-    "copyFailed": "复制失败"
+    "copyFailed": "复制失败",
+    "clear": "清空"
   },
   "error": {
     "title": "界面出错了",
@@ -491,7 +492,8 @@
     "compareFile": "对比文件",
     "compareHint": "红色=删除 · 绿色=新增",
     "compareNoCommon": "两次运行没有同名产物文件",
-    "loading": "加载中…"
+    "loading": "加载中…",
+    "phaseDetail": "阶段详情"
   },
   "console": {
     "step": "步骤",
@@ -662,7 +664,7 @@
     "produceOneDone": "已开始制作，完成后进入审核",
     "act": {
       "title": "运行状态",
-      "events": "实时事件",
+      "events": "{{n}} 事件",
       "toggle": "展开/收起"
     },
     "publishTarget": "分发目标",
@@ -804,7 +806,10 @@
       "bankPlaceholder": "逗号分隔词语",
       "bankSave": "保存词库",
       "bankSaved": "词库已保存"
-    }
+    },
+    "studioArtifacts": "Studio 产物",
+    "whisperPanel": "低语栏",
+    "cardCount": "{{n}} 卡"
   },
   "whisper": {
     "title": "低语",
@@ -887,7 +892,8 @@
     "empty": "暂无深度档位",
     "effect": "注入指令（MD）",
     "effectPlaceholder": "该档位注入 system prompt 的指令。留空 = 不注入（默认「正常」档）。",
-    "hint": "档位列表（内置以代码为准，改档指令在运行前须重开一次）"
+    "hint": "档位列表（内置以代码为准，改档指令在运行前须重开一次）",
+    "deleted": "深度档已删除"
   },
   "dashboard": {
     "title": "看板",
@@ -927,6 +933,7 @@
     "members": "组内策略（按顺序注入）",
     "membersHint": "已选 {{n}} 个策略",
     "hint": "策略组 = 策略的集合（类比团队=角色集合）。计划挂策略组后，组内策略按序拼接注入。",
-    "priorityHint": "挂了策略组的计划：组内策略按序拼接注入，忽略单个策略选择（组优先）。"
+    "priorityHint": "挂了策略组的计划：组内策略按序拼接注入，忽略单个策略选择（组优先）。",
+    "saved": "策略组已保存"
   }
 }

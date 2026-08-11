@@ -31,7 +31,7 @@ import {
 } from '../../api'
 import { Badge, Button, Card, EmptyState, Icon, Input, Select, useToast } from '../../components/ui'
 import { modelOptions, retryOptions, timeoutOptions } from '../../constants/llm'
-import { phaseLabel as phaseLabel } from '../../i18n'
+import { phaseLabel } from '../../i18n'
 import { BuffsTab } from './BuffsTab'
 import { DepthTab } from './DepthTab'
 import { RolesTab } from './RolesTab'
@@ -426,7 +426,7 @@ export function PlansPage() {
       })
       await queryClient.invalidateQueries({ queryKey: ['brief-groups'] })
       loadGroup(group)
-      toast(t('briefs.saved'), 'success')
+      toast(t('briefGroups.saved'), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }

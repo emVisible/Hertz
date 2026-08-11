@@ -643,7 +643,7 @@ function PhaseDetailModal({
   const state = run?.status ?? ''
 
   return (
-    <Modal open={open} onClose={onClose} width={560} title={phaseKey ? `${phaseName(phaseKey)} · 阶段详情` : undefined}>
+    <Modal open={open} onClose={onClose} width={560} title={phaseKey ? `${phaseName(phaseKey)} · ${t('studio.phaseDetail')}` : undefined}>
       <div className="flex flex-col gap-3 p-1">
         {/* 状态 */}
         <div className="flex items-center gap-3">

@@ -76,7 +76,7 @@ export function ActivityPanel() {
         <Icon name="console" size={12} className={logs.length > 0 ? 'animate-pulse text-primary' : 'text-text-disabled'} />
         <span className="truncate">
           {t('console.act.title')}
-          {logs.length > 0 && !open && <span className="ml-2 text-text-disabled">· {logs.length} 事件</span>}
+          {logs.length > 0 && !open && <span className="ml-2 text-text-disabled">· {t('console.act.events', { n: logs.length })}</span>}
         </span>
         <span className="ml-auto shrink-0">{t('console.act.toggle')}</span>
       </button>

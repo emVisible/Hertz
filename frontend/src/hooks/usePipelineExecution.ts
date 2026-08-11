@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
-import { pipelineApi, type PipelineEvent, type PipelineItem, type PipelineJob } from '../api'
+import { pipelineApi, type PipelineEvent, type PipelineItem } from '../api'
 import { useEventSource } from './useEventSource'
 import { useToast } from '../components/ui'
 import { useExecutionStore } from '../stores/execution'
@@ -26,10 +26,6 @@ export function usePipelineExecution() {
     queryKey: ['pipeline-status'],
     queryFn: pipelineApi.status,
     refetchInterval: 5000,
-  })
-  const { data: steps = [] } = useQuery({
-    queryKey: ['pipeline-steps'],
-    queryFn: () => pipelineApi.steps().then((s) => s.steps),
   })
   const { data: counts = {} } = useQuery({
     queryKey: ['pipeline-counts'],
@@ -63,11 +59,6 @@ export function usePipelineExecution() {
     }
     return g
   }, [queueAll])
-  const { data: jobs = [] } = useQuery({
-    queryKey: ['pipeline-jobs'],
-    queryFn: () => pipelineApi.jobs(8),
-    refetchInterval: pollingInterval,
-  })
   const { data: sources = [] } = useQuery({
     queryKey: ['pipeline-sources'],
     queryFn: pipelineApi.sources,
@@ -92,7 +83,7 @@ export function usePipelineExecution() {
   })
 
   const store = useExecutionStore()
-  const { step, limit, logs, logSeq, tab } = store.pipeline
+  const { limit, logSeq, tab } = store.pipeline
   const setPipeline = store.setPipeline
 
   const runningRef = useRef(false)
@@ -182,22 +173,8 @@ export function usePipelineExecution() {
     void queryClient.invalidateQueries({ queryKey: ['pipeline-calendar'] })
   }
 
-  const setStep = (v: string) => setPipeline({ step: v })
   const setLimit = (v: number) => setPipeline({ limit: v })
 
-  async function run() {
-    if (!step || runningRef.current) return
-    runningRef.current = true
-    try {
-      // v0.3.5：单步执行（评分手动触发，不再自动花 API）
-      await pipelineApi.run(step, limit)
-      refresh()
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'error')
-    } finally {
-      runningRef.current = false
-    }
-  }
 
   /** 一键采集+下载（v0.3.5，快捷链）。 */
   async function collectAndDownload() {
@@ -262,14 +239,6 @@ export function usePipelineExecution() {
   /** 采集/下载单步执行（v0.3.5，采集 menu 大按钮）。 */
   async function runStep(stepName: string, channel = '') {
     await runStepOnly(stepName, channel)
-  }
-
-  async function stop() {
-    try {
-      await pipelineApi.cancel()
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'error')
-    }
   }
 
   async function act(item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') {
@@ -432,7 +401,6 @@ export function usePipelineExecution() {
 
   return {
     status,
-    steps,
     counts,
     stageError,
     refetchStage,
@@ -446,19 +414,13 @@ export function usePipelineExecution() {
     stagePublished,
     tab,
     setTab: (v: string) => setPipeline({ tab: v }),
-    jobs,
     sources,
     failures,
     supplyWarnings: supply.warnings,
-    step,
-    setStep,
     limit,
     setLimit,
     running,
-    logs,
     clearLogs: () => store.resetPipelineLogs(),
-    run,
-    stop,
     act,
     batchAction,
     setPublishStats,
@@ -480,5 +442,3 @@ export function usePipelineExecution() {
     refresh,
   }
 }
-
-export type { PipelineJob }
