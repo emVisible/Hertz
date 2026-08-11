@@ -100,9 +100,10 @@ async def ensure_reddit_cookies(*, force: bool = False) -> dict:
         return {"ok": False, "source": "locked"}
     _export_lock_until = now + 120.0
 
+    raw = settings.pipeline_reddit_cookies_browser
     browsers = (
-        [b.strip().lower() for b in settings.pipeline_reddit_cookies_browser.split(",") if b.strip()]
-        if settings.pipeline_reddit_cookies_browser
+        [b.strip().lower() for b in raw.split(",") if b.strip()]
+        if raw
         else list(_BROWSER_CANDIDATES)
     )
     for browser in browsers:
