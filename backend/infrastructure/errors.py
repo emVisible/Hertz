@@ -11,11 +11,20 @@ from backend.errors import HertzError
 
 log = logging.getLogger("hertz.http")
 
+# 领域错误 code → HTTP 状态（v0.8：路由层不再逐端点 try/except 包装）
+_CODE_STATUS = {
+    "item_not_found": 404,
+    "invalid_item_state": 409,
+}
+
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(HertzError)
     async def hertz_error_handler(_: Request, exc: HertzError) -> JSONResponse:
-        return JSONResponse(status_code=400, content={"detail": exc.message, "code": exc.code})
+        return JSONResponse(
+            status_code=_CODE_STATUS.get(exc.code, 400),
+            content={"detail": exc.message, "code": exc.code},
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_: Request, exc: RequestValidationError) -> JSONResponse:

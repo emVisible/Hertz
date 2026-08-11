@@ -1,21 +1,31 @@
 """Pipeline domain errors — typed failures for the review/run surfaces.
 
-Mirrors download/errors.py and orchestration/errors.py so routers can map
-each failure class to the correct HTTP status (404 vs 409 vs 422) instead of
-collapsing everything into one code (AXIOM §4.2 / §28).
+继承共享 HertzError（AXIOM §24.1 稳定 code）：全局 handler 按 code 映射
+HTTP 状态（404/409），路由层不再需要逐端点 try/except 包装（v0.8 查漏补缺）。
 """
 
+from backend.errors import HertzError
 
-class PipelineError(RuntimeError):
+
+class PipelineError(HertzError):
     """Base class for pipeline domain errors."""
+
+    def __init__(self, message: str, code: str = "pipeline_error") -> None:
+        super().__init__(code, message)
 
 
 class ItemNotFoundError(PipelineError):
     """The referenced item does not exist (→ 404)."""
 
+    def __init__(self, item_id) -> None:
+        super().__init__(f"item not found: {item_id}", code="item_not_found")
+
 
 class InvalidItemStateError(PipelineError):
     """The item exists but is not in a state that allows the action (→ 409)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code="invalid_item_state")
 
 
 # 失败分类（参考原项目 Autarkeia 失败看板）：按类聚合统计 + 同类批量重试

@@ -134,12 +134,10 @@ class StepEngine:
     # ---------- per-item actions (review / retry) ----------
 
     async def approve(self, item_id: uuid.UUID) -> dict:
+        from backend.pipeline.helpers import load_item_for_action
+
         async with session_factory() as session:
-            item = await session.get(Item, item_id)
-            if item is None:
-                raise ItemNotFoundError(item_id)
-            if item.status != ItemStatus.QUEUED:
-                raise InvalidItemStateError(f"cannot approve item in state {item.status}")
+            item = await load_item_for_action(item_id, (ItemStatus.QUEUED,), "approve")
             item.status = ItemStatus.APPROVED
             item.approved_at = datetime.now(UTC)
             await session.merge(item)
@@ -149,15 +147,16 @@ class StepEngine:
         return {"id": str(item_id), "status": "approved"}
 
     async def reject(self, item_id: uuid.UUID, reason: str = "") -> dict:
+        from backend.pipeline.helpers import load_item_for_action
+
         async with session_factory() as session:
-            item = await session.get(Item, item_id)
-            if item is None:
-                raise ItemNotFoundError(item_id)
             # v0.3.4：预处理阶段的 discovered（未下载）也可拒绝——人工筛掉不想要的源
-            if item.status not in (
-                ItemStatus.QUEUED, ItemStatus.SCORED, ItemStatus.DOWNLOADED, ItemStatus.DISCOVERED,
-            ):
-                raise InvalidItemStateError(f"cannot reject item in state {item.status}")
+            item = await load_item_for_action(
+                item_id,
+                (ItemStatus.QUEUED, ItemStatus.SCORED,
+                 ItemStatus.DOWNLOADED, ItemStatus.DISCOVERED),
+                "reject",
+            )
             item.status = ItemStatus.REJECTED
             item.error = reason or "rejected at review"
             await session.merge(item)
@@ -178,11 +177,9 @@ class StepEngine:
                 raise ItemNotFoundError(item_id)
             if item.status != ItemStatus.FAILED:
                 raise InvalidItemStateError(f"cannot retry item in state {item.status}")
-            back = (
-                "scored" if item.video_path
-                else ("downloaded" if item.raw_path else "discovered")
-            )
-            item.status = back
+            from backend.pipeline.helpers import back_status_for
+
+            item.status = back_status_for(item)
             item.error = None
             item.retry_count += 1
             await session.merge(item)
@@ -194,14 +191,14 @@ class StepEngine:
 
         发布卡「打回审核」用：已发布/待发布条目重新进入审核队列。
         """
+        from backend.pipeline.helpers import load_item_for_action
+
         async with session_factory() as session:
-            item = await session.get(Item, item_id)
-            if item is None:
-                raise ItemNotFoundError(item_id)
-            if item.status not in (
-                ItemStatus.REJECTED, ItemStatus.APPROVED, ItemStatus.PUBLISHED,
-            ):
-                raise InvalidItemStateError(f"cannot requeue item in state {item.status}")
+            item = await load_item_for_action(
+                item_id,
+                (ItemStatus.REJECTED, ItemStatus.APPROVED, ItemStatus.PUBLISHED),
+                "requeue",
+            )
             item.status = ItemStatus.QUEUED
             item.error = None
             await session.merge(item)

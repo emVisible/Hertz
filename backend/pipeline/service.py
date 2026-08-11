@@ -400,16 +400,12 @@ class PipelineService:
         清产物（脚本/视频/音频/字幕/封面）回到预处理列表，用户重新
         调整生产方式/评分后重新制作；脚本保留（不强制重新生成）。
         """
-        from backend.pipeline.errors import InvalidItemStateError
+        from backend.pipeline.helpers import load_item_for_action
 
         async with session_factory() as session:
-            item = await session.get(Item, item_id)
-            if item is None:
-                raise ItemNotFoundError(item_id)
-            if item.status != ItemStatus.QUEUED:
-                raise InvalidItemStateError(
-                    f"cannot back-to-prep item in state {item.status}"
-                )
+            item = await load_item_for_action(
+                item_id, (ItemStatus.QUEUED,), "back-to-prep"
+            )
             item.status = ItemStatus.SCORED
             item.error = None
             item.error_class = ""
@@ -428,16 +424,12 @@ class PipelineService:
 
         回到采集待下载队列，重新走下载（源可能已恢复）。
         """
-        from backend.pipeline.errors import InvalidItemStateError
+        from backend.pipeline.helpers import load_item_for_action
 
         async with session_factory() as session:
-            item = await session.get(Item, item_id)
-            if item is None:
-                raise ItemNotFoundError(item_id)
-            if item.status not in (ItemStatus.DOWNLOADED, ItemStatus.SCORED):
-                raise InvalidItemStateError(
-                    f"cannot back-to-collect item in state {item.status}"
-                )
+            item = await load_item_for_action(
+                item_id, (ItemStatus.DOWNLOADED, ItemStatus.SCORED), "back-to-collect"
+            )
             item.status = ItemStatus.DISCOVERED
             item.error = None
             item.error_class = ""
@@ -626,12 +618,13 @@ class PipelineService:
         return out
 
     async def counts(self) -> dict[str, int]:
+        from sqlalchemy import func
+
         async with session_factory() as session:
-            result = await session.execute(select(Item.status, Item.id))
-            counts: dict[str, int] = {}
-            for status, _ in result:
-                counts[status] = counts.get(status, 0) + 1
-            return counts
+            rows = await session.execute(
+                select(Item.status, func.count()).group_by(Item.status)
+            )
+            return {str(status): count for status, count in rows.all()}
 
     async def trends(self, days: int = 30) -> list[dict]:
         """看板趋势（v0.5 B）：按天聚合 采集/入库（job_runs.summary）+ 发布（published_at）。
@@ -826,12 +819,10 @@ class PipelineService:
                     )
                 )
             ).scalars().all()
+            from backend.pipeline.helpers import back_status_for
+
             for item in rows:
-                item.status = (
-                    ItemStatus.SCORED
-                    if item.video_path
-                    else (ItemStatus.DOWNLOADED if item.raw_path else ItemStatus.DISCOVERED)
-                )
+                item.status = back_status_for(item)
                 item.error = None
                 item.error_class = ""
                 item.retry_count += 1

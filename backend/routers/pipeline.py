@@ -9,8 +9,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.config import settings
+from backend.errors import HertzError
 from backend.factory.registry import ServiceRegistry
-from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError
 from backend.pipeline.publishers.router import PUBLISHERS
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
@@ -91,32 +91,17 @@ async def calendar_items(
 
 @router.post("/items/{item_id}/approve")
 async def approve_item(item_id: uuid.UUID):
-    try:
-        return await _pipe().approve(item_id)
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidItemStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return await _pipe().approve(item_id)
 
 
 @router.post("/items/{item_id}/reject")
 async def reject_item(item_id: uuid.UUID, reason: str = ""):
-    try:
-        return await _pipe().reject(item_id, reason)
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidItemStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return await _pipe().reject(item_id, reason)
 
 
 @router.post("/items/{item_id}/retry")
 async def retry_item(item_id: uuid.UUID):
-    try:
-        return await _pipe().retry(item_id)
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidItemStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return await _pipe().retry(item_id)
 
 
 @router.post("/items/{item_id}/score")
@@ -124,11 +109,10 @@ async def score_item(item_id: uuid.UUID):
     """单条评分（v0.3.5，预处理手动评分按钮）：仅已下载条目。"""
     try:
         return await _pipe().score_one(item_id)
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidItemStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except HertzError:
+        raise  # 领域错误（404/409）由全局 handler 映射
     except RuntimeError as exc:
+        # 评分执行失败（LLM 等）→ 502
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
@@ -137,22 +121,15 @@ async def produce_item(item_id: uuid.UUID):
     """单条制作（v0.3.4，预处理「制作」按钮）：按生产方式立即执行 produce。"""
     try:
         return await _pipe().produce_one(item_id)
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidItemStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except HertzError:
+        raise
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post("/items/{item_id}/requeue")
 async def requeue_item(item_id: uuid.UUID):
-    try:
-        return await _pipe().requeue(item_id)
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidItemStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return await _pipe().requeue(item_id)
 
 
 class BatchBody(BaseModel):
@@ -233,32 +210,19 @@ class PublishStatsBody(BaseModel):
 @router.post("/items/{item_id}/publish-stats")
 async def set_publish_stats(item_id: uuid.UUID, body: PublishStatsBody) -> dict:
     """手动补录发布数据（v0.4 C1：自动回捞失败时的降级入口）。"""
-    try:
-        return await _pipe().set_publish_stats(item_id, body.model_dump())
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return await _pipe().set_publish_stats(item_id, body.model_dump())
 
 
 @router.post("/items/{item_id}/back-to-prep")
 async def back_to_prep(item_id: uuid.UUID):
     """审核打回预处理（v0.3.9 相邻双向）：queued → scored。"""
-    try:
-        return await _pipe().back_to_prep(item_id)
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidItemStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return await _pipe().back_to_prep(item_id)
 
 
 @router.post("/items/{item_id}/back-to-collect")
 async def back_to_collect(item_id: uuid.UUID):
     """预处理打回采集（v0.3.9 相邻双向）：downloaded/scored → discovered。"""
-    try:
-        return await _pipe().back_to_collect(item_id)
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidItemStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return await _pipe().back_to_collect(item_id)
 
 
 @router.post("/reschedule-expired")
@@ -297,30 +261,26 @@ class ItemMetaBody(BaseModel):
 
 @router.put("/items/{item_id}/meta")
 async def update_item_meta(item_id: uuid.UUID, body: ItemMetaBody):
-    try:
-        return await _pipe().update_meta(
-            item_id,
-            bili_title=body.bili_title,
-            bili_tags=body.bili_tags,
-            bili_tid=body.bili_tid,
-            bili_copyright=body.bili_copyright,
-            scheduled_at=body.scheduled_at,
-        )
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return await _pipe().update_meta(
+        item_id,
+        bili_title=body.bili_title,
+        bili_tags=body.bili_tags,
+        bili_tid=body.bili_tid,
+        bili_copyright=body.bili_copyright,
+        scheduled_at=body.scheduled_at,
+    )
 
 
 @router.post("/items/{item_id}/publish")
 async def publish_item(item_id: uuid.UUID, selfmade: int = 0, target: str = ""):
+    """发布：404/409 由全局 handler 映射；执行失败（缺 cookie/文件等）→ 502。"""
     try:
         return await _pipe().publish_one(
             item_id, selfmade=bool(selfmade), target=target.strip() or None
         )
-    except ItemNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidItemStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001 — 发布失败（缺 cookie/文件等）返回可读错误
+    except HertzError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — 发布失败返回可读错误
         raise HTTPException(status_code=502, detail=f"发布失败：{exc}") from exc
 
 
