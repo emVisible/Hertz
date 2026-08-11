@@ -138,7 +138,14 @@ function startBackend(): void {
   backendProcess = spawn(
     python,
     ['-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', BACKEND_PORT],
-    { cwd: backendDir, stdio: 'ignore', env: { ...process.env } },
+    {
+      cwd: backendDir,
+      stdio: 'ignore',
+      env: { ...process.env },
+      // detached: 独立进程组——退出时按组杀，uv run/venv 包装进程与其
+      // uvicorn 子进程一起终止，避免"后台服务残留"（v0.8.3 修复）
+      detached: true,
+    },
   )
   backendProcess.on('error', (err) => {
     void showCustomDialog({
@@ -357,6 +364,14 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
-  backendProcess?.kill()
+  // v0.8.3：按进程组终止——detached 后子进程组独立，负 PID 组杀确保
+  // uvicorn 与其包装进程（uv run / venv entry）全部退出
+  if (backendProcess?.pid) {
+    try {
+      process.kill(-backendProcess.pid, 'SIGTERM')
+    } catch {
+      backendProcess.kill()
+    }
+  }
   backendProcess = null
 })

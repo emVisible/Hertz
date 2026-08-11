@@ -57,4 +57,13 @@ ELECTRON_PID=$!
 echo "Backend :8787 (pid $BACKEND_PID) · Frontend :3000 (pid $FRONTEND_PID) · Electron (pid $ELECTRON_PID)"
 echo "Press Ctrl+C to stop all."
 
-wait
+# 任一服务退出（如 Dock 右键退出 Electron）→ 自动清理全部，防止后台残留
+while true; do
+  for pid in "$BACKEND_PID" "$FRONTEND_PID" "$ELECTRON_PID"; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "Service (pid $pid) exited — stopping all..."
+      exit 0
+    fi
+  done
+  sleep 2
+done
