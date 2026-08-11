@@ -677,7 +677,8 @@
     "act": {
       "title": "运行状态",
       "events": "{{n}} 事件",
-      "toggle": "展开/收起"
+      "toggle": "展开/收起",
+      "eventsCount": "{{n}} 事件"
     },
     "publishTarget": "分发目标",
     "publishTargetDefault": "默认（设置）",
@@ -766,7 +767,18 @@
     "autoCollectOn": "自动采集 {{n}} 分钟",
     "autoCollectOff": "自动采集关闭",
     "autoCollectHint": "scheduler 周期自动采集入数据库（0=关闭仅手动）；下载与处理仍在预处理人工控制",
-    "downloadN": "下载 {n} 条"
+    "downloadN": "下载 {{n}} 条",
+    "collectOps": "采集运维",
+    "collectRunning": "采集中",
+    "collectIdle": "空闲",
+    "collectStop": "停止",
+    "collectStopHint": "终止当前批次",
+    "collectLastAt": "上次 {{when}}",
+    "collectNextIn": "下次 {{s}} 分钟后",
+    "collectProgress": "采集进度",
+    "collectSources": "源",
+    "collectWorking": "采集中…",
+    "collectFailed": "失败"
   },
   "canvas": {
     "tool": {

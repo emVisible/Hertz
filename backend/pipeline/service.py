@@ -625,6 +625,46 @@ class PipelineService:
             )
             return {str(status): count for status, count in rows.all()}
 
+    async def collect_status(self) -> dict:
+        """采集运维状态（v0.8.2）：运行中/上次结果/下次自动/间隔（监视 + 操作依据）。"""
+        from backend.models.system import JobRun
+
+        async with session_factory() as session:
+            last_run = (
+                await session.execute(
+                    select(JobRun)
+                    .where(JobRun.job_name == "collect")
+                    .order_by(JobRun.started_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+
+        interval_min = int(
+            getattr(self.engine.settings, "pipeline_auto_collect_minutes", 30) or 0
+        )
+        # 下次自动采集 = 上次成功采集 + 间隔（registry tick 节流同语义）
+        next_in_s = None
+        if interval_min > 0 and last_run is not None and last_run.started_at is not None:
+            from datetime import UTC, datetime
+
+            elapsed = (datetime.now(UTC) - last_run.started_at).total_seconds()
+            next_in_s = max(0, int(interval_min * 60 - elapsed))
+        return {
+            "running": self.running,
+            "job": self.current_job(),
+            "interval_min": interval_min,
+            "auto_enabled": interval_min > 0,
+            "next_in_s": next_in_s,
+            "last": {
+                "status": last_run.status if last_run else None,
+                "started_at": (
+                    last_run.started_at.isoformat() if last_run and last_run.started_at else None
+                ),
+                "summary": (last_run.summary if last_run else None) or {},
+                "error": last_run.error if last_run else None,
+            },
+        }
+
     async def trends(self, days: int = 30) -> list[dict]:
         """看板趋势（v0.5 B）：按天聚合 采集/入库（job_runs.summary）+ 发布（published_at）。
 

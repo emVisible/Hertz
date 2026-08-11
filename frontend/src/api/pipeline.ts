@@ -119,6 +119,8 @@ export interface PipelineEvent {
   ok?: number
   rejected?: number
   failed?: number
+  /** 采集进度明细（v0.8.2）：job_step collect 各源状态 */
+  sources?: Array<{ channel: string; collected?: number; inserted?: number; cooldown_s?: number; error?: string }>
 }
 
 export const pipelineApi = {
@@ -141,6 +143,21 @@ export const pipelineApi = {
       `/api/pipeline/items?limit=${limit}${status ? `&status=${status}` : ''}`,
     ),
   counts: () => api.get<Record<string, number>>('/api/pipeline/items/counts'),
+  /** 采集运维状态（v0.8.2）：运行中/上次结果/下次自动/间隔 */
+  collectStatus: () =>
+    api.get<{
+      running: boolean
+      job: string | null
+      interval_min: number
+      auto_enabled: boolean
+      next_in_s: number | null
+      last: {
+        status: string | null
+        started_at: string | null
+        summary: Record<string, unknown>
+        error: string | null
+      }
+    }>('/api/pipeline/collect/status'),
   /** 看板趋势（v0.5 B）：采集/入库/发布按天聚合 */
   trends: (days = 30) =>
     api.get<Array<{ date: string; collected: number; inserted: number; published: number }>>(

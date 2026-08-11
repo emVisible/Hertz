@@ -87,9 +87,15 @@ export function usePipelineExecution() {
     queryFn: () => api.get<{ pipeline_auto_collect_minutes?: number }>('/api/config'),
   })
   const autoCollectMinutes = cfg?.pipeline_auto_collect_minutes ?? 30
+  // 采集运维状态（v0.8.2）：监视用
+  const { data: collectStatus } = useQuery({
+    queryKey: ['pipeline-collect-status'],
+    queryFn: pipelineApi.collectStatus,
+    refetchInterval: pollingInterval,
+  })
 
   const store = useExecutionStore()
-  const { limit, logSeq, tab } = store.pipeline
+  const { limit, logSeq, tab, collectProgress } = store.pipeline
   const setPipeline = store.setPipeline
 
   const runningRef = useRef(false)
@@ -117,6 +123,11 @@ export function usePipelineExecution() {
     if (event.type === 'job_step') {
       // 明细（v0.3.0，参考原项目 job_summary）：collect 显示采集/入库/跳过
       if (event.step === 'collect') {
+        // v0.8.2 可视化进度：job_step collect 一次带全源明细
+        const sources = event.sources as
+          | Array<{ channel: string; collected?: number; inserted?: number; cooldown_s?: number; error?: string }>
+          | undefined
+        if (sources) setPipeline({ collectProgress: sources })
         const details = [
           t('console.collected', { n: event.collected ?? event.count ?? 0 }),
           t('console.inserted', { n: event.inserted ?? 0 }),
@@ -263,6 +274,15 @@ export function usePipelineExecution() {
         toast(t('console.retriedHint'), 'success')
       }
       refresh()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 停止当前任务（v0.8.2 采集运维：终止运行中的批次）。 */
+  async function stop() {
+    try {
+      await pipelineApi.cancel()
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }
@@ -434,6 +454,9 @@ export function usePipelineExecution() {
     publishItem,
     publishStatus,
     autoCollectMinutes,
+    collectStatus,
+    collectProgress,
+    stop,
     uploadCover,
     retryClass,
     backToPrep,

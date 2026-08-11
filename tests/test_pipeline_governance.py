@@ -1725,3 +1725,37 @@ def test_auto_collect_config_default() -> None:
 
     assert settings.pipeline_auto_collect_minutes == 30
     assert "pipeline_auto_collect_minutes" in RUNTIME_ALLOWLIST
+
+
+# ---------- 采集运维状态（v0.8.2） ----------
+
+
+@pytest.mark.asyncio
+async def test_collect_status_endpoint(client, monkeypatch) -> None:
+    """采集运维状态：间隔/上次结果/下次自动字段齐全。"""
+    from datetime import UTC, datetime
+
+    from backend.models.system import JobRun, JobStatus
+
+    async with session_factory() as session:
+        session.add(JobRun(job_name="collect", status=JobStatus.COMPLETED,
+                           summary={"collected": 12, "inserted": 10, "sources": []},
+                           started_at=datetime.now(UTC)))
+        await session.commit()
+
+    resp = await client.get("/api/pipeline/collect/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["auto_enabled"] is True
+    assert body["interval_min"] >= 30
+    assert body["last"]["summary"]["collected"] == 12
+    assert body["next_in_s"] is not None  # 上次完成后距下次自动
+
+
+def test_auto_collect_interval_config() -> None:
+    """自动采集间隔可配置且进 allowlist（设置页写入口）。"""
+    from backend.config import settings
+    from backend.routers.config import RUNTIME_ALLOWLIST
+
+    assert "pipeline_auto_collect_minutes" in RUNTIME_ALLOWLIST
+    assert settings.pipeline_auto_collect_minutes >= 0

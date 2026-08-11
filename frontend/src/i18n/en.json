@@ -662,7 +662,8 @@
     "act": {
       "title": "Activity",
       "events": "{{n}} events",
-      "toggle": "Toggle"
+      "toggle": "Toggle",
+      "eventsCount": "{{n}} events"
     },
     "publishTarget": "Publish target",
     "publishTargetDefault": "Default (settings)",
@@ -751,7 +752,18 @@
     "autoCollectOn": "Auto collect {{n}}m",
     "autoCollectOff": "Auto collect off",
     "autoCollectHint": "Scheduler collects periodically (0=off, manual only); download & processing stay manual in preprocess",
-    "downloadN": "Download {n}"
+    "downloadN": "Download {{n}}",
+    "collectOps": "Collect ops",
+    "collectRunning": "Collecting",
+    "collectIdle": "Idle",
+    "collectStop": "Stop",
+    "collectStopHint": "Stop current batch",
+    "collectLastAt": "Last {{when}}",
+    "collectNextIn": "next in {{s}}m",
+    "collectProgress": "Collect progress",
+    "collectSources": "sources",
+    "collectWorking": "collecting…",
+    "collectFailed": "failed"
   },
   "canvas": {
     "tool": {

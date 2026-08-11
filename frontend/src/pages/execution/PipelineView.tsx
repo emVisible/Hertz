@@ -51,6 +51,9 @@ interface PipelineViewProps {
   failures: Record<string, number>
   publishStatus?: ReturnType<typeof usePipelineExecution>['publishStatus']
   autoCollectMinutes: number
+  collectStatus?: ReturnType<typeof usePipelineExecution>['collectStatus']
+  stop: () => void
+  collectProgress: ReturnType<typeof usePipelineExecution>['collectProgress']
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
   publishItem: (item: PipelineItem, selfmade?: boolean, target?: string) => void
@@ -323,29 +326,45 @@ export function PipelineView(p: PipelineViewProps) {
       <div key={pTab} className="hz-fade-in min-h-0 flex-1 overflow-y-auto">
         {pTab === 'run' && (
           <div className="flex min-h-full flex-col gap-4 p-4">
-            {/* 操作区（v0.3.5）：三个显式大按钮——采集/下载/一键，无 Select */}
-            <SectionCard title={t('console.stageCollect')} padded={false}>
-              <div className="flex flex-wrap items-end gap-3 p-3">
-                <Button
-                  size="md"
-                  onClick={() => void p.runStep('collect')}
-                  disabled={p.running}
-                  title={t('console.collectHint')}
-                >
-                  <Icon name="downloads" size={14} />
-                  {t('console.stageCollect')}
-                </Button>
-                <span className="flex items-center gap-1.5 text-xs">
-                  <Icon name="downloads" size={13} className="text-text-disabled" />
-                  <span className="text-text-secondary">
-                    {t('console.pendingDownloads')}: {p.counts.discovered ?? 0}
+            {/* 运维控制卡（v0.8.2）：自动静默运行，监视 + 手动操作 */}
+            <SectionCard title={t('console.collectOps')} padded={false}>
+              <div className="flex flex-wrap items-center gap-3 p-3">
+                <span className="flex items-center gap-2 text-sm">
+                  <span
+                    className={`inline-block h-2.5 w-2.5 rounded-full ${
+                      p.collectStatus?.running ? 'animate-pulse bg-primary' : 'bg-text-disabled/40'
+                    }`}
+                  />
+                  <span className="font-medium text-text-primary">
+                    {p.collectStatus?.running
+                      ? t('console.collectRunning')
+                      : t('console.collectIdle')}
                   </span>
                 </span>
-                {/* 自动采集状态（v0.8.1）：scheduler 周期自动入库，0=关闭 */}
-                {p.autoCollectMinutes > 0 ? (
+                {/* 上次采集结果 */}
+                {p.collectStatus?.last?.started_at && !p.collectStatus.running && (
+                  <span className="text-xs text-text-secondary">
+                    {t('console.collectLastAt', {
+                      when: new Date(p.collectStatus.last.started_at).toLocaleTimeString(),
+                    })}
+                    {' · '}
+                    {t('console.collected', {
+                      n: Number((p.collectStatus.last.summary?.collected as number) ?? 0),
+                    })}
+                    {' · '}
+                    {t('console.inserted', {
+                      n: Number((p.collectStatus.last.summary?.inserted as number) ?? 0),
+                    })}
+                  </span>
+                )}
+                {/* 自动采集状态 + 下次 */}
+                {p.collectStatus?.auto_enabled ? (
                   <Badge tone="success">
                     <span title={t('console.autoCollectHint')}>
-                      {t('console.autoCollectOn', { n: p.autoCollectMinutes })}
+                      {t('console.autoCollectOn', { n: p.collectStatus.interval_min })}
+                      {p.collectStatus.next_in_s != null && !p.collectStatus.running
+                        ? ` · ${t('console.collectNextIn', { s: Math.ceil(p.collectStatus.next_in_s / 60) })}`
+                        : ''}
                     </span>
                   </Badge>
                 ) : (
@@ -355,14 +374,86 @@ export function PipelineView(p: PipelineViewProps) {
                     </span>
                   </Badge>
                 )}
-                {p.running && (
-                  <p className="text-xs text-text-secondary">{p.statusJob}</p>
-                )}
+                <span className="flex items-center gap-1.5 text-xs">
+                  <Icon name="downloads" size={13} className="text-text-disabled" />
+                  <span className="text-text-secondary">
+                    {t('console.pendingDownloads')}: {p.counts.discovered ?? 0}
+                  </span>
+                </span>
+                {/* 操作：右对齐 */}
+                <span className="ml-auto flex items-center gap-2">
+                  <Button
+                    size="md"
+                    onClick={() => void p.runStep('collect')}
+                    disabled={p.running}
+                    title={t('console.collectHint')}
+                  >
+                    <Icon name="downloads" size={14} />
+                    {t('console.stageCollect')}
+                  </Button>
+                  <Button
+                    size="md"
+                    variant="danger"
+                    onClick={() => void p.stop()}
+                    disabled={!p.running}
+                    title={t('console.collectStopHint')}
+                  >
+                    <Icon name="stop" size={14} />
+                    {t('console.collectStop')}
+                  </Button>
+                </span>
               </div>
+
+              {/* 采集进度（v0.8.2 可视化）：最近批次各源明细 */}
+              {p.collectProgress.length > 0 && (
+                <div className="border-t border-border/60 p-3">
+                  <div className="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-wide text-text-disabled">
+                    <span>{t('console.collectProgress')}</span>
+                    <span>
+                      {p.collectProgress.filter((s) => s.collected != null || s.error).length}/
+                      {p.collectProgress.length} {t('console.collectSources')}
+                    </span>
+                  </div>
+                  <ul className="flex flex-col gap-1">
+                    {p.collectProgress.map((s) => {
+                      const done = s.collected != null || s.error != null
+                      const cooling = (s.cooldown_s ?? 0) > 0
+                      const failed = Boolean(s.error)
+                      return (
+                        <li key={s.channel} className="flex items-center gap-2 text-xs">
+                          <span
+                            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+                              failed ? 'bg-error' : done ? 'bg-success' : cooling ? 'bg-warning' : 'bg-primary/60'
+                            }`}
+                          />
+                          <span className="min-w-0 flex-1 truncate text-text-secondary">{s.channel}</span>
+                          {failed ? (
+                            <span className="shrink-0 text-[10px] text-error" title={s.error}>
+                              {t('console.collectFailed')}
+                            </span>
+                          ) : done ? (
+                            <span className="shrink-0 font-mono text-[10px] text-text-disabled">
+                              +{s.inserted ?? 0}
+                            </span>
+                          ) : cooling ? (
+                            <span className="shrink-0 font-mono text-[10px] text-warning">
+                              ⏳ {Math.ceil(s.cooldown_s ?? 0)}s
+                            </span>
+                          ) : (
+                            <span className="shrink-0 animate-pulse text-[10px] text-primary">
+                              {t('console.collectWorking')}
+                            </span>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              )}
             </SectionCard>
 
-            {/* 待下载队列（v0.3.5）：discovered 条目——下载前的供给可见。
-                v0.3.12：无限滚动分页（此前 max-h 截断 349 条只能看到 ~8 行） */}
+            {/* 待下载队列（v0.3.5）：discovered 条目——供给水位。
+                v0.3.12 无限滚动 + v0.8.2 与采集进度同卡下位 */}
             <SectionCard
               title={`${t('console.pendingDownloads')} (${p.counts.discovered ?? 0})`}
               padded={false}
@@ -443,25 +534,26 @@ export function PipelineView(p: PipelineViewProps) {
                     sort={preSort}
                     onSort={setPreSort}
                   />
-                  {/* 下载 N 条（v0.8.1 职责重组：下载从采集 menu 移到预处理，
-                      每次下载量人工可控） */}
-                  <Select
-                    aria-label={t('console.limit')}
-                    value={String(p.limit)}
-                    onChange={(e) => p.setLimit(Number(e.target.value))}
-                    options={[5, 10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))}
-                    className="w-20"
-                  />
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void p.runStep('download')}
-                    disabled={p.running}
-                    title={t('console.downloadHint')}
-                  >
-                    <Icon name="downloads" size={12} />
-                    {t('console.downloadN', { n: p.limit })}
-                  </Button>
+                  {/* 下载分组（v0.8.2）：与审核操作隔离——独立容器 + 分隔线 */}
+                  <span className="flex items-center gap-1.5 border-l border-border pl-2">
+                    <Select
+                      aria-label={t('console.limit')}
+                      value={String(p.limit)}
+                      onChange={(e) => p.setLimit(Number(e.target.value))}
+                      options={[5, 10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))}
+                      className="w-20"
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void p.runStep('download')}
+                      disabled={p.running}
+                      title={t('console.downloadHint')}
+                    >
+                      <Icon name="downloads" size={12} />
+                      {t('console.downloadN', { n: p.limit })}
+                    </Button>
+                  </span>
                   <Button
                     size="sm"
                     onClick={() => void p.scoreBatch()}

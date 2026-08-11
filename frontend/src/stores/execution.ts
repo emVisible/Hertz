@@ -33,6 +33,8 @@ export interface PipelineExecState {
   logSeq: number
   /** 流水线平铺菜单当前部分（wave13：跨模式切换保持上下文） */
   tab: string
+  /** 采集进度（v0.8.2）：最近一次 collect 各源明细（可视化运维） */
+  collectProgress: Array<{ channel: string; collected?: number; inserted?: number; cooldown_s?: number; error?: string }>
 }
 
 interface ExecutionState {
@@ -64,6 +66,7 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
     logs: [],
     logSeq: 0,
     tab: 'inReview',
+    collectProgress: [],
   },
   setStudio: (patch) => set((s) => ({ studio: { ...s.studio, ...patch } })),
   setPipeline: (patch) => set((s) => ({ pipeline: { ...s.pipeline, ...patch } })),

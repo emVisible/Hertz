@@ -73,6 +73,12 @@ async def trends(days: int = Query(30, ge=7, le=90)):
     return await _pipe().trends(days=days)
 
 
+@router.get("/collect/status")
+async def collect_status() -> dict:
+    """采集运维状态（v0.8.2）：运行中/上次结果/下次自动/间隔。"""
+    return await _pipe().collect_status()
+
+
 @router.get("/calendar")
 async def calendar_items(
     from_: str = Query("", alias="from"),

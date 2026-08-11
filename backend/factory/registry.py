@@ -117,21 +117,32 @@ class ServiceRegistry:
             trigger="interval",
             hours=6,
         )
-        # 自动采集（v0.8.1 职责重组）：采集只入 DB 数据量小，无需手动操心——
-        # 周期自动跑全部配置源（多源遍历 + 逐源冷却），0=关闭仅手动
-        auto_min = int(getattr(self.settings, "pipeline_auto_collect_minutes", 30) or 0)
-        if auto_min > 0:
-            self.scheduler.add_job(
-                "collect_auto",
-                self._collect_tick,
-                trigger="interval",
-                minutes=auto_min,
-            )
+        # 自动采集（v0.8.2 职责重组）：采集只入 DB 数据量小，无需手动操心。
+        # 固定每分钟 tick，间隔按运行时配置判断——改配置即时生效无需重启
+        # （0=关闭仅手动）
+        self.scheduler.add_job(
+            "collect_auto",
+            self._collect_tick,
+            trigger="interval",
+            minutes=1,
+        )
         self.log.get().info("ServiceRegistry initialized (AI via ProviderRegistry)")
 
     async def _collect_tick(self) -> None:
-        """自动采集：手动运行中跳过（running 守卫）；多源遍历由引擎完成。"""
+        """自动采集：按配置间隔节流（运行中/间隔未到/关闭都跳过）。"""
+        import time as _time
+
+        interval_min = int(
+            getattr(self.settings, "pipeline_auto_collect_minutes", 30) or 0
+        )
+        if interval_min <= 0:
+            return  # 关闭
+        now = _time.time()
+        last = getattr(self, "_last_auto_collect", 0.0)
+        if now - last < interval_min * 60:
+            return  # 间隔未到
         try:
+            self._last_auto_collect = now
             result = await self.pipeline.run_batch("collect")
             summary = result.get("summary") or {}
             if summary.get("collected", 0) > 0:

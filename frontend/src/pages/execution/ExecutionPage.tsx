@@ -96,6 +96,9 @@ export function ExecutionPage() {
           failures={pipeline.failures}
           publishStatus={pipeline.publishStatus}
           autoCollectMinutes={pipeline.autoCollectMinutes}
+          collectStatus={pipeline.collectStatus}
+          collectProgress={pipeline.collectProgress}
+          stop={pipeline.stop}
           act={pipeline.act}
           saveMeta={pipeline.saveMeta}
           publishItem={pipeline.publishItem}
