@@ -375,10 +375,10 @@ export function usePipelineExecution() {
 
   /** 生产方式批量设置（v0.3.3，预处理人工选择）。 */
   async function setProduceOptions(items: PipelineItem[], options: Record<string, boolean>) {
+    // v0.8.4：生产方式点击已有即时视觉反馈（本地 state）——不再 toast，避免噪音
     try {
-      const res = await pipelineApi.setProduceOptions(items.map((i) => i.id), options)
+      await pipelineApi.setProduceOptions(items.map((i) => i.id), options)
       refresh()
-      toast(t('console.produceSaved', { n: res.updated }), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }

@@ -643,7 +643,6 @@
       "batchEmpty": "Select items first",
       "selectAll": "Select all",
       "deselectAll": "Deselect all",
-      "produceSaved": "Updated produce mode for {{n}} item(s)",
       "now": "Produce",
       "nowHint": "Produce now per produce mode (after download)",
       "noRawHint": "Download the media first",

@@ -658,7 +658,6 @@
       "batchEmpty": "请先勾选条目",
       "selectAll": "全选",
       "deselectAll": "取消全选",
-      "produceSaved": "已更新 {{n}} 条生产方式",
       "now": "制作",
       "nowHint": "按生产方式立即制作（下载后可用）",
       "noRawHint": "先下载素材再制作",
