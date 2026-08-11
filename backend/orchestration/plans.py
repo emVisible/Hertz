@@ -89,7 +89,7 @@ class PlanService(BaseCrudService):
     async def update(self, plan_id, **fields) -> dict:
         if "phase_order" in fields and fields["phase_order"] is not None:
             fields["phase_order"] = self.validate_phase_order(fields["phase_order"])
-        return await super().update(plan_id, fields)
+        return await super().update(plan_id, **fields)
 
     async def clone(self, plan_id: UUID, name: str | None = None) -> dict:
         """克隆计划（v0.4 D2）：复制全部字段为新计划，独立可编辑。"""
@@ -115,7 +115,7 @@ class PlanService(BaseCrudService):
             raise NotFoundError()
         return {
             "version": 1,
-            "plan": self._serialize(plan),
+            "plan": await self._serialize(plan),
         }
 
     async def import_plan(self, payload: dict) -> dict:
@@ -140,8 +140,8 @@ class PlanService(BaseCrudService):
             buff_keys=list(data.get("buff_keys") or []),
         )
 
-    @staticmethod
-    def _serialize(plan: Plan) -> dict:
+    @classmethod
+    async def _serialize(cls, plan: Plan) -> dict:
         return {
             "id": str(plan.id),
             "name": plan.name,

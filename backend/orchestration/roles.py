@@ -5,12 +5,12 @@
 """
 
 import logging
-from uuid import UUID
 
 from sqlalchemy import select
 
 from backend.models.role import Role
 from backend.models.session import session_factory
+from backend.orchestration.crud import BaseCrudService
 from backend.orchestration.phases import PHASES
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,9 @@ BUILTIN_ROLES: list[dict] = [
 ]
 
 
-class RoleService:
+class RoleService(BaseCrudService):
+    model = Role
+
     async def _seed(self) -> None:
         """首次访问：种入默认角色 + 内置专职角色（幂等，已存在跳过）。"""
         async with session_factory() as session:
@@ -108,14 +110,7 @@ class RoleService:
                     select(Role).order_by(Role.sort_order, Role.created_at)
                 )).scalars().all()
             )
-            return [self._serialize(r) for r in rows]
-
-    async def get(self, role_id: UUID) -> dict:
-        async with session_factory() as session:
-            row = await session.get(Role, role_id)
-            if row is None:
-                raise KeyError(f"role not found: {role_id}")
-            return self._serialize(row)
+            return [await self._serialize(r) for r in rows]
 
     async def create(
         self,
@@ -140,30 +135,10 @@ class RoleService:
             session.add(row)
             await session.commit()
             await session.refresh(row)
-            return self._serialize(row)
-
-    async def update(self, role_id: UUID, **fields) -> dict:
-        async with session_factory() as session:
-            row = await session.get(Role, role_id)
-            if row is None:
-                raise KeyError(f"role not found: {role_id}")
-            for key, value in fields.items():
-                if value is not None and hasattr(row, key):
-                    setattr(row, key, value)
-            await session.commit()
-            await session.refresh(row)
-            return self._serialize(row)
-
-    async def delete(self, role_id: UUID) -> None:
-        async with session_factory() as session:
-            row = await session.get(Role, role_id)
-            if row is None:
-                raise KeyError(f"role not found: {role_id}")
-            await session.delete(row)
-            await session.commit()
+            return await self._serialize(row)
 
     @staticmethod
-    def _serialize(row: Role) -> dict:
+    async def _serialize(row: Role) -> dict:
         return {
             "id": str(row.id),
             "key": row.key,

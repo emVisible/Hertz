@@ -63,10 +63,10 @@ class BriefService(BaseCrudService):
         )
 
     async def update(self, brief_id, **fields) -> dict:
-        return await super().update(brief_id, fields)
+        return await super().update(brief_id, **fields)
 
     @staticmethod
-    def _serialize(brief: Brief) -> dict:
+    async def _serialize(brief: Brief) -> dict:
         return {
             "id": str(brief.id),
             "name": brief.name,

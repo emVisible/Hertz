@@ -6,12 +6,12 @@ engine 运行时按档位 key 解析指令注入 system prompt（DB 优先，常
 """
 
 import logging
-import uuid
 
 from sqlalchemy import select
 
 from backend.models.buff import DepthLevel
 from backend.models.session import session_factory
+from backend.orchestration.crud import BaseCrudService
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,9 @@ BUILTIN_DEPTHS: list[dict] = [
 ]
 
 
-class DepthService:
+class DepthService(BaseCrudService):
+    model = DepthLevel
+
     async def _seed(self) -> None:
         """种入内置档位并同步代码版本（AXIOM §1.2 单一真相源）。"""
         async with session_factory() as session:
@@ -106,7 +108,7 @@ class DepthService:
                     .order_by(DepthLevel.enabled.desc(), DepthLevel.sort_order.asc())
                 )
             ).scalars().all()
-            return [self._serialize(r) for r in rows]
+            return [await self._serialize(r) for r in rows]
 
     async def effect_for(self, key: str) -> str:
         """档位指令（DB 优先；内置兜底代码常量——无 DB/未 seed 时不阻塞运行）。"""
@@ -137,28 +139,7 @@ class DepthService:
             session.add(row)
             await session.commit()
             await session.refresh(row)
-            return self._serialize(row)
-
-    async def update(self, depth_id: uuid.UUID, **fields) -> dict:
-        async with session_factory() as session:
-            row = await session.get(DepthLevel, depth_id)
-            if row is None:
-                raise KeyError("depth level not found")
-            for k, v in fields.items():
-                if v is not None:
-                    setattr(row, k, v)
-            await session.merge(row)
-            await session.commit()
-            await session.refresh(row)
-            return self._serialize(row)
-
-    async def delete(self, depth_id: uuid.UUID) -> None:
-        async with session_factory() as session:
-            row = await session.get(DepthLevel, depth_id)
-            if row is None:
-                raise KeyError("depth level not found")
-            await session.delete(row)
-            await session.commit()
+            return await self._serialize(row)
 
     async def restore_defaults(self) -> dict:
         """恢复出厂：删除全部行后重新 seed 内置五档（用户自定义一并清掉）。"""
@@ -171,7 +152,7 @@ class DepthService:
         return {"ok": True, "count": len(BUILTIN_DEPTHS)}
 
     @staticmethod
-    def _serialize(row: DepthLevel) -> dict:
+    async def _serialize(row: DepthLevel) -> dict:
         return {
             "id": str(row.id),
             "key": row.key,

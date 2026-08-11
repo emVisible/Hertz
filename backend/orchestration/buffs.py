@@ -10,18 +10,20 @@ Debuff = 反向提示词（指明"不要做什么"），与 buff 同一维护机
 
 import logging
 import random
-from uuid import UUID
 
 from sqlalchemy import select
 
 from backend.models.buff import Buff
 from backend.models.session import session_factory
 from backend.orchestration.buffs_data import BUILTIN_BUFFS, BUILTIN_DEBUFFS, RANDOM_BUFFS
+from backend.orchestration.crud import BaseCrudService
 
 logger = logging.getLogger(__name__)
 
 # 内置 debuff 单一真相源：反向提示词（"不要做什么"）
-class BuffService:
+class BuffService(BaseCrudService):
+    model = Buff
+
     async def _seed(self) -> None:
         """种入内置 buff/debuff 并同步代码版本（AXIOM §1.2 单一真相源）。
 
@@ -75,14 +77,7 @@ class BuffService:
                     select(Buff).order_by(Buff.category, Buff.sort_order, Buff.created_at)
                 )).scalars().all()
             )
-            return [self._serialize(r) for r in rows]
-
-    async def get(self, buff_id: UUID) -> dict:
-        async with session_factory() as session:
-            row = await session.get(Buff, buff_id)
-            if row is None:
-                raise KeyError(f"buff not found: {buff_id}")
-            return self._serialize(row)
+            return [await self._serialize(r) for r in rows]
 
     async def create(
         self,
@@ -111,29 +106,7 @@ class BuffService:
             session.add(row)
             await session.commit()
             await session.refresh(row)
-            return self._serialize(row)
-
-    async def update(self, buff_id: UUID, **fields) -> dict:
-        async with session_factory() as session:
-            row = await session.get(Buff, buff_id)
-            if row is None:
-                raise KeyError(f"buff not found: {buff_id}")
-            for key, value in fields.items():
-                if value is not None and hasattr(row, key):
-                    setattr(row, key, value)
-            await session.commit()
-            await session.refresh(row)
-            return self._serialize(row)
-
-    async def delete(self, buff_id: UUID) -> None:
-        async with session_factory() as session:
-            row = await session.get(Buff, buff_id)
-            if row is None:
-                raise KeyError(f"buff not found: {buff_id}")
-            await session.delete(row)
-            await session.commit()
-
-    # ---------- engine ----------
+            return await self._serialize(row)
 
     async def resolve_effects(self, buff_keys: list[str]) -> list[dict]:
         """buff keys → 注入指令。`random`/`wild_card` 从随机池抽 2 个。
@@ -161,16 +134,16 @@ class BuffService:
                     if p.key in seen:
                         continue
                     seen.add(p.key)
-                    resolved.append(self._serialize(p))
+                    resolved.append(await self._serialize(p))
                 continue
             row = index.get(key)
             if row and row.key not in seen:
                 seen.add(row.key)
-                resolved.append(self._serialize(row))
+                resolved.append(await self._serialize(row))
         return resolved
 
     @staticmethod
-    def _serialize(row: Buff) -> dict:
+    async def _serialize(row: Buff) -> dict:
         return {
             "id": str(row.id),
             "key": row.key,

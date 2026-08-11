@@ -15,6 +15,9 @@ log = logging.getLogger("hertz.http")
 _CODE_STATUS = {
     "item_not_found": 404,
     "invalid_item_state": 409,
+    "not_found": 404,
+    "already_running": 409,
+    "invalid_plan": 422,
 }
 
 

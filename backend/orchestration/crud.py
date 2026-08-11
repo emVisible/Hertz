@@ -1,7 +1,9 @@
 """Shared CRUD scaffolding for orchestration entities.
 
 Each entity service follows the same shape: standalone DB sessions via
-``session_factory``, manual serialization, stable error codes.
+``session_factory``, async serialization, stable error codes.
+v0.8：_serialize 统一为 async（模板方法）——buffs/roles/depths/brief_groups/
+templates 全部继承本基类，消灭三套手抄实现。
 """
 
 from uuid import UUID
@@ -22,7 +24,7 @@ class BaseCrudService:
             session.add(obj)
             await session.commit()
             await session.refresh(obj)
-        return self._serialize(obj)
+        return await self._serialize(obj)
 
     async def list(self, limit: int = 100) -> list[dict]:
         order = func.coalesce(self.model.updated_at, self.model.created_at).desc()
@@ -30,15 +32,15 @@ class BaseCrudService:
             result = await session.execute(
                 select(self.model).order_by(order).limit(limit)
             )
-            return [self._serialize(o) for o in result.scalars().all()]
+            return [await self._serialize(o) for o in result.scalars().all()]
 
     async def get(self, obj_id: UUID) -> dict:
         obj = await self._load(obj_id)
         if obj is None:
             raise NotFoundError()
-        return self._serialize(obj)
+        return await self._serialize(obj)
 
-    async def update(self, obj_id: UUID, fields: dict) -> dict:
+    async def update(self, obj_id: UUID, **fields) -> dict:
         """Apply only the explicitly provided fields.
 
         Unlike `**fields` filtering on `None`, this keeps the ability to
@@ -53,7 +55,7 @@ class BaseCrudService:
         async with session_factory() as session:
             await session.merge(obj)
             await session.commit()
-        return self._serialize(obj)
+        return await self._serialize(obj)
 
     async def delete(self, obj_id: UUID) -> None:
         # Single session: get + delete on detached instances across sessions
@@ -69,6 +71,5 @@ class BaseCrudService:
         async with session_factory() as session:
             return await session.get(self.model, obj_id)
 
-    @staticmethod
-    def _serialize(obj: BaseModel) -> dict:
+    async def _serialize(self, obj: BaseModel) -> dict:
         raise NotImplementedError

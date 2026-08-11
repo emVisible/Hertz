@@ -6,12 +6,12 @@ options_json 存生产方式模块组合（passthrough/voice/subtitle/translate/
 
 import json
 import logging
-import uuid
 
 from sqlalchemy import select
 
 from backend.models.pipeline import ProduceTemplate
 from backend.models.session import session_factory
+from backend.orchestration.crud import BaseCrudService
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,9 @@ BUILTIN_TEMPLATES: list[dict] = [
 ]
 
 
-class ProduceTemplateService:
+class ProduceTemplateService(BaseCrudService):
+    model = ProduceTemplate
+
     async def _seed(self) -> None:
         async with session_factory() as session:
             rows = (await session.execute(select(ProduceTemplate))).scalars().all()
@@ -61,7 +63,7 @@ class ProduceTemplateService:
                     )
                 )
             ).scalars().all()
-            return [self._serialize(r) for r in rows]
+            return [await self._serialize(r) for r in rows]
 
     async def create(self, *, name: str, options: dict) -> dict:
         async with session_factory() as session:
@@ -73,34 +75,10 @@ class ProduceTemplateService:
             session.add(row)
             await session.commit()
             await session.refresh(row)
-            return self._serialize(row)
-
-    async def update(self, template_id: uuid.UUID, **fields) -> dict:
-        async with session_factory() as session:
-            row = await session.get(ProduceTemplate, template_id)
-            if row is None:
-                raise KeyError("produce template not found")
-            for k, v in fields.items():
-                if v is not None:
-                    if k == "options":
-                        row.options_json = json.dumps(v, ensure_ascii=False)
-                    else:
-                        setattr(row, k, v)
-            await session.merge(row)
-            await session.commit()
-            await session.refresh(row)
-            return self._serialize(row)
-
-    async def delete(self, template_id: uuid.UUID) -> None:
-        async with session_factory() as session:
-            row = await session.get(ProduceTemplate, template_id)
-            if row is None:
-                raise KeyError("produce template not found")
-            await session.delete(row)
-            await session.commit()
+            return await self._serialize(row)
 
     @staticmethod
-    def _serialize(row: ProduceTemplate) -> dict:
+    async def _serialize(row: ProduceTemplate) -> dict:
         try:
             options = json.loads(row.options_json or "{}")
         except (ValueError, TypeError):
