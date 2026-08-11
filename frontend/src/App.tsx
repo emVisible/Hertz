@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -9,8 +9,9 @@ import { ToastProvider, useToastStore } from './components/ui'
 import './i18n'
 import { applyTheme, useThemeStore } from './stores/theme'
 
-// 全局错误反馈（AXIOM §22.2）：任何 query/mutation 失败都有限频 toast，
-// mutation 失败还 invalidate 活动查询，让 UI 回滚到服务端真实状态。
+// 全局错误反馈（AXIOM §22.2）：query 失败（无缓存数据）限频 toast 兜底。
+// 业务操作全部走 async 函数 + try/catch（组件层 toast）——全项目无 useMutation，
+// 因此不配置 MutationCache（v0.8 查漏补缺：原配置为死代码）。
 const ERROR_TOAST_WINDOW_MS = 5000
 const lastToasts = new Map<string, number>()
 
@@ -32,12 +33,6 @@ const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error, query) => {
       if (!query.state.data) reportError(error, `query ${query.queryKey.join('.')}`)
-    },
-  }),
-  mutationCache: new MutationCache({
-    onError: (error, _vars, _ctx, mutation) => {
-      reportError(error, `mutation ${mutation.options.mutationKey?.join('.') ?? 'unknown'}`)
-      void queryClient.invalidateQueries()
     },
   }),
   defaultOptions: {

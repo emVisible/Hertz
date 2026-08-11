@@ -105,9 +105,6 @@ class PhaseEngine:
         await asyncio.to_thread(run_dir.mkdir, parents=True, exist_ok=True)
         agents = agents or {}
         brief_excerpt = (brief.content if brief and brief.content else "") or ""
-        # v5.3：平台语境由策略正文承载（策略 MD 已涵盖平台调性），
-        # 不再单独注入 platform_id 标签——保留空值走提示词默认。
-        platform_id = ""
 
         await self.files.atomic_write(run_dir / "user-input.md", topic)
 
@@ -158,6 +155,24 @@ class PhaseEngine:
         normalized = PlanService.validate_phase_order(raw_order)
         order = normalized if normalized is not None else raw_order
         phase_order = [p for p in order if p.get("enabled")]
+
+        # v0.8 拆分：执行循环 + package 兜底 → 收尾状态计算
+        results, final_text, cancelled = await self._execute_phases(
+            run, run_dir, phase_order, topic, brief_excerpt, plan, agents,
+        )
+        return await self._finalize(run, run_dir, results, final_text, cancelled)
+
+    async def _execute_phases(
+        self,
+        run: WorkflowRun,
+        run_dir: Path,
+        phase_order: list[dict],
+        topic: str,
+        brief_excerpt: str,
+        plan: Plan,
+        agents: dict[str, dict],
+    ) -> tuple[list[PhaseResult], str, bool]:
+        """执行循环（v0.8 拆自 run）：逐阶段执行 + package 失败兜底。"""
         total = len(phase_order)
         results: list[PhaseResult] = []
         cancelled = False
@@ -176,7 +191,7 @@ class PhaseEngine:
                 if phase.phase_type == "agent":
                     await self._run_agent(
                         phase.key, phase, run_dir, topic, brief_excerpt,
-                        platform_id, agents, index, total, result,
+                        agents, index, total, result,
                     )
                     if phase.key == "visual_director":
                         # 配图渲染并入视觉工序（原 image_gen 职责）：
@@ -185,7 +200,7 @@ class PhaseEngine:
                 else:
                     await self._run_system(
                         phase.key, phase, run_dir, topic, brief_excerpt,
-                        platform_id, plan, result,
+                        plan, result,
                     )
             except asyncio.CancelledError:
                 result.status = "cancelled"
@@ -226,7 +241,7 @@ class PhaseEngine:
             try:
                 # 失败兜底路径：跳过终检，仍产出 final.md（Mojito 行为）
                 final_text = await self._package(
-                    run_dir, topic, brief_excerpt, platform_id, result,
+                    run_dir, topic, brief_excerpt, result,
                     mode=plan.mode, phase_order=plan.phase_order, skip_gate=True,
                 )
             except Exception as exc:  # noqa: BLE001
@@ -241,6 +256,17 @@ class PhaseEngine:
             )
             await self._save_phase(run.id, "package", result)
 
+        return results, final_text, cancelled
+
+    async def _finalize(
+        self,
+        run: WorkflowRun,
+        run_dir: Path,
+        results: list[PhaseResult],
+        final_text: str,
+        cancelled: bool,
+    ) -> RunResult:
+        """收尾（v0.8 拆自 run）：状态聚合 + 事件广播。"""
         if not cancelled and all(r.status == "completed" for r in results):
             status = "completed"
         elif cancelled:
@@ -302,7 +328,6 @@ class PhaseEngine:
         run_dir: Path,
         topic: str,
         brief_excerpt: str,
-        platform_id: str,
         agents: dict[str, dict],
         index: int,
         total: int,
@@ -337,7 +362,7 @@ class PhaseEngine:
             phase_name=phase.name,
             topic=topic,
             brief_excerpt=brief_excerpt,
-            platform_id=platform_id,
+            platform_id="",
             prior=prior,
             output_file=f"{key}.md",
             templates=self._prompt_templates,
@@ -389,17 +414,16 @@ class PhaseEngine:
         run_dir: Path,
         topic: str,
         brief_excerpt: str,
-        platform_id: str,
         plan: Plan,
         result: PhaseResult,
     ) -> None:
         # system phase 也输出进度日志：长等待（LLM 分析 40s+）期间用户能看到"在跑"
         self._emit("log", None, message=f"[{phase.name}] 开始…")
         if key == "build_brief":
-            await self._build_brief(run_dir, topic, brief_excerpt, platform_id, result)
+            await self._build_brief(run_dir, topic, brief_excerpt, result)
         elif key == "package":
             await self._package(
-                run_dir, topic, brief_excerpt, platform_id, result,
+                run_dir, topic, brief_excerpt, result,
                 mode=plan.mode, phase_order=plan.phase_order,
             )
         elif key == "content_pipeline":
@@ -408,7 +432,7 @@ class PhaseEngine:
             raise RuntimeError(f"unknown system phase '{key}'")
 
     async def _build_brief(
-        self, run_dir: Path, topic: str, brief_excerpt: str, platform_id: str, result: PhaseResult
+        self, run_dir: Path, topic: str, brief_excerpt: str, result: PhaseResult
     ) -> None:
         # 环境状态并入策略分析（原 preflight 职责）：LLM/图像可用性一目了然
         llm = bool(self.ai is not None and self.ai.llm_available)
@@ -421,7 +445,7 @@ class PhaseEngine:
         text = ""
         if self.ai is not None and self.ai.llm_available:
             messages = build_brief_messages(
-                topic=topic, brief_excerpt=brief_excerpt, platform_id=platform_id,
+                topic=topic, brief_excerpt=brief_excerpt, platform_id="",
                 templates=self._prompt_templates,
             )
             try:
@@ -507,7 +531,7 @@ class PhaseEngine:
             raise RuntimeError(f"质量门禁未通过，缺失产物: {', '.join(missing)}")
 
     async def _package(
-        self, run_dir: Path, topic: str, brief_excerpt: str, platform_id: str, result: PhaseResult,
+        self, run_dir: Path, topic: str, brief_excerpt: str, result: PhaseResult,
         mode: str = "text", phase_order: list[dict] | None = None, skip_gate: bool = False,
     ) -> str:
         # 终检闸门：产物不全则打包失败（原 quality_gate 职责，不再单独排队）；
@@ -537,7 +561,7 @@ class PhaseEngine:
         if self.ai is not None and self.ai.llm_available:
             messages = build_synthesis_messages(
                 topic=topic, title=title, brief_excerpt=brief_excerpt,
-                platform_id=platform_id, body=body, visual=visual, distribution=distribution,
+                platform_id="", body=body, visual=visual, distribution=distribution,
                 mode=mode, templates=self._prompt_templates,
             )
             try:

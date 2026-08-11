@@ -1723,7 +1723,7 @@ async def test_package_prefers_finetune(client, tmp_path, monkeypatch) -> None:
     result = PhaseResult(key="package", name="打包", status="completed")
     try:
         await engine._package(
-            run_dir, "主题", "", "", result,
+            run_dir, "主题", "", result,
             mode="text", skip_gate=True,
         )
     except Exception:  # noqa: BLE001 — 拼接路径可能因缺素材报错，检查产物优先逻辑
