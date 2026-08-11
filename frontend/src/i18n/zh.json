@@ -676,7 +676,7 @@
     "produceOneDone": "已开始制作，完成后进入审核",
     "act": {
       "title": "运行状态",
-      "events": "{{n}} 事件",
+      "events": "实时事件",
       "toggle": "展开/收起",
       "eventsCount": "{{n}} 事件"
     },
@@ -775,7 +775,10 @@
     "collectProgress": "采集进度",
     "collectSources": "源",
     "collectWorking": "采集中…",
-    "collectFailed": "失败"
+    "collectFailed": "失败",
+    "collectedShort": "采集",
+    "insertedShort": "新入库",
+    "publishedShort": "发布"
   },
   "canvas": {
     "tool": {

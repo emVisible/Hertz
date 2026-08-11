@@ -661,7 +661,7 @@
     "produceOneDone": "Producing started — will return to review",
     "act": {
       "title": "Activity",
-      "events": "{{n}} events",
+      "events": "Live events",
       "toggle": "Toggle",
       "eventsCount": "{{n}} events"
     },
@@ -760,7 +760,10 @@
     "collectProgress": "Collect progress",
     "collectSources": "sources",
     "collectWorking": "collecting…",
-    "collectFailed": "failed"
+    "collectFailed": "failed",
+    "collectedShort": "Collect",
+    "insertedShort": "Inserted",
+    "publishedShort": "Published"
   },
   "canvas": {
     "tool": {

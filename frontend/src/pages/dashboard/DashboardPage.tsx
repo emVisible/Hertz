@@ -65,9 +65,9 @@ function TrendChart({ data }: { data: Array<{ date: string; collected: number; i
         )}
       </svg>
       <div className="flex flex-wrap items-center gap-3 px-1 text-[10px] text-text-secondary">
-        <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-4 rounded bg-[var(--hz-primary,#888)]" />{t('console.collected')}</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-4 rounded bg-blue-500" />{t('console.inserted')}</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-4 rounded bg-emerald-400" />{t('console.published')}</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-4 rounded bg-[var(--hz-primary,#888)]" />{t('console.collectedShort')}</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-4 rounded bg-blue-500" />{t('console.insertedShort')}</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-4 rounded bg-emerald-400" />{t('console.publishedShort')}</span>
       </div>
     </div>
   )
