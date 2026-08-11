@@ -8,7 +8,6 @@ import re
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
 
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
@@ -200,7 +199,6 @@ class _FakeFiles:
 
     async def safe_read(self, path):
         import asyncio
-        from pathlib import Path
 
         def _read() -> bytes:
             if Path(path).exists():
@@ -211,7 +209,6 @@ class _FakeFiles:
 
     async def atomic_write(self, path, content):
         import asyncio
-        from pathlib import Path
 
         def _write() -> None:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -335,7 +332,6 @@ class _FakeFiles2:
 
     async def safe_read(self, path):
         import asyncio
-        from pathlib import Path
 
         def _read() -> bytes:
             if Path(path).exists():
@@ -347,12 +343,10 @@ class _FakeFiles2:
 
 def test_33_rules_file_generated() -> None:
     """33 条铁律文件存在且覆盖 33 个编号。"""
-    from pathlib import Path
 
     path = Path(__file__).resolve().parent.parent / "data" / "reference" / "33-anti-ai-rules.md"
     assert path.exists(), "33-anti-ai-rules.md 缺失"
     content = path.read_text(encoding="utf-8")
-    import re
 
     numbers = [int(m) for m in re.findall(r"^### (\d+)\.", content, re.M)]
     assert len(numbers) == 33, f"应为 33 条，实际 {len(numbers)}"

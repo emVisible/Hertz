@@ -18,7 +18,6 @@ from backend.pipeline.phash import compute_phash
 from backend.pipeline.schedule import next_slot
 from backend.pipeline.steps.score import ScoreStep
 
-
 # ---------- 失败分类 ----------
 
 def test_classify_error_categories() -> None:
