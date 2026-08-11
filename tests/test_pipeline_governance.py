@@ -1666,3 +1666,97 @@ async def test_usage_absent_when_no_usage_chunk() -> None:
     assert "".join(chunks) == "ok"
     assert provider.last_usage is None
     await provider._client.aclose()
+
+
+# ---------- AI 味去除（v0.6：反 AI 专家 + AIFantune 工序 + debuff 深化） ----------
+
+
+def test_ai_fantune_phase_registered() -> None:
+    """AIFantune 工序：注册 + 默认顺序启用 + 反 AI 专家角色可派生。"""
+    from backend.orchestration.phases import DEFAULT_PHASE_ORDER, PHASE_INDEX
+
+    phase = PHASE_INDEX.get("ai_fantune")
+    assert phase is not None
+    assert phase.phase_type == "agent"
+    assert phase.role == "反 AI 专家"
+    assert phase.output_file == "ai_fantune.md"
+    assert "均值回归" in phase.method  # 原理注入
+    assert "不得编造" in phase.method  # no-fabrication 铁律
+    # 默认顺序中在 editor 后、distribution 前（用户可拖拽调整）
+    keys = [p["key"] for p in DEFAULT_PHASE_ORDER]
+    assert keys.index("ai_fantune") > keys.index("editor")
+    assert keys.index("ai_fantune") < keys.index("distribution")
+
+
+def test_anti_ai_debuffs_seeded() -> None:
+    """反 AI debuff 四件套：词汇/句式/吹胀/痕迹。"""
+    from backend.orchestration.buffs import BUILTIN_DEBUFFS
+
+    keys = {b["key"]: b for b in BUILTIN_DEBUFFS}
+    assert "no_ai_phrases" in keys and keys["no_ai_phrases"]["kind"] == "heavy"
+    for key in ("no_ai_structure", "no_ai_hype", "no_ai_artifact"):
+        assert key in keys, f"missing debuff {key}"
+        assert keys[key]["kind"] == "heavy"
+    assert "系动词回避" in keys["no_ai_structure"]["effect"]
+    assert "均值回归" in keys["no_ai_hype"]["effect"]
+    assert "知识截止免责" in keys["no_ai_artifact"]["effect"]
+
+
+@pytest.mark.asyncio
+async def test_package_prefers_ai_fantune(client, tmp_path, monkeypatch) -> None:
+    """打包正文优先 ai_fantune.md（AIFantune 启用时真正影响成品）。"""
+    from backend.orchestration.engine import PhaseEngine
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "writer.md").write_text("这是 AI 写的第一版正文。\n", encoding="utf-8")
+    (run_dir / "ai_fantune.md").write_text("这是人去 AI 味后的正文。\n", encoding="utf-8")
+
+    engine = PhaseEngine(files=None, hub=None, ai=None)  # type: ignore[arg-type]
+    engine.files = _FakeFiles()
+    engine.ai = None
+
+    # 兜底路径（skip_gate）验证 body 来源；ai=None 时走 _assemble 拼接
+    from backend.orchestration.engine import PhaseResult
+
+    result = PhaseResult(key="package", name="打包", status="completed")
+    try:
+        await engine._package(
+            run_dir, "主题", "", "", result,
+            mode="text", skip_gate=True,
+        )
+    except Exception:  # noqa: BLE001 — 拼接路径可能因缺素材报错，检查产物优先逻辑
+        pass
+    final = (
+        (run_dir / "final.md").read_text(encoding="utf-8")
+        if (run_dir / "final.md").exists()
+        else ""
+    )
+    assert "人去 AI 味后的正文" in final
+    assert "AI 写的第一版正文" not in final
+
+
+class _FakeFiles:
+    """Engine 文件存取的桩：直接映射 tmp 路径（包内最小实现）。"""
+
+    async def safe_read(self, path):
+        import asyncio
+        from pathlib import Path
+
+        def _read() -> bytes:
+            if Path(path).exists():
+                return Path(path).read_bytes()
+            return b""
+
+        return await asyncio.to_thread(_read)
+
+    async def atomic_write(self, path, content):
+        import asyncio
+        from pathlib import Path
+
+        def _write() -> None:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(content, encoding="utf-8")
+
+        await asyncio.to_thread(_write)
+
