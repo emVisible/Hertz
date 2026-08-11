@@ -660,6 +660,13 @@ export function PlansPage() {
               label: t('plans.groupConfig'),
               tabs: [
                 { id: 'phases', label: t('phases.title') },
+                { id: 'depths', label: t('depths.title') },
+              ],
+            },
+            {
+              id: 'strategy',
+              label: t('plans.groupStrategy'),
+              tabs: [
                 { id: 'briefs', label: t('nav.briefs') },
                 { id: 'brief-groups', label: t('briefGroups.title') },
               ],
@@ -678,14 +685,13 @@ export function PlansPage() {
               tabs: [
                 { id: 'buffs', label: t('buffs.title') },
                 { id: 'debuffs', label: t('buffs.debuffTitle') },
-                { id: 'depths', label: t('depths.title') },
               ],
             },
           ].map((group) => {
             const groupActive = group.tabs.some((it) => it.id === tab)
             return (
               <div key={group.id} className="flex items-center gap-1 py-0.5">
-                <div className="grid min-w-0 flex-1 grid-cols-3">
+                <div className="grid min-w-0 flex-1 grid-cols-2">
                   {group.tabs.map((item, idx) => (
                     <button
                       key={item.id}

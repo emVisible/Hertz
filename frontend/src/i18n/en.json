@@ -406,7 +406,8 @@
     "cloned": "Cloned (copy)",
     "imported": "Plan imported",
     "briefGroup": "Brief group (wins over single brief)",
-    "briefGroupPriority": "Group mounted — member briefs are concatenated at runtime, single brief above is ignored"
+    "briefGroupPriority": "Group mounted — member briefs are concatenated at runtime, single brief above is ignored",
+    "groupStrategy": "Strategy"
   },
   "studio": {
     "title": "Studio",

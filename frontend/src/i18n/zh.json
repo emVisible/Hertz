@@ -421,7 +421,8 @@
     "cloned": "已克隆（副本）",
     "imported": "计划已导入",
     "briefGroup": "策略组（优先于单策略）",
-    "briefGroupPriority": "已挂策略组——运行时组内策略按序拼接注入，忽略上方单个策略"
+    "briefGroupPriority": "已挂策略组——运行时组内策略按序拼接注入，忽略上方单个策略",
+    "groupStrategy": "策略"
   },
   "studio": {
     "title": "Studio",
