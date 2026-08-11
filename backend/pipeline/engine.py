@@ -19,14 +19,13 @@ from backend.models.session import session_factory
 from backend.models.system import JobRun, JobStatus
 from backend.pipeline.base import Pipe, ProcessResult, StepContext, StepError
 from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError, classify_error
-from backend.pipeline.steps import get_step
+from backend.pipeline.steps import PIPELINE_ORDER, get_step
 from backend.pipeline.steps.collect import run_collect
 
 logger = logging.getLogger(__name__)
 
 # Steps that consume items in status order; collect is batch-only.
 # v5.9 流程：download → score → produce → (audit 人工) → publish
-STEP_ORDER = ("collect", "download", "score", "produce", "publish")
 
 
 class StepEngine:
@@ -100,7 +99,7 @@ class StepEngine:
     async def run_chain(self, *, limit: int = 10, channel: str = "") -> dict:
         """Run collect → download → score → produce in sequence (review gate before publish)."""
         results: dict[str, dict] = {}
-        for step in STEP_ORDER:
+        for step in PIPELINE_ORDER:
             if step == "publish":
                 continue  # publish requires human approval
             results[step] = await self.run_batch(step, limit=limit, channel=channel)

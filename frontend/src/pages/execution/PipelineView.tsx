@@ -66,7 +66,6 @@ interface PipelineViewProps {
   setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
   produceOne: (item: PipelineItem) => Promise<void>
   produceBatch: () => Promise<void>
-  collectAndDownload: () => Promise<void>
   scoreOne: (item: PipelineItem) => Promise<void>
   scoreBatch: () => Promise<void>
   runStep: (stepName: string, channel?: string) => Promise<void>

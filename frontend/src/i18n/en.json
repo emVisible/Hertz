@@ -730,8 +730,7 @@
     "statsPrompt": "Stats (space separated): views likes favorites comments shares",
     "statsPromptInvalid": "Expected 5 numbers separated by spaces",
     "statsSaved": "Stats saved",
-    "preReviewEmptyHint": "{{n}} items waiting to download — download first, then score & produce",
-    "preReviewGoCollect": "Download",
+    "preReviewEmptyHint": "{{n}} items waiting to download — hit \"Download N\" on the right to bring them in, then score & produce",
     "similar": "Similar",
     "similarPublished": "similar to published",
     "similarQueued": "similar in queue",
@@ -763,7 +762,8 @@
     "collectFailed": "failed",
     "collectedShort": "Collect",
     "insertedShort": "Inserted",
-    "publishedShort": "Published"
+    "publishedShort": "Published",
+    "preReviewDownloadHere": "Download is on this page, top-right"
   },
   "canvas": {
     "tool": {

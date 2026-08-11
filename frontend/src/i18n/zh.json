@@ -745,8 +745,7 @@
     "statsPrompt": "补录数据（空格分隔）：播放 点赞 收藏 评论 分享",
     "statsPromptInvalid": "格式应为 5 个数字（空格分隔）",
     "statsSaved": "数据已保存",
-    "preReviewEmptyHint": "待下载队列还有 {{n}} 条——先下载再评分制作",
-    "preReviewGoCollect": "去下载",
+    "preReviewEmptyHint": "待下载队列还有 {{n}} 条——点击右上角「下载 N 条」入库后即可评分制作",
     "similar": "相似内容",
     "similarPublished": "与已发布相似",
     "similarQueued": "与队列内相似",
@@ -778,7 +777,8 @@
     "collectFailed": "失败",
     "collectedShort": "采集",
     "insertedShort": "新入库",
-    "publishedShort": "发布"
+    "publishedShort": "发布",
+    "preReviewDownloadHere": "下载按钮在本页右上角"
   },
   "canvas": {
     "tool": {

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useRef } from 'react'
+import { useQuery, useQueryClient, type Query } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import { api, pipelineApi, type PipelineEvent, type PipelineItem } from '../api'
@@ -13,8 +13,13 @@ export interface PipelineLog extends LogLine {
 }
 
 // 轮询只是 SSE 的兜底：空闲时 15s 一次，流水线运行中 2s（AXIOM §7.2 性能预算）。
-const pollingInterval = (query: unknown): number | false =>
-  (query as { state?: { data?: { running?: boolean } } })?.state?.data?.running ? 2000 : 15000
+// v5 Query 回调需全泛型才兼容各 useQuery 具体类型
+const pollingInterval = (
+  query: Query<any, any, any, any>,
+): number | false =>
+  (query.state.data as { running?: boolean } | undefined)?.running
+    ? 2000
+    : 15000
 
 /** Pipeline 域执行状态（从 ConsolePage 抽取，逻辑零改动）。 */
 export function usePipelineExecution() {
@@ -105,11 +110,6 @@ export function usePipelineExecution() {
     handleEvent(event)
   })
 
-  useEffect(() => {
-    void queryClient.invalidateQueries({ queryKey: ['pipeline-stage'] })
-    void queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] })
-  }, [status?.running, queryClient])
-
   function appendLog(text: string, kind: PipelineLog['kind']) {
     const now = new Date()
     const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
@@ -191,22 +191,6 @@ export function usePipelineExecution() {
   }
 
   const setLimit = (v: number) => setPipeline({ limit: v })
-
-
-  /** 一键采集+下载（v0.3.5，快捷链）。 */
-  async function collectAndDownload() {
-    if (runningRef.current) return
-    runningRef.current = true
-    try {
-      await pipelineApi.run('collect', limit)
-      await pipelineApi.run('download', limit)
-      refresh()
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'error')
-    } finally {
-      runningRef.current = false
-    }
-  }
 
   /** 单条评分（v0.3.5，预处理手动评分按钮）。 */
   async function scoreOne(item: PipelineItem) {
@@ -454,7 +438,6 @@ export function usePipelineExecution() {
     setProduceOptions,
     produceOne,
     produceBatch,
-    collectAndDownload,
     scoreOne,
     scoreBatch,
     runStep,
