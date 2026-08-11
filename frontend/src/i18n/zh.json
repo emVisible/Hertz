@@ -419,7 +419,9 @@
     "export": "导出",
     "import": "导入计划",
     "cloned": "已克隆（副本）",
-    "imported": "计划已导入"
+    "imported": "计划已导入",
+    "briefGroup": "策略组（优先于单策略）",
+    "briefGroupPriority": "已挂策略组——运行时组内策略按序拼接注入，忽略上方单个策略"
   },
   "studio": {
     "title": "Studio",
@@ -911,5 +913,17 @@
     "next": "下一步",
     "start": "开始",
     "skip": "跳过（不再提示）"
+  },
+  "briefGroups": {
+    "title": "策略组",
+    "new": "新建策略组",
+    "empty": "暂无策略组",
+    "name": "策略组名称",
+    "description": "说明",
+    "descriptionHint": "这个策略组解决什么问题（可选）",
+    "members": "组内策略（按顺序注入）",
+    "membersHint": "已选 {{n}} 个策略",
+    "hint": "策略组 = 策略的集合（类比团队=角色集合）。计划挂策略组后，组内策略按序拼接注入。",
+    "priorityHint": "挂了策略组的计划：组内策略按序拼接注入，忽略单个策略选择（组优先）。"
   }
 }

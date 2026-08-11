@@ -70,6 +70,7 @@ class PlanService(BaseCrudService):
         mode: str = PlanMode.TEXT,
         crew_id: UUID | None = None,
         brief_id: UUID | None = None,
+        brief_group_id: UUID | None = None,
         description: str = "",
         buff_keys: list | None = None,
     ) -> dict:
@@ -80,6 +81,7 @@ class PlanService(BaseCrudService):
             phase_order=phase_order,
             crew_id=crew_id,
             brief_id=brief_id,
+            brief_group_id=brief_group_id,
             description=description,
             buff_keys=buff_keys or [],
         )
@@ -102,6 +104,7 @@ class PlanService(BaseCrudService):
             phase_order=plan.phase_order,
             crew_id=plan.crew_id,
             brief_id=plan.brief_id,
+            brief_group_id=plan.brief_group_id,
             buff_keys=plan.buff_keys or [],
         )
 
@@ -149,6 +152,7 @@ class PlanService(BaseCrudService):
             "phase_order": PlanService.validate_phase_order(plan.phase_order) or [],
             "crew_id": str(plan.crew_id) if plan.crew_id else None,
             "brief_id": str(plan.brief_id) if plan.brief_id else None,
+            "brief_group_id": str(plan.brief_group_id) if plan.brief_group_id else None,
             "buff_keys": plan.buff_keys or [],
             "created_at": plan.created_at.isoformat() if plan.created_at else None,
             "updated_at": plan.updated_at.isoformat() if plan.updated_at else None,

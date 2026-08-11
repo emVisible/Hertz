@@ -1678,7 +1678,7 @@ def test_finetune_phase_registered() -> None:
     phase = PHASE_INDEX.get("finetune")
     assert phase is not None
     assert phase.phase_type == "agent"
-    assert phase.role == "反 AI 专家"
+    assert phase.role == "AI 调和工程师"  # v0.7 角色切换
     assert phase.output_file == "finetune.md"
     assert "均值回归" in phase.method  # 原理注入
     assert "不得编造" in phase.method  # no-fabrication 铁律
@@ -1767,3 +1767,82 @@ def test_finetune_legacy_alias() -> None:
     from backend.orchestration.phases import LEGACY_PHASE_ALIASES
 
     assert LEGACY_PHASE_ALIASES["ai_fantune"] == "finetune"
+
+
+# ---------- 策略组 / 反 AI 资产（v0.7） ----------
+
+
+@pytest.mark.asyncio
+async def test_brief_groups_crud_and_seed(client) -> None:
+    """策略组：内置反 AI 策略组 seed + CRUD + 组优先挂载。"""
+    # seed：内置反 AI 策略 + 反 AI 策略组
+    briefs = (await client.get("/api/briefs")).json()
+    anti = next((b for b in briefs if b["name"] == "反 AI 策略"), None)
+    assert anti is not None
+    assert "均值回归" in anti["content"]  # 超长策略核心原理
+    assert "不得编造" in anti["content"]  # no-fabrication 铁律
+    assert "stop-slop" in anti["content"] or "五维" in anti["content"]
+
+    groups = (await client.get("/api/brief-groups")).json()
+    g = next((x for x in groups if x["name"] == "反 AI 策略组"), None)
+    assert g is not None
+    assert str(anti["id"]) in g["brief_ids"]
+
+    # CRUD：新建 + 更新 + 删除
+    resp = await client.post(
+        "/api/brief-groups",
+        json={"name": "测试组", "description": "d", "brief_ids": [str(anti["id"])]},
+    )
+    assert resp.status_code == 200
+    gid = resp.json()["id"]
+    resp = await client.put(
+        f"/api/brief-groups/{gid}", json={"name": "测试组2"}
+    )
+    assert resp.status_code == 200 and resp.json()["name"] == "测试组2"
+    resp = await client.delete(f"/api/brief-groups/{gid}")
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_brief_group_resolve_and_plan_mount(client) -> None:
+    """引擎拼接注入 + 计划挂载（组优先于单 brief）。"""
+    from backend.models.brief import Brief, BriefGroup
+    from backend.orchestration.brief_groups import BriefGroupService
+
+    async with session_factory() as session:
+        b1 = Brief(name="策略一", content="内容一。")
+        b2 = Brief(name="策略二", content="内容二。")
+        session.add_all([b1, b2])
+        await session.commit()
+        group = BriefGroup(name="组合", brief_ids=[str(b1.id), str(b2.id)])
+        session.add(group)
+        await session.commit()
+        gid, bid1 = group.id, b1.id
+
+    svc = BriefGroupService()
+    content = await svc.resolve_content(gid)
+    assert "## 策略：策略一" in content and "内容一。" in content
+    assert "## 策略：策略二" in content
+
+    # 计划挂组：create 带 brief_group_id
+    resp = await client.post(
+        "/api/plans",
+        json={"name": "组挂载测试", "brief_group_id": str(gid), "brief_id": str(bid1)},
+    )
+    assert resp.status_code == 200
+    plan = resp.json()
+    assert plan["brief_group_id"] == str(gid)
+    assert plan["brief_id"] == str(bid1)  # 两者并存，引擎按组优先
+
+
+@pytest.mark.asyncio
+async def test_ai_harmonizer_role_seeded(client) -> None:
+    """内置角色 AI 调和工程师 seed。"""
+    roles = (await client.get("/api/roles")).json()
+    harmonizer = next((r for r in roles if r["key"] == "ai_harmonizer"), None)
+    assert harmonizer is not None
+    assert harmonizer["role_name"] == "AI 调和工程师"
+    assert (
+        "均值回归" in harmonizer["description"]
+        or "Signs of AI writing" in harmonizer["description"]
+    )

@@ -93,7 +93,19 @@ export interface Plan {
   phase_order: PhaseOrderItem[]
   crew_id: string | null
   brief_id: string | null
+  brief_group_id: string | null
   buff_keys: string[]
+  created_at: string | null
+  updated_at: string | null
+}
+
+/** 策略组（v0.7）：策略的集合（类比团队=角色集合），组优先于单策略 */
+export interface BriefGroup {
+  id: string
+  name: string
+  description: string
+  brief_ids: string[]
+  brief_names: string[]
   created_at: string | null
   updated_at: string | null
 }
@@ -181,6 +193,16 @@ export const briefsApi = {
   update: (id: string, body: Partial<Pick<Brief, 'name' | 'content'>>) =>
     api.put<Brief>(`/api/briefs/${id}`, body),
   remove: (id: string) => api.delete<{ ok: boolean }>(`/api/briefs/${id}`),
+}
+
+/** 策略组（v0.7）：策略的集合（类比团队=角色集合） */
+export const briefGroupsApi = {
+  list: () => api.get<BriefGroup[]>('/api/brief-groups'),
+  create: (body: { name: string; description?: string; brief_ids?: string[] }) =>
+    api.post<BriefGroup>('/api/brief-groups', body),
+  update: (id: string, body: Partial<Pick<BriefGroup, 'name' | 'description' | 'brief_ids'>>) =>
+    api.put<BriefGroup>(`/api/brief-groups/${id}`, body),
+  remove: (id: string) => api.delete<{ ok: boolean }>(`/api/brief-groups/${id}`),
 }
 
 export const plansApi = {

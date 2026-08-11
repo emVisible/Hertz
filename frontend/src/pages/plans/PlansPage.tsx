@@ -12,6 +12,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import {
+  briefGroupsApi,
   briefsApi,
   buffsApi,
   crewsApi,
@@ -19,6 +20,7 @@ import {
   plansApi,
   rolesApi,
   type Brief,
+  type BriefGroup,
   type Buff,
   type Crew,
   type DepthLevel,
@@ -99,7 +101,7 @@ function SortablePhaseRow({
   )
 }
 
-type LeftTab = 'plans' | 'phases' | 'briefs' | 'roles' | 'crews' | 'buffs' | 'debuffs' | 'depths'
+type LeftTab = 'plans' | 'phases' | 'briefs' | 'brief-groups' | 'roles' | 'crews' | 'buffs' | 'debuffs' | 'depths'
 
 export function PlansPage() {
   const { t } = useTranslation()
@@ -112,6 +114,7 @@ export function PlansPage() {
   const { data: buffs = [] } = useQuery({ queryKey: ['buffs'], queryFn: buffsApi.list })
   const { data: depths = [] } = useQuery({ queryKey: ['depths'], queryFn: depthsApi.list })
   const { data: briefs = [] } = useQuery({ queryKey: ['briefs'], queryFn: briefsApi.list })
+  const { data: briefGroups = [] } = useQuery({ queryKey: ['brief-groups'], queryFn: briefGroupsApi.list })
   const { data: palette = [] } = useQuery({ queryKey: ['phases'], queryFn: plansApi.phases })
 
   const [tab, setTab] = useState<LeftTab>('plans')
@@ -123,6 +126,7 @@ export function PlansPage() {
   const [mode, setMode] = useState<'text' | 'visual' | 'video'>('text')
   const [crewId, setCrewId] = useState('')
   const [briefId, setBriefId] = useState('')
+  const [briefGroupId, setBriefGroupId] = useState('')
   const [planBuffKeys, setPlanBuffKeys] = useState<string[]>([])
   const [phaseOrder, setPhaseOrder] = useState<PhaseOrderItem[]>([])
   const [dirty, setDirty] = useState(false)
@@ -132,6 +136,13 @@ export function PlansPage() {
   const [briefName, setBriefName] = useState('')
   const [briefContent, setBriefContent] = useState('')
   const [briefDirty, setBriefDirty] = useState(false)
+
+  // ---- 策略组状态（v0.7）----
+  const [groupSel, setGroupSel] = useState<string | null>(null)
+  const [groupName, setGroupName] = useState('')
+  const [groupDesc, setGroupDesc] = useState('')
+  const [groupBriefIds, setGroupBriefIds] = useState<string[]>([])
+  const [groupDirty, setGroupDirty] = useState(false)
 
   // ---- phase 状态 ----
   const [phaseSel, setPhaseSel] = useState<string | null>(null)
@@ -174,6 +185,7 @@ export function PlansPage() {
     setMode(plan.mode)
     setCrewId(plan.crew_id ?? '')
     setBriefId(plan.brief_id ?? '')
+    setBriefGroupId(plan.brief_group_id ?? '')
     setPhaseOrder(plan.phase_order)
     setPlanBuffKeys(plan.buff_keys ?? [])
     setDirty(false)
@@ -250,6 +262,7 @@ export function PlansPage() {
         mode,
         crew_id: crewId || null,
         brief_id: briefId || null,
+        brief_group_id: briefGroupId || null,
         phase_order: phaseOrder,
         buff_keys: planBuffKeys,
       })
@@ -376,6 +389,61 @@ export function PlansPage() {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }
   }
+
+  // ================= 策略组（v0.7，类比团队=角色集合） =================
+  function loadGroup(group: BriefGroup | null) {
+    if (!group) {
+      setGroupSel(null)
+      return
+    }
+    setGroupSel(group.id)
+    setGroupName(group.name)
+    setGroupDesc(group.description ?? '')
+    setGroupBriefIds(group.brief_ids)
+    setGroupDirty(false)
+  }
+
+  async function createGroup() {
+    try {
+      const group = await briefGroupsApi.create({ name: t('briefGroups.new') })
+      await queryClient.invalidateQueries({ queryKey: ['brief-groups'] })
+      setTab('brief-groups')
+      loadGroup(group)
+      setGroupDirty(true)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  async function saveGroup() {
+    if (!groupSel) return
+    try {
+      const group = await briefGroupsApi.update(groupSel, {
+        name: groupName,
+        description: groupDesc,
+        brief_ids: groupBriefIds,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['brief-groups'] })
+      loadGroup(group)
+      toast(t('briefs.saved'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  async function removeGroup(group: BriefGroup) {
+    if (!window.confirm(t('common.delete'))) return
+    try {
+      await briefGroupsApi.remove(group.id)
+      await queryClient.invalidateQueries({ queryKey: ['brief-groups'] })
+      if (groupSel === group.id) loadGroup(null)
+      toast(t('briefs.deleted'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  const selectedGroup = briefGroups.find((g) => g.id === groupSel) ?? null
 
   // ================= 团队（TeamsTab 受控选择） =================
   function loadCrew(crew: Crew | null) {
@@ -593,6 +661,7 @@ export function PlansPage() {
               tabs: [
                 { id: 'phases', label: t('phases.title') },
                 { id: 'briefs', label: t('nav.briefs') },
+                { id: 'brief-groups', label: t('briefGroups.title') },
               ],
             },
             {
@@ -616,7 +685,7 @@ export function PlansPage() {
             const groupActive = group.tabs.some((it) => it.id === tab)
             return (
               <div key={group.id} className="flex items-center gap-1 py-0.5">
-                <div className="grid min-w-0 flex-1 grid-cols-2">
+                <div className="grid min-w-0 flex-1 grid-cols-3">
                   {group.tabs.map((item, idx) => (
                     <button
                       key={item.id}
@@ -971,6 +1040,44 @@ export function PlansPage() {
                 </button>
               </li>
             ))}
+          {tab === 'brief-groups' && (
+            <li className="p-1">
+              <Button className="w-full" onClick={() => void createGroup()}>
+                <Icon name="plus" size={14} />
+                {t('briefGroups.new')}
+              </Button>
+            </li>
+          )}
+          {tab === 'brief-groups' &&
+            briefGroups.map((group) => (
+              <li key={group.id}>
+                <button
+                  type="button"
+                  onClick={() => loadGroup(group)}
+                  className={`flex w-full items-center justify-between gap-1 px-3 py-2 text-left text-sm transition-colors ${
+                    groupSel === group.id
+                      ? 'bg-surface-2 text-text-primary'
+                      : 'text-text-secondary hover:bg-surface-2/50'
+                  }`}
+                >
+                  <span className="truncate">{group.name}</span>
+                  <span className="shrink-0 text-[10px] text-text-disabled">
+                    {group.brief_ids.length}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={t('common.delete')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void removeGroup(group)
+                    }}
+                    className="shrink-0 p-0.5 text-text-disabled hover:text-error"
+                  >
+                    <Icon name="trash" size={12} />
+                  </button>
+                </button>
+              </li>
+            ))}
           {tab === 'crews' && (
             <li className="p-1">
               <Button className="w-full" onClick={() => void createCrew()}>
@@ -1013,13 +1120,14 @@ export function PlansPage() {
             ))}
           {(tab === 'plans' && plans.length === 0) ||
           (tab === 'briefs' && briefs.length === 0) ||
+          (tab === 'brief-groups' && briefGroups.length === 0) ||
           (tab === 'roles' && roles.length === 0) ||
           (tab === 'buffs' && buffs.filter((b) => b.polarity === 'buff').length === 0) ||
           (tab === 'debuffs' && buffs.filter((b) => b.polarity === 'debuff').length === 0) ||
           (tab === 'depths' && depths.length === 0) ||
           (tab === 'crews' && crews.length === 0) ? (
             <p className="px-3 py-4 text-center text-xs text-text-disabled">
-              {tab === 'plans' ? t('plans.empty') : tab === 'briefs' ? t('briefs.empty') : tab === 'roles' ? t('roles.empty') : tab === 'buffs' ? t('buffs.empty') : tab === 'debuffs' ? t('buffs.debuffEmpty') : tab === 'depths' ? t('depths.empty') : t('teams.empty')}
+              {tab === 'plans' ? t('plans.empty') : tab === 'briefs' ? t('briefs.empty') : tab === 'brief-groups' ? t('briefGroups.empty') : tab === 'roles' ? t('roles.empty') : tab === 'buffs' ? t('buffs.empty') : tab === 'debuffs' ? t('buffs.debuffEmpty') : tab === 'depths' ? t('depths.empty') : t('teams.empty')}
             </p>
           ) : null}
         </ul>
@@ -1066,6 +1174,21 @@ export function PlansPage() {
                     ...briefs.map((b) => ({ value: b.id, label: b.name })),
                   ]}
                 />
+                {/* 策略组（v0.7）：组优先于单个 brief */}
+                <Select
+                  label={t('plans.briefGroup')}
+                  value={briefGroupId}
+                  onChange={(e) => { setBriefGroupId(e.target.value); setDirty(true) }}
+                  options={[
+                    { value: '', label: t('plans.none') },
+                    ...briefGroups.map((g) => ({ value: g.id, label: g.name })),
+                  ]}
+                />
+                {briefGroupId && (
+                  <p className="-mt-1 text-[10px] text-text-disabled">
+                    {t('plans.briefGroupPriority')}
+                  </p>
+                )}
                 {/* 计划级 buff（v5.0）：运行时可覆盖 */}
                 <div>
                   <p className="mb-1 text-xs font-medium text-text-secondary">{t('plans.buffs')}</p>
@@ -1347,6 +1470,80 @@ export function PlansPage() {
         {tab === 'briefs' && !selectedBrief && (
           <div className="w-full">
             <EmptyState icon="briefs" title={briefs.length === 0 ? t('briefs.empty') : t('briefs.noSelection')} />
+          </div>
+        )}
+
+        {/* 策略组管理（v0.7）：名称/描述 + 策略多选 + 组优先提示 */}
+        {tab === 'brief-groups' && !selectedGroup && (
+          <div className="w-full">
+            <EmptyState
+              icon="briefs"
+              title={briefGroups.length === 0 ? t('briefGroups.empty') : t('briefs.noSelection')}
+              description={t('briefGroups.hint')}
+            />
+          </div>
+        )}
+
+        {tab === 'brief-groups' && selectedGroup && (
+          <div className="flex w-full flex-col gap-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <Input
+                label={t('briefGroups.name')}
+                value={groupName}
+                onChange={(e) => { setGroupName(e.target.value); setGroupDirty(true) }}
+                className="w-64"
+              />
+              <Button onClick={saveGroup} disabled={!groupDirty}>
+                <Icon name="check" size={14} />
+                {t('briefs.save')}
+              </Button>
+            </div>
+            <Input
+              label={t('briefGroups.description')}
+              value={groupDesc}
+              onChange={(e) => { setGroupDesc(e.target.value); setGroupDirty(true) }}
+              placeholder={t('briefGroups.descriptionHint')}
+            />
+            <Card padded={false} className="flex min-h-0 flex-1 flex-col">
+              <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                <h2 className="text-sm font-semibold">{t('briefGroups.members')}</h2>
+                <span className="text-xs text-text-disabled">
+                  {t('briefGroups.membersHint', { n: groupBriefIds.length })}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 p-3">
+                {briefs.length === 0 && (
+                  <p className="text-xs text-text-disabled">{t('briefs.empty')}</p>
+                )}
+                {briefs.map((brief) => {
+                  const active = groupBriefIds.includes(brief.id)
+                  return (
+                    <button
+                      key={brief.id}
+                      type="button"
+                      onClick={() => {
+                        setGroupBriefIds(
+                          active
+                            ? groupBriefIds.filter((id) => id !== brief.id)
+                            : [...groupBriefIds, brief.id],
+                        )
+                        setGroupDirty(true)
+                      }}
+                      className={`border px-2 py-1 text-xs transition-colors ${
+                        active
+                          ? 'border-primary bg-primary/10 text-text-primary'
+                          : 'border-border text-text-secondary hover:border-primary hover:text-primary'
+                      }`}
+                    >
+                      {brief.name}
+                    </button>
+                  )
+                })}
+              </div>
+            </Card>
+            <p className="text-[10px] leading-relaxed text-text-disabled">
+              {t('briefGroups.priorityHint')}
+            </p>
           </div>
         )}
 

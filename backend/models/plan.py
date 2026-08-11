@@ -32,6 +32,10 @@ class Plan(BaseModel):
     brief_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("briefs.id", ondelete="SET NULL"), nullable=True
     )
+    # 策略组（v0.7）：组优先于单个 brief——挂了组则忽略 brief_id
+    brief_group_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("brief_groups.id", ondelete="SET NULL"), nullable=True
+    )
     # 计划级持久 buff（v5.0）：["human_touch", "de_ai", ...]；运行时 Studio 可覆盖
     buff_keys: Mapped[list] = mapped_column(JSONB, default=list)
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from backend.routers import (
     ai,
+    brief_groups,
     briefs,
     buffs,
     canvas,
@@ -34,6 +35,7 @@ api_router.include_router(buffs.router)
 api_router.include_router(depths.router)
 api_router.include_router(roles.router)
 api_router.include_router(briefs.router)
+api_router.include_router(brief_groups.router)
 api_router.include_router(plans.router)
 api_router.include_router(studio.router)
 api_router.include_router(pipeline.router)

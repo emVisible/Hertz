@@ -19,6 +19,7 @@ from backend.factory.scheduler import ScheduleManager
 from backend.infrastructure.events import EventHub
 from backend.infrastructure.logging import LogManager, log_manager
 from backend.infrastructure.storage import FileStore, file_store
+from backend.orchestration.brief_groups import BriefGroupService
 from backend.orchestration.briefs import BriefService
 from backend.orchestration.buffs import BuffService
 from backend.orchestration.crews import CrewService
@@ -75,6 +76,7 @@ class ServiceRegistry:
         self.buffs = BuffService()
         self.depths = DepthService()
         self.briefs = BriefService()
+        self.brief_groups = BriefGroupService()
         self.plans = PlanService()
         self.phases = PhasesService()
         self.studio = StudioService(files=file_store, hub=self.events)

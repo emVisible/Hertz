@@ -404,7 +404,9 @@
     "export": "Export",
     "import": "Import plan",
     "cloned": "Cloned (copy)",
-    "imported": "Plan imported"
+    "imported": "Plan imported",
+    "briefGroup": "Brief group (wins over single brief)",
+    "briefGroupPriority": "Group mounted — member briefs are concatenated at runtime, single brief above is ignored"
   },
   "studio": {
     "title": "Studio",
@@ -911,5 +913,17 @@
     "next": "Next",
     "start": "Get started",
     "skip": "Skip (never ask again)"
+  },
+  "briefGroups": {
+    "title": "Brief groups",
+    "new": "New brief group",
+    "empty": "No brief groups yet",
+    "name": "Group name",
+    "description": "Description",
+    "descriptionHint": "What this group solves (optional)",
+    "members": "Member briefs (injected in order)",
+    "membersHint": "{{n}} selected",
+    "hint": "A brief group is a collection of briefs (like Team = collection of Roles). Plans using a group get all member briefs concatenated in order.",
+    "priorityHint": "Plans with a group: member briefs are concatenated in order; the single brief selection is ignored (group wins)."
   }
 }

@@ -103,7 +103,19 @@ class StudioService:
                 plan.phase_order = cleaned
                 await session.commit()
             brief = None
-            if plan.brief_id is not None:
+            # v0.7 策略组：组优先于单个 brief——挂了组则忽略 brief_id
+            if plan.brief_group_id is not None:
+                from backend.orchestration.brief_groups import BriefGroupService
+
+                group_content = await BriefGroupService().resolve_content(
+                    plan.brief_group_id
+                )
+                if group_content:
+                    brief = Brief(
+                        name="策略组",
+                        content=group_content,
+                    )
+            if brief is None and plan.brief_id is not None:
                 brief = await session.get(Brief, plan.brief_id)
             run = WorkflowRun(
                 status=WorkflowRunStatus.RUNNING,

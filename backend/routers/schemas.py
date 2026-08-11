@@ -19,6 +19,7 @@ class PlanBody(BaseModel):
     phase_order: list | None = None
     crew_id: str | None = None
     brief_id: str | None = None
+    brief_group_id: str | None = None
     buff_keys: list[str] | None = None
 
 
@@ -29,6 +30,7 @@ class PlanUpdate(BaseModel):
     phase_order: list | None = None
     crew_id: str | None = None
     brief_id: str | None = None
+    brief_group_id: str | None = None
     buff_keys: list[str] | None = None
 
 

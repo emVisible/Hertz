@@ -41,6 +41,7 @@ async def create_plan(body: PlanBody):
             mode=body.mode,
             crew_id=_uuid_or_none(body.crew_id),
             brief_id=_uuid_or_none(body.brief_id),
+            brief_group_id=_uuid_or_none(body.brief_group_id),
             buff_keys=body.buff_keys,
         )
     except OrchestrationError as exc:
@@ -61,7 +62,7 @@ async def update_plan(plan_id: uuid.UUID, body: PlanUpdate):
     for key in ("name", "description", "phase_order", "mode", "buff_keys"):
         if getattr(body, key, None) is not None:
             fields[key] = getattr(body, key)
-    for key in ("crew_id", "brief_id"):
+    for key in ("crew_id", "brief_id", "brief_group_id"):
         value = getattr(body, key, None)
         if value is not None:
             fields[key] = _uuid_or_none(value)
