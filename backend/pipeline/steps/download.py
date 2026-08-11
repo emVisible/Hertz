@@ -159,10 +159,17 @@ class DownloadStep(Pipe):
                     last_error = f"{cand[:48]}: {exc}"
                     continue
                 if not result.ok:
-                    # 403 附排查提示（v0.3.0，参考原项目 AccessDenied 语义）
+                    # 403 附排查提示（v0.3.0）：CDN 拒绝通常 = Reddit 封锁出口 IP
                     hint = ""
                     if result.status == 403:
-                        hint = "（CDN 拒绝——检查网络/代理/Reddit Cookie）"
+                        from backend.config import settings
+
+                        oauth_hint = (
+                            ""
+                            if settings.pipeline_reddit_client_id
+                            else "；建议在 设置→流水线 配置 Reddit OAuth 凭证解锁"
+                        )
+                        hint = f"（CDN 拒绝——检查网络/代理{oauth_hint}）"
                         # 域级冰封（v0.3.6 冰川式）：403 → 该媒体域指数退避冷却
                         await note_resource_failure(cand, error=result.error)
                     last_error = f"{cand[:48]}: {result.error}{hint}"

@@ -539,7 +539,8 @@ async def test_back_to_prep_and_collect(client) -> None:
         await session.commit()
         item_id = item.id
 
-    # 审核打回预处理：queued → scored，清产物保留脚本
+    # 审核打回预处理（v0.8）：queued → scored，保留全部产物（成片/封面/字幕）
+    # 是否重制由预处理侧决定，produce 重制时 ffmpeg -y 覆盖
     resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-prep")
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "scored"
@@ -547,7 +548,9 @@ async def test_back_to_prep_and_collect(client) -> None:
         row = await session.get(Item, item_id)
         assert row.status == "scored"
         assert row.script_json is not None  # 脚本保留
-        assert row.video_path is None and row.phash is None  # 产物清空
+        assert row.video_path == "/x/v.mp4"  # 成片保留（可预览，由预处理决定重制）
+        assert row.cover_path == "/x/c.jpg"  # 封面不丢失
+        assert row.audio_path == "/x/a.mp3"
 
     # 预处理打回采集：scored → discovered
     resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-collect")

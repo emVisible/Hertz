@@ -749,7 +749,8 @@
     "previewMedia": "预览媒体（视频播放 / 图片查看）",
     "typeVideo": "视频",
     "typeImage": "图片",
-    "typeText": "文本"
+    "typeText": "文本",
+    "preReviewCount": "{{done}} / {{total}}"
   },
   "canvas": {
     "tool": {

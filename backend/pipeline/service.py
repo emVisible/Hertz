@@ -397,8 +397,9 @@ class PipelineService:
     async def back_to_prep(self, item_id: uuid.UUID) -> dict:
         """审核打回预处理（v0.3.9）：queued → scored。
 
-        清产物（脚本/视频/音频/字幕/封面）回到预处理列表，用户重新
-        调整生产方式/评分后重新制作；脚本保留（不强制重新生成）。
+        v0.8：不清除任何产物（成片/封面/字幕保留）——回到预处理后仍可
+        预览播放，是否重制由预处理侧决定；重制时 produce 覆盖产物。
+        脚本保留（不强制重新生成）。
         """
         from backend.pipeline.helpers import load_item_for_action
 
@@ -409,8 +410,6 @@ class PipelineService:
             item.status = ItemStatus.SCORED
             item.error = None
             item.error_class = ""
-            for field in ("video_path", "cover_path", "audio_path", "subtitle_path", "phash"):
-                setattr(item, field, None)
             await session.merge(item)
             await session.commit()
         self.hub.publish(

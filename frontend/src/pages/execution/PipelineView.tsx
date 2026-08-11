@@ -438,7 +438,10 @@ export function PipelineView(p: PipelineViewProps) {
         {pTab === 'preReview' && (
           <div className="p-4">
             <PipelineStage
-              title={t('console.stagePreReview')}
+              title={`${t('console.stagePreReview')} (${t('console.preReviewCount', {
+                done: p.counts.downloaded ?? 0,
+                total: (p.counts.downloaded ?? 0) + (p.counts.scored ?? 0),
+              })})`}
               right={
                 <div className="flex items-center gap-1.5">
                   {/* 预处理排序（v0.3.12）：要素 × 方向 */}

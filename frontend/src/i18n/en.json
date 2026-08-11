@@ -734,7 +734,8 @@
     "previewMedia": "Preview media (play video / view image)",
     "typeVideo": "Video",
     "typeImage": "Image",
-    "typeText": "Text"
+    "typeText": "Text",
+    "preReviewCount": "{{done}} / {{total}}"
   },
   "canvas": {
     "tool": {
