@@ -263,6 +263,14 @@ class RedditCollector(SourceCollector):
         # /comments/{id}/ 提取 source_id
         m = re.search(r"/comments/([a-z0-9]+)/", permalink)
         source_id = m.group(1) if m else permalink.rstrip("/").rsplit("/", 1)[-1]
+        # v0.8.1 参考原项目：RSS 视频帖 link 有时直接指向 v.redd.it 媒体而非
+        # 评论区——归一化为 comments permalink（yt-dlp/下载依赖详情页解析），
+        # 并从该 URL 提取视频 id 作为媒体候选
+        if "v.redd.it" in permalink and "/comments/" not in permalink:
+            vid = permalink.rstrip("/").rsplit("/", 1)[-1]
+            if vid and vid != "v.redd.it":
+                source_id = vid
+                permalink = f"https://www.reddit.com/comments/{vid}/"
         # 媒体从 content:encoded 正则提取（RSS 不直接给 media_url）
         content = ""
         for tag in (f"{_CONTENT_NS}content", f"{_CONTENT_NS}summary"):

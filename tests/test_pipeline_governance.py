@@ -1619,3 +1619,39 @@ async def test_cookie_status_and_export_endpoint(client, tmp_path, monkeypatch) 
     resp = await client.post("/api/pipeline/reddit-cookie/export")
     assert resp.status_code == 200
     assert resp.json()["ok"] is False
+
+
+# ---------- RSS 错位与 yt-dlp cookie 优先（v0.8.1，参考原项目） ----------
+
+
+def test_rss_vreddit_link_normalized() -> None:
+    """RSS 视频帖 link 直接指向 v.redd.it → 归一化 comments permalink。"""
+    import xml.etree.ElementTree as ET
+
+    from backend.pipeline.collectors.reddit import RedditCollector
+
+    xml = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>视频帖</title>
+    <link href="https://v.redd.it/abc123"/>
+    <content type="html">&lt;a href="https://v.redd.it/abc123/DASH_720.mp4"&gt;v&lt;/a&gt;</content>
+  </entry>
+</feed>"""
+    root = ET.fromstring(xml)
+    post = RedditCollector._rss_to_post(root.find("{http://www.w3.org/2005/Atom}entry"))
+    assert post is not None
+    assert post.source_id == "abc123"
+    assert post.source_url == "https://www.reddit.com/comments/abc123/"  # 不再误存 v.redd.it
+    assert post.media_url == "https://v.redd.it/abc123/DASH_720.mp4"
+
+
+def test_dead_media_detects_misaligned_permalink() -> None:
+    """采集预筛（参考原项目 _invalid_collect_media）：permalink 误存 v.redd.it → 死。"""
+    from backend.pipeline.download import is_dead_reddit_media
+
+    assert is_dead_reddit_media("", "https://v.redd.it/abc123", "abc123") is True
+    assert (
+        is_dead_reddit_media("", "https://www.reddit.com/r/x/comments/abc123/t/", "abc123")
+        is False
+    )

@@ -119,10 +119,16 @@ def download_headers(url: str) -> dict[str, str]:
 
 def is_dead_reddit_media(url: str, permalink: str | None, source_id: str | None) -> bool:
     """已知必死媒体：permalink 不是 /comments/ 详情页的 v.redd.it 视频、
-    Pullpush/RSS 死 id（1f1 结尾且无详情页）。命中 → 采集时跳过。"""
+    Pullpush/RSS 死 id（1f1 结尾且无详情页）。命中 → 采集时跳过。
+
+    v0.8.1 参考原项目 _invalid_collect_media：**permalink 本身是 v.redd.it**
+    （RSS 视频帖 link 直接指向媒体而非评论区）→ 视为死（无详情页可解析）。
+    """
     has_comments = "/comments/" in (permalink or "")
     if "v.redd.it" in (url or "") and not has_comments:
         return True
+    if "v.redd.it" in (permalink or "") and "/comments/" not in (permalink or ""):
+        return True  # permalink 误存媒体链接
     if (source_id or "").endswith("1f1") and not has_comments:
         return True
     return False

@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 async def _ytdlp_download(url: str, dest: Path) -> Path:
-    """yt-dlp 兜底（v0.3.1，参考原项目）：内置 Reddit 提取器，线程池执行。
+    """yt-dlp（v0.8.1 参考原项目：有 cookie 时优先抓 permalink，内置 Reddit
+    提取器解析 HLS/DASH——实测 v.redd.it DASH_720.mp4 403 时此路可通）。
 
     输出到 dest 同目录（扩展名由 yt-dlp 决定），返回实际产物路径。
     """
@@ -36,7 +37,8 @@ async def _ytdlp_download(url: str, dest: Path) -> Path:
 
         template = str(dest.with_name(f"{dest.stem}.%(ext)s"))
         opts = {
-            "format": "best[ext=mp4]/best",
+            "format": "bv*+ba/b",  # v0.8.1：音视频分离合并（原项目同款）
+            "merge_output_format": "mp4",
             "outtmpl": template,
             "quiet": True,
             "no_warnings": True,
@@ -44,6 +46,15 @@ async def _ytdlp_download(url: str, dest: Path) -> Path:
             "http_headers": download_headers(url),
             "socket_timeout": 30,
         }
+        # 参考原项目 ytdlp_cookie_args：cookie 文件存在即带（Netscape 格式）
+        try:
+            from backend.pipeline.reddit_cookies import cookies_file_path
+
+            cookie_path = cookies_file_path()
+            if cookie_path.exists() and cookie_path.stat().st_size >= 40:
+                opts["cookiefile"] = str(cookie_path)
+        except Exception:  # noqa: BLE001 — cookie 不可用不影响
+            pass
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
         # 产物 = template 的实际文件（去掉多余部分：best.xxx 或 url.xxx）
@@ -89,6 +100,18 @@ class DownloadStep(Pipe):
         if not url:
             raise StepError("item has no source URL to download")
 
+        # v0.8.1 错位数据归一化（参考原项目 _invalid_collect_media）：
+        # 历史条目 source_url 误存 v.redd.it 裸媒体链接（RSS 路径缺陷）——
+        # 视其为 media_url，并用构造的 comments permalink 作 yt-dlp 抓取目标
+        from urllib.parse import urlparse as _urlparse
+
+        permalink = item.source_url or ""
+        # source_url 误存 v.redd.it 裸媒体链接（历史 RSS 错位）→ 构造 comments permalink
+        if (urlparse(url).hostname or "") == "v.redd.it" and "/comments/" not in permalink:
+            vid = (urlparse(url).path or "").strip("/").split("/")[0]
+            if vid:
+                permalink = f"https://www.reddit.com/comments/{vid}/"
+
         # 媒体域冰封（v0.3.6 冰川式）：该域被 403 冻结 → 跳过，冷却到期后自动重试
         left = await resource_cooldown_left(url)
         if left > 0:
@@ -101,13 +124,53 @@ class DownloadStep(Pipe):
         # SSRF guard (AXIOM §8.1): collector-supplied URLs are remote input.
         checker = is_safe_media_url
         if getattr(ctx.settings, "pipeline_allow_loopback_urls", False):
-            checker = lambda u: urlparse(u).scheme in ("http", "https")  # noqa: E731
+            checker = lambda u: _urlparse(u).scheme in ("http", "https")  # noqa: E731
 
         # CDN 熔断：保护队列——剩余条目保持状态，冷却后重试
         if cdn_circuit_open():
             left = cdn_circuit_remaining()
             ctx.log(f"[download] CDN cooling down ({left}s left) — skipping")
             return ProcessResult(status="discovered", skip=True)
+
+        # v0.8.1 参考原项目 prefer_ytdlp_when_auth：有 cookie 时 yt-dlp 抓
+        # permalink 优先（内置 Reddit 提取器解析 HLS——DASH 直下 403 时可通）
+        try:
+            from backend.pipeline.reddit_cookies import cookies_file_path as _cfp
+
+            _cookie_ok = _cfp().exists() and _cfp().stat().st_size >= 40
+        except Exception:  # noqa: BLE001
+            _cookie_ok = False
+        root = Path(ctx.settings.data_dir) / "pipeline"
+        if not item.output_dir:
+            slug = next_output_slug(root)
+            async with session_factory() as session:
+                row = await session.get(type(item), item.id)
+                if row is not None:
+                    row.output_dir = f"pipeline/{slug}"
+                    await session.commit()
+            item.output_dir = f"pipeline/{slug}"
+        directory = root / item.output_dir.split("/")[-1]
+        dest = directory / "raw"
+        ext = _ext_from(url)
+        if ext:
+            dest = dest.with_suffix(ext)
+
+        if _cookie_ok and permalink and permalink != url:
+            try:
+                ytdlp_path = await _ytdlp_download(permalink, dest)
+                size = ytdlp_path.stat().st_size if ytdlp_path.exists() else 0
+                if size >= STILL_MIN_BYTES:
+                    ctx.log(
+                        f"[download] yt-dlp (cookie) ✓ {item.title[:40]} → "
+                        f"{ytdlp_path.name} ({size} bytes)"
+                    )
+                    return ProcessResult(
+                        status="downloaded",
+                        data={"raw_path": str(ytdlp_path.resolve())},
+                    )
+                ytdlp_path.unlink(missing_ok=True)
+            except Exception as exc:  # noqa: BLE001 — 失败落回候选链
+                ctx.log(f"[download] yt-dlp cookie path failed: {exc} — falling back")
 
         candidates = media_candidates(url, item.source_url, checker=checker)
         if not candidates:
@@ -117,6 +180,7 @@ class DownloadStep(Pipe):
         # 优先走签名链（CDN 放行），失败再落回匿名候选
         try:
             from backend.pipeline.reddit_media import _signed_url_safe, resolve_direct_video
+
 
             signed = await resolve_direct_video(item.source_id, url)
             if signed and _signed_url_safe(signed) and checker(signed):
