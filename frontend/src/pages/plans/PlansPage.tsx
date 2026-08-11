@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -30,8 +29,10 @@ import {
   type Role,
 } from '../../api'
 import { Badge, Button, Card, EmptyState, Icon, Input, Select, useToast } from '../../components/ui'
-import { modelOptions, retryOptions, timeoutOptions } from '../../constants/llm'
 import { phaseLabel } from '../../i18n'
+import { BriefEditor } from './BriefEditor'
+import { BriefGroupEditor } from './BriefGroupEditor'
+import { PhaseEditor } from './PhaseEditor'
 import { BuffsTab } from './BuffsTab'
 import { DepthTab } from './DepthTab'
 import { RolesTab } from './RolesTab'
@@ -1366,127 +1367,33 @@ export function PlansPage() {
             {!phaseSel ? (
               <EmptyState icon="plans" title={t('phases.select')} />
             ) : (
-              <>
-                <div className="flex items-end gap-3">
-                  <Input
-                    label={t('phases.name')}
-                    value={phaseName}
-                    onChange={(e) => { setPhaseName(e.target.value); setPhaseDirty(true) }}
-                    className="w-64"
-                  />
-                  {selectedPhase?.builtin ? (
-                    <Badge tone="neutral">{t('phases.builtin')}</Badge>
-                  ) : null}
-                  <Button onClick={savePhase} disabled={!phaseDirty}>
-                    <Icon name="check" size={14} />
-                    {t('phases.save')}
-                  </Button>
-                </div>
-                <Card padded={false}>
-                  <div className="border-b border-border px-3 py-2">
-                    <h2 className="text-sm font-semibold">{t('phases.info')}</h2>
-                  </div>
-                  <dl className="grid grid-cols-1 gap-1 p-3 text-xs sm:grid-cols-2">
-                    <div className="flex gap-2">
-                      <dt className="w-20 text-text-disabled">{t('phases.key')}</dt>
-                      <dd className="font-mono text-text-primary">{phaseSel}</dd>
-                    </div>
-                    <div className="flex gap-2">
-                      <dt className="w-20 text-text-disabled">{t('phases.type')}</dt>
-                      <dd className="text-text-primary">{selectedPhase?.phase_type ?? selectedPhase?.type ?? 'agent'}</dd>
-                    </div>
-                    <div className="flex gap-2">
-                      <dt className="w-20 text-text-disabled">{t('phases.output')}</dt>
-                      <dd className="font-mono text-text-primary">
-                        {selectedPhase?.output_file || (phaseSel.endsWith('.md') ? phaseSel : `${phaseSel}.md`)}
-                      </dd>
-                    </div>
-                    <div className="flex gap-2">
-                      <dt className="w-20 text-text-disabled">{t('phases.phaseGroup')}</dt>
-                      <dd className="text-text-primary">{selectedPhase?.phase_group ?? 'custom'}</dd>
-                    </div>
-                  </dl>
-                </Card>
-                <Input
-                  label={t('phases.description')}
-                  value={phaseDesc}
-                  onChange={(e) => { setPhaseDesc(e.target.value); setPhaseDirty(true) }}
-                  placeholder={t('phases.descHint')}
-                />
-                {selectedPhase?.phase_type === 'agent' || selectedPhase?.type === 'agent' ? (
-                  <Card padded={false} className="flex min-h-0 flex-1 flex-col">
-                    <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                      <h2 className="text-sm font-semibold">{t('phases.agentConfig')}</h2>
-                      <span className="text-xs text-text-disabled">{t('phases.agentHint')}</span>
-                    </div>
-                    <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 p-3 md:grid-cols-2">
-                      <Input
-                        label={t('phases.role')}
-                        value={phaseRole}
-                        onChange={(e) => { setPhaseRole(e.target.value); setPhaseDirty(true) }}
-                        placeholder={t('phases.roleHint')}
-                      />
-                      <Select
-                        label={t('phases.model')}
-                        value={phaseModel}
-                        onChange={(e) => { setPhaseModel(e.target.value); setPhaseDirty(true) }}
-                        options={[{ value: '', label: t('phases.modelDefault') }, ...modelOptions(phaseModel)]}
-                      />
-                      <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-medium text-text-secondary">
-                          {t('phases.method')}
-                          <span className="ml-2 text-text-disabled">{t('phases.methodHint')}</span>
-                        </label>
-                        <textarea
-                          value={phaseMethod}
-                          onChange={(e) => { setPhaseMethod(e.target.value); setPhaseDirty(true) }}
-                          spellCheck={false}
-                          rows={8}
-                          className="w-full resize-y border border-border bg-surface-2/60 px-3 py-2 font-mono text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
-                          placeholder={t('phases.methodHint')}
-                        />
-                      </div>
-                      <Input
-                        label={t('phases.style')}
-                        value={phaseStyle}
-                        onChange={(e) => { setPhaseStyle(e.target.value); setPhaseDirty(true) }}
-                        placeholder={t('phases.styleHint')}
-                      />
-                      <div className="flex items-end gap-3">
-                        <Select
-                          label={t('phases.retries')}
-                          value={String(phaseRetries)}
-                          onChange={(e) => { setPhaseRetries(Number(e.target.value) || 0); setPhaseDirty(true) }}
-                          className="w-24"
-                          options={retryOptions(phaseRetries)}
-                        />
-                        <Select
-                          label={t('phases.timeout')}
-                          value={String(phaseTimeout)}
-                          onChange={(e) => { setPhaseTimeout(Number(e.target.value) || 300); setPhaseDirty(true) }}
-                          className="w-28"
-                          options={timeoutOptions(phaseTimeout)}
-                        />
-                      </div>
-                      {/* 参考素材文件（v0.7.2）：相对 data_dir 路径，运行时注入 system prompt */}
-                      <div className="md:col-span-2">
-                        <Input
-                          label={t('phases.reference')}
-                          value={phaseReference}
-                          onChange={(e) => { setPhaseReference(e.target.value); setPhaseDirty(true) }}
-                          placeholder="reference/33-anti-ai-rules.md"
-                        />
-                        <p className="mt-1 text-[10px] leading-relaxed text-text-disabled">
-                          {t('phases.referenceHint')}
-                        </p>
-                      </div>
-                    </div>
-                  </Card>
-                ) : null}
-              </>
+              <PhaseEditor
+                phase={selectedPhase ?? null}
+                name={phaseName}
+                description={phaseDesc}
+                role={phaseRole}
+                method={phaseMethod}
+                style={phaseStyle}
+                model={phaseModel}
+                retries={phaseRetries}
+                timeout={phaseTimeout}
+                reference={phaseReference}
+                dirty={phaseDirty}
+                onName={(v) => { setPhaseName(v); setPhaseDirty(true) }}
+                onDescription={(v) => { setPhaseDesc(v); setPhaseDirty(true) }}
+                onRole={(v) => { setPhaseRole(v); setPhaseDirty(true) }}
+                onMethod={(v) => { setPhaseMethod(v); setPhaseDirty(true) }}
+                onStyle={(v) => { setPhaseStyle(v); setPhaseDirty(true) }}
+                onModel={(v) => { setPhaseModel(v); setPhaseDirty(true) }}
+                onRetries={(v) => { setPhaseRetries(v); setPhaseDirty(true) }}
+                onTimeout={(v) => { setPhaseTimeout(v); setPhaseDirty(true) }}
+                onReference={(v) => { setPhaseReference(v); setPhaseDirty(true) }}
+                onSave={savePhase}
+              />
             )}
           </div>
         )}
+
 
         {tab === 'briefs' && !selectedBrief && (
           <div className="w-full">
@@ -1506,116 +1413,38 @@ export function PlansPage() {
         )}
 
         {tab === 'brief-groups' && selectedGroup && (
-          <div className="flex w-full flex-col gap-3">
-            <div className="flex flex-wrap items-end gap-3">
-              <Input
-                label={t('briefGroups.name')}
-                value={groupName}
-                onChange={(e) => { setGroupName(e.target.value); setGroupDirty(true) }}
-                className="w-64"
-              />
-              <Button onClick={saveGroup} disabled={!groupDirty}>
-                <Icon name="check" size={14} />
-                {t('briefs.save')}
-              </Button>
-            </div>
-            <Input
-              label={t('briefGroups.description')}
-              value={groupDesc}
-              onChange={(e) => { setGroupDesc(e.target.value); setGroupDirty(true) }}
-              placeholder={t('briefGroups.descriptionHint')}
-            />
-            <Card padded={false} className="flex min-h-0 flex-1 flex-col">
-              <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                <h2 className="text-sm font-semibold">{t('briefGroups.members')}</h2>
-                <span className="text-xs text-text-disabled">
-                  {t('briefGroups.membersHint', { n: groupBriefIds.length })}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 p-3">
-                {briefs.length === 0 && (
-                  <p className="text-xs text-text-disabled">{t('briefs.empty')}</p>
-                )}
-                {briefs.map((brief) => {
-                  const active = groupBriefIds.includes(brief.id)
-                  return (
-                    <button
-                      key={brief.id}
-                      type="button"
-                      onClick={() => {
-                        setGroupBriefIds(
-                          active
-                            ? groupBriefIds.filter((id) => id !== brief.id)
-                            : [...groupBriefIds, brief.id],
-                        )
-                        setGroupDirty(true)
-                      }}
-                      className={`border px-2 py-1 text-xs transition-colors ${
-                        active
-                          ? 'border-primary bg-primary/10 text-text-primary'
-                          : 'border-border text-text-secondary hover:border-primary hover:text-primary'
-                      }`}
-                    >
-                      {brief.name}
-                    </button>
-                  )
-                })}
-              </div>
-            </Card>
-            <p className="text-[10px] leading-relaxed text-text-disabled">
-              {t('briefGroups.priorityHint')}
-            </p>
-          </div>
+          <BriefGroupEditor
+            name={groupName}
+            description={groupDesc}
+            briefIds={groupBriefIds}
+            briefs={briefs}
+            dirty={groupDirty}
+            onName={(v) => { setGroupName(v); setGroupDirty(true) }}
+            onDescription={(v) => { setGroupDesc(v); setGroupDirty(true) }}
+            onToggleBrief={(id) => {
+              setGroupBriefIds(
+                groupBriefIds.includes(id)
+                  ? groupBriefIds.filter((x) => x !== id)
+                  : [...groupBriefIds, id],
+              )
+              setGroupDirty(true)
+            }}
+            onSave={saveGroup}
+          />
         )}
 
+
         {tab === 'briefs' && selectedBrief && (
-          <div className="flex w-full flex-col gap-3">
-            <div className="flex flex-wrap items-end gap-3">
-              <Input
-                label={t('briefs.name')}
-                value={briefName}
-                onChange={(e) => { setBriefName(e.target.value); setBriefDirty(true) }}
-                className="w-64"
-              />
-              <Button onClick={saveBrief} disabled={!briefDirty}>
-                <Icon name="check" size={14} />
-                {t('briefs.save')}
-              </Button>
-            </div>
-            <Card padded={false} className="flex min-h-0 flex-1 flex-col">
-              <div className="flex items-center justify-between rounded-t border-b border-border px-3 py-2">
-                <h2 className="text-sm font-semibold">{t('briefs.content')}</h2>
-                <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1 text-xs text-text-secondary">
-                    <Icon name="edit" size={12} aria-hidden />
-                    {t('briefs.raw')}
-                  </span>
-                  <span className="flex items-center gap-1 text-xs text-text-secondary">
-                    <Icon name="eye" size={12} aria-hidden />
-                    {t('briefs.preview')}
-                  </span>
-                  <span className="text-xs text-text-disabled">
-                    {t('briefs.charCount', { count: briefContent.length })}
-                  </span>
-                </div>
-              </div>
-              <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
-                <textarea
-                  value={briefContent}
-                  onChange={(e) => { setBriefContent(e.target.value); setBriefDirty(true) }}
-                  spellCheck={false}
-                  className="min-h-0 resize-none overflow-y-auto bg-transparent p-3 font-mono text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-disabled"
-                  placeholder={t('briefs.placeholder')}
-                />
-                <div className="min-h-0 overflow-y-auto border-t border-border p-3 md:border-l md:border-t-0">
-                  <div className="md-body">
-                    <ReactMarkdown>{briefContent || t('briefs.placeholder')}</ReactMarkdown>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
+          <BriefEditor
+            name={briefName}
+            content={briefContent}
+            dirty={briefDirty}
+            onName={(v) => { setBriefName(v); setBriefDirty(true) }}
+            onContent={(v) => { setBriefContent(v); setBriefDirty(true) }}
+            onSave={saveBrief}
+          />
         )}
+
 
         {tab === 'roles' && <RolesTab selectedId={roleSel} onSelect={setRoleSel} />}
 
