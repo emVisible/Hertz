@@ -672,7 +672,6 @@
       "templateNamePlaceholder": "模板名（如：搬运风格）"
     },
     "stageCollect": "采集",
-    "stageDownload": "下载",
     "produceOneDone": "已开始制作，完成后进入审核",
     "act": {
       "title": "运行状态",

@@ -657,7 +657,6 @@
       "templateNamePlaceholder": "Template name (e.g. repost style)"
     },
     "stageCollect": "Collect",
-    "stageDownload": "Download",
     "produceOneDone": "Producing started — will return to review",
     "act": {
       "title": "Activity",

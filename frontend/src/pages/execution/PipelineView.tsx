@@ -89,7 +89,7 @@ const AUDIT_SORT_FIELDS: SortField[] = [
 ]
 
 // 第三级路由：内容流水线平铺菜单（v0.2.0 审核三态）——
-// 采集（collect+download 手动，下载后自动评分）｜预处理（生产方式选择+制作）
+// v0.8.4：采集（scheduler 自动 + 手动触发，只入 DB）｜预处理（下载/评分/生产方式/制作）
 // ｜审核（内容判断）｜发布（分发）｜异常（独立恢复区）
 const PIPELINE_TABS = [
   { id: 'run', labelKey: 'console.stageCollect' },
