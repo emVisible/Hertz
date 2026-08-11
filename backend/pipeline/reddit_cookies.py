@@ -10,7 +10,6 @@
 - 导出最多每 N 小时一次，失败软降级（不影响匿名链路）
 """
 
-import json
 import logging
 import os
 import subprocess

@@ -1575,7 +1575,6 @@ async def test_usage_absent_when_no_usage_chunk() -> None:
 
 def test_cookie_header_from_netscape(tmp_path, monkeypatch) -> None:
     """Netscape cookies.txt → Cookie header（reddit 域过滤 + 去重）。"""
-    from backend.config import settings
     from backend.pipeline.reddit_cookies import _netscape_cookie_header
 
     path = tmp_path / "reddit_cookies.txt"
@@ -1610,7 +1609,6 @@ async def test_cookie_status_and_export_endpoint(client, tmp_path, monkeypatch) 
 
     # 导出：yt-dlp 不可用 → ok=False 软降级（不抛 500）
     async def fake_run(cmd):
-        import subprocess
 
         class P:
             returncode = 127
