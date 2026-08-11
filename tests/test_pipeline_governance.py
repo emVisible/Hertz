@@ -1671,21 +1671,21 @@ async def test_usage_absent_when_no_usage_chunk() -> None:
 # ---------- AI 味去除（v0.6：反 AI 专家 + AIFantune 工序 + debuff 深化） ----------
 
 
-def test_ai_fantune_phase_registered() -> None:
+def test_finetune_phase_registered() -> None:
     """AIFantune 工序：注册 + 默认顺序启用 + 反 AI 专家角色可派生。"""
     from backend.orchestration.phases import DEFAULT_PHASE_ORDER, PHASE_INDEX
 
-    phase = PHASE_INDEX.get("ai_fantune")
+    phase = PHASE_INDEX.get("finetune")
     assert phase is not None
     assert phase.phase_type == "agent"
     assert phase.role == "反 AI 专家"
-    assert phase.output_file == "ai_fantune.md"
+    assert phase.output_file == "finetune.md"
     assert "均值回归" in phase.method  # 原理注入
     assert "不得编造" in phase.method  # no-fabrication 铁律
     # 默认顺序中在 editor 后、distribution 前（用户可拖拽调整）
     keys = [p["key"] for p in DEFAULT_PHASE_ORDER]
-    assert keys.index("ai_fantune") > keys.index("editor")
-    assert keys.index("ai_fantune") < keys.index("distribution")
+    assert keys.index("finetune") > keys.index("editor")
+    assert keys.index("finetune") < keys.index("distribution")
 
 
 def test_anti_ai_debuffs_seeded() -> None:
@@ -1703,14 +1703,14 @@ def test_anti_ai_debuffs_seeded() -> None:
 
 
 @pytest.mark.asyncio
-async def test_package_prefers_ai_fantune(client, tmp_path, monkeypatch) -> None:
-    """打包正文优先 ai_fantune.md（AIFantune 启用时真正影响成品）。"""
+async def test_package_prefers_finetune(client, tmp_path, monkeypatch) -> None:
+    """打包正文优先 finetune.md（内容微调工序启用时真正影响成品）。"""
     from backend.orchestration.engine import PhaseEngine
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "writer.md").write_text("这是 AI 写的第一版正文。\n", encoding="utf-8")
-    (run_dir / "ai_fantune.md").write_text("这是人去 AI 味后的正文。\n", encoding="utf-8")
+    (run_dir / "finetune.md").write_text("这是人去 AI 味后的正文。\n", encoding="utf-8")
 
     engine = PhaseEngine(files=None, hub=None, ai=None)  # type: ignore[arg-type]
     engine.files = _FakeFiles()
@@ -1760,3 +1760,10 @@ class _FakeFiles:
 
         await asyncio.to_thread(_write)
 
+
+
+def test_finetune_legacy_alias() -> None:
+    """旧计划 ai_fantune 引用平滑迁移到 finetune（v0.6 更名）。"""
+    from backend.orchestration.phases import LEGACY_PHASE_ALIASES
+
+    assert LEGACY_PHASE_ALIASES["ai_fantune"] == "finetune"

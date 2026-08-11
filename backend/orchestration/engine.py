@@ -478,12 +478,12 @@ class PhaseEngine:
         # 失败兜底路径（skip_gate）仍产出 final.md
         if not skip_gate:
             await self._quality_gate(run_dir, phase_order)
-        # v0.6：正文优先取 ai_fantune.md（AI 味去除工序启用时），否则回退 writer.md
+        # v0.6：正文优先取 finetune.md（内容微调工序启用时），否则回退 writer.md
         writer_raw = await self.files.safe_read(run_dir / "writer.md")
         body = writer_raw.decode("utf-8", "replace") if writer_raw else ""
         if not body.strip():
             body = "# 无正文草稿\n\nwriter.md 缺失，请检查前序阶段。\n"
-        fantune_raw = await self.files.safe_read(run_dir / "ai_fantune.md")
+        fantune_raw = await self.files.safe_read(run_dir / "finetune.md")
         if fantune_raw:
             fantune_body = fantune_raw.decode("utf-8", "replace").strip()
             if fantune_body:

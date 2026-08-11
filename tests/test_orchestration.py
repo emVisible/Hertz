@@ -129,8 +129,8 @@ async def test_brief_crud(client, fake_ai) -> None:
 @pytest.mark.asyncio
 async def test_plan_crud_and_validation(client, fake_ai) -> None:
     plan = await _create(client, "plans", {"name": "标准流程"})
-    assert len(plan["phase_order"]) == 9  # v0.6: +ai_fantune
-    assert sum(1 for p in plan["phase_order"] if p["enabled"]) == 8  # v0.6: +ai_fantune
+    assert len(plan["phase_order"]) == 9  # v0.6: +finetune
+    assert sum(1 for p in plan["phase_order"] if p["enabled"]) == 8  # v0.6: +finetune
     assert plan["phase_order"][0]["key"] == "build_brief"
 
     # invalid phase key rejected
@@ -212,7 +212,7 @@ async def test_plan_crud_and_validation(client, fake_ai) -> None:
 async def test_phase_editing_archive_and_restore(client, fake_ai) -> None:
     # 工序库：可查看/编辑 agent 配置（完全维护）
     palette = (await client.get("/api/phases")).json()
-    assert len(palette) == 9  # v0.6: +ai_fantune
+    assert len(palette) == 9  # v0.6: +finetune
     assert any(p["key"] == "distribution" for p in palette)
     assert not any(p["key"] == "scout" for p in palette)  # 已精简
     # wave8 二次精简：preflight/image_gen/quality_gate 已移除
@@ -365,7 +365,7 @@ async def test_full_run_produces_final_md(client, fake_ai) -> None:
     assert run["status"] == "completed", run.get("error")
 
     # all 7 enabled phases recorded
-    assert len(run["phases"]) == 8  # v0.6: +ai_fantune（content_pipeline 默认禁用）
+    assert len(run["phases"]) == 8  # v0.6: +finetune（content_pipeline 默认禁用）
     assert all(p["status"] == "completed" for p in run["phases"])
 
     # final.md exists and is non-empty
@@ -387,7 +387,7 @@ async def test_full_run_produces_final_md(client, fake_ai) -> None:
     assert re.match(r"^studio/\d{4}-\d{2}-\d{2}-\d{2}$", run["output_dir"]), run["output_dir"]
     detail = (await client.get(f"/api/studio/runs/{run_id}")).json()
     assert detail["output_dir"] == run["output_dir"]
-    assert detail["phases"] and len(detail["phases"]) == 8  # v0.6: +ai_fantune
+    assert detail["phases"] and len(detail["phases"]) == 8  # v0.6: +finetune
 
     # DB rows persisted
     async with session_factory() as session:
@@ -396,7 +396,7 @@ async def test_full_run_produces_final_md(client, fake_ai) -> None:
         rows = await session.execute(
             select(PhaseRun).where(PhaseRun.run_id == run_id)
         )
-        assert len(rows.scalars().all()) == 8  # v0.6: +ai_fantune
+        assert len(rows.scalars().all()) == 8  # v0.6: +finetune
 
 
 def test_agent_prompt_bans_copy_and_orders_thinking() -> None:
@@ -530,7 +530,7 @@ async def test_studio_events_stream(client, fake_ai) -> None:
     assert "phase_start" in types
     assert "phase_done" in types
     assert "run_done" in types
-    assert types.count("phase_start") == types.count("phase_done") == 8  # v0.6: +ai_fantune
+    assert types.count("phase_start") == types.count("phase_done") == 8  # v0.6: +finetune
     run_done = next(e for e in seen if e["type"] == "run_done")
     assert run_done["status"] == "completed"
 

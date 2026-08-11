@@ -118,25 +118,25 @@ PHASES: tuple[PhaseDef, ...] = (
         retries=2,
     ),
     PhaseDef(
-        key="ai_fantune",
-        name="AI 味去除",
+        key="finetune",
+        name="Finetune",
         description=(
-            "AIFantune（v0.6）：识别并清除 AI 生成痕迹——"
+            "Finetune（v0.6）：识别并清除 AI 生成痕迹——"
             "词汇/句式/内容膨胀/格式四层排查，重写正文为「人写的」版本。"
             "依据 Wikipedia:Signs of AI writing 与 WikiProject AI Cleanup 指南"
             "（均值回归、AI 词汇密度、系动词回避、否定排比、三法则、意义膨胀、"
             "推销语、模糊归因、挑战公式、破折号/粗体/emoji 痕迹、对话残留等）。"
         ),
         phase_type="agent",
-        agent_key="ai_fantune",
+        agent_key="finetune",
         phase_group="create",
-        output_file="ai_fantune.md",
+        output_file="finetune.md",
         timeout=420,
         role="反 AI 专家",
         method=(
             "你是反 AI 专家：负责把 AI 生成的文本改写成看不出 AI 痕迹的人写文本。\n"
             "先通读前序正文（writer/editor 产物），再逐段改写，"
-            "产出 ai_fantune.md（完整重写版正文，不是意见清单）。\n\n"
+            "产出 finetune.md（完整重写版正文，不是意见清单）。\n\n"
             "【原理】LLM 按统计概率生成，结果趋同于「最可能、最通用」的表述——"
             "把具体事实抹平成通用正面陈述（均值回归）。"
             "所以去 AI 味的核心是：恢复具体、恢复直白、恢复人的节奏。\n\n"
@@ -221,6 +221,7 @@ LEGACY_PHASE_ALIASES: dict[str, str] = {
     "preflight": "build_brief",  # 环境检查并入策略分析
     "image_gen": "visual_director",  # 配图渲染并入视觉设计
     "quality_gate": "package",  # 终检闸门并入打包交付
+    "ai_fantune": "finetune",  # v0.6 更名：内容微调工序不带 AI 前缀
 }
 
 # Default plan: all phases enabled except content_pipeline (平台依赖工序，
