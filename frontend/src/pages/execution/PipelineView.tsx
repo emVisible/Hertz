@@ -61,7 +61,6 @@ interface PipelineViewProps {
   uploadCover: (item: PipelineItem, file: File) => void
   retryClass: (cls: string, n: number) => void
   backToPrep: (item: PipelineItem) => void
-  backToCollect: (item: PipelineItem) => void
   batchAction: (action: 'approve' | 'reject' | 'back_to_prep' | 'requeue', ids: string[]) => void
   rescheduleExpired: () => Promise<void>
   setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
@@ -612,7 +611,6 @@ export function PipelineView(p: PipelineViewProps) {
                     onProduce={(i) => void p.produceOne(i)}
                     onReject={(i) => void p.act(i, 'reject')}
                       onUploadCover={(i, file) => void p.uploadCover(i, file)}
-                      onBackToCollect={(i) => void p.backToCollect(i)}
                     />
                   )}
                 />

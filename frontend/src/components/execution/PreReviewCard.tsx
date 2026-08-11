@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem, ProduceOptions } from '../../api'
@@ -16,7 +16,6 @@ export function PreReviewCard({
   onScore,
   onProduce,
   onReject,
-  onBackToCollect,
   onUploadCover,
 }: {
   item: PipelineItem
@@ -24,14 +23,25 @@ export function PreReviewCard({
   onScore: (item: PipelineItem) => void
   onProduce: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
-  onBackToCollect: (item: PipelineItem) => void
   onUploadCover: (item: PipelineItem, file: File) => void
 }) {
   const { t } = useTranslation()
-  const options = normalizeOptions(item.produce_options)
+  const [options, setOptions] = useState<ProduceOptions>(() =>
+    normalizeOptions(item.produce_options),
+  )
   const hasRaw = !!item.raw_path
   const hasVideo = !!item.video_path
   const coverInputRef = useRef<HTMLInputElement>(null)
+
+  // 生产方式本地即时反馈（v0.8.3）：点击立即变色，后端刷新后以服务器为准
+  useEffect(() => {
+    setOptions(normalizeOptions(item.produce_options))
+  }, [item.produce_options])
+
+  function changeOptions(next: Partial<ProduceOptions>) {
+    setOptions(normalizeOptions({ ...options, ...next })) // 本地先变（即时视觉）
+    onSaveOptions(item, next)
+  }
 
   return (
     <li className="group flex gap-5 px-4 py-4">
@@ -123,16 +133,12 @@ export function PreReviewCard({
           <ProduceOptionsPicker
             value={options}
             compact
-            onChange={(next) => onSaveOptions(item, next)}
+            onChange={(next) => changeOptions(next)}
           />
         </div>
 
         {/* hover 操作：评分（未评分且已下载时显示）+ 打回采集（v0.3.9）+ 制作 + 拒绝 */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-          <Button size="sm" variant="ghost" onClick={() => onBackToCollect(item)} title={t('console.backToCollectHint')}>
-            <Icon name="rewind" size={12} />
-            {t('console.backToCollect')}
-          </Button>
           <Button size="sm" variant="danger" onClick={() => onReject(item)}>
             <Icon name="close" size={12} />
             {t('console.reject')}

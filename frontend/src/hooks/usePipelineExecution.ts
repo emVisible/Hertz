@@ -388,16 +388,6 @@ export function usePipelineExecution() {
     }
   }
 
-  /** 预处理打回采集（v0.3.9 相邻双向）：downloaded/scored → discovered，重新下载。 */
-  async function backToCollect(item: PipelineItem) {
-    try {
-      await pipelineApi.backToCollect(item.id)
-      refresh()
-      toast(t('console.backToCollectDone'), 'success')
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'error')
-    }
-  }
 
   /** 生产方式批量设置（v0.3.3，预处理人工选择）。 */
   async function setProduceOptions(items: PipelineItem[], options: Record<string, boolean>) {
@@ -460,7 +450,6 @@ export function usePipelineExecution() {
     uploadCover,
     retryClass,
     backToPrep,
-    backToCollect,
     rescheduleExpired,
     setProduceOptions,
     produceOne,

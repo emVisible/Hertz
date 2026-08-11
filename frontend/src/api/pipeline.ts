@@ -178,10 +178,6 @@ export const pipelineApi = {
   backToPrep: (id: string) =>
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/back-to-prep`),
 
-  /** 预处理打回采集（v0.3.9）：downloaded/scored → discovered */
-  backToCollect: (id: string) =>
-    api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/back-to-collect`),
-
   /** 批量审核操作（v0.4 A2）：逐条执行，失败不中断 */
   batch: (action: string, ids: string[]) =>
     api.post<{ ok: number; failed: Array<{ id: string; error: string }> }>(
