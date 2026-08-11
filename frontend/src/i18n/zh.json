@@ -745,7 +745,8 @@
     "lowScoreOnlyHint": "只显示 AI 评分低但可能可复用的条目",
     "lowScorePool": "低分回收池",
     "lowScorePoolHint": "低分标记的条目（可人工决定复用/恢复）",
-    "lowScoreRestoreAll": "全部恢复待审（{{n}}）"
+    "lowScoreRestoreAll": "全部恢复待审（{{n}}）",
+    "previewMedia": "预览媒体（视频播放 / 图片查看）"
   },
   "canvas": {
     "tool": {

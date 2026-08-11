@@ -730,7 +730,8 @@
     "lowScoreOnlyHint": "Show only items marked low AI score (possibly reusable)",
     "lowScorePool": "Low-score pool",
     "lowScorePoolHint": "Items marked low score — review & decide, or restore",
-    "lowScoreRestoreAll": "Restore all ({{n}})"
+    "lowScoreRestoreAll": "Restore all ({{n}})",
+    "previewMedia": "Preview media (play video / view image)"
   },
   "canvas": {
     "tool": {

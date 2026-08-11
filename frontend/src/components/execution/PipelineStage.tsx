@@ -108,27 +108,39 @@ function isImageUrl(url: string): boolean {
   return /\.(jpe?g|png|webp|gif|avif)([?#]|$)/i.test(url) || /(i\.redd\.it|preview\.redd\.it)/.test(url)
 }
 
-/** 条目缩略图（各阶段共用）：本地封面/成片优先，远程图片兜底，无图占位。
+/** 本地媒体路径是否为视频（按扩展名；默认视频）。 */
+function isVideoPath(path: string): boolean {
+  return /\.(mp4|mkv|webm|mov|m4v)([?#]|$)/i.test(path)
+}
+
+/** 条目缩略图（各阶段共用）：本地封面/成片/下载素材优先，远程图片兜底，无图占位。
  *  远程图加载失败回退占位（不残留空白块）。
  *  v0.2.4：有成片时点击缩略图播放成片（复用素材库 QuickPreview 的
  *  Modal + video controls 交互）；v0.2.5：播放 Modal 内可一键在
  *  Finder 定位成片（排查文件缺失），无成片时点击直达原始素材定位。
  *  v0.2.6：尺寸类（className）作用于外层按钮/容器，内容统一填充——
- *  支持 h-full w-full 填充模式（审核卡大图），不再依赖 img 的固定尺寸。 */
+ *  支持 h-full w-full 填充模式（审核卡大图），不再依赖 img 的固定尺寸。
+ *  v0.8 预处理修复：回退链插入 raw_path（本地下载素材）——下载后未制作的
+ *  视频/图片可预览；图片可点击查看大图，视频可点击播放。 */
 export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineItem; className?: string }) {
   const { t } = useTranslation()
   const [remoteFailed, setRemoteFailed] = useState(false)
   const [coverFailed, setCoverFailed] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [videoFailed, setVideoFailed] = useState(false)
+  // v0.8：本地下载素材预览（raw 视频播放 / raw 图片大图查看）
+  const [rawPreview, setRawPreview] = useState(false)
+  const [rawFailed, setRawFailed] = useState(false)
   const cover = item.cover_path
   const video = item.video_path
+  const raw = item.raw_path
+  const rawIsVideo = raw ? isVideoPath(raw) : null
   const remote = item.media_url && isImageUrl(item.media_url) ? item.media_url : null
   const sizing = className || 'h-12 w-20'
   const fill = 'h-full w-full border border-border bg-surface-2 object-cover'
 
   const thumb = (() => {
-    // 回退链：封面 → 成片首帧 → 远程图 → 占位（cover 失效不空白，§15 视图完整性）
+    // 回退链：封面 → 成片首帧 → 本地下载素材（v0.8）→ 远程图 → 占位
     if (cover && !coverFailed) {
       return (
         <img
@@ -152,6 +164,32 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
             const el = e.currentTarget
             if (el.duration > 0.2 && el.currentTime === 0) el.currentTime = 0.1
           }}
+          className={fill}
+        />
+      )
+    }
+    if (raw && rawIsVideo) {
+      return (
+        <video
+          src={fileUrl(raw)}
+          preload="metadata"
+          muted
+          playsInline
+          onLoadedMetadata={(e) => {
+            const el = e.currentTarget
+            if (el.duration > 0.2 && el.currentTime === 0) el.currentTime = 0.1
+          }}
+          className={fill}
+        />
+      )
+    }
+    if (raw && !rawIsVideo) {
+      return (
+        <img
+          src={fileUrl(raw)}
+          alt=""
+          loading="lazy"
+          onError={() => setRemoteFailed(true)}
           className={fill}
         />
       )
@@ -180,43 +218,48 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
     window.electron.showItemInFolder(path)
   }
 
-  if (!video) {
-    // 无成片：点击直接定位原始素材/封面（有值才可点），排查「为什么没成片」
-    const locate = item.raw_path ?? cover ?? null
-    if (!locate) return <div className={`shrink-0 ${sizing}`}>{thumb}</div>
-    return (
-      <button
-        type="button"
-        onClick={() => revealInFinder(locate)}
-        title={t('console.revealRaw')}
-        aria-label={t('console.revealRaw')}
-        className={`group relative shrink-0 ${sizing} focus-visible:outline-none`}
-      >
-        {thumb}
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          <Icon name="folder" size={20} className="text-white/90" />
-        </span>
-      </button>
-    )
+  // v0.8 点击语义：成片播放 / 本地素材预览（视频播放、图片查看）/ 远程图查看 / 定位文件
+  function onClickThumb() {
+    if (video) {
+      setVideoFailed(false)
+      setPlaying(true)
+      return
+    }
+    if (raw) {
+      setRawFailed(false)
+      setRawPreview(true)
+      return
+    }
+    if (remote) {
+      setRemoteFailed(false)
+      setRawPreview(true) // 复用预览 Modal：视频态仅 raw 路径走
+      return
+    }
+    revealInFinder(item.raw_path ?? cover ?? null)
   }
+
+  const buttonTitle = video
+    ? t('console.playVideo')
+    : raw || remote
+      ? t('console.previewMedia')
+      : t('console.revealRaw')
 
   return (
     <>
       <button
         type="button"
-        onClick={() => {
-          setVideoFailed(false)
-          setPlaying(true)
-        }}
-        title={t('console.playVideo')}
-        aria-label={t('console.playVideo')}
+        onClick={onClickThumb}
+        title={buttonTitle}
+        aria-label={buttonTitle}
         className={`group relative shrink-0 ${sizing} focus-visible:outline-none`}
       >
         {thumb}
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          <Icon name="play" size={20} className="text-white/90" />
+          <Icon name={video || (raw && rawIsVideo) ? 'play' : 'eye'} size={20} className="text-white/90" />
         </span>
       </button>
+
+      {/* 成片播放 Modal（v0.2.4） */}
       <Modal open={playing} onClose={() => setPlaying(false)} width={820} title={item.title}>
         <div className="flex flex-col gap-2">
           {videoFailed ? (
@@ -234,7 +277,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
             </div>
           ) : (
             <video
-              src={fileUrl(video)}
+              src={fileUrl(video!)}
               controls
               autoPlay
               onError={() => setVideoFailed(true)}
@@ -253,6 +296,63 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
               </button>
             )}
           </div>
+        </div>
+      </Modal>
+
+      {/* 本地素材/远程图预览 Modal（v0.8）：raw 视频播放 / 图片大图查看 */}
+      <Modal
+        open={rawPreview}
+        onClose={() => setRawPreview(false)}
+        width={820}
+        title={item.title}
+      >
+        <div className="flex flex-col gap-2">
+          {rawFailed ? (
+            <div className="flex min-h-40 flex-col items-center justify-center gap-2 border border-error/40 bg-error/5 px-4 text-center">
+              <Icon name="alert" size={22} className="text-error" />
+              <p className="text-sm text-text-primary">{t('console.videoMissing')}</p>
+              {raw && (
+                <button
+                  type="button"
+                  onClick={() => revealInFinder(raw)}
+                  className="flex items-center gap-1.5 border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-primary transition-colors hover:border-primary hover:text-primary"
+                >
+                  <Icon name="folder" size={13} />
+                  {t('console.revealVideo')}
+                </button>
+              )}
+            </div>
+          ) : raw && rawIsVideo ? (
+            <video
+              src={fileUrl(raw)}
+              controls
+              autoPlay
+              onError={() => setRawFailed(true)}
+              className="max-h-[70vh] w-full bg-black"
+            />
+          ) : (
+            <div className="flex max-h-[70vh] items-center justify-center overflow-auto bg-surface-2">
+              {/* raw 图片优先，远程图兜底（MediaThumb 回退链一致） */}
+              <img
+                src={raw ? fileUrl(raw) : (remote ?? '')}
+                alt={item.title}
+                onError={() => setRawFailed(true)}
+                className="max-h-full max-w-full object-contain"
+              />
+            </div>
+          )}
+          {(raw || remote) && window.electron?.showItemInFolder && (
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => revealInFinder(raw ?? null)}
+                className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
+              >
+                <Icon name="folder" size={13} />
+                {t('console.revealVideo')}
+              </button>
+            </div>
+          )}
         </div>
       </Modal>
     </>
