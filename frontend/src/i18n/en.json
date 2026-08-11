@@ -748,7 +748,7 @@
     "typeImage": "Image",
     "typeText": "Text",
     "preReviewCount": "{{done}} / {{total}}",
-    "autoCollectOn": "Auto collect {n}m",
+    "autoCollectOn": "Auto collect {{n}}m",
     "autoCollectOff": "Auto collect off",
     "autoCollectHint": "Scheduler collects periodically (0=off, manual only); download & processing stay manual in preprocess",
     "downloadN": "Download {n}"
