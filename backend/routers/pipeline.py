@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from backend.config import settings
 from backend.errors import HertzError
 from backend.factory.registry import ServiceRegistry
+from backend.pipeline.errors import ItemNotFoundError
 from backend.pipeline.publishers.router import PUBLISHERS
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
