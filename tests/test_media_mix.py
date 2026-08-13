@@ -296,3 +296,156 @@ async def test_bilibili_dtime_ok_when_far_enough(monkeypatch, tmp_path):
 
     assert "--dtime" in captured[0]
     assert "dtime_bumped_to" not in result
+
+
+async def test_asr_translate_false_keeps_original(monkeypatch, tmp_path):
+    """v0.10 字幕数据源 = 视频原声：translate=False（仅字幕）→ 转写原文直录
+    字幕，不调 LLM 翻译、不清洗标点。"""
+    import backend.pipeline.producers.media as m
+
+    asr_srt = tmp_path / "asr.srt"
+    asr_srt.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\nHello, world!\n\n"
+        "2\n00:00:01,000 --> 00:00:02,000\nHow are you?\n",
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+
+    async def fake_transcribe(path, out):
+        out.write_text(asr_srt.read_text(encoding="utf-8"), encoding="utf-8")
+        return out
+
+    async def fake_has_audio(*a, **k):
+        return True
+
+    class FakeAI:
+        async def chat_messages(self, messages, **kw):
+            calls.append("chat")
+            return '{"segments": ["你好"]}'
+
+    monkeypatch.setattr(m, "probe_has_audio", fake_has_audio)
+    monkeypatch.setattr("backend.pipeline.producers.asr.transcribe", fake_transcribe)
+
+    got = await m._asr_subtitles(FakeAI(), Path("x.mp4"), tmp_path, translate=False)
+    assert got is not None
+    srt, full = got
+    assert calls == []
+    assert full == "Hello, world! How are you?"
+    cues = m.parse_srt_cues(Path(srt))
+    assert cues[0][2] == "Hello, world!"
+
+
+async def test_asr_skip_translation_when_already_zh(monkeypatch, tmp_path):
+    """v0.10 原声已是目标语言（中文 + zh 目标）→ 跳过 LLM 翻译直接入字幕。"""
+    import backend.pipeline.producers.media as m
+
+    asr_srt = tmp_path / "asr.srt"
+    asr_srt.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n他蹲下来了 哭声停了\n\n"
+        "2\n00:00:01,000 --> 00:00:02,000\n孩子不哭了\n",
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+
+    async def fake_transcribe(path, out):
+        out.write_text(asr_srt.read_text(encoding="utf-8"), encoding="utf-8")
+        return out
+
+    async def fake_has_audio(*a, **k):
+        return True
+
+    class FakeAI:
+        async def chat_messages(self, messages, **kw):
+            calls.append("chat")
+            return '{"segments": ["x"]}'
+
+    monkeypatch.setattr(m, "probe_has_audio", fake_has_audio)
+    monkeypatch.setattr("backend.pipeline.producers.asr.transcribe", fake_transcribe)
+
+    got = await m._asr_subtitles(FakeAI(), Path("x.mp4"), tmp_path, target_lang="zh-CN")
+    assert got is not None
+    srt, full = got
+    assert calls == []
+    assert full == "他蹲下来了 哭声停了 孩子不哭了"
+
+
+async def test_produce_prefers_asr_for_all_subtitle_modes(monkeypatch, tmp_path):
+    """v0.10 语义修正：配音模式 + 字幕也优先原声（此前仅 translate 且不配音）。
+
+    voice + subtitle 组合 → 字幕数据源 = ASR 原声（source=asr），
+    不再基于简介派生的旁白文案。
+    """
+    import backend.pipeline.producers.media as m
+
+    raw = tmp_path / "raw.mp4"
+    raw.write_bytes(b"raw")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir(exist_ok=True)
+
+    asr_seen: list[dict] = []
+
+    async def fake_asr(ai, raw_path, directory, **kw):
+        asr_seen.append(kw)
+        srt = directory / "subs.srt"
+        srt.write_text(
+            "1\n00:00:00,000 --> 00:00:01,000\n他蹲下来了\n", encoding="utf-8"
+        )
+        return srt, "他蹲下来了"
+
+    async def fake_probe(p):
+        return 10.0
+
+    async def fake_compose(*a, **kw):
+        out = a[3]
+        out.write_bytes(b"v")
+        return {"path": str(out)}
+
+    async def fake_cover(*a):
+        return {"path": "/x/cover.jpg"}
+
+    monkeypatch.setattr(m, "_asr_subtitles", fake_asr)
+    monkeypatch.setattr(m, "probe_duration", fake_probe)
+    monkeypatch.setattr(m, "compose_video", fake_compose)
+    monkeypatch.setattr(m, "generate_cover", fake_cover)
+    from backend.pipeline import phash as phash_mod
+
+    async def fake_phash(p):
+        return "abc"
+
+    monkeypatch.setattr(phash_mod, "compute_phash", fake_phash)
+
+    async def fake_tts(*a, **k):
+        return None  # TTS 失败降级 subs-only，不阻塞字幕断言
+
+    monkeypatch.setattr(m, "synthesize_tts", fake_tts)
+
+    class Files:
+        def resolve(self, p):
+            return Path(p)
+
+        def output_root(self):
+            return out_dir
+
+    class FakeAI:
+        async def title_and_tags(self, **kw):
+            from backend.ai.types import TitleResult
+            return TitleResult(title="x", tags=[], description="")
+
+        async def chat_messages(self, messages, **kw):
+            return "旁白"
+
+    from backend.models.item import Item
+
+    item = Item(
+        status="queued", source="reddit", source_id="asr-1",
+        title="t", raw_path=str(raw), output_dir="asr-slug",
+        produce_options={"voice": True, "subtitle": True},
+    )
+    artifacts = await m.produce_item(
+        FakeAI(), Files(), item,
+        existing_script={"mode": "script", "narration": "Watch this."},
+    )
+
+    assert asr_seen, "voice+subtitle 也应尝试 ASR 原声字幕"
+    assert artifacts["subtitle"]["source"] == "asr"
+    assert artifacts["script"]["subtitle_zh"] == "他蹲下来了"

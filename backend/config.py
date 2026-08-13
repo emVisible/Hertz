@@ -102,9 +102,10 @@ class Settings(BaseSettings):
     pipeline_narration_lang: str = "en-US"
     pipeline_subtitle_lang: str = "zh-CN"
     pipeline_translate_source_lang: str = ""  # 空 = 沿用 narration_lang（默认 en-US）
-    # ASR 原声转写（v0.8.9，对齐原项目 enable_asr/retranslate）：
-    # translate 生产方式 = 提取视频原声→中文字幕（原声保留、无配音）。
-    # 无原声（图片帖）自动回退旁白翻译。xinference 服务未配置时用本地 faster-whisper
+    # ASR 原声转写（v0.8.9 起，v0.10 语义：字幕/翻译的数据源 = 视频原声）：
+    # 字幕生产方式 = 原声转写字幕（原声语言）；翻译生产方式 = 原声转写 →
+    # 中文字幕（原声保留、无配音）。无原声（图片帖）自动回退旁白文案字幕。
+    # xinference 服务未配置时用本地 faster-whisper
     pipeline_enable_asr: bool = True
     xinference_stt_base_url: str = "http://127.0.0.1:9997/v1"
     xinference_api_key: str = ""

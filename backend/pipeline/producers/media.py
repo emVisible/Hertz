@@ -601,10 +601,17 @@ def parse_srt_cues(srt_path: Path) -> list[tuple[float, float, str]]:
 
 
 def _write_srt_cues(out_path: Path, cues: list[tuple[float, float, str]]) -> Path:
-    """写 (start, end, text) cue 列表为 SRT（v0.8.9，对齐原项目 _write_srt）。"""
+    """写 (start, end, text) cue 列表为 SRT（v0.8.9，对齐原项目 _write_srt）。
+
+    v0.10：标点清洗只对中文本体生效（ASR 英文原文要保留标点与停顿感）——
+    clean_zh_subtitle_text 的"去标点"语义前提是目标为中文。
+    """
     lines: list[str] = []
     for i, (start, end, text) in enumerate(cues, 1):
-        body = clean_zh_subtitle_text(text) or text.strip()
+        has_zh = any("\u4e00" <= ch <= "\u9fff" for ch in text or "")
+        body = (
+            clean_zh_subtitle_text(text) if has_zh else (text or "").strip()
+        ) or " "
         lines.append(str(i))
         lines.append(f"{_fmt_ts(start)} --> {_fmt_ts(end)}")
         lines.append(body)
@@ -691,19 +698,43 @@ async def probe_has_audio(path: Path) -> bool:
     return bool((out.decode(errors="replace") or "").strip())
 
 
+async def _cues_already_target(cues, target_lang: str) -> bool:
+    """转写文本已是目标语言则跳过 LLM 翻译（中文原声视频不绕一圈）。
+
+    v0.10：翻译只对「原声非目标语言」发生——目标为中文且转写已含
+    中文字符（≥3 字）时原文即目标语言，直接复用转写（省一次 LLM 调用）。
+    """
+    if not target_lang.lower().startswith("zh"):
+        return False
+    zh_count = sum(
+        1
+        for _, _, text in cues
+        for ch in (text or " ")
+        if "\u4e00" <= ch <= "\u9fff"
+    )
+    return zh_count >= 3
+
+
 async def _asr_subtitles(
-    ai: AIRouter, raw_path: Path, directory: Path, target_lang: str = "zh-CN"
+    ai: AIRouter,
+    raw_path: Path,
+    directory: Path,
+    target_lang: str = "zh-CN",
+    *,
+    translate: bool = True,
 ) -> tuple[Path, str] | None:
-    """ASR 原声字幕（v0.8.9，对齐原项目 enable_asr/retranslate 第一步）：
-    转写原声音轨（xinference 优先 / whisper 兜底）→ LLM 逐段翻译 →
-    target_lang SRT（保留原声时间戳，字幕标点统一清洗）。返回 (srt, 译文
-    全文)；任一环节失败返回 None。v0.8.9 翻译方向扩展：目标语言参数化。
+    """ASR 原声字幕（v0.8.9 起，v0.10 语义修正：字幕/翻译数据源 = 视频原声）：
+
+    转写原声音轨（xinference 优先 / whisper 兜底）→ 可选 LLM 逐段翻译 →
+    target_lang SRT（保留原声时间戳；translate=True 且目标为中文时译文标点
+    统一清洗）。返回 (srt, 全文)；任一环节失败返回 None。
+    translate=False：转写原文直接作字幕（原声语言），不翻译、不清洗。
     """
     from backend.pipeline.producers.asr import transcribe
 
     has_audio = await probe_has_audio(raw_path)
     if not has_audio:
-        return None  # 图片帖等无原声——回退旁白翻译
+        return None  # 图片帖等无原声——回退旁白字幕
     asr_srt = directory / "asr.srt"
     got = await transcribe(raw_path, asr_srt)
     if got is None:
@@ -711,13 +742,16 @@ async def _asr_subtitles(
     cues = parse_srt_cues(asr_srt)
     if not cues:
         return None
-    zh_cues = await _translate_srt_cues(ai, cues, target_lang=target_lang)
-    # v0.8.9 标点清洗（对齐原项目 _rewrite_srt_strip_zh_punct）：
-    # ASR 译文可能残留标点，统一清洗（保留时间戳）
-    zh_cues = [
-        (s, e, clean_zh_subtitle_text(t) or " ")
-        for s, e, t in zh_cues
-    ]
+    if translate and not await _cues_already_target(cues, target_lang):
+        zh_cues = await _translate_srt_cues(ai, cues, target_lang=target_lang)
+        # v0.8.9 标点清洗（对齐原项目 _rewrite_srt_strip_zh_punct）：
+        # ASR 译文可能残留标点，统一清洗（保留时间戳）
+        zh_cues = [
+            (s, e, clean_zh_subtitle_text(t) or " ")
+            for s, e, t in zh_cues
+        ]
+    else:
+        zh_cues = cues
     zh_srt = directory / "subs.srt"
     _write_srt_cues(zh_srt, zh_cues)
     full = " ".join(t for _, _, t in zh_cues).strip()
@@ -1275,28 +1309,30 @@ async def produce_item(
         start_offset = 0.0
 
     # 字幕模块：烧录字幕（不依赖旁白——subs-only 语义）
-    # v0.8.9 对齐原项目 enable_asr/retranslate：翻译且不配音时优先 ASR——
-    # 提取视频原声 → 逐段中文字幕（保留原声时间戳，原声保留、无 TTS），
-    # 即用户诉求的「提取视频原来的文字→转中文→打上字幕」；无原声/ASR
-    # 失败自动回退旁白翻译（现状）
+    # v0.10 语义修正：字幕/翻译的数据源 = 视频原声（视频中的人说的话），
+    # 旁白文案仅作回退——此前字幕基于简介派生的旁白文案，与用户语义
+    # 「提取视频原话→（翻译→）字幕」不符（v0.8.9 只覆盖 translate 且
+    # 不配音的组合，v0.10 扩展到全部字幕生产方式）：
+    # - translate：原声转写 → 逐段翻译成 subtitle_lang（目标语言字幕）
+    # - subtitle（无 translate）：原声转写原文（保留原声语言与时间戳）
+    # - 原声缺失（图片帖/静音视频）/ ASR 通道不可用/失败 → 回退旁白文案字幕
     srt_path = None
     asr_subtitle = None
-    if want_subtitle:
-        if (
-            want_translate
-            and not want_voice
-            and bool(getattr(settings, "pipeline_enable_asr", True))
-        ):
-            try:
-                asr_subtitle = await _asr_subtitles(
-                    ai, raw_path, directory, target_lang=subtitle_lang
-                )
-            except Exception:  # noqa: BLE001 — ASR 失败回退旁白翻译
-                logger.warning("ASR subtitles failed, falling back to narration subs")
-            if asr_subtitle:
-                srt_path, asr_text = asr_subtitle
-                script["subtitle_zh"] = asr_text.strip()
-                artifacts["subtitle"] = {"path": str(srt_path), "source": "asr"}
+    if (
+        want_subtitle
+        and bool(getattr(settings, "pipeline_enable_asr", True))
+    ):
+        try:
+            asr_subtitle = await _asr_subtitles(
+                ai, raw_path, directory,
+                target_lang=subtitle_lang, translate=want_translate,
+            )
+        except Exception:  # noqa: BLE001 — ASR 失败回退旁白字幕
+            logger.warning("ASR subtitles failed, falling back to narration subs")
+        if asr_subtitle:
+            srt_path, asr_text = asr_subtitle
+            script["subtitle_zh"] = asr_text.strip()
+            artifacts["subtitle"] = {"path": str(srt_path), "source": "asr"}
         if srt_path is None:
             srt_path = directory / "subs.srt"
             try:
