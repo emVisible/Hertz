@@ -535,6 +535,7 @@
     "noSources": "No sources recorded",
     "collected": "collected {{n}}",
     "processed": "processed {{n}}",
+    "jobQueued": "{{step}} queued — running in background",
     "item": "item",
     "stageAudit": "Review",
     "auditSort.videoFirst": "With video first",

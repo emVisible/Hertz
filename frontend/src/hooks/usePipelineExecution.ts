@@ -140,6 +140,10 @@ export function usePipelineExecution() {
       }
     } else if (event.type === 'item') {
       appendLog(`${t('console.item')} ${event.status}${event.error ? `: ${event.error}` : ''}`, event.status === 'rejected' || event.status === 'failed' ? 'done' : 'item')
+      // v0.10.1 异步队列：后台任务每完成一条立即刷新列表与计数（此前
+      // 同步批处理完成后才一次性刷新，看不到逐个进度）
+      void queryClient.invalidateQueries({ queryKey: ['pipeline-queue'] })
+      void queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] })
     } else if (event.type === 'job_done') {
       const failed = event.status === 'failed'
       // 冷却（v0.3.5）：源被拒后的静默分支——不算 ✓，标 ⚠ 提示原因
@@ -173,6 +177,8 @@ export function usePipelineExecution() {
         .join(' · ')
       appendLog(`── [${event.job}] ${failed ? '✗' : empty || cooling ? '⚠' : '✓'}${summary ? ` ${summary}` : ''}${deltaText ? `  ${deltaText}` : ''}${event.error ? `: ${event.error}` : ''} ──`, 'done')
       void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
+      void queryClient.invalidateQueries({ queryKey: ['pipeline-queue'] })
+      void queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] })
       if (failed) toast(event.error ?? `${event.job} failed`, 'error')
       else if (empty) toast(t('console.collectEmpty'), 'warning')
       else if (cooling) toast(t('console.collectCooling'), 'warning')
@@ -242,8 +248,10 @@ export function usePipelineExecution() {
     if (runningRef.current) return
     runningRef.current = true
     try {
+      // v0.10.1 异步队列：run 端点立即返回 queued，任务后台执行——进度经
+      // SSE（job_step/item/job_done）实时刷新，不再等待整个批次完成
       await pipelineApi.run(stepName, limit, channel)
-      refresh()
+      toast(t('console.jobQueued', { step: stepName }), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     } finally {

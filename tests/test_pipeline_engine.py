@@ -194,14 +194,35 @@ async def _wait_items(client, status: str, expected: int, timeout_s: float = 20.
     raise AssertionError(f"timed out waiting for {expected} item(s) in state {status}")
 
 
+async def _wait_jobs_done(client, timeout_s: float = 60.0):
+    """v0.10.1 异步队列：轮询直到后台任务完全结束（running=false）并返回 jobs。
+
+    仅看 jobs 表 status 会早退——job 落库 COMPLETED 后任务还要算 delta/
+    commit/emit 收尾，此间 pipeline.running 仍为 true。
+    """
+    deadline = asyncio.get_running_loop().time() + timeout_s
+    last_status = {}
+    while asyncio.get_running_loop().time() < deadline:
+        status = (await client.get("/api/pipeline/status")).json()
+        if not status.get("running"):
+            resp = await client.get("/api/pipeline/jobs")
+            return resp.json().get("jobs", [])
+        last_status = status
+        await asyncio.sleep(0.3)
+    raise AssertionError(
+        f"timed out waiting for pipeline idle (busy: {last_status.get('job')})"
+    )
+
+
 @pytest.mark.asyncio
 async def test_chain_to_review_gate(client, pipeline_env) -> None:
     resp = await client.post("/api/pipeline/chain", params={"limit": 10})
     assert resp.status_code == 200, resp.text
-    results = resp.json()
-    assert "collect" in results and "produce" in results
+    # v0.10.1 异步队列：立即返回入队（不再阻塞等待整链完成）
+    assert resp.json()["status"] == "queued"
+    assert resp.json()["job"] == "chain"
 
-    queued = await _wait_items(client, "queued", 1)
+    queued = await _wait_items(client, "queued", 1, timeout_s=40)
     good = next(q for q in queued if q["source_id"] == "good-1")
     assert good["status"] == "queued"
     assert good["title"].startswith("一个很棒")
@@ -238,6 +259,8 @@ async def test_chain_to_review_gate(client, pipeline_env) -> None:
 @pytest.mark.asyncio
 async def test_approve_reject_publish(client, pipeline_env) -> None:
     await client.post("/api/pipeline/chain", params={"limit": 10})
+    # v0.10.1 异步队列：等整链后台完成后才能发布（single-flight）
+    await _wait_jobs_done(client)
     queued = await _wait_items(client, "queued", 1)
     good = queued[0]
     rejected_id = await _mk_item(status="rejected")
@@ -248,10 +271,9 @@ async def test_approve_reject_publish(client, pipeline_env) -> None:
 
     resp = await client.post("/api/pipeline/run", params={"step": "publish"})
     assert resp.status_code == 200, resp.text
-    assert resp.json()["summary"]["processed"] == 1
-
-    published = (await client.get("/api/pipeline/items", params={"status": "published"})).json()
-    assert len(published) == 1
+    # v0.10.1 异步队列：run 立即返回入队，发布结果经轮询确认
+    assert resp.json()["status"] == "queued"
+    published = await _wait_items(client, "published", 1)
     assert published[0]["publish_json"]["target"] == "noop"
 
     resp = await client.post(f"/api/pipeline/items/{good['id']}/reject")
@@ -304,11 +326,16 @@ async def test_step_order(client, pipeline_env) -> None:
 @pytest.mark.asyncio
 async def test_jobs_and_sources(client, pipeline_env) -> None:
     await client.post("/api/pipeline/chain", params={"limit": 10})
-    jobs = (await client.get("/api/pipeline/jobs")).json()["jobs"]
-    assert len(jobs) >= 4  # collect, score, download, produce
+    jobs = await _wait_jobs_done(client)
     names = {j["job"] for j in jobs}
     assert {"collect", "score", "download", "produce"} <= names
-    assert all(j["status"] == "completed" for j in jobs)
+    # 断言本次 chain 产生的最新四步全部 completed（jobs 含历史 job——
+    # 前面测试的失败 job 不参与；列表按 started_at 倒序，同名取首个）
+    latest: dict[str, dict] = {}
+    for j in jobs:
+        latest.setdefault(j["job"], j)
+    chain_jobs = [latest[n] for n in ("collect", "score", "download", "produce") if n in latest]
+    assert all(j["status"] == "completed" for j in chain_jobs)
 
     sources = (await client.get("/api/pipeline/sources")).json()
     assert len(sources) >= 1  # 默认源列表（v0.8.6 真实 subreddit）

@@ -90,6 +90,14 @@ class StepEngine:
         except Exception:  # noqa: BLE001 — diff 是增强，失败不阻塞主流程
             logger.warning("delta snapshot failed for job %s", job_name)
         job.summary = summary
+        # v0.10.1 异步队列：delta 与最终 summary 落库（此前仅内存返回——
+        # 同步模式前端拿响应体掩盖了缺口；异步后 jobs 列表/轮询读库）
+        try:
+            async with session_factory() as session:
+                await session.merge(job)
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 — 落库失败不阻塞收尾
+            logger.warning("final job summary persist failed: %s", exc)
 
         self._emit(
             str(job.id),

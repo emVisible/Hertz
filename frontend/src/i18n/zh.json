@@ -550,6 +550,7 @@
     "noSources": "还没有采集源记录",
     "collected": "采集 {{n}} 条",
     "processed": "处理 {{n}} 项",
+    "jobQueued": "{{step}} 已加入队列，后台处理中",
     "item": "内容项",
     "stageAudit": "审核",
     "auditSort.videoFirst": "有成片优先",

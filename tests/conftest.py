@@ -91,3 +91,20 @@ async def _dispose_engine():
     from backend.database import engine
 
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _reset_pipeline_state():
+    """v0.10.1 异步队列：后台任务跨测试泄漏防护。
+
+    run_batch 现在 create_task 后台执行——前一个测试结束时任务随旧 loop
+    被取消（CancelledError → FAILED job 落库），残留 _task/_current_job
+    会污染下一个测试（409 busy / jobs 出现 failed）。每个测试开始前重置
+    单例状态；旧 loop 的 task 不可 cancel（loop 已关），直接丢引用。
+    """
+    from backend.factory.registry import ServiceRegistry
+
+    yield
+    pipe = ServiceRegistry.get().pipeline
+    pipe._task = None
+    pipe._current_job = None

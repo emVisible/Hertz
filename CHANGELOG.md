@@ -5,6 +5,28 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.10.1] - 2026-08-13
+
+批量运行异步队列化（修复"加入队列后立即完成"）。
+
+### 修复
+
+- **批量制作/采集同步阻塞**：`run_batch`/`run_chain` 曾 `await self._task`——HTTP 请求
+  挂住直到全部条目处理完，前端"加入队列"后瞬间全部完成、看不到排队与进度——
+  现 create_task 后台执行、请求立即返回 `{status: queued}`；进度经 SSE
+  （job_step / item / job_done）实时推送，任务状态经 /pipeline/jobs 轮询
+- **job summary delta 从未落库**：`run_batch` 在 finally 提交后算 delta 并更新
+  `job.summary` 但缺第二次 commit——同步模式下前端拿响应体掩盖了缺口，
+  异步化后 jobs 列表/详情读库即暴露；补最终 summary 持久化
+- **SSE item/job_done 刷新列表**：后台任务每完成一条立即 invalidate
+  pipeline-queue/counts（此前仅写日志，列表要等轮询周期才更新）
+
+### 其他
+
+- 前端入队即时反馈 toast（`jobQueued`，zh/en）；测试隔离 fixture（后台任务
+  跨测试泄漏防护）与等待模式改造（`_wait_jobs_done` 等 running=false——job
+  落库 COMPLETED 后任务仍有收尾步骤）
+
 ## [v0.10.0] - 2026-08-13
 
 字幕/翻译数据源语义修正：基于视频原声（用户明确「视频中的人说的话」），旁白文案仅作回退。

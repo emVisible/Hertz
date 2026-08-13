@@ -7,7 +7,7 @@ review API and event wiring. The heavy lifting is delegated to StepEngine.
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func, or_, select
 
@@ -49,33 +49,43 @@ class PipelineService:
     # ---------- batch runs ----------
 
     async def run_batch(self, job_name: str, *, limit: int = 10, channel: str = "") -> dict:
+        """批量运行（v0.10.1 异步队列化）：create_task 后台执行，立即返回入队。
+
+        此前 `return await self._task` 让 HTTP 请求挂住直到全部条目处理完——
+        前端"加入队列"后条目瞬间全部完成，看不到排队与进度。现后台跑，
+        进度经 SSE（job_step / item / job_done）实时推送，任务状态经
+        /pipeline/jobs 轮询。运行中并发提交仍 409（single-flight）。
+        """
         if self.running:
             raise RuntimeError(f"pipeline busy with job '{self._current_job}'")
         self._current_job = job_name
-        try:
-            self._task = asyncio.create_task(
-                self.engine.run_batch(job_name, limit=limit, channel=channel),
-                name=f"pipeline-{job_name}",
-            )
-            return await self._task
-        finally:
-            self._task = None
-            self._current_job = None
+        task = asyncio.create_task(
+            self.engine.run_batch(job_name, limit=limit, channel=channel),
+            name=f"pipeline-{job_name}",
+        )
+        task.add_done_callback(self._on_batch_done)
+        self._task = task
+        return {
+            "status": "queued",
+            "job": job_name,
+            "queued_at": datetime.now(UTC).isoformat(),
+        }
+
+    def _on_batch_done(self, _task: asyncio.Task) -> None:
+        self._current_job = None
 
     async def run_chain(self, *, limit: int = 10, channel: str = "") -> dict:
-        """collect → score → download → produce (stops at the review gate)."""
+        """collect → score → download → produce (stops at the review gate)。"""
         if self.running:
             raise RuntimeError(f"pipeline busy with job '{self._current_job}'")
         self._current_job = "chain"
-        try:
-            self._task = asyncio.create_task(
-                self.engine.run_chain(limit=limit, channel=channel),
-                name="pipeline-chain",
-            )
-            return await self._task
-        finally:
-            self._task = None
-            self._current_job = None
+        task = asyncio.create_task(
+            self.engine.run_chain(limit=limit, channel=channel),
+            name="pipeline-chain",
+        )
+        task.add_done_callback(self._on_batch_done)
+        self._task = task
+        return {"status": "queued", "job": "chain"}
 
     async def cancel(self) -> dict:
         if self._task is None or self._task.done():

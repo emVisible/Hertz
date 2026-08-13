@@ -1090,11 +1090,22 @@ async def test_run_batch_delta_snapshot(client, monkeypatch) -> None:
     registry.pipeline.engine.collector = FakeRedditCollector([post])
     try:
         # 采集入库一条 → summary 应含 delta（discovered +1）
+        # v0.10.1 异步队列：run 立即返回入队，summary 经 job 轮询取
         resp = await client.post("/api/pipeline/run?step=collect&channel=hot")
-        body = resp.json()
-        if resp.status_code == 200:
-            summary = body.get("summary") or {}
-            assert summary.get("delta", {}).get("discovered", 0) == 1
+        assert resp.status_code == 200 and resp.json()["status"] == "queued"
+        summary = {}
+        deadline = asyncio.get_running_loop().time() + 30
+        while asyncio.get_running_loop().time() < deadline:
+            jobs = (await client.get("/api/pipeline/jobs")).json().get("jobs", [])
+            # v0.8.8 轻量化：列表不含 delta（light）——展开详情经 /jobs/{id} 取全量
+            hit = next((j for j in jobs if j.get("job") == "collect"), None)
+            if hit:
+                detail = (await client.get(f"/api/pipeline/jobs/{hit['id']}")).json()
+                if (detail.get("summary") or {}).get("delta"):
+                    summary = detail["summary"]
+                    break
+            await asyncio.sleep(0.3)
+        assert summary.get("delta", {}).get("discovered", 0) == 1
     finally:
         registry.pipeline.engine.collector = FakeRedditCollector([])  # 复原占位
 
