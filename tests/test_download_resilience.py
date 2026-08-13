@@ -23,21 +23,23 @@ from backend.pipeline.download import (
 # ---------- 候选链 ----------
 
 def test_media_candidates_chain() -> None:
-    """v.redd.it 视频 → DASH_720.mp4 变体 + 原 URL + permalink 兜底；
-    清单候选（.mpd/.m3u8）排除——无解析器，直下会误存 XML 文本（§34 查漏补缺）。"""
+    """v.redd.it 视频 → MPD 主清单（v0.8.9：DASH_720 被 CDN 403，CMAF 放行）
+    + DASH_720.mp4 变体 + 原 URL + permalink 兜底；去重。"""
     url = "https://v.redd.it/abc123/DASH_720.mp4"
     permalink = "https://www.reddit.com/r/funny/comments/abc123/title/"
     cands = media_candidates(url, permalink)
-    assert cands[0] == url  # 已是 DASH_720.mp4：原样在前
+    # 裸 v.redd.it id → MPD 首位（CDN 放行的 CMAF 通道）
+    assert "https://v.redd.it/abc123/DASHPlaylist.mpd" in cands
     assert permalink in cands
     assert len(cands) == len(set(cands))  # 去重
-    # 清单候选绝不出现
-    assert not any(".mpd" in c or ".m3u8" in c for c in cands)
 
-    # 裸 v.redd.it id → 只生成 DASH_720.mp4（无清单）
+    # 裸 v.redd.it id → 含 MPD 与 DASH_720 变体
+    cands2 = media_candidates("https://v.redd.it/abc123", permalink)
+    assert "https://v.redd.it/abc123/DASHPlaylist.mpd" in cands2
+    assert "https://v.redd.it/abc123/DASH_720.mp4" in cands2
     raw_id = media_candidates("https://v.redd.it/abc123", permalink)
     assert "https://v.redd.it/abc123/DASH_720.mp4" in raw_id
-    assert not any(".mpd" in c or ".m3u8" in c for c in raw_id)
+    # v0.8.9：MPD 已是合法候选（由下载链 MPD→CMAF 路径消费）
 
     # 非 v.redd.it：只保留原 URL + permalink
     plain = media_candidates("https://i.redd.it/x.jpg", "https://www.reddit.com/r/a/comments/1/x/")
@@ -592,3 +594,69 @@ async def test_signed_url_safe_allowlist() -> None:
     assert _signed_url_safe("https://preview.redd.it/x.jpg")
     assert not _signed_url_safe("https://evil.com/x.mp4")
     assert not _signed_url_safe("http://127.0.0.1/x")
+
+
+# ---------- MPD→CMAF 路径（v0.8.9，参考原项目 _download_via_mpd_direct） ----------
+
+
+@pytest.mark.asyncio
+async def test_download_via_mpd_classifies_tracks(monkeypatch) -> None:
+    """MPD 解析：bandwidth= 含 width= 子串不误分类（\b 边界）；视频/音频分流。"""
+    import tempfile
+    from pathlib import Path
+
+    from backend.pipeline import download as dl_mod
+
+    mpd = """<?xml version="1.0"?>
+<MPD>
+  <Period><AdaptationSet>
+    <Representation bandwidth="211736" codecs="avc1.4d401e" height="392" mimeType="video/mp4" width="220">
+      <BaseURL>CMAF_220.mp4</BaseURL>
+    </Representation>
+    <Representation bandwidth="980646" codecs="avc1.4d401f" height="854" mimeType="video/mp4" width="480">
+      <BaseURL>CMAF_480.mp4</BaseURL>
+    </Representation>
+    <Representation audioSamplingRate="48000" bandwidth="129899" codecs="mp4a.40.2" mimeType="audio/mp4">
+      <BaseURL>CMAF_AUDIO_128.mp4</BaseURL>
+    </Representation>
+  </AdaptationSet></Period>
+</MPD>"""
+
+    video_bytes = b"\x00" * 4096
+    audio_bytes = b"\x01" * 4096
+
+    class FakeResp:
+        status_code = 200
+        text = mpd
+        content = b""
+
+    async def fake_get(url):
+        class R:
+            status_code = 200
+            content = video_bytes if "AUDIO" not in url else audio_bytes
+        return R()
+
+    class FakeClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url, **kw):
+            if url.endswith("DASHPlaylist.mpd"):
+                return FakeResp()
+            return await fake_get(url)
+
+    import httpx
+
+    from backend.library import thumbnails as thumbs_mod
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: FakeClient())
+    monkeypatch.setattr(thumbs_mod, "find_ffmpeg", lambda: None)  # 无 ffmpeg → 仅视频轨
+
+    dest = Path(tempfile.mkdtemp()) / "raw.mp4"
+    out = await dl_mod.download_via_mpd(
+        "https://v.redd.it/abc123/DASHPlaylist.mpd", dest,
+        headers={}, checker=lambda u: True,
+    )
+    assert out is not None and out.exists()
+    assert out.stat().st_size > 1024
+    # 视频轨（中档优先 480）应被选中而非音频
+    assert out.read_bytes() == video_bytes

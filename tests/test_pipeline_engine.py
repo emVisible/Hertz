@@ -296,23 +296,23 @@ async def test_requeue_rejected_item(client, pipeline_env) -> None:
 
 @pytest.mark.asyncio
 async def test_step_order(client, pipeline_env) -> None:
-    """v5.9 流程顺序：download → score → produce → publish（collect 前置除外）。"""
+    """v0.8.6 流程顺序：score → download → produce → publish（collect 前置除外）。"""
     steps = (await client.get("/api/pipeline/steps")).json()["steps"]
-    assert steps == ["download", "score", "produce", "publish"]
+    assert steps == ["score", "download", "produce", "publish"]
 
 
 @pytest.mark.asyncio
 async def test_jobs_and_sources(client, pipeline_env) -> None:
     await client.post("/api/pipeline/chain", params={"limit": 10})
-    jobs = (await client.get("/api/pipeline/jobs")).json()
+    jobs = (await client.get("/api/pipeline/jobs")).json()["jobs"]
     assert len(jobs) >= 4  # collect, score, download, produce
     names = {j["job"] for j in jobs}
     assert {"collect", "score", "download", "produce"} <= names
     assert all(j["status"] == "completed" for j in jobs)
 
     sources = (await client.get("/api/pipeline/sources")).json()
-    assert len(sources) == 1
-    assert sources[0]["source"] == "reddit"
+    assert len(sources) >= 1  # 默认源列表（v0.8.6 真实 subreddit）
+    assert all(s["source"] == "reddit" for s in sources)
     assert sources[0]["ok_count"] >= 1
     assert sources[0]["cursor"] is not None
 

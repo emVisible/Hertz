@@ -1,7 +1,8 @@
 """StepEngine — batch executor for the content pipeline.
 
-Drives Items through the five steps: collect → download → score → produce →
-publish (v5.9: 下载在评分之前，审核为人工 gate)。The engine owns status
+Drives Items through the five steps: collect → score → download → produce →
+publish (v0.8.6: 评分先行——评分只读元数据不依赖文件，低分免下载；审核为人工
+gate)。The engine owns status
 transitions; each step only declares what it consumes and produces. Progress
 is broadcast via EventHub on the ``pipeline`` topic; batch runs are recorded
 in job_runs for audit.
@@ -133,12 +134,13 @@ class StepEngine:
     # ---------- per-item actions (review / retry) ----------
 
     async def approve(self, item_id: uuid.UUID) -> dict:
-        from backend.pipeline.helpers import load_item_for_action
+        from backend.pipeline.helpers import bump_item_seq, load_item_for_action
 
         async with session_factory() as session:
             item = await load_item_for_action(item_id, (ItemStatus.QUEUED,), "approve")
             item.status = ItemStatus.APPROVED
             item.approved_at = datetime.now(UTC)
+            await bump_item_seq(session, item)  # v0.8.9：审核通过 = 最新入库序
             await session.merge(item)
             await session.commit()
         item_event = {"type": "item", "item_id": str(item_id), "status": "approved"}
@@ -146,7 +148,7 @@ class StepEngine:
         return {"id": str(item_id), "status": "approved"}
 
     async def reject(self, item_id: uuid.UUID, reason: str = "") -> dict:
-        from backend.pipeline.helpers import load_item_for_action
+        from backend.pipeline.helpers import bump_item_seq, load_item_for_action
 
         async with session_factory() as session:
             # v0.3.4：预处理阶段的 discovered（未下载）也可拒绝——人工筛掉不想要的源
@@ -158,6 +160,7 @@ class StepEngine:
             )
             item.status = ItemStatus.REJECTED
             item.error = reason or "rejected at review"
+            await bump_item_seq(session, item)  # v0.8.9
             await session.merge(item)
             await session.commit()
         item_event = {"type": "item", "item_id": str(item_id), "status": "rejected"}
@@ -176,11 +179,15 @@ class StepEngine:
                 raise ItemNotFoundError(item_id)
             if item.status != ItemStatus.FAILED:
                 raise InvalidItemStateError(f"cannot retry item in state {item.status}")
-            from backend.pipeline.helpers import back_status_for
+            from backend.pipeline.helpers import back_status_for, bump_item_seq, purge_derived_media
 
+            # v0.8.9 对齐原项目 reproduce（_REMAKE_STATUSES 含 FAILED）：
+            # 重试前清除旧派生媒体，重跑必然全新产物
+            await purge_derived_media(item)
             item.status = back_status_for(item)
             item.error = None
             item.retry_count += 1
+            await bump_item_seq(session, item)  # v0.8.9：重试 = 最新入库序
             await session.merge(item)
             await session.commit()
         return {"id": str(item_id), "status": item.status}
@@ -206,6 +213,140 @@ class StepEngine:
             "item:" + item_id.hex, {"type": "item", "item_id": str(item_id), "status": "queued"}
         )
         return {"id": str(item_id), "status": "queued"}
+
+    async def retranslate(self, item_id: uuid.UUID) -> dict:
+        """重新翻译（v0.8.9，对齐原项目 retranslate_item）：
+        提取视频原声 → 中文字幕（原声保留、无 TTS、无旁白）——用户诉求的
+        「先提取视频原来的文字→转中文→打上字幕」。
+
+        ASR 双通道（xinference 优先 / faster-whisper 兜底）→ LLM 逐段翻译
+        （1:1 段数、保留原声时间戳）→ 中文 SRT → ASS → 原声合成。
+        """
+        from backend.config import settings
+        from backend.factory.registry import ServiceRegistry
+        from backend.pipeline.helpers import (
+            bump_item_seq,
+            load_item_for_action,
+            purge_derived_media,
+        )
+        from backend.pipeline.producers.media import (
+            ProducerError,
+            _artifacts_dir,
+            _asr_subtitles,
+            compose_video,
+            find_ffmpeg,
+            generate_cover,
+            srt_to_ass,
+            subtitles_filter_available,
+        )
+
+        subtitle_lang = str(
+            getattr(settings, "pipeline_subtitle_lang", "zh-CN") or "zh-CN"
+        )
+
+        registry = ServiceRegistry.get()
+        ai = registry.ai
+
+        async with session_factory() as session:
+            item = await load_item_for_action(
+                item_id,
+                (
+                    ItemStatus.QUEUED, ItemStatus.APPROVED, ItemStatus.REJECTED,
+                    ItemStatus.FAILED, ItemStatus.DOWNLOADED, ItemStatus.SCORED,
+                ),
+                "retranslate",
+            )
+            raw_path = item.raw_path
+            directory = _artifacts_dir(registry.files, item)
+            import os
+            from pathlib import Path
+
+            raw_ok = bool(raw_path and await asyncio.to_thread(os.path.exists, raw_path))
+            if not raw_ok:
+                raise InvalidItemStateError(
+                    "item has no raw media — run download first"
+                )
+            await purge_derived_media(item)
+            item.status = ItemStatus.DOWNLOADED
+            item.error = None
+            item.error_class = ""
+            await bump_item_seq(session, item)
+            await session.merge(item)
+            await session.commit()
+
+        try:
+            raw = Path(raw_path)
+            result = await _asr_subtitles(
+                ai, raw, directory, target_lang=subtitle_lang
+            )
+            if result is None:
+                raise ProducerError(
+                    "ASR unavailable — install with `uv sync --extra asr` "
+                    "or configure xinference STT"
+                )
+            srt_path, zh_text = result
+
+            burn = srt_path
+            ffmpeg = find_ffmpeg()
+            if await subtitles_filter_available(ffmpeg):
+                try:
+                    ass = srt_path.with_suffix(".ass")
+                    await asyncio.to_thread(srt_to_ass, srt_path, ass)
+                    burn = ass
+                except Exception:  # noqa: BLE001 — subtitles are best-effort
+                    pass
+
+            out_path = directory / "final.mp4"
+            edit = await compose_video(raw, None, burn, out_path, muted=False)
+            try:
+                cover = await generate_cover(raw, directory / "cover.jpg")
+            except ProducerError:
+                cover = None
+
+            from backend.pipeline.phash import compute_phash
+
+            phash = await compute_phash(str(out_path))
+
+            async with session_factory() as session:
+                row = await session.get(Item, item_id)
+                if row is not None:
+                    row.video_path = edit["path"]
+                    row.subtitle_path = str(burn)
+                    row.cover_path = cover["path"] if cover else None
+                    row.audio_path = None
+                    row.phash = phash
+                    script = {
+                        "mode": "retranslate",
+                        "subtitle_zh": zh_text,
+                        "source": "asr",
+                    }
+                    from backend.pipeline.package import generate_packaging
+
+                    script = await generate_packaging(ai, row, script)
+                    row.script_json = script
+                    row.status = ItemStatus.QUEUED
+                    row.error = None
+                    row.error_class = ""
+                    await bump_item_seq(session, row)
+                    await session.merge(row)
+                    await session.commit()
+        except Exception as exc:  # noqa: BLE001 — 失败标 failed，产物尽力保留
+            logger.exception("retranslate failed for item %s", item_id)
+            async with session_factory() as session:
+                row = await session.get(Item, item_id)
+                if row is not None:
+                    row.status = ItemStatus.FAILED
+                    row.error = str(exc)[:400]
+                    row.error_class = "retranslate"
+                    await session.merge(row)
+                    await session.commit()
+            raise RuntimeError(f"retranslate failed: {exc}") from exc
+
+        self._emit(
+            "item:" + item_id.hex,
+            {"type": "item", "item_id": str(item_id), "status": "queued"},
+        )
+        return {"id": str(item_id), "status": "queued", "action": "retranslate"}
 
     # ---------- internals ----------
 
@@ -243,7 +384,7 @@ class StepEngine:
                 except Exception as exc:  # noqa: BLE001 — 单源失败不中断其他源
                     logger.warning("collect %s failed: %s", src, exc)
                     await self._record_collect_failure(
-                        self.collector.name, src, str(exc)
+                        self.collector.name, src, str(exc), exc
                     )
                     summaries.append({"channel": src, "error": str(exc)[:200]})
                     continue
@@ -302,6 +443,8 @@ class StepEngine:
             return list(result.scalars().all())
 
     async def _process_item(self, ctx: StepContext, step: Pipe, item: Item) -> str:
+        from backend.pipeline.helpers import bump_item_seq
+
         result: ProcessResult | None = None
         error = ""
         try:
@@ -339,6 +482,11 @@ class StepEngine:
                 row.error_class = ""
             for field, value in (result.data if result else {}).items():
                 setattr(row, field, value)
+            # v0.8.9：状态流转（评分/下载/制作等）= 最新入库序——最近活跃的
+            # 条目在各列表「入库序」排序中排到最前（用户诉求：打回即最新入库）。
+            # 冷却跳过（skip，未处理）不刷新——条目没有真实活动
+            if outcome != "skipped":
+                await bump_item_seq(session, row)
             await session.merge(row)
             await session.commit()
 
@@ -389,12 +537,24 @@ class StepEngine:
         except Exception:  # noqa: BLE001 — 健康度记账失败不阻塞采集主流程
             logger.exception("failed to record empty collect for %s:%s", source, channel)
 
-    async def _record_collect_failure(self, source: str, channel: str, error: str) -> None:
+    async def _record_collect_failure(
+        self, source: str, channel: str, error: str, exc: BaseException | None = None
+    ) -> None:
         """采集失败记账（数据源健康度 v0.2.1）：连续失败 + 失败计数 + 最后错误 + 冷却。
 
-        冷却/熔断：基础 30 分钟；连续失败 ≥3（熔断）翻倍到 2 小时。
+        冰川式分类冷却（v0.8.6）：
+        - CollectNetworkError（连接/超时）→ 900s：网络抖动不熔断，恢复后快速重试
+        - CollectRateLimitedError（429）→ 1800s
+        - CollectBlockedError（403）→ 1800s
+        - 配置错误（无分类）→ 不冷却（改配置即可重试，避免「改配置→等 2h」）
+        - 连续失败 ≥3（熔断）→ 翻倍到 2h
         """
         from backend.models.pipeline import SourceState
+        from backend.pipeline.collectors.reddit import (
+            CollectBlockedError,
+            CollectNetworkError,
+            CollectRateLimitedError,
+        )
 
         try:
             async with session_factory() as session:
@@ -413,9 +573,22 @@ class StepEngine:
                 state.consecutive_fails += 1
                 state.last_error = str(error)[:500]
                 state.last_error_at = datetime.now(UTC)
-                cooldown_s = 3600 * 2 if state.consecutive_fails >= 3 else 1800
+                if isinstance(exc, CollectNetworkError):
+                    base_cooldown = 900
+                elif isinstance(exc, (CollectRateLimitedError, CollectBlockedError)):
+                    base_cooldown = 1800
+                elif isinstance(exc, Exception):
+                    base_cooldown = 0  # 配置类错误：不冷却，改配置即可重试
+                else:
+                    base_cooldown = 1800
+                if base_cooldown > 0 and state.consecutive_fails >= 3:
+                    base_cooldown = 7200  # 熔断（冰川式：持续失败翻倍）
+                cooldown_s = base_cooldown
                 cooldowns = state.get_cooldowns()
-                cooldowns["default"] = datetime.now(UTC).timestamp() + cooldown_s
+                if cooldown_s > 0:
+                    cooldowns["default"] = datetime.now(UTC).timestamp() + cooldown_s
+                else:
+                    cooldowns.pop("default", None)
                 state.set_cooldowns(cooldowns)
                 await session.commit()
                 logger.warning(

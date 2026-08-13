@@ -69,6 +69,9 @@ export interface JobSummary {
   /** 采集 0 条（v0.2.8）：源返回空列表，已记健康度并冷却 */
   empty?: boolean
   error?: string
+  /** 列表轻量摘要（v0.8.8）：collect 逐源 ok/err 计数——展开时经 /jobs/{id} 取全量 */
+  sources_ok?: number
+  sources_err?: number
   [key: string]: unknown
 }
 
@@ -80,6 +83,31 @@ export interface PipelineJob {
   error: string | null
   started_at: string | null
   finished_at: string | null
+  /** 任务耗时秒（v0.8.7）：finished-started */
+  duration_s: number | null
+}
+
+/** 采集轮次逐源明细（v0.8.7）：活动面板/采集卡展开用。 */
+export interface CollectSourceRun {
+  channel: string
+  collected?: number
+  inserted?: number
+  skipped?: number
+  cooldown_s?: number
+  error?: string
+  empty?: boolean
+}
+
+export interface JobListResult {
+  total: number
+  jobs: PipelineJob[]
+}
+
+export interface LogLineHistory {
+  ts: string
+  level: 'INFO' | 'WARNING' | 'ERROR'
+  logger: string
+  message: string
 }
 
 export interface SourceState {
@@ -171,6 +199,9 @@ export const pipelineApi = {
   reject: (id: string, reason = '') =>
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/reject?reason=${encodeURIComponent(reason)}`),
   retry: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/retry`),
+  /** 重新翻译（v0.8.9）：ASR 原声→中文字幕，原声保留无 TTS */
+  retranslate: (id: string) =>
+    api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/retranslate`),
   /** 打回审核（v0.3.9 相邻双向）：rejected/approved/published → queued */
   requeue: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/requeue`),
 
@@ -188,6 +219,8 @@ export const pipelineApi = {
   produce: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/produce`),
   /** 单条评分（v0.3.5，预处理手动评分按钮）。 */
   score: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/score`),
+  /** 单条下载（v0.8.6 评分先行，预处理手动下载按钮）。 */
+  download: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/download`),
   /** 过期排期自动重排（v0.2.7）：进入审核时调用。 */
   rescheduleExpired: () => api.post<{ updated: number }>('/api/pipeline/reschedule-expired'),
   /** 发布数据补录（v0.4 C1）：自动回捞失败时手动填播放/互动 */
@@ -237,7 +270,16 @@ export const pipelineApi = {
     ),
   chain: (limit = 10) => api.post<Record<string, PipelineJob>>(`/api/pipeline/chain?limit=${limit}`),
   cancel: () => api.post<{ ok: boolean; cancelling: boolean }>('/api/pipeline/cancel'),
-  jobs: (limit = 10) => api.get<PipelineJob[]>(`/api/pipeline/jobs?limit=${limit}`),
+  /** 任务历史分页（v0.8.7）：类型/状态筛选 + offset 分页。 */
+  jobsPage: (limit = 50, offset = 0, jobName = '', status = '') =>
+    api.get<JobListResult>(
+      `/api/pipeline/jobs?limit=${limit}&offset=${offset}${jobName ? `&job_name=${encodeURIComponent(jobName)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}`,
+    ),
+  /** 单任务详情（v0.8.7）：活动面板展开。 */
+  jobDetail: (id: string) => api.get<PipelineJob>(`/api/pipeline/jobs/${id}`),
+  /** 采集历史轮次（v0.8.7）：最近 N 轮逐源明细。 */
+  collectHistory: (limit = 10) =>
+    api.get<PipelineJob[]>(`/api/pipeline/collect/history?limit=${limit}`),
   sources: () => api.get<SourceState[]>('/api/pipeline/sources'),
   supply: () => api.get<{ warnings: string[] }>('/api/pipeline/supply'),
   failures: () => api.get<Record<string, number>>('/api/pipeline/failures'),

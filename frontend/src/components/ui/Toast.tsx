@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { copyToClipboard } from '../../utils/copy'
 import { Icon } from './Icon'
 import { useToastStore } from './toast-store'
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t: tCopy } = useTranslation()
   const toasts = useToastStore((s) => s.toasts)
   const dismiss = useToastStore((s) => s.dismiss)
   return (
@@ -37,7 +39,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => void copyToClipboard(t.message)}
               aria-label="Copy message"
-              title="复制"
+              title={tCopy('common.copyTitle')}
               className="p-0.5 text-text-disabled transition-colors hover:text-text-primary"
             >
               <Icon name="copy" size={12} />

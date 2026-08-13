@@ -15,6 +15,7 @@ import {
   PIPELINE_ITEM_TONE,
   PipelineStage,
   PreReviewCard,
+  PreReviewRow,
   PublishCard,
   SectionCard,
   SortControl,
@@ -24,6 +25,7 @@ import {
   type SortSpec,
 } from '../../components/execution'
 import { CalendarView } from './CalendarView'
+import { CollectHistory } from './CollectHistory'
 import { ProduceBatchModal } from '../../components/execution/ProduceBatchModal'
 import { usePipelineExecution } from '../../hooks/usePipelineExecution'
 
@@ -54,7 +56,7 @@ interface PipelineViewProps {
   collectStatus?: ReturnType<typeof usePipelineExecution>['collectStatus']
   stop: () => void
   collectProgress: ReturnType<typeof usePipelineExecution>['collectProgress']
-  act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') => void
+  act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue' | 'retranslate') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
   publishItem: (item: PipelineItem, selfmade?: boolean, target?: string) => void
   setPublishStats: (item: PipelineItem) => void
@@ -68,6 +70,7 @@ interface PipelineViewProps {
   produceBatch: () => Promise<void>
   scoreOne: (item: PipelineItem) => Promise<void>
   scoreBatch: () => Promise<void>
+  downloadOne: (item: PipelineItem) => Promise<void>
   runStep: (stepName: string, channel?: string) => Promise<void>
 }
 
@@ -111,32 +114,39 @@ export function PipelineView(p: PipelineViewProps) {
   const [produceBatchOpen, setProduceBatchOpen] = useState(false)
   // 预处理排序（v0.3.12）：要素 × 方向两维度；默认 入库序+降序（最新在前）
   const [preSort, setPreSort] = useState<SortSpec>({ field: 'seq', dir: 'desc' })
-  const sortedPreReview = useMemo(() => {
-    const list = [...p.stageDownloaded, ...p.stageScored]
+  // 预处理阶段子菜单（v0.8.8）：未评分 / 已评分未下载 / 已下载未加工——
+  // 点击切换查看对应阶段数据（原下拉折叠分组改为菜单导航；待审核归审核页签）
+  const [preStage, setPreStage] = useState<'discovered' | 'scored' | 'downloaded'>('downloaded')
+  const sortPreList = useMemo(() => {
     const seqOf = (item: PipelineItem) => item.seq ?? (item.created_at ? Date.parse(item.created_at) : 0)
     const updatedOf = (item: PipelineItem) =>
       item.updated_at ? Date.parse(item.updated_at) : seqOf(item)
     const sign = preSort.dir === 'asc' ? 1 : -1
-    switch (preSort.field) {
-      case 'score':
-        return list.sort((a, b) => sign * ((b.score_total ?? -1) - (a.score_total ?? -1)))
-      case 'updated':
-        return list.sort((a, b) => sign * (updatedOf(a) - updatedOf(b)))
-      case 'produce': {
-        // 生产方式组合排序：直发优先展示（无需加工最快），其余按模块数
-        const key = (i: PipelineItem): number => {
-          const o = i.produce_options ?? {}
-          if ((o as { passthrough?: boolean }).passthrough) return 0
-          return Object.values(o).filter(Boolean).length
+    return (list: PipelineItem[]): PipelineItem[] => {
+      const copy = [...list]
+      switch (preSort.field) {
+        case 'score':
+          return copy.sort((a, b) => sign * ((b.score_total ?? -1) - (a.score_total ?? -1)))
+        case 'updated':
+          return copy.sort((a, b) => sign * (updatedOf(a) - updatedOf(b)))
+        case 'produce': {
+          // 生产方式组合排序：直发优先展示（无需加工最快），其余按模块数
+          const key = (i: PipelineItem): number => {
+            const o = i.produce_options ?? {}
+            if ((o as { passthrough?: boolean }).passthrough) return 0
+            return Object.values(o).filter(Boolean).length
+          }
+          return copy.sort((a, b) => key(a) - key(b) || sign * (seqOf(a) - seqOf(b)))
         }
-        return list.sort((a, b) => key(a) - key(b) || sign * (seqOf(a) - seqOf(b)))
+        default:
+          return copy.sort((a, b) => sign * (seqOf(a) - seqOf(b)))
       }
-      default:
-        return list.sort((a, b) => sign * (seqOf(a) - seqOf(b)))
     }
-  }, [p.stageDownloaded, p.stageScored, preSort])
+  }, [preSort])
   // 审核排序（v0.3.12）：要素 × 方向 + 独立开关「有成片优先 / 随机洗牌」
   const [auditSort, setAuditSort] = useState<SortSpec>({ field: 'seq', dir: 'desc' })
+  // 审核搜索（v0.8.9）：标题关键词过滤
+  const [auditQuery, setAuditQuery] = useState('')
   const [videoFirst, setVideoFirst] = useState(true)
   const [auditRandom, setAuditRandom] = useState(false)
   // 低分复用池（v0.5 D）：仅看 is_lowscore 条目
@@ -188,9 +198,13 @@ export function PipelineView(p: PipelineViewProps) {
       sorted = [...withVideo, ...rest]
     }
     // 低分复用池（v0.5 D）：仅看 is_lowscore 时过滤
-    return lowScoreOnly ? sorted.filter((i) => i.is_lowscore) : sorted
+    if (lowScoreOnly) sorted = sorted.filter((i) => i.is_lowscore)
+    // 审核搜索（v0.8.9）：标题关键词（大小写不敏感）
+    const q = auditQuery.trim().toLowerCase()
+    if (q) sorted = sorted.filter((i) => (i.title || '').toLowerCase().includes(q))
+    return sorted
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.stageQueued, auditSort, videoFirst, auditRandom, randomSeed, lowScoreOnly])
+  }, [p.stageQueued, auditSort, videoFirst, auditRandom, randomSeed, lowScoreOnly, auditQuery])
   const pTab: PipelineTabId = PIPELINE_TABS.some((tb) => tb.id === p.tab)
     ? (p.tab as PipelineTabId)
     : 'inReview'
@@ -375,7 +389,7 @@ export function PipelineView(p: PipelineViewProps) {
                 <span className="flex items-center gap-1.5 text-xs">
                   <Icon name="downloads" size={13} className="text-text-disabled" />
                   <span className="text-text-secondary">
-                    {t('console.pendingDownloads')}: {p.counts.discovered ?? 0}
+                    {t('console.preStage.discovered')}: {p.counts.discovered ?? 0}
                   </span>
                 </span>
                 {/* 操作：右对齐 */}
@@ -450,32 +464,7 @@ export function PipelineView(p: PipelineViewProps) {
               )}
             </SectionCard>
 
-            {/* 待下载队列（v0.3.5）：discovered 条目——供给水位。
-                v0.3.12 无限滚动 + v0.8.2 与采集进度同卡下位 */}
-            <SectionCard
-              title={`${t('console.pendingDownloads')} (${p.counts.discovered ?? 0})`}
-              padded={false}
-              className="shrink-0"
-            >
-              <StageList
-                items={p.stageDiscovered}
-                emptyText={t('console.noPendingDownloads')}
-                total={p.counts.discovered ?? 0}
-                pageSize={50}
-                renderRow={(item) => (
-                  <li key={item.id} className="flex items-center gap-2 px-3 py-1.5 text-xs">
-                    <span className="min-w-0 flex-1 truncate text-text-secondary" title={item.title}>
-                      {item.title}
-                    </span>
-                    <span className="shrink-0 font-mono text-[10px] text-text-disabled">
-                      r{item.reddit_score}
-                    </span>
-                  </li>
-                )}
-              />
-            </SectionCard>
-
-            {/* 采集源状态（参考原项目漏斗水位） */}
+            {/* 采集源状态（参考原项目漏斗水位）；待下载队列已并入预处理（v0.8.6） */}
             <SectionCard title={t('console.sources')} padded={false} className="shrink-0">
               <ul className="max-h-40 space-y-1 overflow-y-auto p-3 text-xs">
                 {p.sources.length === 0 && <p className="text-text-disabled">{t('console.noSources')}</p>}
@@ -514,16 +503,18 @@ export function PipelineView(p: PipelineViewProps) {
                 ))}
               </ul>
             </SectionCard>
+
+            {/* 最近采集轮次（v0.8.7）：历史时间线——采集卡可直接回看最近 N 轮结果 */}
+            <SectionCard title={t('console.act.recentCollects')} padded={false} className="shrink-0">
+              <CollectHistory />
+            </SectionCard>
           </div>
         )}
 
         {pTab === 'preReview' && (
           <div className="p-4">
             <PipelineStage
-              title={`${t('console.stagePreReview')} (${t('console.preReviewCount', {
-                done: p.counts.downloaded ?? 0,
-                total: (p.counts.downloaded ?? 0) + (p.counts.scored ?? 0),
-              })})`}
+              title={`${t('console.stagePreReview')} · ${t(`console.preStage.${preStage}`)} (${p.counts[preStage] ?? 0})`}
               right={
                 <div className="flex items-center gap-1.5">
                   {/* 预处理排序（v0.3.12）：要素 × 方向 */}
@@ -532,7 +523,6 @@ export function PipelineView(p: PipelineViewProps) {
                     sort={preSort}
                     onSort={setPreSort}
                   />
-                  {/* 下载分组（v0.8.2）：与审核操作隔离——独立容器 + 分隔线 */}
                   <span className="flex items-center gap-1.5 border-l border-border pl-2">
                     <Select
                       aria-label={t('console.limit')}
@@ -541,79 +531,125 @@ export function PipelineView(p: PipelineViewProps) {
                       options={[5, 10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))}
                       className="w-20"
                     />
+                    {/* 当前阶段的批量操作（v0.8.8）：未评分→评分 / 已评分→下载 / 已下载→制作 */}
+                    {preStage === 'discovered' && (
+                      <Button
+                        size="sm"
+                        onClick={() => void p.scoreBatch()}
+                        title={t('console.scoreBatchHint')}
+                      >
+                        <Icon name="whisper" size={12} />
+                        {t('console.scoreBatch')}
+                      </Button>
+                    )}
+                    {preStage === 'scored' && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void p.runStep('download')}
+                        disabled={p.running}
+                        title={t('console.downloadHint')}
+                      >
+                        <Icon name="downloads" size={12} />
+                        {t('console.downloadBatch')}
+                      </Button>
+                    )}
+                    {preStage === 'downloaded' && (
+                      <Button
+                        size="sm"
+                        onClick={() => void p.produceBatch()}
+                        title={t('console.produce.batchProduceHint')}
+                      >
+                        <Icon name="play" size={12} />
+                        {t('console.produce.batchProduce')}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => void p.runStep('download')}
-                      disabled={p.running}
-                      title={t('console.downloadHint')}
+                      onClick={() => setProduceBatchOpen(true)}
+                      title={t('console.produce.batchHint')}
                     >
-                      <Icon name="downloads" size={12} />
-                      {t('console.downloadN', { n: p.limit })}
+                      <Icon name="config" size={12} />
+                      {t('console.produce.batch')}
                     </Button>
                   </span>
-                  <Button
-                    size="sm"
-                    onClick={() => void p.scoreBatch()}
-                    title={t('console.scoreBatchHint')}
-                  >
-                    <Icon name="whisper" size={12} />
-                    {t('console.scoreBatch')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => void p.produceBatch()}
-                    title={t('console.produce.batchProduceHint')}
-                  >
-                    <Icon name="play" size={12} />
-                    {t('console.produce.batchProduce')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setProduceBatchOpen(true)}
-                    title={t('console.produce.batchHint')}
-                  >
-                    <Icon name="config" size={12} />
-                    {t('console.produce.batch')}
-                  </Button>
                 </div>
               }
             >
-              {/* v0.3.5：预处理只含已下载/已评分条目（discovered 留在采集 menu 待下载队列） */}
-              {/* v0.4 E4 空态引导：数据在待下载队列时指路，不让人困惑 */}
-              {sortedPreReview.length === 0 && (p.counts.discovered ?? 0) > 0 && (
-                <div className="flex items-center gap-2 border-b border-border bg-surface-2/40 px-3 py-2 text-xs text-text-secondary">
-                  <Icon name="downloads" size={12} className="shrink-0 text-text-disabled" />
-                  <span className="min-w-0">
-                    {t('console.preReviewEmptyHint', { n: p.counts.discovered ?? 0 })}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => p.setTab('run')}
-                    className="ml-auto shrink-0 text-primary underline-offset-2 hover:underline"
-                  >
-                    {t('console.preReviewGoCollect')}
-                  </button>
-                </div>
-              )}
+              {/* 阶段子菜单（v0.8.8）：三个可导航分段——点击切换查看该阶段数据；
+                  待审核已移除（归审核页签）。分段控件风格：激活段填充高亮 */}
+              <div
+                role="tablist"
+                aria-label={t('console.stagePreReview')}
+                className="flex gap-1 border-b border-border bg-surface-2/40 px-3 py-2"
+              >
+                {(
+                  [
+                    { key: 'discovered', n: p.counts.discovered ?? 0 },
+                    { key: 'scored', n: p.counts.scored ?? 0 },
+                    { key: 'downloaded', n: p.counts.downloaded ?? 0 },
+                  ] as const
+                ).map((seg) => {
+                  const active = preStage === seg.key
+                  return (
+                    <button
+                      key={seg.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setPreStage(seg.key)}
+                      className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors ${
+                        active
+                          ? 'bg-surface-1 font-medium text-text-primary shadow-sm ring-1 ring-border'
+                          : 'text-text-secondary hover:bg-surface-1/50 hover:text-text-primary'
+                      }`}
+                    >
+                      <span className="truncate">{t(`console.preStage.${seg.key}`)}</span>
+                      <span className={`shrink-0 font-mono text-[10px] ${active ? 'text-text-secondary' : 'text-text-disabled'}`}>
+                        {seg.n}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* 当前阶段数据列表（单阶段渲染——菜单即导航） */}
               <StageList
-                items={sortedPreReview}
-                emptyText={t('console.emptyPreReview')}
-                total={(p.counts.downloaded ?? 0) + (p.counts.scored ?? 0)}
-                renderRow={(item) => (
-                  <PreReviewCard
-                    key={item.id}
-                    item={item}
-                    onSaveOptions={(i, options) => void p.setProduceOptions([i], options)}
-                    onScore={(i) => void p.scoreOne(i)}
-                    onProduce={(i) => void p.produceOne(i)}
-                    onReject={(i) => void p.act(i, 'reject')}
+                items={
+                  preStage === 'discovered'
+                    ? sortPreList(p.stageDiscovered)
+                    : preStage === 'scored'
+                      ? sortPreList(p.stageScored)
+                      : sortPreList(p.stageDownloaded)
+                }
+                emptyText={t(`console.preEmpty.${preStage}`)}
+                total={p.counts[preStage] ?? 0}
+                renderRow={(item) =>
+                  preStage === 'downloaded' ? (
+                    // 已下载未加工：卡式（生产方式选择需要空间）
+                    <PreReviewCard
+                      key={item.id}
+                      item={item}
+                      onSaveOptions={(i, options) => void p.setProduceOptions([i], options)}
+                      onProduce={(i) => void p.produceOne(i)}
+                      onReject={(i) => void p.act(i, 'reject')}
                       onUploadCover={(i, file) => void p.uploadCover(i, file)}
                     />
-                  )}
-                />
-              </PipelineStage>
+                  ) : (
+                    // 未评分/已评分：紧凑行（v0.8.9 三阶段差异化——列表式浏览）
+                    <PreReviewRow
+                      key={item.id}
+                      item={item}
+                      stage={preStage}
+                      onScore={(i) => void p.scoreOne(i)}
+                      onDownload={(i) => void p.downloadOne(i)}
+                      onReject={(i) => void p.act(i, 'reject')}
+                    />
+                  )
+                }
+              />
+            </PipelineStage>
             <ProduceBatchModal
               open={produceBatchOpen}
               onClose={() => setProduceBatchOpen(false)}
@@ -631,6 +667,14 @@ export function PipelineView(p: PipelineViewProps) {
               emptyText={t('console.emptyAudit')}
               right={
                 <span className="flex items-center gap-1.5">
+                  {/* 审核搜索（v0.8.9）：标题关键词过滤——本地过滤当前队列 */}
+                  <input
+                    type="search"
+                    value={auditQuery}
+                    onChange={(e) => setAuditQuery(e.target.value)}
+                    placeholder={t('console.auditSearch')}
+                    className="h-6 w-36 rounded-sm border border-border bg-surface-1 px-2 text-[11px] text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
+                  />
                   {/* 审核排序（v0.3.12）：要素 × 方向 + 独立开关 */}
                   <SortControl fields={AUDIT_SORT_FIELDS} sort={auditSort} onSort={setAuditSort} />
                   {/* 仅看低分（v0.5 D 低分复用池）：is_lowscore 过滤 */}
@@ -799,15 +843,25 @@ export function PipelineView(p: PipelineViewProps) {
                         item={item}
                         badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
                         right={
-                          item.status === 'failed' ? (
-                            <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'retry')}>
-                              {t('common.retry')}
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void p.act(item, 'retranslate')}
+                              title={t('console.retranslateHint')}
+                            >
+                              {t('console.retranslate')}
                             </Button>
-                          ) : (
-                            <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
-                              {t('console.restore')}
-                            </Button>
-                          )
+                            {item.status === 'failed' ? (
+                              <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'retry')}>
+                                {t('common.retry')}
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
+                                {t('console.restore')}
+                              </Button>
+                            )}
+                          </>
                         }
                       />
                     )}

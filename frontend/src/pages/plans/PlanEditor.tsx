@@ -303,25 +303,30 @@ export function PlanEditor({
             {t('plans.defaultOrder')}
           </button>
         </div>
-        <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={phaseOrder.map((p) => p.key)} strategy={verticalListSortingStrategy}>
-            <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3">
-              {phaseOrder.map((item, index) => (
-                <SortablePhaseRow
-                  key={item.key}
-                  item={item}
-                  index={index}
-                  group={palette.find((p) => p.key === item.key)?.phase_group}
-                  onToggle={() => onTogglePhase(item.key)}
-                  onRemove={() => onRemovePhase(item.key)}
-                />
-              ))}
-              {phaseOrder.length === 0 && (
-                <p className="px-2 py-4 text-center text-sm text-text-disabled">{t('plans.addPhase')}</p>
-              )}
-            </ul>
-          </SortableContext>
-        </DndContext>
+        {/* v0.8.8 溢出修复：DndContext 渲染为无样式 div——须包一层 flex 约束，
+            否则内部 ul 的 flex-1/overflow-y-auto 相对 auto 高度父级失效，
+            工序树内容超出卡片被 main overflow-hidden 裁剪 */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+            <SortableContext items={phaseOrder.map((p) => p.key)} strategy={verticalListSortingStrategy}>
+              <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3">
+                {phaseOrder.map((item, index) => (
+                  <SortablePhaseRow
+                    key={item.key}
+                    item={item}
+                    index={index}
+                    group={palette.find((p) => p.key === item.key)?.phase_group}
+                    onToggle={() => onTogglePhase(item.key)}
+                    onRemove={() => onRemovePhase(item.key)}
+                  />
+                ))}
+                {phaseOrder.length === 0 && (
+                  <p className="px-2 py-4 text-center text-sm text-text-disabled">{t('plans.addPhase')}</p>
+                )}
+              </ul>
+            </SortableContext>
+          </DndContext>
+        </div>
       </Card>
     </div>
   )

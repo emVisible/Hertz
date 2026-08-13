@@ -552,13 +552,22 @@ export function PlansPage() {
   return (
     <div className="flex h-full overflow-hidden">
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface-1">
-        {/* 编排：页面身份标题（当前页即编排，非可点击项） */}
-        <div className="border-b border-border px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <Icon name="plans" size={14} className="text-primary" />
-            <span className="text-sm font-semibold text-text-primary">{t('nav.plans')}</span>
-          </div>
-        </div>
+        {/* 编排：页面身份标题——可点击跳回编排主内容（v0.8.8：此前切到
+            其他 tab 后只能从全局菜单返回，违背「点击即达」直觉） */}
+        <button
+          type="button"
+          onClick={() => setTab('plans')}
+          aria-label={t('nav.plans')}
+          title={t('nav.plans')}
+          className={`flex w-full items-center gap-2 border-b border-border px-3 py-2.5 text-left transition-colors ${
+            tab === 'plans' ? '' : 'hover:bg-surface-2'
+          }`}
+        >
+          <Icon name="plans" size={14} className={tab === 'plans' ? 'text-primary' : 'text-text-secondary'} />
+          <span className={`text-sm font-semibold ${tab === 'plans' ? 'text-text-primary' : 'text-text-secondary'}`}>
+            {t('nav.plans')}
+          </span>
+        </button>
 
         {/* 语义分组：配置 / 角色 / 增益（每组一行两列，激活组的行右侧显示简约贴纸） */}
         <div className="px-1 pb-1">
@@ -726,7 +735,7 @@ export function PlansPage() {
                 >
                   <span className="truncate">
                     {def.name}
-                    {def.builtin && <span className="ml-1 text-[10px] text-text-disabled">内置</span>}
+                    {def.builtin && <span className="ml-1 text-[10px] text-text-disabled">{t('phases.builtin')}</span>}
                   </span>
                   <button
                     type="button"

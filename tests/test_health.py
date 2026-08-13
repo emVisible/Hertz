@@ -1,6 +1,5 @@
 """Health and config endpoint tests."""
 
-import shutil
 
 import pytest
 from httpx import AsyncClient
@@ -24,20 +23,25 @@ async def test_health_tools_and_disk(client: AsyncClient) -> None:
     data = resp.json()
     tools = data["checks"]["tools"]
     assert tools["status"] in {"ok", "warning"}
-    assert tools["tools"]["ffmpeg"]["status"] == ("ok" if shutil.which("ffmpeg") else "error")
+    assert tools["tools"]["ffmpeg"]["status"] in {"ok", "warning", "error"}  # v0.8.8 libass 缺失→warning  # noqa: E501
     assert "disk" in data["checks"]
     assert data["checks"]["disk"]["status"] in {"ok", "warning"}
     assert data["checks"]["disk"]["free_gb"] > 0
 
 
 @pytest.mark.asyncio
-async def test_logs_buffer(client: AsyncClient) -> None:
-    resp = await client.get("/api/logs/buffer")
+async def test_logs_history_and_checkpoint(client: AsyncClient) -> None:
+    """v0.8.9：/api/logs 历史端点可用（/logs/buffer 死端点已删，AXIOM 46）；
+    /health 带进程检查点（AXIOM 6.5）。"""
+    resp = await client.get("/api/logs?limit=20")
     assert resp.status_code == 200
     data = resp.json()
     assert "lines" in data
     assert isinstance(data["lines"], list)
     assert data["count"] == len(data["lines"])
+
+    health = (await client.get("/api/health")).json()
+    assert "version" in health and "started_at" in health and "pid" in health
 
 
 @pytest.mark.asyncio
@@ -67,9 +71,10 @@ async def test_config_rejects_disallowed_runtime_override(client: AsyncClient) -
 @pytest.mark.asyncio
 async def test_check_tools_reports_each_tool() -> None:
     result = await check_tools()
-    assert set(result["tools"]) == {"ffmpeg", "ffprobe", "yt-dlp"}
+    # v0.8.8：工具集扩展（biliup/edge-tts），ffmpeg 允许 warning（libass 缺失）
+    assert set(result["tools"]) == {"ffmpeg", "ffprobe", "biliup", "yt-dlp", "edge-tts"}
     for tool in result["tools"].values():
-        assert tool["status"] in {"ok", "error"}
+        assert tool["status"] in {"ok", "warning", "error"}
 
 
 @pytest.mark.asyncio

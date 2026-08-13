@@ -113,14 +113,14 @@ async def test_updated_at_refreshes_on_requeue(client) -> None:
         assert row.updated_at is not None
         assert (row.updated_at - old).total_seconds() > 3600  # 明显刷新
 
-    # 审核打回预处理 → 再次刷新
+    # 审核打回预处理 → 再次刷新（v0.8.6：打回 = downloaded 已下载未加工）
     resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-prep")
     assert resp.status_code == 200
     async with session_factory() as session:
         row = await session.get(Item, item_id)
-        assert row.status == "scored"
+        assert row.status == "downloaded"
     # 序列化暴露 updated_at（列表排序要素）
-    resp = await client.get("/api/pipeline/items?status=scored&limit=10")
+    resp = await client.get("/api/pipeline/items?status=downloaded&limit=10")
     assert resp.status_code == 200
     serialized = resp.json()
     assert all("updated_at" in i for i in serialized)

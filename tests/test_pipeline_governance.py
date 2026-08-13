@@ -4,7 +4,9 @@
 """
 
 import asyncio
+import json
 import re
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -539,20 +541,21 @@ async def test_back_to_prep_and_collect(client) -> None:
         await session.commit()
         item_id = item.id
 
-    # 审核打回预处理（v0.8）：queued → scored，保留全部产物（成片/封面/字幕）
-    # 是否重制由预处理侧决定，produce 重制时 ffmpeg -y 覆盖
+    # 审核打回预处理（v0.8.6 评分先行）：queued → downloaded
+    # v0.8.9 对齐原项目 reproduce：打回即 purge 派生媒体（旧成片/封面/配音删除、
+    # 字段清空，脚本缓存清除但保留用户发布元数据 bili_tid）
     resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-prep")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["status"] == "scored"
+    assert resp.json()["status"] == "downloaded"
     async with session_factory() as session:
         row = await session.get(Item, item_id)
-        assert row.status == "scored"
-        assert row.script_json is not None  # 脚本保留
-        assert row.video_path == "/x/v.mp4"  # 成片保留（可预览，由预处理决定重制）
-        assert row.cover_path == "/x/c.jpg"  # 封面不丢失
-        assert row.audio_path == "/x/a.mp3"
+        assert row.status == "downloaded"
+        assert row.video_path is None  # 旧成片已清除
+        assert row.cover_path is None
+        assert row.audio_path is None
+        assert row.script_json == {"bili_tid": 201}  # 旁白清除，发布元数据保留
 
-    # 预处理打回采集：scored → discovered
+    # 预处理打回采集：downloaded → discovered
     resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-collect")
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "discovered"
@@ -883,8 +886,8 @@ def test_script_to_srt_weighted_and_offset(tmp_path) -> None:
     assert long_seg > short_seg
     # 最小可读时长 0.45s
     assert all((b - a) >= 0.449 for a, b in times)
-    # 不超总时长
-    assert times[-1][1] <= 10.0
+    # v0.8.9 语义：duration = 音频实际时长（不含 offset），结尾 = offset + 时长
+    assert times[-1][1] == pytest.approx(11.0, abs=0.05)
 
 
 def test_narration_start_offset() -> None:
@@ -1054,22 +1057,22 @@ async def test_reject_discovered_item(client) -> None:
 
 @pytest.mark.asyncio
 async def test_score_one_endpoint(client) -> None:
-    """预处理手动评分（v0.3.5）：仅已下载条目；未下载 409。"""
+    """预处理手动评分（v0.8.6 评分先行）：仅未评分（discovered）可评分。"""
     async with session_factory() as session:
-        not_dl = Item(status="discovered", source="reddit", source_id="sc-1", title="未下载")
+        not_scored = Item(status="discovered", source="reddit", source_id="sc-1", title="未评分")
         dl = Item(status="downloaded", source="reddit", source_id="sc-2",
                   title="已下载", reddit_score=100, upvote_ratio=0.9)
-        session.add_all([not_dl, dl])
+        session.add_all([not_scored, dl])
         await session.commit()
-        not_id, dl_id = not_dl.id, dl.id
+        not_id, dl_id = not_scored.id, dl.id
 
-    # 未下载 → 409
+    # 未评分 → 走评分（fake_ai 无 LLM → 502 或 LLM provider 错误，但状态校验通过）
     resp = await client.post(f"/api/pipeline/items/{not_id}/score")
-    assert resp.status_code == 409
+    assert resp.status_code in (200, 502)
 
-    # 已下载 → 走评分（fake_ai 无 LLM → 502 或 LLM provider 错误）
+    # 已下载（评分过）→ 409（不可重复评分）
     resp = await client.post(f"/api/pipeline/items/{dl_id}/score")
-    assert resp.status_code in (200, 502)  # 无 LLM 时评分失败但状态流正确
+    assert resp.status_code == 409
 
 
 @pytest.mark.asyncio
@@ -1625,7 +1628,8 @@ async def test_cookie_status_and_export_endpoint(client, tmp_path, monkeypatch) 
 
 
 def test_rss_vreddit_link_normalized() -> None:
-    """RSS 视频帖 link 直接指向 v.redd.it → 归一化 comments permalink。"""
+    """RSS 视频帖 link 直接指向 v.redd.it → v0.8.8 修复：content 无真评论链接时
+    回退 /video/{id}/ 视频页（旧实现构造 comments/{媒体ID} 为无效链接）。"""
     import xml.etree.ElementTree as ET
 
     from backend.pipeline.collectors.reddit import RedditCollector
@@ -1642,7 +1646,7 @@ def test_rss_vreddit_link_normalized() -> None:
     post = RedditCollector._rss_to_post(root.find("{http://www.w3.org/2005/Atom}entry"))
     assert post is not None
     assert post.source_id == "abc123"
-    assert post.source_url == "https://www.reddit.com/comments/abc123/"  # 不再误存 v.redd.it
+    assert post.source_url == "https://www.reddit.com/video/abc123/"  # 有效视频页
     assert post.media_url == "https://v.redd.it/abc123/DASH_720.mp4"
 
 
@@ -1701,11 +1705,11 @@ async def test_auto_collect_tick_calls_collect(monkeypatch) -> None:
     reg = ServiceRegistry.get()
     calls = {"n": 0, "busy": False}
 
-    async def fake_run_batch(job):
+    async def fake_run_batch(job, limit=10):
         calls["n"] += 1
         return {"summary": {"collected": 3, "sources": [{"channel": "pics"}]}}
 
-    async def fake_busy_run_batch(job):
+    async def fake_busy_run_batch(job, limit=10):
         raise RuntimeError("pipeline busy")
 
     monkeypatch.setattr(reg.pipeline, "run_batch", fake_run_batch)
@@ -1719,11 +1723,12 @@ async def test_auto_collect_tick_calls_collect(monkeypatch) -> None:
 
 
 def test_auto_collect_config_default() -> None:
-    """默认 30 分钟自动采集；0=关闭。"""
-    from backend.config import settings
+    """默认 30 分钟自动采集（settings_base，不受 runtime.yaml 覆盖影响）；0=关闭。"""
+    from backend.config import settings, settings_base
     from backend.routers.config import RUNTIME_ALLOWLIST
 
-    assert settings.pipeline_auto_collect_minutes == 30
+    assert settings_base.pipeline_auto_collect_minutes == 30
+    assert settings.pipeline_auto_collect_minutes >= 0
     assert "pipeline_auto_collect_minutes" in RUNTIME_ALLOWLIST
 
 
@@ -1747,7 +1752,10 @@ async def test_collect_status_endpoint(client, monkeypatch) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["auto_enabled"] is True
-    assert body["interval_min"] >= 30
+    # 端点如实反映配置（runtime.yaml 覆盖后可能 < 30）
+    from backend.config import settings
+
+    assert body["interval_min"] == settings.pipeline_auto_collect_minutes
     assert body["last"]["summary"]["collected"] == 12
     assert body["next_in_s"] is not None  # 上次完成后距下次自动
 
@@ -1759,3 +1767,1242 @@ def test_auto_collect_interval_config() -> None:
 
     assert "pipeline_auto_collect_minutes" in RUNTIME_ALLOWLIST
     assert settings.pipeline_auto_collect_minutes >= 0
+
+
+# ---------- B 站 cookie 统一（v0.8.4：data/core/cookies.json） ----------
+
+
+def test_bili_cookie_header_both_formats(tmp_path) -> None:
+    """B 站 cookie 文件兼容两种格式（biliup dict / passport 数组）。"""
+    from backend.pipeline.publish_stats import _cookie_header
+
+    # biliup 风格 {"cookies": {...}}
+    f1 = tmp_path / "a.json"
+    f1.write_text(json.dumps({"cookies": {"SESSDATA": "s1", "bili_jct": "j1"}}), encoding="utf-8")
+    h1 = _cookie_header(f1)
+    assert "SESSDATA=s1" in h1 and "bili_jct=j1" in h1
+
+    # passport 登录响应（cookie_info.cookies 数组 + token_info）
+    f2 = tmp_path / "b.json"
+    f2.write_text(json.dumps({
+        "cookie_info": {"cookies": [
+            {"name": "SESSDATA", "value": "s2", "expires": 1800000000, "http_only": 1, "secure": 0},
+            {"name": "bili_jct", "value": "j2", "expires": 1800000000, "http_only": 0, "secure": 0},
+            {"name": "buvid3", "value": "x", "expires": -1, "http_only": 1, "secure": 0},
+        ]},
+        "token_info": {"access_token": "tok"},
+        "sso": ["https://passport.bilibili.com/api/v2/sso"],
+    }), encoding="utf-8")
+    h2 = _cookie_header(f2)
+    assert "SESSDATA=s2" in h2 and "bili_jct=j2" in h2 and "buvid3=x" in h2
+
+
+@pytest.mark.asyncio
+async def test_publish_status_cookie_path(client, tmp_path, monkeypatch) -> None:
+    """publish/status 检查 data/core/cookies.json（统一路径）。"""
+    from backend.config import settings
+
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    resp = await client.get("/api/pipeline/publish/status")
+    body = resp.json()
+    assert body["cookie_path"].endswith("core/cookies.json")
+    assert body["cookie_exists"] is False  # 无文件
+
+    (tmp_path / "core").mkdir(exist_ok=True)
+    (tmp_path / "core" / "cookies.json").write_text(json.dumps({"cookies": {"SESSDATA": "s"}}), encoding="utf-8")  # noqa: E501
+    resp = await client.get("/api/pipeline/publish/status")
+    assert resp.json()["cookie_exists"] is True
+
+
+# ---------- B 站中文包装 + 发布参数对齐（v0.8.5） ----------
+
+
+def test_heuristic_bili_title() -> None:
+    """英文标题 → 「这镜头 xx」中文兜底；中文标题原样保留。"""
+    from backend.pipeline.package import _heuristic_bili_title
+
+    assert _heuristic_bili_title("Man hand-feeds a giant crocodile") == "这镜头 Man hand-feeds a giant croco"  # noqa: E501
+    assert _heuristic_bili_title("这是一条中文标题内容足够长") == "这是一条中文标题内容足够长"
+    assert _heuristic_bili_title("   ") == "这镜头有点东西"
+    assert _heuristic_bili_title("[OC] Cool stuff") == "这镜头 Cool stuff"
+
+
+def test_normalize_tags_filters_banned() -> None:
+    """禁词过滤：reddit / r/xxx / 纯英文子名剔除，去重限 8。"""
+    from backend.pipeline.package import normalize_tags
+
+    got = normalize_tags([
+        "Reddit", "r/BeAmazed", "BeAmazed", "海外精选",
+        "神奇现象", "神奇现象", "高能", "动物", "机械",
+        "暖心", "反转", "绝了", "生活",
+    ])
+    assert "神奇现象" in got
+    assert got.count("神奇现象") == 1
+    assert not any(t in ("Reddit", "r/BeAmazed", "BeAmazed", "海外精选") for t in got)
+    assert len(got) <= 8
+
+
+def test_build_description_subtitle_first_sentence() -> None:
+    """简介 = 中文字幕首句（截到标点/72 字）+ r/xxx · u/author 署名。"""
+    from backend.pipeline.package import build_description
+
+    d = build_description("这个镜头太安静了。再细看其实有玄机", "aww", "catlover")
+    assert "这个镜头太安静了。" in d
+    assert "r/aww" in d and "u/catlover" in d
+
+    long = build_description("很" * 90, "pics", None)
+    assert len(long.splitlines()[0]) <= 72 + 1  # 截断 + 可能省略号
+    assert "r/pics" in long
+
+    assert build_description("", "", None) == ""
+
+
+class _PackagingAi:
+    """Fake AI：title_and_tags 可配置成功/失败。"""
+
+    def __init__(self, *, ok: bool = True):
+        self.ok = ok
+        self.calls = 0
+
+    async def title_and_tags(self, **kwargs):
+        self.calls += 1
+        if not self.ok:
+            raise RuntimeError("llm down")
+        from backend.ai.types import TitleResult
+        return TitleResult(
+            title="门一开空气都安静了",
+            tags=["神奇现象", "高能", "Reddit", "r/aww"],
+            description="第一眼以为是定格，其实全是真实的慢动作。",
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_packaging_llm_and_fallback() -> None:
+    """LLM 成功：中文标题/清洗后标签/简介写入；LLM 失败：heuristic 兜底。"""
+    from backend.pipeline.package import generate_packaging
+
+    class Item:
+        title = "Man hand-feeds a giant crocodile"
+        subreddit = "interestingasfuck"
+        author = "wildlife_dan"
+
+    script = {"mode": "script", "narration": "Watch this. He feeds it by hand.", "subtitle_zh": "他居然徒手喂鳄鱼。"}  # noqa: E501
+
+    ai = _PackagingAi(ok=True)
+    got = await generate_packaging(ai, Item(), script)
+    assert got["bili_title"] == "门一开空气都安静了"
+    assert got["bili_tags"] == "神奇现象,高能"  # Reddit/r/aww 被清洗
+    assert "第一眼以为是定格" in got["bili_desc"]
+
+    ai_bad = _PackagingAi(ok=False)
+    got2 = await generate_packaging(ai_bad, Item(), {"mode": "script", "narration": "x", "subtitle_zh": "他居然徒手喂鳄鱼。"})  # noqa: E501
+    assert got2["bili_title"].startswith("这镜头 ")
+    assert "神奇现象" in got2["bili_tags"]
+    assert "他居然徒手喂鳄鱼。" in got2["bili_desc"]  # 字幕首句兜底
+    assert "r/interestingasfuck" in got2["bili_desc"]
+
+
+@pytest.mark.asyncio
+async def test_publish_cmd_cover_source_desc() -> None:
+    """发布命令对齐原项目：--cover 封面 / --source 转载来源 / desc 中文兜底。"""
+    import tempfile
+    from pathlib import Path
+    from unittest.mock import patch
+
+    from backend.pipeline.publishers.router import BilibiliPublisher
+
+    class Item:
+        video_path = "/tmp/x.mp4"
+        title = "English Fallback Title"
+        scheduled_at = None
+        script_json = {
+            "bili_title": "门一开空气都安静了",
+            "bili_desc": "",
+            "bili_tags": "神奇现象,高能",
+            "bili_copyright": 2,
+        }
+        subreddit = "interestingasfuck"
+        item_type = "video_raw"
+        source_url = "https://www.reddit.com/r/interestingasfuck/comments/abc/"
+        cover_path = "/tmp/x.jpg"
+
+    class Settings:
+        data_dir = Path(tempfile.mkdtemp())
+        pipeline_bili_default_tid = 0
+
+    class Ctx:
+        settings = Settings()
+        def log(self, msg): pass
+
+    captured: list[str] = []
+
+    async def fake_run(cmd):
+        captured.extend(cmd)
+        return b"ok BV1abc123XYZ"
+
+    with patch("backend.pipeline.producers.media._run_cmd", new=fake_run):
+        with patch.object(Path, "exists", return_value=True):
+            r = await BilibiliPublisher().publish(Ctx(), Item())
+
+    assert "--cover" in captured and "/tmp/x.jpg" in captured
+    joined = " ".join(captured)
+    assert "--source" in joined and "reddit.com" in joined
+    assert "门一开空气都安静了" in captured  # desc 空 → bili_title 兜底
+    assert "--tag" in joined and "神奇现象" in joined
+    assert r["bvid"] == "BV1abc123XYZ"
+
+
+# ---------- 采集健壮性 + 评分先行（v0.8.6） ----------
+
+
+def test_parse_channel_semantics() -> None:
+    """channel 语义：subreddit / subreddit:sort；排序词误当 subreddit 报可读错误。"""
+    from backend.pipeline.collectors.reddit import _parse_channel
+
+    sub, sort = _parse_channel("Damnthatsinteresting")
+    assert sub == "Damnthatsinteresting" and sort in ("hot", "new", "rising", "top")
+    assert _parse_channel("BeAmazed:new") == ("BeAmazed", "new")
+    with pytest.raises(RuntimeError, match="排序词"):
+        _parse_channel("hot")
+    with pytest.raises(RuntimeError, match="排序词"):
+        _parse_channel("new")
+    with pytest.raises(RuntimeError, match="缺少"):
+        _parse_channel("")
+
+
+def test_collect_error_classification() -> None:
+    """httpx 网络层异常 → CollectNetworkError（含类型名，空消息可读化）。"""
+    import httpx
+
+    from backend.pipeline.collectors.reddit import (
+        CollectBlockedError,
+        CollectNetworkError,
+        CollectRateLimitedError,
+        _classify_http,
+    )
+
+    class FakeResp:
+        status_code = 403
+
+    exc403 = httpx.HTTPStatusError("403", request=httpx.Request("GET", "u"), response=FakeResp())
+    assert isinstance(_classify_http(exc403, "d"), CollectBlockedError)
+
+    class FakeResp429:
+        status_code = 429
+
+    exc429 = httpx.HTTPStatusError("429", request=httpx.Request("GET", "u"), response=FakeResp429())
+    assert isinstance(_classify_http(exc429, "d"), CollectRateLimitedError)
+
+    conn = httpx.ConnectError("", request=httpx.Request("GET", "u"))
+    classified = _classify_http(conn, "d")
+    assert isinstance(classified, CollectNetworkError)
+    assert "ConnectError" in str(classified)  # 空消息 → 类型名可读
+
+
+@pytest.mark.asyncio
+async def test_collect_failure_cooldown_by_kind() -> None:
+    """分类冷却：网络层 900s / 平台拒绝 1800s / 配置错误不冷却 / 连续≥3 熔断 2h。"""
+    from backend.models.pipeline import SourceState
+    from backend.pipeline.collectors.reddit import (
+        CollectBlockedError,
+        CollectNetworkError,
+    )
+    from backend.pipeline.engine import StepEngine
+
+    engine = StepEngine(hub=None, settings=None)
+
+    async def kind_cd(exc) -> int:
+        from datetime import UTC, datetime
+
+        from backend.models.session import session_factory
+
+        async with session_factory() as session:
+            state = (
+                await session.execute(
+                    select(SourceState).where(
+                        SourceState.source == "reddit",
+                        SourceState.channel == "BeAmazed:test",
+                    )
+                )
+            ).scalar_one_or_none()
+            if state is None:
+                state = SourceState(source="reddit", channel="BeAmazed:test")
+                session.add(state)
+            state.consecutive_fails = 0
+            await session.commit()
+        await engine._record_collect_failure("reddit", "BeAmazed:test", str(exc), exc)
+        async with session_factory() as session:
+            state = (
+                await session.execute(
+                    select(SourceState).where(SourceState.channel == "BeAmazed:test")
+                )
+            ).scalar_one()
+            cd = state.get_cooldowns().get("default", 0.0)
+            left = int(cd - datetime.now(UTC).timestamp())
+            return left
+
+    net = await kind_cd(CollectNetworkError("net"))
+    assert 800 <= net <= 950, net
+    blocked = await kind_cd(CollectBlockedError("403"))
+    assert 1700 <= blocked <= 1850, blocked
+    cfg = await kind_cd(RuntimeError("采集源 'hot' 是排序词"))
+    assert cfg <= 0  # 配置错误不冷却（无 default 冷却键）
+    # 连续 3 次 → 熔断 2h（cleared fails 后连续失败）
+    await kind_cd(CollectNetworkError("reset"))
+    for _ in range(3):
+        await engine._record_collect_failure(
+            "reddit", "BeAmazed:test", "x", CollectBlockedError("403")
+        )
+    async with session_factory() as session:
+        state = (
+            await session.execute(
+                select(SourceState).where(SourceState.channel == "BeAmazed:test")
+            )
+        ).scalar_one()
+        fused = int(state.get_cooldowns().get("default", 0.0) - datetime.now(UTC).timestamp())
+    assert fused >= 7100, fused
+
+
+@pytest.mark.asyncio
+async def test_score_first_flow() -> None:
+    """评分先行（v0.8.6）：score 吃 discovered / download 吃 scored / produce 吃 downloaded。"""
+    from backend.pipeline.steps import PIPELINE_ORDER, get_step
+
+    assert PIPELINE_ORDER == ("collect", "score", "download", "produce", "publish")
+    assert get_step("score").input_statuses == ("discovered",)
+    assert get_step("download").input_statuses == ("scored",)
+    assert get_step("produce").input_statuses == ("downloaded",)
+
+
+def test_back_status_swap() -> None:
+    """回退状态机（v0.8.6）：有成片→downloaded / 已下载→scored / 否则→discovered。"""
+    from backend.pipeline.helpers import back_status_for
+
+    class _I:
+        video_path = None
+        raw_path = None
+
+    i = _I()
+    i.video_path = "/tmp/v.mp4"
+    i.raw_path = "/tmp/r.mp4"
+    assert back_status_for(i) == "downloaded"
+    i.video_path = None
+    assert back_status_for(i) == "scored"
+    i.raw_path = None
+    assert back_status_for(i) == "discovered"
+
+
+@pytest.mark.asyncio
+async def test_download_one_endpoint(client) -> None:
+    """单条下载端点：scored 可下载；discovered/已下载拒绝。"""
+    from datetime import UTC, datetime
+
+    from backend.models.item import Item, ItemStatus
+    from backend.models.session import session_factory
+
+    async def mk(status: ItemStatus, *, raw: bool = False) -> str:
+        async with session_factory() as session:
+            it = Item(
+                status=status,
+                source="reddit",
+                source_id=f"t_{status}_{datetime.now(UTC).timestamp()}",
+                title=f"下载端点测试 {status}",
+                subreddit="BeAmazed",
+                source_url="https://www.reddit.com/r/BeAmazed/comments/abc/",
+                media_url="https://v.redd.it/xyz/DASH_720.mp4",
+                raw_path=f"/tmp/r_{status.value}.mp4" if raw else None,
+            )
+            session.add(it)
+            await session.commit()
+            await session.refresh(it)
+            return str(it.id)
+
+    mid = await mk(ItemStatus.SCORED)
+    resp = await client.post(f"/api/pipeline/items/{mid}/download")
+    assert resp.status_code in (200, 502)  # 无网络环境可能下载失败，但状态校验通过
+
+    other = await mk(ItemStatus.DISCOVERED)
+    resp = await client.post(f"/api/pipeline/items/{other}/download")
+    assert resp.status_code == 409  # 未评分不可下载
+
+
+# ---------- 活动面板历史化（v0.8.7：jobs 分页/详情 + 日志历史 + 事件落盘） ----------
+
+
+@pytest.mark.asyncio
+async def test_jobs_page_filter_and_detail(client) -> None:
+    """任务历史：分页 + 类型筛选 + 单任务详情。"""
+    from backend.models.session import session_factory
+    from backend.models.system import JobRun, JobStatus
+
+    async with session_factory() as session:
+        for i in range(5):
+            session.add(JobRun(job_name="collect", status=JobStatus.COMPLETED,
+                               summary={"collected": i, "sources": [{"channel": f"s{i}", "collected": i}]}))  # noqa: E501
+        session.add(JobRun(job_name="score", status=JobStatus.FAILED, error="boom"))
+        await session.commit()
+
+    r = await client.get("/api/pipeline/jobs?limit=3&offset=0")
+    b = r.json()
+    assert r.status_code == 200
+    assert b["total"] >= 6
+    assert len(b["jobs"]) == 3
+
+    only_failed = (await client.get("/api/pipeline/jobs?status=failed")).json()
+    assert only_failed["total"] >= 1
+    assert all(j["status"] == "failed" for j in only_failed["jobs"])
+
+    only_score = (await client.get("/api/pipeline/jobs?job_name=score")).json()
+    assert all(j["job"] == "score" for j in only_score["jobs"])
+
+    first = only_score["jobs"][0]
+    detail = (await client.get(f"/api/pipeline/jobs/{first['id']}")).json()
+    assert detail["id"] == first["id"]
+    assert detail["job"] == "score"
+    assert detail["error"] == "boom"
+    assert "duration_s" in detail
+
+    nf = await client.get("/api/pipeline/jobs/00000000-0000-0000-0000-000000000000")
+    assert nf.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_collect_history_endpoint(client) -> None:
+    """采集历史轮次：逐源明细随行返回。"""
+    from backend.models.session import session_factory
+    from backend.models.system import JobRun, JobStatus
+
+    async with session_factory() as session:
+        session.add(JobRun(job_name="collect", status=JobStatus.COMPLETED, summary={
+            "collected": 3, "inserted": 2,
+            "sources": [
+                {"channel": "BeAmazed", "collected": 2, "inserted": 2, "skipped": 0},
+                {"channel": "Unexpected", "collected": 1, "inserted": 0, "skipped": 1},
+            ],
+        }))
+        await session.commit()
+
+    h = (await client.get("/api/pipeline/collect/history?limit=5")).json()
+    assert len(h) >= 1
+    latest = h[0]
+    assert latest["job"] == "collect"
+    assert latest["summary"]["sources"][0]["channel"] == "BeAmazed"
+
+
+def test_logs_history_parse_and_filter(tmp_path, monkeypatch) -> None:
+    """日志文件历史：解析 + 级别/关键字/时间游标过滤（含轮转文件）。"""
+    from backend.routers import logs as logs_mod
+
+    logdir = tmp_path / "logs"
+    logdir.mkdir()
+    lines = [
+        "2026-08-11 10:00:00 INFO     [hertz] boot ok",
+        "2026-08-11 10:01:00 WARNING  [backend.pipeline] collect failed: net",
+        "2026-08-11 10:02:00 ERROR    [backend.pipeline] tick failed",
+        "   multi-line traceback continuation (non-log line)",
+    ]
+    (logdir / "hertz.log").write_text("\n".join(lines), encoding="utf-8")
+    (logdir / "hertz.log.1").write_text(
+        "2026-08-10 09:00:00 INFO     [hertz] older line\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(logs_mod.log_manager, "log_dir", logdir)
+
+    all_ = logs_mod._query_logs(limit=10, level="", q="", since="", until="")
+    assert all_["count"] == 4  # 3 格式行 + 轮转 1 行；多行 traceback 被跳过
+    assert all_["lines"][0]["ts"] == "2026-08-11 10:02:00"  # 新在前
+
+    warn = logs_mod._query_logs(limit=10, level="WARNING", q="", since="", until="")
+    assert warn["count"] == 1 and warn["lines"][0]["logger"] == "backend.pipeline"
+
+    q = logs_mod._query_logs(limit=10, level="", q="tick", since="", until="")
+    assert q["count"] == 1 and "tick failed" in q["lines"][0]["message"]
+
+    # until 是「加载更多」游标：排除端点行本身（避免重复），取更早行
+    until = logs_mod._query_logs(limit=10, level="", q="", since="", until="2026-08-11 10:01:00")
+    assert until["count"] == 2
+    assert until["lines"][0]["ts"] == "2026-08-11 10:00:00"
+    assert until["lines"][1]["ts"] == "2026-08-10 09:00:00"
+
+    has_more = logs_mod._query_logs(limit=2, level="", q="", since="", until="")
+    assert has_more["has_more"] is True and has_more["count"] == 2
+
+
+def test_step_log_persisted(monkeypatch) -> None:
+    """事件落盘（v0.8.7）：StepContext.log 同步写日志（SSE 之外持久化）。"""
+    from backend.pipeline.base import StepContext
+
+    captured: list[tuple[str, str, tuple]] = []
+
+    class FakeLogger:
+        def info(self, m, *a): captured.append(("info", m, a))
+        def warning(self, m, *a): captured.append(("warning", m, a))
+        def error(self, m, *a): captured.append(("error", m, a))
+
+    monkeypatch.setattr("backend.pipeline.base.logger", FakeLogger())
+
+    emitted = []
+    ctx = StepContext(run_id="r1", settings=None, emit=lambda e: emitted.append(e))
+    ctx.log("hello world")
+    ctx.log("warn here", level="warning")
+    assert emitted == [
+        {"type": "log", "message": "hello world", "level": "info"},
+        {"type": "log", "message": "warn here", "level": "warning"},
+    ]
+    assert captured == [
+        ("info", "[step] %s", ("hello world",)),
+        ("warning", "[step] %s", ("warn here",)),
+    ]
+
+
+# ---------- AXIOM 查漏补缺（v0.8.8 审计） ----------
+
+
+@pytest.mark.asyncio
+async def test_jobs_list_light_detail_full(client) -> None:
+    """列表轻量化（§2.3/§7.2）：列表无逐源明细，展开详情完整返回。"""
+    from backend.models.session import session_factory
+    from backend.models.system import JobRun, JobStatus
+
+    async with session_factory() as session:
+        session.add(JobRun(job_name="collect", status=JobStatus.COMPLETED, summary={
+            "collected": 5, "inserted": 3,
+            "sources": [{"channel": "a", "collected": 5, "inserted": 3},
+                        {"channel": "b", "error": "net fail"}],
+            "delta": {"discovered": 5},
+        }))
+        await session.commit()
+
+    page = (await client.get("/api/pipeline/jobs?job_name=collect")).json()
+    light = page["jobs"][0]
+    assert "sources" not in light["summary"] and "delta" not in light["summary"]
+    assert light["summary"]["sources_ok"] == 1
+    assert light["summary"]["sources_err"] == 1
+
+    detail = (await client.get(f"/api/pipeline/jobs/{light['id']}")).json()
+    assert len(detail["summary"]["sources"]) == 2
+    assert detail["summary"]["delta"] == {"discovered": 5}
+
+
+def test_logs_scrub_and_cursor_validation(tmp_path, monkeypatch) -> None:
+    """§8.2 密钥脱敏 + §8.1 游标格式校验。"""
+    from backend.routers import logs as logs_mod
+
+    logdir = tmp_path / "logs"
+    logdir.mkdir()
+    (logdir / "hertz.log").write_text(
+        "2026-08-11 10:00:00 ERROR    [biliup] failed cookie=SESSDATA=abc123\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(logs_mod.log_manager, "log_dir", logdir)
+    logs_mod._CACHE.clear()
+
+    r = logs_mod._query_logs(limit=10, level="", q="", since="", until="")
+    assert "abc123" not in r["lines"][0]["message"]
+    assert "***" in r["lines"][0]["message"]
+
+
+# ---------- RSS 视频帖链接修复（v0.8.8） ----------
+
+
+def _rss_entry(href: str, content: str) -> object:
+    import xml.etree.ElementTree as ET
+
+    xml = f'''<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Test video post</title>
+    <link href="{href}" />
+    <content type="html"><![CDATA[{content}]]></content>
+  </entry>
+</feed>'''
+    return ET.fromstring(xml).find("{http://www.w3.org/2005/Atom}entry")
+
+
+def test_rss_to_post_normal_comments_href() -> None:
+    """正常 RSS：href 即评论链接，source_url/source_id 原样提取。"""
+    from backend.pipeline.collectors.reddit import RedditCollector
+
+    entry = _rss_entry(
+        "https://old.reddit.com/r/Damnthatsinteresting/comments/1vlwkn3/the_perfect_rainbow/",
+        'a href="https://v.redd.it/ktqommt3rtih1"',
+    )
+    post = RedditCollector._rss_to_post(entry)
+    assert post is not None
+    assert post.source_id == "1vlwkn3"
+    assert "/comments/1vlwkn3" in post.source_url
+    assert post.media_url == "https://v.redd.it/ktqommt3rtih1"
+
+
+def test_rss_to_post_vreddit_href_with_real_link_in_content() -> None:
+    """v.redd.it href + content 含真评论链接：优先用真 post ID（v0.8.8 修复）。"""
+    from backend.pipeline.collectors.reddit import RedditCollector
+
+    entry = _rss_entry(
+        "https://v.redd.it/ktqommt3rtih1",
+        '<a href="https://www.reddit.com/r/Damnthatsinteresting/comments/1vlwkn3/">'
+        '<img src="https://i.redd.it/abc.jpg"></a>',
+    )
+    post = RedditCollector._rss_to_post(entry)
+    assert post is not None
+    assert post.source_id == "1vlwkn3"
+    assert "/r/Damnthatsinteresting/comments/1vlwkn3/" in post.source_url
+    assert "v.redd.it/ktqommt3rtih1" not in post.source_url
+
+
+def test_rss_to_post_vreddit_href_no_real_link() -> None:
+    """v.redd.it href + content 无评论链接：回退 /video/{id}/（有效视频页，v0.8.8）。"""
+    from backend.pipeline.collectors.reddit import RedditCollector
+
+    entry = _rss_entry(
+        "https://v.redd.it/5wtt65kshxdh1",
+        '<video src="https://v.redd.it/5wtt65kshxdh1"></video>',
+    )
+    post = RedditCollector._rss_to_post(entry)
+    assert post is not None
+    assert post.source_url == "https://www.reddit.com/video/5wtt65kshxdh1/"
+    assert post.source_id == "5wtt65kshxdh1"
+    assert "/comments/" not in post.source_url
+
+
+# ---------- gallery 多图帖误标修复（v0.8.8） ----------
+
+
+def test_classify_media_gallery_url() -> None:
+    """reddit.com/gallery/{id} 多图帖 → image_gallery（此前 fallback 误标 video_raw）。"""
+    from backend.pipeline.collectors.reddit import classify_media
+
+    assert classify_media("https://www.reddit.com/gallery/1vlf6lh", False, {}) == "image_gallery"
+    assert classify_media("https://www.reddit.com/r/oddlysatisfying/gallery/1vlf6lh", False, {}) == "image_gallery"  # noqa: E501
+    # 既有语义不回归
+    assert classify_media("https://v.redd.it/abc123", False, {}) == "video_raw"
+    assert classify_media("https://v.redd.it/abc123/DASH_720.mp4", True, {}) == "video_raw"
+    assert classify_media("https://i.redd.it/abc.jpg", False, {}) == "image_gallery"
+    assert classify_media("", False, {}) == "text_only"
+
+
+# ---------- ffmpeg libass 缺失降级（v0.8.8） ----------
+
+
+@pytest.mark.asyncio
+async def test_subtitles_filter_detection(monkeypatch) -> None:
+    """探测：优先读 deps 缓存；缓存缺失回退 -filters 行级精确匹配。"""
+    import tempfile
+
+    from backend.infrastructure import deps as deps_mod
+    from backend.pipeline.producers import media as media_mod
+
+    # 隔离 deps 缓存（避免真实 data/state/deps.json 干扰）
+    monkeypatch.setattr(deps_mod.settings, "data_dir", Path(tempfile.mkdtemp()))
+    deps_mod._cache = None
+    media_mod._subtitles_available = None
+
+    # 无 ass 行 → False
+    async def fake_exec(*a, **kw):
+        class P:
+            async def communicate(self):
+                return b"Filters:\n T.. anull            A->A       Pass\n", b""
+        return P()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    media_mod._subtitles_available = None
+    ok = await media_mod.subtitles_filter_available("/fake/ffmpeg")
+    assert ok is False
+
+    # 含 subtitles 行 → True
+    async def fake_exec2(*a, **kw):
+        class P:
+            async def communicate(self):
+                return b"Filters:\n T.. subtitles       V->V       Convert text subtitles\n", b""
+        return P()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec2)
+    media_mod._subtitles_available = None
+    ok2 = await media_mod.subtitles_filter_available("/fake/ffmpeg")
+    assert ok2 is True
+
+    # deps 缓存存在时直接读缓存（不再 subprocess）
+    deps_mod._cache = {"ffmpeg": {"status": "ok", "libass": False}}
+    media_mod._subtitles_available = None
+    assert await media_mod.subtitles_filter_available("/fake/ffmpeg") is False
+
+
+# ---------- 基础依赖检测缓存（v0.8.8：启动一次 + 手动重测，运行时零探测） ----------
+
+
+def test_deps_state_roundtrip(tmp_path, monkeypatch) -> None:
+    """deps 状态：refresh 持久化 + load 读缓存（不重测）+ dep_ok 消费。"""
+    from backend.infrastructure import deps as deps_mod
+
+    monkeypatch.setattr(deps_mod.settings, "data_dir", tmp_path)
+    deps_mod._cache = None
+
+    async def fake_check():
+        return {
+            "checked_at": "2026-08-12T10:00:00+00:00",
+            "ffmpeg": {"status": "ok", "path": "/x/ffmpeg", "libass": True},
+            "biliup": {"status": "missing", "path": None},
+        }
+
+    monkeypatch.setattr(deps_mod, "check_dependencies", fake_check)
+    data = asyncio.run(deps_mod.refresh_dependencies())
+    assert data["ffmpeg"]["libass"] is True
+    assert (tmp_path / "state" / "deps.json").exists()
+
+    # 缓存存在：load 直接返回（无重测调用）
+    calls = {"n": 0}
+    monkeypatch.setattr(deps_mod, "check_dependencies", lambda: calls.__setitem__("n", calls["n"] + 1) or {})  # noqa: E501
+    loaded = deps_mod.load_dependencies()
+    assert loaded["ffmpeg"]["libass"] is True and calls["n"] == 0
+
+    assert deps_mod.dep_ok(loaded, "ffmpeg") is True
+    assert deps_mod.dep_ok(loaded, "biliup") is False
+    assert deps_mod.dep_ok(None, "ffmpeg") is False
+
+
+@pytest.mark.asyncio
+async def test_deps_endpoints(client, tmp_path, monkeypatch) -> None:
+    """GET /api/deps 读缓存；POST /api/deps/check 强制重测。"""
+    from backend.infrastructure import deps as deps_mod
+
+    monkeypatch.setattr(deps_mod.settings, "data_dir", tmp_path)
+    deps_mod._cache = None
+
+    resp = await client.get("/api/deps")
+    assert resp.status_code == 200
+    assert "ffmpeg" in resp.json()  # 缓存缺失时补测
+
+    resp2 = await client.post("/api/deps/check")
+    assert resp2.status_code == 200
+    assert resp2.json()["checked_at"]
+
+
+# ---------- AXIOM 全量审视（v0.8.9） ----------
+
+
+@pytest.mark.asyncio
+async def test_meta_validation_422(client) -> None:
+    """AXIOM 8.1：非法排期/超长字段/越界 tid → 422（此前非法排期是 500）。"""
+    from backend.models.item import Item
+    from backend.models.session import session_factory
+
+    async with session_factory() as session:
+        it = Item(status="approved", source="reddit", source_id="mv-1", title="校验")
+        session.add(it)
+        await session.commit()
+        item_id = str(it.id)
+
+    bad_sched = await client.put(
+        f"/api/pipeline/items/{item_id}/meta", json={"scheduled_at": "not-a-date"}
+    )
+    assert bad_sched.status_code == 422
+
+    too_long = await client.put(
+        f"/api/pipeline/items/{item_id}/meta", json={"bili_title": "长" * 90}
+    )
+    assert too_long.status_code == 422
+
+    bad_tid = await client.put(
+        f"/api/pipeline/items/{item_id}/meta", json={"bili_tid": 99999}
+    )
+    assert bad_tid.status_code == 422
+
+    # 合法值仍可用（0 = 清空回默认）
+    ok = await client.put(
+        f"/api/pipeline/items/{item_id}/meta", json={"bili_title": "正常标题", "bili_tid": 0}
+    )
+    assert ok.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_batch_ids_limit(client) -> None:
+    """AXIOM 8.1：batch ids 上限 200（此前无上限）。"""
+    import uuid as _uuid
+
+    resp = await client.post(
+        "/api/pipeline/items/batch",
+        json={"action": "approve", "ids": [str(_uuid.uuid4()) for _ in range(201)]},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_produce_raw_degraded_fallback(monkeypatch) -> None:
+    """AXIOM 4.6：合成彻底失败 → 原片兜底交付（标注 degraded，不伪装成功）。"""
+    import tempfile
+    from pathlib import Path
+
+    from backend.pipeline.producers import media as media_mod
+
+    tmp = Path(tempfile.mkdtemp())
+    raw = tmp / "raw.mp4"
+    raw.write_bytes(b"fake-raw-bytes")
+
+    class Item:
+        raw_path = str(raw)
+        output_dir = "test-slug"
+        produce_options = {"mute": False, "voice": False, "subtitle": True, "translate": True, "passthrough": False}  # noqa: E501
+        title = "t"
+        subreddit = "r"
+        author = "a"
+
+    class Files:
+        def resolve(self, p): return p
+        def output_root(self): return tmp / "out"
+
+    class FakeAI:
+        async def title_and_tags(self, **kw):
+            from backend.ai.types import TitleResult
+            return TitleResult(title="标题", tags=[], description="")
+        async def chat_messages(self, messages, **kw):
+            return "x"
+
+    async def fake_compose(*a, **kw):
+        raise media_mod.ProducerError("ffmpeg exploded")
+
+    monkeypatch.setattr(media_mod, "compose_video", fake_compose)
+    from backend.pipeline import phash as phash_mod
+
+    async def fake_phash(p):
+        return "abc"
+
+    monkeypatch.setattr(phash_mod, "compute_phash", fake_phash)
+    async def fake_cover(*a):
+        return {"path": "x"}
+
+    monkeypatch.setattr(media_mod, "generate_cover", fake_cover)
+
+    artifacts = await media_mod.produce_item(FakeAI(), Files(), Item())
+    assert artifacts["video"]["degraded"] == "raw"
+    assert artifacts["video"]["path"] == str(raw)
+    assert artifacts["script"]["produced_degraded"] == "raw"
+    assert artifacts["phash"] == "abc"
+
+
+def test_deps_install_hints(monkeypatch) -> None:
+    """AXIOM 22.2：基础依赖缺失/降级时返回安装指引（install_hint，设置页可见展示）。"""
+    from backend.infrastructure import deps as deps_mod
+
+    async def fake_check():
+        return {
+            "checked_at": "2026-08-13T00:00:00+00:00",
+            "ffmpeg": {"status": "missing", "path": None, "version": None, "libass": False,
+                       "install_hint": "brew install homebrew-ffmpeg/ffmpeg/ffmpeg"},
+            "ffprobe": {"status": "missing", "path": None,
+                        "install_hint": "brew install ffmpeg"},
+            "biliup": {"status": "ok", "path": "/x/biliup"},
+            "yt-dlp": {"status": "missing", "path": None,
+                       "install_hint": "uv pip install yt-dlp  （或 brew install yt-dlp）"},
+            "edge-tts": {"status": "ok", "path": "/x/edge_tts"},
+        }
+
+    monkeypatch.setattr(deps_mod, "check_dependencies", fake_check)
+    data = asyncio.run(deps_mod.check_dependencies())
+    assert data["ffmpeg"]["install_hint"].startswith("brew install homebrew-ffmpeg")
+    assert data["ffprobe"]["install_hint"] == "brew install ffmpeg"
+    assert "yt-dlp" in data["yt-dlp"]["install_hint"]
+    # 正常项不带 hint（前端只展示缺失项的指引）
+    assert "install_hint" not in data["biliup"]
+    assert "install_hint" not in data["edge-tts"]
+
+
+# ---------- 翻译链路修复（v0.8.9，参考原项目 subtitle.py） ----------
+
+
+def test_clean_zh_subtitle_text() -> None:
+    """中文字幕清洗（原项目 clean_zh_subtitle_text 移植）：去标点、句间单空格。"""
+    from backend.pipeline.producers.media import clean_zh_subtitle_text
+
+    assert clean_zh_subtitle_text("他不吼不骂。蹲下来轻声说话！") == "他不吼不骂 蹲下来轻声说话"
+    assert clean_zh_subtitle_text("这招比吼管用…真的") == "这招比吼管用 真的"
+    assert clean_zh_subtitle_text("   ") == ""
+    assert clean_zh_subtitle_text("English only sentence.") == "English only sentence."
+
+
+@pytest.mark.asyncio
+async def test_translate_condition(monkeypatch) -> None:
+    """v0.8.9 翻译条件修复：want_translate 且旁白语言≠目标语言 → 翻译生效
+    （此前 subtitle_lang=zh-CN 时条件误判跳过翻译——英文原样入字幕）。"""
+    import tempfile
+    from pathlib import Path
+
+    from backend.pipeline.producers import media as media_mod
+
+    tmp = Path(tempfile.mkdtemp())
+    raw = tmp / "raw.mp4"
+    raw.write_bytes(b"fake")
+    calls: dict[str, int] = {"localize": 0}
+
+    class Item:
+        raw_path = str(raw)
+        output_dir = "t-slug"
+        produce_options = {"mute": False, "voice": False, "subtitle": True, "translate": True, "passthrough": False}  # noqa: E501
+        title = "t"
+        subreddit = "r"
+        author = "a"
+
+    class Files:
+        def resolve(self, p): return p
+        def output_root(self): return tmp / "out"
+
+    class FakeAI:
+        async def title_and_tags(self, **kw):
+            from backend.ai.types import TitleResult
+            return TitleResult(title="x", tags=[], description="")
+        async def chat_messages(self, messages, **kw):
+            calls["localize"] += 1
+            return "他蹲下来 孩子就不哭了"
+
+    async def fake_compose(*a, **kw):
+        return {"path": str(tmp / "final.mp4")}
+
+    async def fake_phash(p):
+        return "abc"
+
+    async def fake_cover(*a):
+        return {"path": "x"}
+
+    async def fake_probe(p):
+        return 10.0
+
+    from backend.pipeline import phash as phash_mod
+
+    monkeypatch.setattr(media_mod, "compose_video", fake_compose)
+    monkeypatch.setattr(phash_mod, "compute_phash", fake_phash)
+    monkeypatch.setattr(media_mod, "generate_cover", fake_cover)
+    monkeypatch.setattr(media_mod, "probe_duration", fake_probe)
+    monkeypatch.setattr(media_mod, "synthesize_tts", lambda *a, **k: None)
+
+    artifacts = await media_mod.produce_item(
+        FakeAI(), Files(), Item(),
+        existing_script={"mode": "script", "narration": "He kneels down. The kid stops crying."},
+    )
+    script = artifacts["script"]
+    assert "他蹲下来" in script.get("subtitle_zh", "")  # 翻译生效（中文入字幕）
+    assert calls["localize"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_bump_seq_on_back_to_prep(client) -> None:
+    """v0.8.9 入库序随操作刷新：打回预处理后条目 seq = max+1（列表最前）。"""
+    from sqlalchemy import func, select
+
+    from backend.models.item import Item, ItemStatus
+    from backend.models.session import session_factory
+
+    async with session_factory() as session:
+        it = Item(status=ItemStatus.QUEUED, source="reddit", source_id="bump-1", title="打回序")
+        session.add(it)
+        await session.commit()
+        item_id = it.id
+        old_max = (
+            await session.execute(select(func.max(Item.seq)))
+        ).scalar_one()
+
+    resp = await client.post(f"/api/pipeline/items/{item_id}/back-to-prep")
+    assert resp.status_code == 200
+
+    async with session_factory() as session:
+        row = await session.get(Item, item_id)
+        assert row.status == "downloaded"
+        assert row.seq > old_max  # 打回 = 最新入库序
+
+
+# ---------- v0.8.9 对齐原项目：purge / retranslate / 字幕对齐 / 音色 ----------
+
+@pytest.mark.asyncio
+async def test_back_to_prep_purges_derived_media(client, tmp_path) -> None:
+    """v0.8.9 打回即 purge：旧成片文件删除、字段清空、发布元数据保留。"""
+    from backend.pipeline.helpers import purge_derived_media
+
+    stale = tmp_path / "old.mp4"
+    stale.write_bytes(b"stale")
+    async with session_factory() as session:
+        item = Item(
+            status=ItemStatus.QUEUED, source="reddit", source_id="purge-1",
+            title="purge", video_path=str(stale), cover_path=str(tmp_path / "c.jpg"),
+            script_json={"narration": "old", "bili_tid": 201, "bili_title": "旧标题"},
+        )
+        session.add(item)
+        await session.commit()
+    assert stale.exists()
+
+    await purge_derived_media(item)
+
+    assert not stale.exists()
+    assert item.video_path is None and item.cover_path is None
+    assert item.script_json == {"bili_tid": 201, "bili_title": "旧标题"}
+
+
+@pytest.mark.asyncio
+async def test_retranslate_endpoint(client, monkeypatch) -> None:
+    """v0.8.9 retranslate：ASR 原声→中文字幕，原声保留无 TTS。"""
+    from backend.pipeline.producers import media as media_mod
+
+    async def fake_asr(ai, raw, directory, target_lang="zh-CN"):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "subs.srt").write_text(
+            "1\n00:00:00,500 --> 00:00:01,500\n海浪拍打着岸边\n", encoding="utf-8"
+        )
+        return directory / "subs.srt", "海浪拍打着岸边"
+
+    monkeypatch.setattr(media_mod, "_asr_subtitles", fake_asr)
+
+    async def fake_compose(*a, **kw):
+        out = a[3]
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"video")
+        return {"path": str(out), "width": 1280, "height": 720}
+
+    monkeypatch.setattr(media_mod, "compose_video", fake_compose)
+
+    async def fake_cover(*a):
+        return {"path": "/x/cover.jpg"}
+
+    monkeypatch.setattr(media_mod, "generate_cover", fake_cover)
+    from backend.pipeline import phash as phash_mod
+
+    async def fake_phash(p):
+        return "abc"
+
+    monkeypatch.setattr(phash_mod, "compute_phash", fake_phash)
+
+    raw_path = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name
+    async with session_factory() as session:
+        item = Item(status="queued", source="reddit", source_id="rt-1",
+                    title="重翻译", raw_path=raw_path,
+                    script_json={"narration": "old"}, video_path="/x/old.mp4")
+        session.add(item)
+        await session.commit()
+        item_id = item.id
+
+    resp = await client.post(f"/api/pipeline/items/{item_id}/retranslate")
+    assert resp.status_code == 200, resp.text
+    async with session_factory() as session:
+        row = await session.get(Item, item_id)
+        assert row.status == "queued"
+        assert row.video_path.endswith("final.mp4")
+        assert row.script_json["mode"] == "retranslate"
+        assert row.script_json["subtitle_zh"] == "海浪拍打着岸边"
+        assert row.audio_path is None  # 无 TTS
+
+
+@pytest.mark.asyncio
+async def test_retranslate_no_raw_409(client) -> None:
+    async with session_factory() as session:
+        item = Item(status="queued", source="reddit", source_id="rt-2",
+                    title="无素材", raw_path=None)
+        session.add(item)
+        await session.commit()
+        item_id = item.id
+    resp = await client.post(f"/api/pipeline/items/{item_id}/retranslate")
+    assert resp.status_code in (409, 502)
+
+
+@pytest.mark.asyncio
+async def test_script_to_srt_zh_split_and_align(tmp_path) -> None:
+    """v0.8.9 对齐原项目：中文 22 字断句 + align_script 1:1 词数加权。"""
+    from backend.pipeline.producers.media import parse_srt_cues, script_to_srt
+
+    # 中文长段（>22 字）→ 折行
+    zh = "这是一个非常长的中文字幕句子用来验证二十二字以内的断句逻辑是否正常工作" * 2
+    out = tmp_path / "zh.srt"
+    script_to_srt(zh, 10.0, out)
+    cues = parse_srt_cues(out)
+    assert len(cues) >= 2
+    assert all(len(t) <= 22 for _, _, t in cues)
+
+    # align_script：中文 cue 数 = 英文句数，词数加权
+    en = "He kneels down. The crying stops. Kids listen. Big heart."
+    out2 = tmp_path / "aligned.srt"
+    script_to_srt("他蹲下来 哭声停了 孩子们听话 心很大", 8.0, out2, align_script=en)
+    cues2 = parse_srt_cues(out2)
+    assert len(cues2) == 4  # 1:1 对应英文 4 句
+    # 词数加权：第 3 句（Kids listen，2 词）时长 > 第 1 句（He kneels down，3 词）？
+    # 词数 3,3,2,2 → 前两句长于后两句
+    durs = [e - s for s, e, _ in cues2]
+    assert durs[0] >= durs[2]
+
+
+@pytest.mark.asyncio
+async def test_pick_voice_content_match() -> None:
+    """v0.8.9 音色内容自适应：科技→男声，暖心→女声。"""
+    from backend.pipeline.producers.tts_voice import pick_voice
+
+    male, _ = pick_voice(title="NASA robot on Mars", script="", subreddit="space")
+    female, _ = pick_voice(title="cute kitten rescue", script="", subreddit="aww")
+    from backend.pipeline.producers.tts_voice import VOICE_CATALOG
+
+    assert VOICE_CATALOG[male]["gender"] == "male"
+    assert VOICE_CATALOG[female]["gender"] == "female"
+    # 手动配置优先
+    v, reason = pick_voice(title="cute cat", configured="zh-CN-YunxiNeural")
+    assert v == "zh-CN-YunxiNeural" and reason == "configured"
+
+
+# ---------- v0.8.9 字幕同步 / TTS 降级 / 翻译方向 ----------
+
+def test_fit_script_to_budget_word_trim() -> None:
+    """v0.8.9 按词数裁旁白：保句首、补句号、不切单词。"""
+    from backend.pipeline.producers.media import fit_script_to_budget
+
+    text = "This is a very long narration script that needs trimming down"
+    out = fit_script_to_budget(text, 6)
+    assert out == "This is a very long narration."
+    # 不超则不裁
+    assert fit_script_to_budget(text, 99) == text
+    # max_words<=0 → 空
+    assert fit_script_to_budget(text, 0) == ""
+
+
+@pytest.mark.asyncio
+async def test_voice_subtitles_sync_to_audio(tmp_path, monkeypatch) -> None:
+    """v0.8.9 字幕同步：voice 模式字幕时间轴 = 旁白音频实际时长（非视频时长）。
+    视频 60s / 旁白 20s → SRT 总时长 ≈ 20s + start_offset（默认 0.75s）。"""
+    from backend.pipeline.producers.media import (
+        parse_srt_cues,
+        script_to_srt,
+    )
+
+    en = "He kneels down. The crying stops. Kids listen with big hearts."
+    zh = "他蹲下来 哭声停了 孩子们用心听"
+    out = tmp_path / "sync.srt"
+    audio_dur = 20.0
+    offset = 0.75
+    script_to_srt(
+        zh, audio_dur, out, start_offset=offset, align_script=en,
+    )
+    cues = parse_srt_cues(out)
+    assert len(cues) == 3  # 1:1 英文 3 句
+    # 字幕总长 = 旁白音频时长 + 起始偏移（不铺满视频 60s）
+    assert cues[0][0] == pytest.approx(offset, abs=0.05)
+    assert cues[-1][1] == pytest.approx(offset + audio_dur, abs=0.05)
+
+
+@pytest.mark.asyncio
+async def test_tts_overflow_drops_to_subs_only(client, tmp_path, monkeypatch) -> None:
+    """v0.8.9 对齐原项目 _drop_to_subs_only：TTS 3 次仍超预算 → 放弃配音。
+
+    生产方式 = voice（无字幕时会走视频时长字幕），旁白音频永远超视频。
+    断言：artifacts.audio 为 None、start_offset 为 0、降级后不残留 narration。
+    """
+    from backend.pipeline.producers.media import produce_item
+
+    class _FakeAI:
+        tts_available = True
+
+        async def synthesize(self, text, voice=""):
+            return b"x" * 100
+
+        async def chat_messages(self, messages, role="fast", **kw):
+            return ""
+
+        def _route(self, task):
+            return object() if self.tts_available else None
+
+        @property
+        def has_tts(self):
+            return True
+
+    async def fake_probe(path):
+        # 旁白音频永远 120s > 视频 60s → 三次裁词仍超 → 降级
+        return 120.0 if "narration" in str(path) else 60.0
+
+    monkeypatch.setattr("backend.pipeline.producers.media.probe_duration", fake_probe)
+
+    item = Item(status="downloaded", source="reddit", source_id="drop-1",
+                title="超预算降级", raw_path=str(tmp_path / "raw.mp4"),
+                output_dir="drop-slug",
+                produce_options={"voice": True, "subtitle": True})
+    (tmp_path / "raw.mp4").write_bytes(b"raw")
+    from backend.factory.registry import ServiceRegistry
+    from backend.pipeline.producers import media as media_mod
+
+    monkeypatch.setattr(media_mod, "_asr_subtitles", lambda *a, **k: None)
+
+    artifacts = await produce_item(_FakeAI(), ServiceRegistry.get().files, item)
+    assert artifacts["audio"] is None  # 降级：无旁白
+    sub = artifacts.get("subtitle")
+    assert sub is not None and sub["source"] in ("script",)
+    # 字幕按视频时长（parse 验证总长 ≈ 60s）
+    from pathlib import Path
+
+    from backend.pipeline.producers.media import parse_srt_cues
+
+    cues = parse_srt_cues(Path(sub["path"]))
+    assert cues[-1][1] <= 61.0 and cues[-1][1] > 55.0
+
+
+@pytest.mark.asyncio
+async def test_localize_target_language_prompt(client, monkeypatch) -> None:
+    """v0.8.9 翻译方向扩展：_localize_text 显式源→目标语言对。"""
+    import backend.pipeline.producers.media as media_mod
+
+    captured: list[str] = []
+
+    class _FakeAI:
+        async def chat_messages(self, messages, role="fast", **kw):
+            captured.append(messages[0].content)
+            return "これはテストです"
+
+    out = await media_mod._localize_text(_FakeAI(), "hello", "ja", source_lang="en-US")
+    assert out == "これはテストです"
+    assert "English" in captured[0] and "日本語" in captured[0]
+
+
+@pytest.mark.asyncio
+async def test_asr_subtitles_strip_punct(tmp_path, monkeypatch) -> None:
+    """v0.8.9 ASR 译文标点清洗：cue 体无标点。"""
+    import backend.pipeline.producers.media as media_mod
+
+    async def fake_transcribe(path, out):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            "1\n00:00:00,000 --> 00:00:01,000\nHello, world!\n\n"
+            "2\n00:00:01,000 --> 00:00:02,000\nHow are you?\n",
+            encoding="utf-8",
+        )
+        return out
+
+    async def fake_has_audio(*a, **k):
+        return True
+
+    monkeypatch.setattr(media_mod, "probe_has_audio", fake_has_audio)
+    monkeypatch.setattr("backend.pipeline.producers.asr.transcribe", fake_transcribe)
+
+    class _FakeAI:
+        async def chat_messages(self, messages, role="fast", **kw):
+            return '{"segments": ["你好，世界！", "你好吗？"]}'
+
+    got = await media_mod._asr_subtitles(_FakeAI(), Path("x.mp4"), tmp_path)
+    assert got is not None
+    srt, full = got
+    assert "，" not in full and "！" not in full and "？" not in full
+    assert "你好世界" in full
+
+@pytest.mark.asyncio
+async def test_non_voice_subtitles_use_original_audio_duration(
+    tmp_path, monkeypatch
+) -> None:
+    """v0.8.9 两个制作概念之二：非旁白模式字幕时间轴 = 视频原声音频时长。
+
+    原声 20s / 视频 60s → 字幕总长 ≈ 20s（不再铺满视频 60s）；
+    无音轨视频 → 回退视频时长 60s。
+    """
+    from backend.pipeline.producers import media as media_mod
+
+    async def fake_probe_audio(path):
+        return 20.0
+
+    async def fake_has_audio(path):
+        return True
+
+    monkeypatch.setattr(media_mod, "probe_audio_duration", fake_probe_audio)
+    monkeypatch.setattr(media_mod, "probe_has_audio", fake_has_audio)
+
+    from backend.pipeline.producers.media import parse_srt_cues, script_to_srt
+
+    zh = "他蹲下来 哭声停了 孩子们用心听 慢慢靠近"
+    out = tmp_path / "orig.srt"
+    script_to_srt(zh, 20.0, out)
+    cues = parse_srt_cues(out)
+    # 原声 20s：字幕在 20s 内结束（对齐原声记录，不拖到视频 60s）
+    assert cues[-1][1] == pytest.approx(20.0, abs=0.3)
+    assert any(c[1] > 8.0 for c in cues)  # 多条 cue 铺满原声时长

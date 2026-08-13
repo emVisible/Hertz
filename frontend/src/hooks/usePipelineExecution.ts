@@ -149,13 +149,13 @@ export function usePipelineExecution() {
       const s = event.summary
       let summary = ''
       if (event.job === 'collect') {
-        summary = `采集 ${s?.collected ?? 0} 条 · 新入库 ${s?.inserted ?? 0} · 跳过 ${s?.skipped ?? 0}`
+        summary = t('console.collectSummary', { n: s?.collected ?? 0, ins: s?.inserted ?? 0, sk: s?.skipped ?? 0 })
         if (s?.failed_sources) summary += ` ⚠ ${s.failed_sources} 个源失败`
         if (empty) summary += ' ⚠ 源返回空，已进入冷却'
         if (cooling) summary += ` ⏳ 源冷却中（${Math.ceil(Number(s?.cooldown_s ?? 0))}s）`
       } else if (s) {
         const parts = []
-        if (s.processed !== undefined) parts.push(`处理 ${s.processed} 项`)
+        if (s.processed !== undefined) parts.push(t('console.processedItems', { n: s.processed }))
         if (s.ok !== undefined) parts.push(`成功 ${s.ok}`)
         if (s.skipped !== undefined) parts.push(`跳过 ${s.skipped}（冷却）`)
         if (s.rejected !== undefined) parts.push(`拒绝 ${s.rejected}`)
@@ -181,6 +181,9 @@ export function usePipelineExecution() {
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ['pipeline-stage'] })
+    // v0.8.9 Bug 修复：pipeline-queue 是 stageQueued/stageDownloaded/stageScored
+    // 的数据源——此前漏 invalidate，制作/评分/下载后审核列表要等 15s 轮询才出现
+    void queryClient.invalidateQueries({ queryKey: ['pipeline-queue'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-sources'] })
@@ -198,6 +201,17 @@ export function usePipelineExecution() {
       await pipelineApi.score(item.id)
       refresh()
       toast(t('console.scored'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 单条下载（v0.8.6 评分先行，预处理手动下载按钮）。 */
+  async function downloadOne(item: PipelineItem) {
+    try {
+      await pipelineApi.download(item.id)
+      refresh()
+      toast(t('console.downloaded'), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }
@@ -242,7 +256,10 @@ export function usePipelineExecution() {
     await runStepOnly(stepName, channel)
   }
 
-  async function act(item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue') {
+  async function act(
+    item: PipelineItem,
+    action: 'approve' | 'reject' | 'retry' | 'requeue' | 'retranslate',
+  ) {
     try {
       if (action === 'approve') {
         await pipelineApi.approve(item.id)
@@ -253,6 +270,9 @@ export function usePipelineExecution() {
       } else if (action === 'requeue') {
         await pipelineApi.requeue(item.id)
         toast(t('console.requeuedHint'), 'success')
+      } else if (action === 'retranslate') {
+        await pipelineApi.retranslate(item.id)
+        toast(t('console.retranslatedHint'), 'success')
       } else {
         await pipelineApi.retry(item.id)
         toast(t('console.retriedHint'), 'success')
@@ -440,6 +460,7 @@ export function usePipelineExecution() {
     produceBatch,
     scoreOne,
     scoreBatch,
+    downloadOne,
     runStep,
     refresh,
   }

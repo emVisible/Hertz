@@ -54,8 +54,6 @@ export function AppShell() {
   const anyRunning = studioRunning || pipelineRunning
 
   const navItems: NavItem[] = [
-    // 创作
-    { to: '/canvas', icon: 'canvas', label: t('nav.canvas'), group: 'create' },
     // 生产
     { to: '/execution', icon: 'console', label: t('nav.execution'), group: 'produce' },
     { to: '/plans', icon: 'plans', label: t('nav.plans'), group: 'produce' },
@@ -63,7 +61,9 @@ export function AppShell() {
     { to: '/dashboard', icon: 'whisper', label: t('nav.dashboard'), group: 'produce' },
     // 素材（唯一出口：下载/资源/文档）
     { to: '/assets', icon: 'box', label: t('nav.assets'), group: 'assets' },
-    // 系统
+    // 画布（v0.8.8：低频工具——移至素材下方，与素材/资源同域）
+    { to: '/canvas', icon: 'canvas', label: t('nav.canvas'), group: 'assets' },
+    // 系统（v0.8.8：设置保持在最下方——低频配置域）
     { to: '/config', icon: 'config', label: t('nav.config'), group: 'system' },
   ]
   const currentLabel = navItems.find((item) => item.to === location.pathname)?.label ?? ''

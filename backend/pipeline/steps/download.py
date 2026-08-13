@@ -72,7 +72,7 @@ async def _ytdlp_download(url: str, dest: Path) -> Path:
 
 class DownloadStep(Pipe):
     name = "download"
-    input_statuses: tuple[str, ...] = ("discovered",)
+    input_statuses: tuple[str, ...] = ("scored",)  # v0.8.6 评分先行
 
     async def process(self, ctx: StepContext, item) -> ProcessResult:
         from urllib.parse import urlparse
@@ -212,6 +212,31 @@ class DownloadStep(Pipe):
         last_error = ""
         for attempt in range(3 if is_still else 1):
             for cand in candidates:
+                # v0.8.9 MPD→CMAF 路径（参考原项目 _download_via_mpd_direct）：
+                # DASH_720.mp4 被 CDN 403，但 MPD 主清单与 CMAF 分片放行——
+                # 实测匿名环境唯一可靠的 Reddit 视频通道
+                if cand.endswith(".mpd"):
+                    from backend.pipeline.download import download_via_mpd
+
+                    mpd_dest = await download_via_mpd(
+                        cand, dest,
+                        headers=download_headers(cand),
+                        checker=checker,
+                    )
+                    if mpd_dest is not None:
+                        reset_cdn_circuit()
+                        await clear_resource_cooldown(url)
+                        size = mpd_dest.stat().st_size
+                        ctx.log(
+                            f"[download] MPD/CMAF ✓ {item.title[:40]} → "
+                            f"{mpd_dest.name} ({size} bytes)"
+                        )
+                        return ProcessResult(
+                            status="downloaded",
+                            data={"raw_path": str(mpd_dest.resolve())},
+                        )
+                    last_error = f"{cand[:48]}: MPD/CMAF failed"
+                    continue
                 try:
                     downloader = ChunkedDownloader(
                         cand, dest,

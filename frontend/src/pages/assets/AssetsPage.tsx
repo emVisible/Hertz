@@ -780,7 +780,7 @@ export function AssetsPage() {
               className="h-9 border border-border bg-surface-1 px-3 text-sm text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
             />
             <div className="flex flex-wrap gap-1.5">
-              {['download', 'bilibili', 'youtube', '精选', '草稿'].map((suggest) => {
+              {['download', 'bilibili', 'youtube', 'assets.tagSelected', 'assets.tagDraft'].map((suggest) => {
                 const active = tagDraft.split(/[,，]/).map((s) => s.trim()).includes(suggest)
                 return (
                   <button
@@ -794,7 +794,7 @@ export function AssetsPage() {
                       active ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-secondary hover:border-text-disabled'
                     }`}
                   >
-                    {suggest}
+                    {suggest.startsWith('assets.') ? t(suggest) : suggest}
                   </button>
                 )
               })}

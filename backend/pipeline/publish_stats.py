@@ -1,7 +1,7 @@
 """发布数据回捞（v0.4 C1）：B 站 web API 按 BV 号拉播放/互动。
 
 数据源：api.bilibili.com/x/web-interface/view（公开统计，无需登录）。
-Cookie 复用 biliup 登录产物（bilibili.cookie）——仅当接口被反爬拦截时
+Cookie 复用 data/core/cookies.json（biliup-cli 兼容格式）——仅当接口被反爬拦截时
 才需要；403/异常一律静默（best-effort，不阻塞主流程）。
 
 publish_json 结构（v0.4 C1）：
@@ -32,23 +32,38 @@ def extract_bvid(stdout: str) -> str | None:
 
 
 def _cookie_header(cookie_path: Path) -> str:
-    """biliup cookie 文件 → Cookie header（格式：{"cookies": {..}} 或 {..}）。"""
+    """B 站 cookie 文件 → Cookie header（v0.8.4 统一 data/core/cookies.json）。
+
+    兼容两种格式：biliup 风格 {"cookies": {...}} / 直接 dict，以及
+    B 站 passport 登录响应 cookie_info.cookies 数组（biliup-cli 存储格式）。
+    """
     try:
         data = json.loads(cookie_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return ""
-    cookies = data.get("cookies") if isinstance(data, dict) else {}
-    if not isinstance(cookies, dict):
-        cookies = data if isinstance(data, dict) else {}
-    return "; ".join(
-        f"{k}={v}" for k, v in cookies.items() if v is not None and k
-    )
+    if not isinstance(data, dict):
+        return ""
+    cookies: dict = {}
+    raw = data.get("cookies")
+    if isinstance(raw, dict):
+        cookies = raw
+    elif isinstance(raw, list):
+        cookies = {c.get("name"): c.get("value") for c in raw if isinstance(c, dict) and c.get("name")}  # noqa: E501
+    else:
+        info = data.get("cookie_info")
+        if isinstance(info, dict) and isinstance(info.get("cookies"), list):
+            cookies = {
+                c.get("name"): c.get("value")
+                for c in info["cookies"]
+                if isinstance(c, dict) and c.get("name")
+            }
+    return "; ".join(f"{k}={v}" for k, v in cookies.items() if v is not None and k)
 
 
 async def fetch_bvid_stats(bvid: str) -> dict | None:
     """按 BV 号拉取统计；失败返回 None（静默）。"""
     try:
-        cookie_path = Path(settings.data_dir) / "bilibili.cookie"
+        cookie_path = Path(settings.data_dir) / "core" / "cookies.json"
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "

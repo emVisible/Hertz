@@ -6,11 +6,11 @@ import { Button, Icon, Modal, Spinner, useToast } from '../../components/ui'
 import { useBoardStore } from '../../stores/board'
 
 const WORD_CATEGORIES = [
-  { key: 'conj', label: '连接词' },
-  { key: 'prep', label: '介词' },
-  { key: 'aux', label: '助词' },
-  { key: 'adj', label: '形容词' },
-  { key: 'obj', label: '宾语意象' },
+  { key: 'conj', label: 'canvas.wordConnect' },
+  { key: 'prep', label: 'canvas.wordPreposition' },
+  { key: 'aux', label: 'canvas.wordParticle' },
+  { key: 'adj', label: 'canvas.wordAdjective' },
+  { key: 'obj', label: 'canvas.wordObject' },
 ] as const
 
 /**
@@ -127,7 +127,7 @@ export function RemixModal({ open, onClose }: { open: boolean; onClose: () => vo
           <div className="space-y-3 border border-border p-3">
             {WORD_CATEGORIES.map(({ key, label }) => (
               <div key={key} className="flex items-center gap-2">
-                <span className="w-16 shrink-0 text-xs text-text-secondary">{label}</span>
+                <span className="w-16 shrink-0 text-xs text-text-secondary">{t(label)}</span>
                 <input
                   value={bankDrafts[key] ?? ''}
                   onChange={(e) => setBankDrafts((d) => ({ ...d, [key]: e.target.value }))}

@@ -48,6 +48,58 @@ class _JsonRejectedError(RuntimeError):
         self.status = status
 
 
+class CollectBlockedError(RuntimeError):
+    """Reddit 拒绝服务（403 Blocked）——长冷却，避免连打触发封禁（冰川式）。"""
+
+
+class CollectRateLimitedError(RuntimeError):
+    """频率限制（429）——中等冷却；持续限流会触发熔断。"""
+
+
+class CollectNetworkError(RuntimeError):
+    """网络层失败（连接拒绝/超时）——短冷却，网络恢复后快速重试。
+
+    冰川式原则：网络抖动与平台拒绝分开记账，避免「代理断了一下 → 2h 熔断」。
+    """
+
+
+def _classify_http(exc: httpx.HTTPError, detail: str) -> RuntimeError:
+    """httpx 异常 → 分类异常（含类型名，解决网络层异常 str() 为空的盲区）。"""
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout)):
+        return CollectNetworkError(
+            f"Reddit 连接失败: {detail}（{type(exc).__name__}）——请检查网络或代理设置"
+        )
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code if exc.response is not None else 0
+        if code == 429:
+            return CollectRateLimitedError(f"Reddit 限流 (HTTP 429): {detail}")
+        if code in (401, 403):
+            return CollectBlockedError(f"Reddit 拒绝访问 (HTTP {code}): {detail}")
+    return CollectNetworkError(f"Reddit 请求失败: {detail}（{type(exc).__name__}）")
+
+
+def _parse_channel(channel: str) -> tuple[str, str]:
+    """channel 解析：`subreddit` 或 `subreddit:sort`。
+
+    旧配置曾把排序词（如 "hot"）当作 subreddit——r/hot 近乎无内容，
+    且错误的源会把匿名 403 甩给正常版块；现在显式报配置错误。
+    """
+    raw = (channel or "").strip()
+    sort = raw.split(":", 1)[1] if ":" in raw else ""
+    sub = raw.split(":", 1)[0].strip("/")
+    if not sub:
+        raise RuntimeError("采集通道缺少 subreddit（channel 为空）")
+    # 无冒号的排序词 = 旧配置缺陷（pipeline_sources: ["hot"]）——提示真实版块名
+    if ":" not in raw and sub in _SORTS:
+        raise RuntimeError(
+            f"采集源 '{sub}' 是排序词不是 subreddit——请配置真实版块名，"
+            f"如 'Damnthatsinteresting'；格式为 'subreddit' 或 'subreddit:{'|'.join(_SORTS)}'"
+        )
+    if sort not in _SORTS:
+        sort = random.choice(_SORTS)
+    return sub, sort
+
+
 def _system_proxy() -> str | None:
     """macOS 系统代理（httpx 只认环境变量，不读系统网络设置）。
 
@@ -125,11 +177,16 @@ def classify_media(url: str, is_video: bool, extra: dict) -> str:
     video_raw: direct video file / v.redd.it clip (default when unsure)
     image_gallery: one or more still images
     text_only: self post without media
+
+    v0.8.8 修复：reddit.com/gallery/{id} 多图帖此前落入 fallback 被标成
+    video_raw（JSON 通道 url 字段为 gallery 页链接）——显式识别为图片。
     """
     if is_video or "v.redd.it" in url or "/video" in url:
         return "video_raw"
     lowered = url.lower()
     if any(lowered.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp")):
+        return "image_gallery"
+    if "/gallery/" in lowered:
         return "image_gallery"
     if not url:
         return "text_only"
@@ -138,6 +195,9 @@ def classify_media(url: str, is_video: bool, extra: dict) -> str:
 
 class RedditCollector(SourceCollector):
     name = "reddit"
+    # v0.8.9 AXIOM 28：最近一次成功采集走的通道（oauth/json/rss）——
+    # 由 collect() 各通道设置，run_collect 写入 SourceState.last_strategy
+    _last_strategy: str = "json"
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         proxy = _system_proxy()
@@ -161,29 +221,30 @@ class RedditCollector(SourceCollector):
         await self._client.aclose()
 
     async def collect(self, ctx, channel: str, limit: int) -> list[RawPost]:
-        sort = channel.split(":", 1)[1] if ":" in channel else ""
-        if sort not in _SORTS:
-            # 排序轮换（v0.2.1，参考原项目随机化）：未显式指定时随机挑选，
-            # 避免每次都打固定 hot 首页（反 429 熔断 + 供给多样化）
-            sort = random.choice(_SORTS)
-        sub = channel.split(":", 1)[0].strip("/") or "all"
+        sub, sort = _parse_channel(channel)
         token = await ensure_reddit_token()
         if token:
             # 认证通道（v0.3.5）：官方 API 对匿名 403 Blocked 免疫
+            self._last_strategy = "oauth"  # v0.8.9 AXIOM 28：通道可观测
             return await self._collect_oauth(sub, sort, limit, token)
         try:
+            self._last_strategy = "json"
             return await self._collect_json(sub, sort, limit)
         except _JsonRejectedError as exc:
             # JSON 被拒（403/429）→ RSS 兜底（v0.3.1，参考原项目 RSS 路径）：
-            # 匿名 JSON 易被 Blocked，RSS 更宽容；仍失败则如实报错（走健康度/冷却）
+            # 匿名 JSON 易被 Blocked，RSS 更宽容；仍失败则分类报错（走健康度/冷却）
             logger.warning("JSON rejected for r/%s (%s) — falling back to RSS", sub, exc)
             try:
+                self._last_strategy = "rss"
                 return await self._collect_rss(sub, sort, limit)
             except httpx.HTTPError as rss_exc:
-                raise RuntimeError(
-                    f"Reddit 采集失败: JSON {exc}；RSS 兜底也失败: {rss_exc}。"
-                    "若持续被拒，请在设置页配置 Reddit OAuth 凭证（client_id/secret）"
+                raise _classify_http(
+                    rss_exc,
+                    f"JSON {exc}；RSS 兜底也失败: {rss_exc}。"
+                    "若持续被拒，请在设置页配置 Reddit OAuth 凭证（client_id/secret）",
                 ) from rss_exc
+        except httpx.HTTPError as exc:
+            raise _classify_http(exc, str(exc)) from exc
 
     async def _collect_oauth(
         self, sub: str, sort: str, limit: int, token: str
@@ -197,14 +258,16 @@ class RedditCollector(SourceCollector):
         )
         if resp.status_code in (401, 403):
             invalidate_reddit_token()  # token 失效 → 下次重取
-            raise RuntimeError(
+            raise CollectBlockedError(
                 f"Reddit OAuth 通道被拒 (HTTP {resp.status_code})——"
                 "token 可能已失效，请重试；或检查 client_id/client_secret"
             )
+        if resp.status_code == 429:
+            raise CollectRateLimitedError("Reddit OAuth 限流 (HTTP 429)")
         try:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
-            raise RuntimeError(f"Reddit OAuth 采集失败: {exc}") from exc
+            raise _classify_http(exc, str(exc)) from exc
         body = resp.json()
         posts: list[RawPost] = []
         for child in (body.get("data") or {}).get("children") or []:
@@ -222,10 +285,8 @@ class RedditCollector(SourceCollector):
         try:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
-            hint = ""
-            if isinstance(exc, httpx.ConnectError):
-                hint = "（无法连接 Reddit——请检查网络或代理设置）"
-            raise RuntimeError(f"Reddit 采集失败: {exc}{hint}") from exc
+            # 网络层失败直接分类（不再走 RSS 兜底——RSS 同样会失败）
+            raise _classify_http(exc, str(exc)) from exc
         body = resp.json()
         posts: list[RawPost] = []
         for child in (body.get("data") or {}).get("children") or []:
@@ -239,7 +300,10 @@ class RedditCollector(SourceCollector):
         """RSS 兜底（v0.3.1）：old.reddit.com 更宽容；媒体从 content:encoded 提取。"""
         url = f"https://old.reddit.com/r/{sub}/{sort}.rss"
         resp = await self._client.get(url, params={"limit": min(limit, 100)})
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise _classify_http(exc, f"RSS {exc}") from exc
         root = ET.fromstring(resp.text)
         posts: list[RawPost] = []
         for entry in root.findall(f"{_CONTENT_NS}entry"):
@@ -260,17 +324,6 @@ class RedditCollector(SourceCollector):
         title = _text("title")
         if not permalink:
             return None
-        # /comments/{id}/ 提取 source_id
-        m = re.search(r"/comments/([a-z0-9]+)/", permalink)
-        source_id = m.group(1) if m else permalink.rstrip("/").rsplit("/", 1)[-1]
-        # v0.8.1 参考原项目：RSS 视频帖 link 有时直接指向 v.redd.it 媒体而非
-        # 评论区——归一化为 comments permalink（yt-dlp/下载依赖详情页解析），
-        # 并从该 URL 提取视频 id 作为媒体候选
-        if "v.redd.it" in permalink and "/comments/" not in permalink:
-            vid = permalink.rstrip("/").rsplit("/", 1)[-1]
-            if vid and vid != "v.redd.it":
-                source_id = vid
-                permalink = f"https://www.reddit.com/comments/{vid}/"
         # 媒体从 content:encoded 正则提取（RSS 不直接给 media_url）
         content = ""
         for tag in (f"{_CONTENT_NS}content", f"{_CONTENT_NS}summary"):
@@ -278,6 +331,35 @@ class RedditCollector(SourceCollector):
             if node is not None:
                 content = node.text or ""
                 break
+        # v0.8.8 修复：v.redd.it href 时旧逻辑用媒体 ID（13 位）构造
+        # comments/{id}/——媒体 ID ≠ 帖子 ID（实测 v.redd.it 302 → /video/{id}），
+        # 构造链接 404 无法访问原帖。改为：
+        #   1) 优先从 content:encoded 提取真正 /r/{sub}/comments/{post_id}/ 链接
+        #   2) 提取不到 → 用 https://www.reddit.com/video/{vid}/（有效视频页）
+        source_id = ""
+        if "/comments/" in permalink:
+            m = re.search(r"/comments/([a-z0-9]+)/", permalink)
+            source_id = m.group(1) if m else ""
+            if not source_id:
+                source_id = permalink.rstrip("/").rsplit("/", 1)[-1]
+        elif "v.redd.it" in permalink:
+            vid = permalink.rstrip("/").rsplit("/", 1)[-1]
+            if vid and vid != "v.redd.it":
+                real = re.search(r"/r/[\w]+/comments/([\w]+)/", content or "")
+                if real:
+                    source_id = real.group(1)
+                    sub = re.search(r"/r/([\w]+)/", content or "")
+                    permalink = (
+                        f"https://www.reddit.com/r/{sub.group(1)}/comments/{source_id}/"
+                        if sub
+                        else f"https://www.reddit.com/comments/{source_id}/"
+                    )
+                else:
+                    # 无详情页可循：视频页是唯一有效入口（实测 v.redd.it 302 目标）
+                    source_id = vid
+                    permalink = f"https://www.reddit.com/video/{vid}/"
+        if not source_id:
+            source_id = permalink.rstrip("/").rsplit("/", 1)[-1]
         media = _MEDIA_RE.search(content)
         media_url = media.group(0).rstrip("/") if media else ""
         kind = classify_media(media_url, "v.redd.it" in media_url, {})

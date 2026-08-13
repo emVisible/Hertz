@@ -132,8 +132,10 @@ class ServiceRegistry:
         """自动采集：按配置间隔节流（运行中/间隔未到/关闭都跳过）。"""
         import time as _time
 
+        from backend.config import settings  # 不依赖实例 initialize（单例直取）
+
         interval_min = int(
-            getattr(self.settings, "pipeline_auto_collect_minutes", 30) or 0
+            getattr(settings, "pipeline_auto_collect_minutes", 30) or 0
         )
         if interval_min <= 0:
             return  # 关闭
@@ -143,7 +145,8 @@ class ServiceRegistry:
             return  # 间隔未到
         try:
             self._last_auto_collect = now
-            result = await self.pipeline.run_batch("collect")
+            limit = int(getattr(settings, "pipeline_collect_limit", 25) or 25)
+            result = await self.pipeline.run_batch("collect", limit=limit)
             summary = result.get("summary") or {}
             if summary.get("collected", 0) > 0:
                 self.log.get().info(

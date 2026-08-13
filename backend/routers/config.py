@@ -68,6 +68,10 @@ async def get_config() -> dict:
     base = settings.model_dump()
     overrides = runtime_config.load()
     base.update(overrides)
+    # 素材根目录（v0.8.6）：null = 默认 data_dir——与 library.py/docs.py 消费侧
+    # 语义一致（或 settings.data_dir），否则设置页输入框拿到 null 显示为空
+    if not base.get("assets_root"):
+        base["assets_root"] = str(settings.data_dir)
     public = {k: v for k, v in base.items() if k not in SECRET_FIELDS and not k.startswith("_")}
     public["runtime_overrides"] = {k: v for k, v in overrides.items() if k in RUNTIME_ALLOWLIST}
     api_key = str(base.get("llm_api_key") or base.get("deepseek_api_key") or "")

@@ -61,9 +61,21 @@ class Settings(BaseSettings):
     pipeline_collect_limit: int = 25
     # 自动采集间隔（v0.8.1）：scheduler 周期自动入库（0=关闭，仅手动）
     pipeline_auto_collect_minutes: int = 30
-    # 采集源列表（v0.4 A4）：默认 "hot" 兜底；设置页可增删（如 pics/MadeMeSmile）。
-    # 采集时逐源独立健康度/冷却记账，一个源失败不影响其他。
-    pipeline_sources: list[str] = ["hot"]
+    # 采集源列表（v0.8.6）：真实活跃 subreddit（参考原项目冰川采集列表筛选，
+    # 内容型短视频友好）；设置页可增删。注意是版块名不是排序词——
+    # 旧默认 "hot" 会被 r/hot 近乎无内容 + 403 拖垮整条链路
+    pipeline_sources: list[str] = [
+        "Damnthatsinteresting",
+        "BeAmazed",
+        "nextfuckinglevel",
+        "interestingasfuck",
+        "ThatsInsane",
+        "Unexpected",
+        "Whatcouldgowrong",
+        "PerfectTiming",
+        "HumansBeingBros",
+        "oddlysatisfying",
+    ]
     # 评分成本闸门（v0.2.1，参考原项目 Autarkeia）：单次运行 / 单日 LLM 评分硬限额，
     # 超限跳过评分（条目保持 downloaded，下轮或次日再评）——防 API 费用失控
     pipeline_score_max_per_run: int = 50
@@ -73,6 +85,9 @@ class Settings(BaseSettings):
     pipeline_publish_min_interval_min: int = 30
     pipeline_publish_jitter_min: int = 5
     pipeline_publish_lookahead_days: int = 3
+    # 排期发布硬门槛（v0.9 对齐原项目 ensure_bilibili_dtime）：
+    # B 站要求 dtime 提交后 ≥ N 小时；scheduled_at 不足时自动顺延
+    pipeline_bili_dtime_min_hours: int = 4
     # 自动过审（v0.2.1，参考原项目 auto_approve）：默认关闭；
     # 开启后停留审核队列超过 N 小时的条目自动 approve（人工审核仍是默认路径）
     pipeline_auto_approve: bool = False
@@ -81,9 +96,27 @@ class Settings(BaseSettings):
     pipeline_bili_default_tid: int = 201  # 201 = 知识
     # 处理语言（v0.2.7，参考原项目 locales 配置）：默认英文旁白 + 中文字幕
     # narration_lang: 旁白目标语言（edge-tts 音色对应；zh-CN = 中文旁白）
-    # subtitle_lang: 字幕目标语言（zh-CN = 中文字幕；可配 vi/id/fil/pt-BR 等）
+    # subtitle_lang: 字幕目标语言（zh-CN = 中文字幕；可配 en-US/ja/ko/vi/id/fil/pt-BR 等）
+    # translate_source_lang: 翻译源语言（v0.8.9 翻译方向扩展——默认英文旁白翻中文；
+    #   配 zh-CN 即中文旁白例子可翻任意目标字幕语言；沿用 narration_lang 时置空）
     pipeline_narration_lang: str = "en-US"
     pipeline_subtitle_lang: str = "zh-CN"
+    pipeline_translate_source_lang: str = ""  # 空 = 沿用 narration_lang（默认 en-US）
+    # ASR 原声转写（v0.8.9，对齐原项目 enable_asr/retranslate）：
+    # translate 生产方式 = 提取视频原声→中文字幕（原声保留、无配音）。
+    # 无原声（图片帖）自动回退旁白翻译。xinference 服务未配置时用本地 faster-whisper
+    pipeline_enable_asr: bool = True
+    xinference_stt_base_url: str = "http://127.0.0.1:9997/v1"
+    xinference_api_key: str = ""
+    xinference_stt_model_id: str = ""  # 空 = 不使用 xinference STT
+    # 配音（v0.8.9，对齐原项目 tts.py）：语速与旁白预算
+    pipeline_tts_rate: str = "+0%"  # edge-tts rate（如 -10% / +15%）
+    # 配音文本来源（v0.9）：script = 跟旁白原文（本地化后配音）；
+    # subtitle = 跟中文字幕译文配音（需配合 translate）
+    pipeline_tts_text_source: str = "script"
+    pipeline_narration_silent_below: float = 8.0  # 视频短于此秒数不生成旁白
+    pipeline_narration_min_words: int = 6  # 词预算低于此值不生成旁白
+    pipeline_narration_max_words: int = 42  # 旁白词数硬上限（原项目 42）
     # 字幕样式（v0.4 B1）：ASS 参数可调——字号/描边宽/加粗/对齐(1底2中3顶)
     pipeline_subtitle_font_size: int = 26
     pipeline_subtitle_outline: int = 2
@@ -189,12 +222,16 @@ class _EffectiveSettings:
     """
 
     _MISSING = object()
+    # runtime.yaml 只能存字符串；这些字段在 Settings 中是 Path，读回需转换
+    _PATH_FIELDS = ("data_dir", "output_dir", "log_dir", "assets_root")
 
     def __getattr__(self, name: str):
         if name.startswith("__"):
             raise AttributeError(name)
         value = runtime_config.get(name, self._MISSING)
         if value is not self._MISSING:
+            if name in self._PATH_FIELDS and value is not None:
+                return Path(value)
             return value
         return getattr(settings_base, name)
 

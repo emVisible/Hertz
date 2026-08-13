@@ -8,27 +8,27 @@ import { Badge } from '../../components/ui'
 /** AI 使用记录（v3.0 可读化）：把 caller/operation 的机器码映射成人类语言。 */
 
 const CALLER_LABELS: Record<string, string> = {
-  'engine:writer': '编排·内容创作',
-  'engine:director': '编排·创意定调',
-  'engine:editor': '编排·质量审校',
-  'engine:visual_director': '编排·视觉设计',
-  'engine:distribution': '编排·分发策略',
-  'engine:build_brief': '编排·创意策略',
-  'pipeline:score': '流水线·评分',
-  'pipeline:script': '流水线·脚本',
-  'pipeline:title': '流水线·标题',
-  'ai:chat': '对话',
-  test: '连通性测试',
+  'engine:writer': 'trace.catOrchestration',
+  'engine:director': 'trace.catDirector',
+  'engine:editor': 'trace.catEditor',
+  'engine:visual_director': 'trace.catVisual',
+  'engine:distribution': 'trace.catDistribution',
+  'engine:build_brief': 'trace.catBrief',
+  'pipeline:score': 'trace.catPipeScore',
+  'pipeline:script': 'trace.catPipeScript',
+  'pipeline:title': 'trace.catPipeTitle',
+  'ai:chat': 'trace.catDialogue',
+  test: 'trace.catPing',
 }
 
 const OPERATION_LABELS: Record<string, string> = {
-  chat: '对话',
-  stream_chat: '流式对话',
-  score: '评分',
-  script: '脚本',
-  title: '标题',
-  generate_image: '出图',
-  synthesize: '语音合成',
+  chat: 'trace.catDialogue',
+  stream_chat: 'trace.catStream',
+  score: 'trace.catScore',
+  script: 'trace.catScript',
+  title: 'trace.catTitle',
+  generate_image: 'trace.catImage',
+  synthesize: 'trace.catTTS',
 }
 
 /** 时间格式化：HH:MM:SS */
@@ -60,10 +60,10 @@ export function TracePanel() {
               {c.status === 'ok' ? '✓' : '✗'}
             </Badge>
             <span className="w-24 shrink-0 truncate text-text-secondary" title={c.caller}>
-              {CALLER_LABELS[c.caller] ?? c.caller}
+              {t(CALLER_LABELS[c.caller] ?? c.caller)}
             </span>
             <span className="shrink-0 text-text-disabled">
-              {OPERATION_LABELS[c.operation] ?? c.operation}
+              {t(OPERATION_LABELS[c.operation] ?? c.operation)}
             </span>
             <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-text-primary" title={c.model_key}>
               {c.model_key}

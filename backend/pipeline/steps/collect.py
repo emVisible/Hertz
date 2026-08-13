@@ -89,7 +89,8 @@ async def run_collect(ctx: StepContext, channel: str, limit: int, collector) -> 
 
         if posts:
             state.set_cursor({"oldest_created_utc": min(p.created_utc for p in posts)})
-            state.last_strategy = collector.name
+            # v0.8.9 AXIOM 28：记录实际通道（此前写死 collector.name，零观测价值）
+            state.last_strategy = getattr(collector, "_last_strategy", None) or collector.name
             state.last_run_at = datetime.now(UTC)
             state.ok_count += 1
             state.consecutive_fails = 0  # 数据源健康度：成功即清零连续失败

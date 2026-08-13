@@ -14,7 +14,7 @@ interface ModelOption {
 }
 
 /**
- * 默认模型（使用层，v2.1/Cherry"默认模型设置"）：
+ * 默认模型（使用层，v2.1/Cherryt('settings.rolesDefaultModel')）：
  * 服务层（Provider/模型库）配好后，这里只关心「哪个任务用哪个模型」。
  * - 主模型：编排创作/对话用（你常用那个）
  * - 快速模型：评分/标题/脚本（便宜快速的即可，可跟随主模型）

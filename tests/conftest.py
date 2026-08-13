@@ -14,6 +14,15 @@ os.environ.setdefault(
     "HERTZ_DATABASE_URL", "postgresql+asyncpg://hertz:hertz@localhost:5432/hertz_test"
 )
 
+# 测试数据根隔离（v0.8.8，AXIOM 34）：必须与数据库同批注入——
+# FileStore/LogManager 在 import 期锚定 settings.data_dir，若指向真实 data/，
+# 测试会改写 deps.json/hertz.log 甚至覆盖真实成片（final.mp4 被测试条目覆盖过）
+import tempfile  # noqa: E402
+
+os.environ.setdefault(
+    "HERTZ_DATA_DIR", os.path.join(tempfile.mkdtemp(prefix="hertz-test-data-"), "data")
+)
+
 # Pipeline download step: allow loopback test servers (SSRF guard is
 # on by default; tests opt out explicitly — AXIOM §8.1).
 os.environ.setdefault("HERTZ_PIPELINE_ALLOW_LOOPBACK_URLS", "1")

@@ -112,19 +112,27 @@ class BilibiliPublisher(Publisher):
     async def publish(self, ctx: StepContext, item) -> dict:
         if not item.video_path:
             raise PublisherError("item has no finished video to publish")
+        from datetime import UTC, datetime, timedelta
+
         from backend.pipeline.producers.media import _run_cmd
 
-        cookie = self._cookie_path or str(ctx.settings.data_dir / "bilibili.cookie")
+        cookie = self._cookie_path or str(ctx.settings.data_dir / "core" / "cookies.json")
         if not await asyncio.to_thread(Path(cookie).exists):
-            hint = f"run `biliup -u {cookie} login`"
+            hint = f"放置 B 站登录 cookies.json 到 {cookie}（biliup-cli 兼容格式）"
             raise PublisherError(f"bilibili cookie file not found: {cookie} ({hint})")
         video = Path(item.video_path)
         if not await asyncio.to_thread(video.exists):
             raise PublisherError(f"video missing: {video}")
         # 发布元数据单一真相源：script_json.bili_*（审核/发布环节经 update_meta 写入）
         script = item.script_json or {}
+        result_extra: dict = {}
         title = script.get("bili_title") or item.title[:80]
-        desc = script.get("bili_desc") or item.title[:200]
+        # 简介兜底（v0.8.5）：中文包装 > 中文标题 > 原标题（避免英文裸传）
+        desc = (
+            script.get("bili_desc")
+            or script.get("bili_title")
+            or item.title[:200]
+        )
         cmd = [
             "biliup", "-u", cookie, "upload", str(video),
             "--submit", "web",
@@ -137,6 +145,9 @@ class BilibiliPublisher(Publisher):
         copyright_ = script.get("bili_copyright")
         if copyright_ in (1, "1"):
             cmd += ["--copyright", "1"]
+        # 转载来源（v0.8.5，对齐原项目）：copyright != 1（转载）且存在来源 URL 时传
+        elif getattr(item, "source_url", ""):
+            cmd += ["--source", str(item.source_url)[:255]]
         # 分区 tid：条目显式设置优先，其次自动建议（参考原项目 assign_bili_tid），
         # 最后配置默认（审核未设分区时兜底）
         tid = script.get("bili_tid")
@@ -149,8 +160,30 @@ class BilibiliPublisher(Publisher):
         if tid:
             cmd += ["--tid", str(tid)]
         # 排期发布：scheduled_at 存在 → biliup 定时上传（v5.10）
+        # biliup-cli（Rust 版）参数为 --dtime（Unix 10 位时间戳）；
+        # --timedpublish 是旧版 Python biliup 的参数，Rust 版已移除。
+        # v0.9 对齐原项目 ensure_bilibili_dtime：B 站要求提交后 ≥ N 小时，
+        # 不足则自动顺延（result 标记 dtime_bumped_to 由调用方回写落库）
         if item.scheduled_at:
-            cmd += ["--timedpublish", item.scheduled_at.strftime("%Y-%m-%d %H:%M")]
+            dtime = item.scheduled_at
+            min_hours = int(
+                getattr(ctx.settings, "pipeline_bili_dtime_min_hours", 4) or 4
+            )
+            earliest = datetime.now(UTC) + timedelta(hours=min_hours, minutes=5)
+            if dtime < earliest:
+                dtime = earliest
+                result_extra["dtime_bumped_to"] = int(dtime.timestamp())
+                ctx.log(
+                    f"[publish] scheduled_at {item.scheduled_at} within "
+                    f"{min_hours}h of submit — bumped to {dtime.isoformat()}"
+                )
+            cmd += ["--dtime", str(int(dtime.timestamp()))]
+        # 封面（v0.8.5，对齐原项目）：biliup 自动上传本地文件转 URL，缺失时忽略
+        cover = getattr(item, "cover_path", "") or ""
+        if cover:
+            cover_file = Path(cover)
+            if await asyncio.to_thread(cover_file.exists):
+                cmd += ["--cover", str(cover_file)]
         out = await _run_cmd(cmd)
         ctx.log(f"[publish] biliup ok: {title}")
         full = out.decode(errors="replace")
@@ -158,6 +191,7 @@ class BilibiliPublisher(Publisher):
         # v0.4 C1：从 stdout 解析 BV 号（发布数据回捞的锚点）
         m = re.search(r"BV[0-9A-Za-z]{10}", full)
         result: dict = {"target": "bilibili", "title": title, "stdout_tail": tail}
+        result.update(result_extra)
         if m:
             result["bvid"] = m.group(0)
         return result

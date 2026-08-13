@@ -56,6 +56,6 @@ export function timeoutOptions(current?: number): SelectOption[] {
     TIMEOUT_OPTIONS.map((s) => ({ value: String(s), label: `${s}s` })),
     current,
     TIMEOUT_OPTIONS.map(String),
-    's (自定义)',
+    's (custom)',
   )
 }

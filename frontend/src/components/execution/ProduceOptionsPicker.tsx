@@ -12,10 +12,10 @@ export const PRODUCE_MODULES: Array<{ id: ProduceModule }> = [
   { id: 'mute' },
 ]
 
-/** 空选项（默认 = 配音+字幕+翻译，兼容现状英文旁白+中文字幕） */
+/** 空选项（默认 = 翻译+字幕：原视频翻译成中文字幕，不配音） */
 export const DEFAULT_PRODUCE_OPTIONS: ProduceOptions = {
   passthrough: false,
-  voice: true,
+  voice: false,
   subtitle: true,
   translate: true,
   mute: false,

@@ -6,21 +6,17 @@ import { Badge, Button, Icon } from '../ui'
 import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { normalizeOptions, ProduceOptionsPicker } from './ProduceOptionsPicker'
 
-/** 预处理卡片（v0.3.4 重构，对齐审核卡相册感）：
- *  左侧大媒体（可播放）+ 右侧精简信息（标题/meta/AI 总分）+ 生产方式
- *  chips（点击即存，无保存按钮）+ hover 右下角操作。
- *  v0.3.9 相邻双向：预处理可 制作→审核 / 打回采集。 */
+/** 预处理卡片（v0.8.9）：仅服务「已下载未加工」阶段——大媒体 + 生产方式选择 +
+ *  制作主操作（评分/下载已在紧凑行完成，步骤条与子 menu 重复已移除）。 */
 export function PreReviewCard({
   item,
   onSaveOptions,
-  onScore,
   onProduce,
   onReject,
   onUploadCover,
 }: {
   item: PipelineItem
   onSaveOptions: (item: PipelineItem, options: Partial<ProduceOptions>) => void
-  onScore: (item: PipelineItem) => void
   onProduce: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
   onUploadCover: (item: PipelineItem, file: File) => void
@@ -42,6 +38,7 @@ export function PreReviewCard({
     setOptions(normalizeOptions({ ...options, ...next })) // 本地先变（即时视觉）
     onSaveOptions(item, next)
   }
+
 
   return (
     <li className="group flex gap-5 px-4 py-4">
@@ -78,7 +75,6 @@ export function PreReviewCard({
           <p className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary" title={item.title}>
             {item.title}
           </p>
-          {/* 类型徽章（v0.8）：图片/视频一眼区分 */}
           {ITEM_TYPE_BADGE[item.item_type] && (
             <Badge tone={ITEM_TYPE_BADGE[item.item_type].tone}>
               {t(ITEM_TYPE_BADGE[item.item_type].labelKey)}
@@ -92,7 +88,7 @@ export function PreReviewCard({
           )}
         </div>
 
-        {/* meta 行：来源/作者/分数 + 下载状态 */}
+        {/* meta 行：来源/作者/分数/互动（信息密度 v0.8.6） */}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-text-secondary">
           {item.source_url ? (
             <a
@@ -109,6 +105,11 @@ export function PreReviewCard({
           )}
           <Badge tone="neutral">u/{item.author}</Badge>
           <Badge tone="neutral">r{item.reddit_score}</Badge>
+          {item.upvote_ratio > 0 && (
+            <Badge tone={item.upvote_ratio >= 0.85 ? 'neutral' : 'warning'}>
+              {Math.round(item.upvote_ratio * 100)}%↑
+            </Badge>
+          )}
           {/* AI 总分（v0.3.4：去掉评分维度，只留总分） */}
           {item.score_total != null
             ? <Badge tone="primary">AI {item.score_total.toFixed(1)}</Badge>
@@ -137,29 +138,13 @@ export function PreReviewCard({
           />
         </div>
 
-        {/* hover 操作：评分（未评分且已下载时显示）+ 打回采集（v0.3.9）+ 制作 + 拒绝 */}
+        {/* 主操作（v0.8.9：卡片仅服务已下载未加工阶段——评分/下载已在行内完成） */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
           <Button size="sm" variant="danger" onClick={() => onReject(item)}>
             <Icon name="close" size={12} />
             {t('console.reject')}
           </Button>
-          {item.score_total == null && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => onScore(item)}
-              title={t('console.scoreHint')}
-            >
-              <Icon name="whisper" size={12} />
-              {t('console.score')}
-            </Button>
-          )}
-          <Button
-            size="sm"
-            onClick={() => onProduce(item)}
-            disabled={!hasRaw}
-            title={hasRaw ? t('console.produce.nowHint') : t('console.produce.noRawHint')}
-          >
+          <Button size="sm" onClick={() => onProduce(item)} title={t('console.produce.nowHint')}>
             <Icon name="play" size={12} />
             {t('console.produce.now')}
           </Button>

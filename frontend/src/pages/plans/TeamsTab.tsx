@@ -117,7 +117,7 @@ export function TeamsTab({
                   onChange={(e) => { setDesc(e.target.value); setDirty(true) }}
                   spellCheck={false}
                   className="min-h-0 resize-none overflow-y-auto bg-transparent p-3 font-mono text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-disabled"
-                  placeholder="# 团队说明（Markdown）"
+                  placeholder={t('plans.teamPlaceholder')}
                 />
                 <div className="min-h-0 overflow-y-auto border-t border-border p-3 md:border-l md:border-t-0">
                   <div className="md-body">

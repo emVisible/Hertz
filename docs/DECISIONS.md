@@ -330,3 +330,44 @@
   - **reject 支持 discovered**：预处理「拒绝」对未下载条目 409 → engine.reject 放行 DISCOVERED（人工筛掉不想要的源）
   - **分发历史徽章**：已发布区显示每条的分发目标（publish_json.target），导出包等目标一目了然
   - **P2 规划（记录在案）**：多平台分发——PUBLISHERS 注册表扩展 + upload/export 双模式适配器（tiktok/youtube/小红书）；多源采集器插拔（SourceCollector 抽象已有）；已发布再分发 UI（发布历史区逐条目标）
+- **D-160 B 站发布对齐原项目（v0.8.5）**：produce 自动生成中文包装（bili_title ≤40 字 B 站风格 / bili_tags 4-8 中文禁词过滤 / bili_desc 中文字幕首句+署名，LLM 失败 heuristic 兜底"这镜头 xx"）；发布补 --cover（cover_path）/--source（source_url 转载时）/desc 中文兜底；ItemMetaBody 加 bili_desc（发布卡可编辑）；--timedpublish 改 --dtime（biliup-cli Rust 版参数）；runtime.yaml 字符串覆盖 Path 字段统一转回（_EffectiveSettings._PATH_FIELDS）；biliup cookie 统一 data/core/cookies.json（passport 格式与 biliup-cli 兼容，实测 renew 自动刷新 token）。
+- **D-161 采集冰川化 + 评分先行（v0.8.6）**——
+  - **采集 0 条根因**：pipeline_sources=["hot"] 是排序词被当 subreddit（r/hot 无内容）+ 匿名 JSON 403 + 代理网络层失败空消息 + 2h 熔断连坐 + 失败日志不进 hertz.log（模块 logger 未挂 handler）
+  - **冰川式修复**：分类异常（CollectBlocked/CollectRateLimited/CollectNetwork，网络层 900s 短冷却/平台拒绝 1800s/配置错误不冷却/连续≥3 熔断 2h）；channel 语义校验（排序词显式报配置错误）；pipeline_sources 默认 10 个真实活跃 subreddit（参考原项目冰川列表）；pipeline_collect_limit 接线；backend.pipeline/download/factory logger 挂 LogManager（修复 warn_buffer 无 buffer 属性的潜伏崩溃）；空消息异常带类型名可读化
+  - **流程重排评分先行**：collect→score→download→produce→publish（D-114 的 download 先行无实质理由——评分只读元数据不依赖文件，低分免下载省带宽）；步骤 input_statuses 交换（score 吃 discovered/download 吃 scored/produce 吃 downloaded）；回退状态机交换（有成片→downloaded/已下载→scored/否则→discovered）；back_to_prep queued→downloaded；迁移脚本 scripts/migrate_score_first.py（存量 scored→downloaded）；新增单条下载端点
+  - **预处理三阶段分组**：漏斗条（未评分→已评分→已下载→待审核）+ 三组折叠（组头批量操作）+ PreReviewCard 阶段步骤条（评分→下载→制作三态灯）+ 条件主操作 + 信息密度（upvote ratio 徽章）；run 页签待下载队列并入预处理
+  - **素材根目录 input 空**：get_config assets_root null → data_dir（与 library.py 消费侧语义一致）
+  - **common.yes/no 缺失**：zh/en 字典补 key（加粗下拉渲染成裸 key）
+- **D-162 活动面板历史化（v0.8.7，企业级对齐）**：底部三面板从"即时性"补足为"历史可回溯 + 可钻取"——
+  - **最近任务**：DB job_runs 全量历史分页（limit/offset + job_name/status 筛选，返回 {total, jobs}）；行内展开详情（GH Actions 语义）——信息格栅（开始/结束/耗时/状态）+ collect 逐源明细表（channel×采/入/跳/冷却/错误）+ delta 状态增减 + 错误高亮；新增单任务详情端点与 collect/history 端点
+  - **系统日志**：从内存 buffer（重启即丢）改为读 hertz.log + 轮转文件（已持久化，AXIOM §17.11 不重复存储）——级别/关键字筛选 + until 时间游标向前翻页（过滤先于截断，跨轮转文件正确）；/logs/buffer 保留兼容
+  - **实时事件**：StepContext.log 在 SSE 之外同步落盘（[step] 前缀，backend.pipeline logger 已挂 file handler）——刷新/重启可回溯，与系统日志同源
+  - **采集卡**：run 页签新增「最近采集」轮次时间线（CollectHistory，复用 collect/history）
+  - 修复：warn_buffer 无 buffer 属性的潜伏崩溃（此前 apscheduler/httpx WARNING 一 emit 即崩）
+- **D-163 AXIOM 查漏补缺（v0.8.8，四十五 双维度审计）**：对 v0.8.5-0.8.7 改动逐条审计后的遗留物治理——
+  - **§35 前端状态与渲染时序**：jobs 加载更多后轮询以当前页替换累计列表（分页错乱）→ 累计列表本地 state 按 id 去重合并；日志 until 游标进 queryKey 导致轮询重复追加历史行 → 加载更多改一次性请求、轮询只刷新初始页
+  - **§2.3 接口存在理由 / §7.2 交互预算**：job_detail 端点实现后无人调用（列表全量 summary）→ 列表轻量化（sources_ok/err 计数），展开时懒加载详情——50 条列表轮询不再全量传输
+  - **四十六 遗留物治理**：pipelineApi.jobs 旧函数类型与后端 {total,jobs} 不一致且无调用者 → 删除
+  - **§3 文档一致性**：i18next 不支持 ICU select，collectRound 的 `{{err, select, ...}}` 渲染成残缺文本（实测 `"0 个}}"`）→ 拆 collectRoundOk/Err 条件渲染
+  - **§8.2 密钥安全**：日志历史 API 是 Web 暴露面——message 读取时一次 scrub（token/cookie/secret=***，复用发布侧 _scrub_err 模式）
+  - **§8.1 输入校验**：since/until 非法格式 422；q 截断 120 字符
+  - **§5 输出风格**：相对时间刚发生显示「刚刚」而非孤立符号
+- **D-164 RSS 视频帖无效链接修复（v0.8.8）**：用户反馈评分后无法访问原帖——根因 `_rss_to_post` v0.8.1 归一化逻辑在 RSS link 指向 v.redd.it 时用**媒体 ID（13 位）**构造 `comments/{id}/`，但媒体 ID ≠ 帖子 ID（6-8 位 base36，实测 v.redd.it 302 → `/video/{id}`），构造链接 404。修复：①采集器优先从 content:encoded 提取真 `/r/{sub}/comments/{post_id}/` 链接；提取不到回退 `https://www.reddit.com/video/{vid}/`（实测有效视频页）②迁移脚本 scripts/migrate_reddit_video_urls.py 修复存量 294 条（published 1 条同步修复，media_url/下载链路不受影响）③新增 3 个 _rss_to_post 单测（正常 href / v.redd.it+content 真链接 / v.redd.it 无真链接回退）。实测新采集 30 条坏链接 0。
+- **D-165 gallery 多图帖误标修复（v0.8.8）**：用户反馈"图片标成视频"——JSON 通道 `_to_post` 的 url 字段对多图帖为 `reddit.com/gallery/{id}`，`classify_media` 无 gallery 识别落入 fallback 误标 video_raw（实测 11 条）。修复：classify_media 按 `/gallery/` 路径段识别为 image_gallery（含 `/r/{sub}/gallery/` 形态）；迁移脚本 scripts/migrate_gallery_item_type.py 修复存量 11 条（media_url 保持 gallery 页，yt-dlp 解析多图）；新增单测防回归。外链文章帖（theguardian 等）保持 video_raw fallback 语义。
+- **D-166 ffmpeg libass 缺失降级（v0.8.8）**：用户"重做翻译"报 production produced no usable media——根因：本机 ffmpeg 升级到 8.1.2 且编译未含 libass（`-h filter=subtitles` Unknown filter），compose_video 的 subtitles filter 直接 234 失败 → video=None + 无配音 audio=None → 触发兜底错误。修复：①`subtitles_filter_available` 进程内缓存探测（-filters 行级精确解析 filter 名，此前子串匹配会误报）②compose_video 不可用时跳过烧录、保留 srt artifact、视频正常合成（生产降级不阻塞，best-effort 语义）③warning 提示 `brew reinstall ffmpeg` 恢复烧录。用户机器建议重装带 libass 的 ffmpeg。
+- **D-167 基础依赖检测缓存化（v0.8.8）**：用户诉求"基础依赖初次运行检测一次、设置页手动重测、运行时零检测"。此前高频检测点：publish_status 每 15s which biliup、compose_video 每次后端重启首次制作 subprocess 探测 libass、/api/health 每次全量 which+import。方案：①新增 backend/infrastructure/deps.py——check_dependencies 全量检测（ffmpeg 含 libass 探测/ffprobe/biliup/yt-dlp/edge-tts），结果持久化 data/state/deps.json（原子写 §17.11）+ 进程内缓存；②触发点仅两处：应用启动（main.lifespan 预热一次）+ 设置页「重新检测」按钮（POST /api/deps/check），缓存存在即用无自动重测；③消费点改造：publish_status/health.check_tools/subtitles_filter_available 均读缓存（health 缓存缺失时补测一次）；④设置页新增「基础依赖」卡（各依赖状态徽章 + libass 缺失 warning + 手动重测 + 上次检测时间）；⑤测试：deps 往返/端点/缓存优先（190 全绿）。
+- **D-168 AXIOM 全量审视（v0.8.9，第三部宪章+第四部实践逐条对照）**：完整阅读 axiom.md 47 节后双 agent 并行审计（前端/后端各产缺口清单）分五波实施——
+  - **波1 数据保护**：测试隔离 §34——conftest 注入 HERTZ_DATA_DIR 会话级 tmp（此前测试改写 deps.json/hertz.log 并覆盖过真实成片 final.mp4）；_artifacts_dir mkdir 移到 raw 校验后（消除 300+ 空目录遗留）；输入校验 §8.1——ItemMetaBody 长度/范围上限（bili_tid 0=清空保留语义）、scheduled_at 非法 422（原 500）、BatchBody ids ≤200
+  - **波2 可观测性**：§28 last_strategy 从写死常量改为真实通道（oauth/json/rss，sources() 带出）；§6.5 /health 加 version/started_at/pid 进程检查点；§46 删 /logs/buffer 死端点（buffer fallback 链保留）
+  - **波3 用户语言化 §22.2**：约 25 处硬编码中文清理（ActivityPanel 采/入/跳/冷却/空、usePipelineExecution 摘要、PlansPage 内置混用、PublishCard 导出包/自定义、SettingsPage placeholder×4、Toast title、RemixModal 词类、TracePanel 标签映射、bilibili 分区名按语言）
+  - **波4 韧性卫生**：§4.6 produce 合成失败 raw 原片兜底交付（degraded 标注 + 审核卡徽章，不伪装成功）+ 半写文件 best-effort 清理；§2.5 PublishCard 草稿随 item.id 重置（脱离 key remount 单点依赖）
+  - **波5 路由域拆分 §2.1**：pipeline.py 43 端点 7 域 → pipeline_run/items/publish/ops 四文件（路径语义不变，聚合文件 include，AXIOM 38 前缀单点）；service.py 1048 行 8 域记架构债下轮处理
+  - 验证：193 后端 + 30 前端测试全绿，openapi 41 路径与拆分前一致
+- **D-169 下载 MPD→CMAF 通道（v0.8.9）**：用户"预处理依旧无法下载"（全部 HTTP_403）——实测定位：**DASH_720.mp4 旧格式被 CDN 403 封禁，但 DASHPlaylist.mpd 主清单与 CMAF 分片（CMAF_*.mp4）完全放行**（匿名环境唯一可靠通道）。修复（参考原项目 _download_via_mpd_direct）：①_reddit_dash_url 候选增加 DASHPlaylist.mpd（置于首位）②新增 download_via_mpd：抓 MPD（SSRF 校验+重定向跟随）→ 解析视频/音频轨（\bwidth= 边界匹配——bandwidth= 含 width= 子串的经典陷阱）→ 中档视频优先（原项目 probe 逻辑）→ CMAF 视频+音频下载 → ffmpeg -c copy 合并（音频缺失降级仅视频轨）③下载步骤候选循环 .mpd 分支接入。端到端实测：用户失败条目 12.7MB raw.mp4 下载成功（video+audio 双流），194 测试全绿。cookie 路径（/video/ 页）仍 404 属预期——该页非详情页，MPD 通道为主力。
+- **D-170 审核搜索 + 队列刷新 Bug + 预处理三阶段差异化（v0.8.9）**——
+  - **队列刷新 Bug**：制作/评分/下载后审核列表看不到最新数据——根因 `refresh()` 的 invalidateQueries 漏了 `pipeline-queue`（stageQueued/stageDownloaded/stageScored 的数据源），操作后只能等 15s 轮询（§7.5 缓存症状模式）。修复：refresh 补 invalidate pipeline-queue
+  - **审核搜索**：inReview 工具栏加标题关键词搜索框（本地过滤当前队列，大小写不敏感，与排序/低分/随机开关组合）
+  - **预处理三阶段差异化**：未评分（discovered）与已评分（scored）从统一大卡改为紧凑行（PreReviewRow）——小缩略图 + 标题 + 来源/reddit 分/upvote + 按阶段主操作（评分/下载）；scored 行内 AI 分大号醒目（下载决策输入）；已下载未加工保留大卡（生产方式选择需要空间），移除与子 menu 重复的阶段步骤条与 onScore/onDownload props（四十六 遗留物：PRE_STAGE_INDEX 死导出清理）
+- **D-171 依赖检测安装指引（v0.8.9，AXIOM 22.2 用户语言化 + 28 可操作提示）**：用户"基础检查失败应给出如何安装的操作提示"——deps.py 每项检测返回 install_hint（ffmpeg 缺失/无 libass → `brew install homebrew-ffmpeg/ffmpeg/ffmpeg`（官方 brew 8.x 已移除 libass 的实测结论）；ffprobe → brew install ffmpeg；biliup → brew install biliup；yt-dlp/edge-tts → uv pip install）；前端 DepsCard 缺失项**行内可见展示**安装命令（code select-all 可复制），libass 降级警示同样带命令——此前只有 tooltip 且前端硬编码。单一真相源：安装指引随检测逻辑维护在后端。
+- **D-172 翻译链路修复（v0.8.9，参考原项目 subtitle.py/localize.py）**：用户"翻译制作后审核还是原视频/无字幕"——根因：`produce_item` 的字幕条件 `not want_translate or subtitle_lang == "zh-CN"` 把「目标语言是中文」误当「无需翻译」——默认配置（subtitle_lang=zh-CN）下翻译永不生效，英文旁白原样入字幕（实测 Mr. Ty 的 subtitle_zh 存的是英文）。修复：①条件改为 `want_translate and narration_lang != subtitle_lang`（旁白与目标语言不同才翻译）②移植原项目 clean_zh_subtitle_text（中文字幕去标点、句间单空格）——在 script_to_srt 切句后逐句应用（保留句边界时间分配语义）③迁移数据兜底：旧项目脚本（CandleBone 只有 script 键无 narration）重制时 narration 缺失→重生成脚本（此前烧出字符串 "None"）。真实链路验证：Mr. Ty 重制后 subtitle_zh=中文、srt 无标点、成片 video+audio 11.7MB。
+- **D-173 打回重制语义 + 入库序随操作刷新（v0.8.9）**：①用户"打回预处理再制作没效果"——根因 ProduceStep 无条件传 existing_script（旧脚本）重跑，结果与上次相同。修复：条目已有成片（video_path 非空，打回重制场景）→ 完整重制（重新生成脚本 + 重新合成 + 翻译烧录）；首次制作保持原有逻辑。②入库序随真实操作刷新：新增 helpers.bump_item_seq（seq 手动赋 max+1，Identity BY DEFAULT 列可赋值）——engine 的 approve/reject/retry/requeue/_process_item（批量流转，冷却跳过不刷新）与 service 的 back_to_prep/back_to_collect 全部接入——打回/重试/恢复/评分/下载/制作后条目在各列表「入库序」排序排到最前（用户诉求：打回即最新入库）。

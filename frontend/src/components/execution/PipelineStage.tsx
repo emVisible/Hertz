@@ -144,6 +144,8 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
   const rawIsVideo = raw ? isVideoPath(raw) : null
   const remote = item.media_url && isImageUrl(item.media_url) ? item.media_url : null
   const sizing = className || 'h-12 w-20'
+  // 媒体缓存版本（v0.8.9）：反复制作覆盖同名文件，URL 带 updated_at 强制刷新
+  const ver = item.updated_at ?? item.seq ?? null
   const fill = 'h-full w-full border border-border bg-surface-2 object-cover'
 
   const thumb = (() => {
@@ -151,7 +153,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
     if (cover && !coverFailed) {
       return (
         <img
-          src={fileUrl(cover)}
+          src={fileUrl(cover, ver)}
           alt=""
           loading="lazy"
           onError={() => setCoverFailed(true)}
@@ -162,7 +164,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
     if (video) {
       return (
         <video
-          src={fileUrl(video)}
+          src={fileUrl(video, ver)}
           preload="metadata"
           muted
           playsInline
@@ -178,7 +180,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
     if (raw && rawIsVideo) {
       return (
         <video
-          src={fileUrl(raw)}
+          src={fileUrl(raw, ver)}
           preload="metadata"
           muted
           playsInline
@@ -193,7 +195,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
     if (raw && !rawIsVideo) {
       return (
         <img
-          src={fileUrl(raw)}
+          src={fileUrl(raw, ver)}
           alt=""
           loading="lazy"
           onError={() => setRemoteFailed(true)}
@@ -284,7 +286,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
             </div>
           ) : (
             <video
-              src={fileUrl(video!)}
+              src={fileUrl(video!, ver)}
               controls
               autoPlay
               onError={() => setVideoFailed(true)}
@@ -331,7 +333,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
             </div>
           ) : raw && rawIsVideo ? (
             <video
-              src={fileUrl(raw)}
+              src={fileUrl(raw, ver)}
               controls
               autoPlay
               onError={() => setRawFailed(true)}
@@ -341,7 +343,7 @@ export function MediaThumb({ item, className = 'h-12 w-20' }: { item: PipelineIt
             <div className="flex max-h-[70vh] items-center justify-center overflow-auto bg-surface-2">
               {/* raw 图片优先，远程图兜底（MediaThumb 回退链一致） */}
               <img
-                src={raw ? fileUrl(raw) : (remote ?? '')}
+                src={raw ? fileUrl(raw, ver) : (remote ?? '')}
                 alt={item.title}
                 onError={() => setRawFailed(true)}
                 className="max-h-full max-w-full object-contain"

@@ -16,7 +16,9 @@ v.redd.it 分享 URL 经常 404（帖子删除/死 id/HLS-only），单 URL 直�
 import asyncio
 import logging
 import random
+import re
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 from backend.config import settings
@@ -35,15 +37,22 @@ _REDDIT_REFERER = "https://www.reddit.com/"
 
 
 def _reddit_dash_url(url: str) -> list[str]:
-    """v.redd.it/{id} → DASH 视频候选（只认 v.redd.it，且仅直接视频文件——
-    清单（.mpd/.m3u8）需要解析器，Hertz 不引入，宁缺勿滥）。"""
+    """v.redd.it/{id} → DASH 视频候选（只认 v.redd.it）。
+
+    v0.8.9 修复（参考原项目 _download_candidates）：实测 DASH_720.mp4 旧格式被
+    CDN 403 封禁，但 DASHPlaylist.mpd 主清单与 CMAF 分片（CMAF_*.mp4）全放行——
+    MPD 候选置于首位，由下载链的 MPD→CMAF 合并路径消费。
+    """
     p = urlparse(url)
     if p.hostname != "v.redd.it":
         return []
     vid = (p.path or "").strip("/").split("/")[0]
     if not vid:
         return []
-    return [f"https://v.redd.it/{vid}/DASH_720.mp4"]
+    return [
+        f"https://v.redd.it/{vid}/DASHPlaylist.mpd",
+        f"https://v.redd.it/{vid}/DASH_720.mp4",
+    ]
 
 
 def media_candidates(
@@ -68,6 +77,114 @@ def looks_like_manifest(content: bytes) -> bool:
     """下载内容嗅探：XML/M3U 清单文本（误下 DASHPlaylist/HLS 时的兜底）。"""
     head = content[:512].lstrip().lower()
     return head.startswith(b"<?xml") or head.startswith(b"#extm3u")
+
+
+# ---- MPD → CMAF 直下（v0.8.9，参考原项目 _download_via_mpd_direct） ----
+
+_MPD_REP_RE = re.compile(
+    r"<Representation([^>]*)>(.*?)</Representation>", re.DOTALL
+)
+_MPD_BASEURL_RE = re.compile(r"<BaseURL[^>]*>(.*?)</BaseURL>")
+
+
+async def download_via_mpd(
+    mpd_url: str,
+    dest: Path,
+    *,
+    headers: dict[str, str] | None = None,
+    checker=is_safe_media_url,
+    timeout_s: int = 120,
+) -> Path | None:
+    """DASHPlaylist.mpd → CMAF 视频+音频轨 → ffmpeg 合并为 mp4。
+
+    实测（v0.8.9）：DASH_720.mp4 被 CDN 403 封禁，但 MPD 主清单与 CMAF 分片
+    全放行——这是当前匿名/无凭证环境下唯一可靠的 Reddit 视频通道。
+    顺序：中档视频轨优先（原项目 probe 逻辑），403 自动降级；音频 best-effort
+    （缺失时仅视频轨交付）。全部失败返回 None，调用方落 yt-dlp 兜底。
+    """
+
+    from urllib.parse import urljoin
+
+    import httpx
+
+    from backend.library.thumbnails import find_ffmpeg
+
+    if not checker(mpd_url):
+        return None
+    base = mpd_url.rsplit("/", 1)[0] + "/"
+    video_bytes: bytes | None = None
+    audio_bytes: bytes | None = None
+    try:
+        async with httpx.AsyncClient(
+            headers=headers or {}, timeout=30, follow_redirects=True
+        ) as client:
+            resp = await client.get(mpd_url)
+            if resp.status_code != 200:
+                return None
+            videos: list[str] = []
+            audios: list[str] = []
+            for attrs, body in _MPD_REP_RE.findall(resp.text):
+                m = _MPD_BASEURL_RE.search(body)
+                if not m:
+                    continue
+                u = urljoin(base, m.group(1).strip())
+                if not checker(u):
+                    continue
+                # 视频轨：开始标签带 width/height（实测 Reddit MPD 属性在
+                # 开始标签而非 body）；音频轨：audioSamplingRate 或 mimeType="audio"
+                # 注意 \b 边界：bandwidth= 含 width= 子串，裸 in 判断会误分类
+                low = (attrs + body).lower()
+                if re.search(r"\bwidth=", attrs) or re.search(r"\bheight=", attrs):
+                    videos.append(u)
+                elif "audiosamplingrate" in low or 'mimetype="audio' in low:
+                    audios.append(u)
+            if not videos:
+                return None
+            # 中档优先（原项目 probe 逻辑：避免从最差质量开始）
+            if len(videos) > 2:
+                mid = videos[len(videos) // 2]
+                videos = [mid] + [v for v in videos if v != mid]
+            for u in videos:
+                r = await client.get(u)
+                if r.status_code == 200 and len(r.content) > 1024:
+                    video_bytes = r.content
+                    break
+            if video_bytes is None:
+                return None
+            for u in audios:
+                r = await client.get(u)
+                if r.status_code == 200 and len(r.content) > 1024:
+                    audio_bytes = r.content
+                    break
+    except Exception:  # noqa: BLE001 — MPD 路径失败落回候选链
+        return None
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    vfile = dest.with_suffix(".v.mp4")
+    afile = dest.with_suffix(".a.m4a")
+    vfile.write_bytes(video_bytes)
+    merged = False
+    if audio_bytes:
+        afile.write_bytes(audio_bytes)
+        ffmpeg = find_ffmpeg()
+        if ffmpeg is not None:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    str(ffmpeg), "-y",
+                    "-i", str(vfile), "-i", str(afile),
+                    "-c", "copy", str(dest),
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+                merged = dest.exists() and dest.stat().st_size > 1024  # noqa: ASYNC240
+            except Exception:  # noqa: BLE001 — 合并失败降级仅视频轨
+                merged = False
+    if not merged:
+        vfile.replace(dest)  # 仅视频轨交付（无音轨，raw 阶段可接受）
+    for tmp in (vfile, afile):
+        tmp.unlink(missing_ok=True)
+    return dest if dest.exists() and dest.stat().st_size > 1024 else None  # noqa: ASYNC240
 
 
 def looks_like_html(content: bytes) -> bool:

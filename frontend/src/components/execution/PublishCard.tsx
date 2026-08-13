@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
 
 import type { PipelineItem } from '../../api'
 import { Badge, Button, Icon, Select } from '../ui'
@@ -12,7 +13,7 @@ export const PUBLISH_TARGETS = [
   { value: '', label: 'default' },
   { value: 'noop', label: 'noop' },
   { value: 'bilibili', label: 'Bilibili' },
-  { value: 'export', label: '导出包' },
+  { value: 'export', label: 'plans.exportLabel' },
 ]
 
 /** 发布卡片（v0.3.4）：发布元数据全集——标题/标签/分区/版权/排期 +
@@ -30,11 +31,22 @@ export function PublishCard({
 }) {
   const { t } = useTranslation()
   const [titleDraft, setTitleDraft] = useState<string | null>(null)
+  const [descDraft, setDescDraft] = useState<string | null>(null)
   const [tagsDraft, setTagsDraft] = useState<string | null>(null)
   const [tidDraft, setTidDraft] = useState<string | null>(null)
   const [target, setTarget] = useState<string>(() => (item.publish_json?.target as string | undefined) ?? '')
+  // v0.8.9 AXIOM 2.5：草稿态随 item 切换重置（不依赖 key remount 的单点约定——
+  // 列表虚拟化/移除 key 时 draft 会串台）
+  useEffect(() => {
+    setTitleDraft(null)
+    setDescDraft(null)
+    setTagsDraft(null)
+    setTidDraft(null)
+    setTarget((item.publish_json?.target as string | undefined) ?? '')
+  }, [item.id])
   const script = item.script_json
   const biliTitle = (script?.bili_title as string | undefined) ?? item.title
+  const biliDesc = (script?.bili_desc as string | undefined) ?? ''
   const biliTags = (script?.bili_tags as string | undefined) ?? ''
   const biliTid = script?.bili_tid != null ? String(script.bili_tid) : ''
   // 版权（v0.3.2）：1=自制 / 2=搬运，默认搬运；发布 selfmade 由开关驱动
@@ -120,6 +132,37 @@ export function PublishCard({
           )}
         </div>
 
+        {/* B站简介（v0.8.5，可编辑）：produce 自动生成中文首句 + 署名 */}
+        <div className="mt-1.5 flex flex-wrap items-start gap-1.5">
+          <span className="pt-1 text-[10px] uppercase tracking-wide text-text-disabled">{t('console.biliDesc')}</span>
+          {descDraft !== null ? (
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <textarea
+                autoFocus
+                rows={2}
+                value={descDraft}
+                onChange={(e) => setDescDraft(e.target.value)}
+                className="min-w-0 flex-1 border border-border bg-surface-1 px-2 py-1 text-xs text-text-primary outline-none focus:border-primary"
+              />
+              <Button size="sm" onClick={() => { onSaveMeta(item, { bili_desc: descDraft }); setDescDraft(null) }}>
+                {t('common.save')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setDescDraft(null)}>
+                {t('common.cancel')}
+              </Button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDescDraft(biliDesc)}
+              className="min-w-0 flex-1 text-left text-xs leading-relaxed text-text-secondary hover:text-primary"
+              title={t('console.editDesc')}
+            >
+              {biliDesc || <span className="text-[10px] text-text-disabled">{t('console.noDesc')}</span>}
+            </button>
+          )}
+        </div>
+
         {/* 分区 Select（v0.3.2 自审核卡迁移）：未设置显示自动建议 */}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.biliTid')}</span>
@@ -137,11 +180,11 @@ export function PublishCard({
                     : t('console.tidAuto'),
               },
               ...(biliTid && !BILI_TIDS.some((p) => String(p.tid) === biliTid)
-                ? [{ value: biliTid, label: `${biliTid} (自定义)` }]
+                ? [{ value: biliTid, label: `${biliTid} (${t('common.custom')})` }]
                 : []),
               ...BILI_TIDS.map((p) => ({
                 value: String(p.tid),
-                label: `${p.tid} · ${p.name}`,
+                label: `${p.tid} · ${biliTidName(p.tid, i18n.language === 'en' ? 'en' : 'zh')}`,
               })),
             ]}
             className="w-36"
@@ -170,7 +213,7 @@ export function PublishCard({
             onChange={(e) => setTarget(e.target.value)}
             options={PUBLISH_TARGETS.map((p) => ({
               value: p.value,
-              label: p.value === '' ? t('console.publishTargetDefault') : p.label,
+              label: p.value === '' ? t('console.publishTargetDefault') : t(p.label),
             }))}
             className="w-32"
           />

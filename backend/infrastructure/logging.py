@@ -2,7 +2,7 @@
 
 - progress channel: human-readable brief lines (console / web)
 - detail channel: full context with stack traces (rotating file)
-Buffered recent lines are served to the web UI via /api/logs/buffer.
+Buffered recent lines back up /api/logs when file history is unavailable (v0.8.9).
 """
 
 import logging
@@ -40,7 +40,8 @@ class LogBuffer:
 class LogManager:
     def __init__(self, log_dir: Path | None = None) -> None:
         self.buffer = LogBuffer()
-        self.log_dir = log_dir or settings.log_dir
+        # runtime.yaml 只能存字符串（YAML 无 Path 类型）——防御性转换
+        self.log_dir = Path(log_dir or settings.log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger = logging.getLogger("hertz")
@@ -87,6 +88,7 @@ class LogManager:
         # uvicorn 启动信息保留 INFO
         warn_buffer = BufferHandler()
         warn_buffer.setLevel(logging.WARNING)
+        warn_buffer.buffer = self.buffer  # v0.8.6 修复：此前未赋值，emit 即崩
         for name in ("apscheduler", "httpx"):
             extra = logging.getLogger(name)
             extra.setLevel(logging.INFO)
@@ -96,6 +98,20 @@ class LogManager:
             extra = logging.getLogger(name)
             extra.setLevel(logging.INFO)
             extra.addHandler(buffer_handler)
+            extra.propagate = False
+        # 业务模块日志接入（v0.8.6）：backend.pipeline.* / backend.download.* /
+        # backend.factory.* 的 WARNING+ 进文件与日志面板——采集失败此前只打 stderr，
+        # hertz.log 与 Web 日志面板都看不到（运维盲区）
+        for name in (
+            "backend.pipeline",
+            "backend.download",
+            "backend.factory",
+            "backend.routers",
+        ):
+            extra = logging.getLogger(name)
+            extra.setLevel(logging.INFO)
+            extra.addHandler(file_handler)
+            extra.addHandler(warn_buffer)
             extra.propagate = False
 
     def get(self) -> logging.Logger:

@@ -1,6 +1,5 @@
 """Health checks: layered, structured, scriptable (AXIOM §28)."""
 
-import importlib.util
 import shutil
 from dataclasses import dataclass, field
 
@@ -29,19 +28,34 @@ async def check_database() -> dict:
 
 
 async def check_tools() -> dict:
-    """System tools: ffmpeg / ffprobe binaries and the yt-dlp module."""
+    """System tools: ffmpeg / ffprobe binaries and the yt-dlp module.
+
+    v0.8.8：读 deps 缓存（启动/设置页手动检测）——health 端点不再每次全量
+    探测；缓存缺失（如首次启动尚未预热完成）时立即补测一次。
+    """
+    from backend.infrastructure.deps import load_dependencies, refresh_dependencies
+
+    deps = load_dependencies()
+    if deps is None:
+        deps = await refresh_dependencies()
     tools: dict[str, dict] = {}
-    for name in ("ffmpeg", "ffprobe"):
-        path = shutil.which(name)
-        if path:
-            tools[name] = {"status": "ok", "path": path}
-        else:
-            tools[name] = {"status": "error", "detail": "not found in PATH"}
-    ytdlp = importlib.util.find_spec("yt_dlp")
-    if ytdlp:
-        tools["yt-dlp"] = {"status": "ok", "path": ytdlp.origin}
-    else:
-        tools["yt-dlp"] = {"status": "error", "detail": "module not installed"}
+    for name, label in (("ffmpeg", "ffmpeg"), ("ffprobe", "ffprobe"), ("biliup", "biliup")):
+        d = (deps.get(name) or {})
+        tools[label] = (
+            {"status": "ok", "path": d.get("path")}
+            if d.get("status") == "ok"
+            else {"status": "error", "detail": "not found in PATH"}
+        )
+    for _name, label in (("yt-dlp", "yt-dlp"), ("edge-tts", "edge-tts")):
+        d = (deps.get(label) or {})
+        tools[label] = (
+            {"status": "ok", "path": d.get("path")}
+            if d.get("status") == "ok"
+            else {"status": "error", "detail": "module not installed"}
+        )
+    ff = deps.get("ffmpeg") or {}
+    if ff.get("status") == "ok" and not ff.get("libass"):
+        tools["ffmpeg"] = {"status": "warning", "path": ff.get("path"), "detail": "libass missing — subtitles burn-in unavailable"}  # noqa: E501
     if any(t["status"] == "error" for t in tools.values()):
         return {"status": "warning", "tools": tools}
     return {"status": "ok", "tools": tools}

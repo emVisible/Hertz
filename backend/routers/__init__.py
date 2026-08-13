@@ -10,6 +10,7 @@ from backend.routers import (
     canvas,
     config,
     crews,
+    deps,
     depths,
     docs,
     downloads,
@@ -26,6 +27,7 @@ from backend.routers import (
 api_router = APIRouter(prefix="/api")
 
 api_router.include_router(health.router)
+api_router.include_router(deps.router)
 api_router.include_router(ai.router)
 api_router.include_router(config.router)
 api_router.include_router(downloads.router)

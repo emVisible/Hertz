@@ -36,6 +36,11 @@ export function AuditCard({
   const [open, setOpen] = useState(false)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const script = item.script_json
+  const scriptBody =
+    (script as Record<string, unknown>)?.narration ??
+    (script as Record<string, unknown>)?.script ??
+    (script as Record<string, unknown>)?.subtitle_zh ??
+    ''
 
   return (
     <li
@@ -89,6 +94,19 @@ export function AuditCard({
             </Badge>
           )}
           <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>
+          {/* v0.8.9 AXIOM 4.6：原片兜底交付（合成失败降级）——如实标注，不伪装完整成功 */}
+          {(item.script_json as Record<string, unknown> | null)?.produced_degraded != null && (
+            <span className="shrink-0 border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning">
+              {t('console.degradedRaw')}
+            </span>
+          )}
+          {/* v0.9 compose_quality：字幕烧录降级/音频守卫重混——不静默降级 */}
+          {(item.script_json as Record<string, unknown> | null)?.compose_quality != null &&
+            ((item.script_json as Record<string, unknown>).compose_quality as Record<string, unknown>).burn !== 'ass' && (
+              <span className="shrink-0 border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning">
+                {t('console.subsBurnFallback')}
+              </span>
+            )}
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-text-secondary">
           {/* 源头审核：subreddit 可点击直达源帖（系统浏览器打开） */}
@@ -156,9 +174,9 @@ export function AuditCard({
               {t('console.script')}
             </summary>
             <div className="relative mt-1 border border-border bg-surface-2/50">
-              <CopyButton text={String(script.script ?? '')} className="absolute right-1.5 top-1.5" />
+              <CopyButton text={String(scriptBody)} className="absolute right-1.5 top-1.5" />
               <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap p-2 pr-9 font-mono text-[11px] leading-relaxed text-text-primary">
-                {String(script.script ?? '—')}
+                {String(scriptBody || '—')}
               </pre>
             </div>
           </details>

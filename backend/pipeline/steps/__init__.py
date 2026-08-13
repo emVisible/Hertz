@@ -11,7 +11,7 @@ emits the next one.
 from backend.pipeline.base import Pipe
 
 # 全流程顺序（含 collect）；step_keys 按此顺序过滤可运行步骤
-PIPELINE_ORDER: tuple[str, ...] = ("collect", "download", "score", "produce", "publish")
+PIPELINE_ORDER: tuple[str, ...] = ("collect", "score", "download", "produce", "publish")
 
 _STEP_INDEX: dict[str, type[Pipe]] = {}
 

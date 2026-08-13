@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class ProduceStep(Pipe):
     name = "produce"
-    input_statuses: tuple[str, ...] = ("scored",)
+    input_statuses: tuple[str, ...] = ("downloaded",)  # v0.8.6 评分先行
 
     async def process(self, ctx: StepContext, item) -> ProcessResult:
         from backend.factory.registry import ServiceRegistry  # deferred import
@@ -22,8 +22,15 @@ class ProduceStep(Pipe):
         ai = ctx.ai if ctx.ai is not None else registry.ai
         from backend.pipeline.producers.media import ProducerError, produce_item
 
-        # 重新翻译（v0.2.7）：保留已有脚本，只重跑 TTS/字幕/合成
-        existing_script = dict(item.script_json) if item.script_json else None
+        # 脚本来源（v0.8.9 打回重制语义）：
+        # - 首次制作（无成片）：用现有脚本（produce 已生成）或新生成
+        # - 打回重制（已有成片 video_path）：完整重制——重新生成脚本，
+        #   否则保留旧脚本重跑结果与上次相同（用户"打回再制作没效果"的根因）
+        existing_script = (
+            None
+            if item.video_path
+            else (dict(item.script_json) if item.script_json else None)
+        )
         try:
             artifacts = await produce_item(
                 ai, registry.files, item, existing_script=existing_script

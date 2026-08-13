@@ -6,9 +6,12 @@ directly — they return a ProcessResult and the engine applies it (AXIOM:
 engine as the single authority on state transitions).
 """
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,6 +44,17 @@ class StepContext:
     def log(self, message: str, level: str = "info") -> None:
         if self.emit is not None:
             self.emit({"type": "log", "message": message, "level": level})
+        # v0.8.7 事件历史持久化：实时事件与系统日志同源——SSE 之外同步落盘
+        # （backend.pipeline logger 已挂 file/buffer handler），刷新/重启可回溯
+        try:
+            if level == "warning":
+                logger.warning("[step] %s", message)
+            elif level == "error":
+                logger.error("[step] %s", message)
+            else:
+                logger.info("[step] %s", message)
+        except Exception:  # noqa: BLE001 — 落盘失败不影响实时链路
+            pass
 
 
 class Pipe(ABC):

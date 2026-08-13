@@ -112,6 +112,7 @@ export function ExecutionPage() {
           produceOne={pipeline.produceOne}
           produceBatch={pipeline.produceBatch}
           scoreOne={pipeline.scoreOne}
+          downloadOne={pipeline.downloadOne}
           scoreBatch={pipeline.scoreBatch}
           runStep={pipeline.runStep}
         />

@@ -41,10 +41,14 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }
 
-export function fileUrl(path: string): string {
-  return `${API_BASE}/api/library/file?path=${encodeURIComponent(path)}`
+/** 媒体 URL（v0.8.9 缓存版本）：v 追加为查询参数——反复制作覆盖同名文件
+ *  （final.mp4/cover.jpg）时浏览器按 URL 缓存旧内容，传 item.updated_at 强制失效。 */
+export function fileUrl(path: string, v?: string | number | null): string {
+  const base = `${API_BASE}/api/library/file?path=${encodeURIComponent(path)}`
+  return v ? `${base}&v=${encodeURIComponent(String(v))}` : base
 }
 
-export function thumbnailUrl(path: string): string {
-  return `${API_BASE}/api/library/thumbnail?path=${encodeURIComponent(path)}`
+export function thumbnailUrl(path: string, v?: string | number | null): string {
+  const base = `${API_BASE}/api/library/thumbnail?path=${encodeURIComponent(path)}`
+  return v ? `${base}&v=${encodeURIComponent(String(v))}` : base
 }

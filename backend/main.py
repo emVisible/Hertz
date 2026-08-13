@@ -91,6 +91,10 @@ async def lifespan(_: FastAPI):
     log_manager.get().info("Hertz backend starting (v0.1.0)")
     registry = ServiceRegistry.get()
     registry.initialize(settings)
+    # v0.8.8：基础依赖初次运行检测一次（结果持久化；后续仅设置页手动重测）
+    from backend.infrastructure.deps import refresh_dependencies
+
+    await refresh_dependencies()
     await _heal_legacy_plans()
     await _heal_legacy_crews()
     registry.scheduler.start()

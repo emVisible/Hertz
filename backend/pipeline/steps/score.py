@@ -10,7 +10,7 @@ total recompute and the safety redline.
 - 低分（非 safety）：标记 is_lowscore 继续流程（人工审核决定）
 
 成本闸门（v0.2.1，参考原项目评分预算）：单次运行 / 单日 LLM 评分硬限额，
-超限跳过评分（条目保持 downloaded，下轮或次日再评）——防 API 费用失控。
+超限跳过评分（条目保持 discovered，下轮或次日再评）——防 API 费用失控。
 Failed scoring calls fail the item (retryable via the engine's retry).
 """
 
@@ -60,7 +60,7 @@ def recompute_total(dimensions: dict) -> float:
 
 class ScoreStep(Pipe):
     name = "score"
-    input_statuses: tuple[str, ...] = ("downloaded",)
+    input_statuses: tuple[str, ...] = ("discovered",)  # v0.8.6 评分先行
 
     async def _budget_left(self, ctx: StepContext) -> int:
         """剩余评分预算 = min(单次剩余, 单日剩余)。运行内计数挂在 ctx（每批共享）。"""

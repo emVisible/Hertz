@@ -26,6 +26,9 @@ export type {
   PipelineJob,
   ProduceOptions,
   SourceState,
+  CollectSourceRun,
+  JobListResult,
+  LogLineHistory,
 } from './pipeline'
 export { docsApi } from './docs'
 export { canvasApi } from './canvas'

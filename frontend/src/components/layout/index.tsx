@@ -38,7 +38,7 @@ export interface NavItem {
   icon: IconName
   label: ReactNode
   /** 功能分组：同组相邻渲染，组间插入分隔线（不按 Windows 平铺堆叠）。 */
-  group?: 'create' | 'produce' | 'assets' | 'system'
+  group?: 'produce' | 'assets' | 'system'  // v0.8.8：create 组并入 assets（画布降频）
 }
 
 export interface SidebarProps {

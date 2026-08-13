@@ -97,6 +97,9 @@ class PipelineService:
     async def requeue(self, item_id: uuid.UUID) -> dict:
         return await self.engine.requeue(item_id)
 
+    async def retranslate(self, item_id: uuid.UUID) -> dict:
+        return await self.engine.retranslate(item_id)
+
     async def batch_action(
         self, action: str, ids: list[uuid.UUID]
     ) -> dict:
@@ -135,12 +138,13 @@ class PipelineService:
         item_id: uuid.UUID,
         *,
         bili_title: str | None = None,
+        bili_desc: str | None = None,
         bili_tags: str | None = None,
         bili_tid: int | None = None,
         bili_copyright: int | None = None,
         scheduled_at: str | None = None,
     ) -> dict:
-        """更新发布元数据（B站标题/标签/分区/版权/排期），单一真相源 script_json。"""
+        """更新发布元数据（B站标题/简介/标签/分区/版权/排期），单一真相源 script_json。"""
         from datetime import UTC, datetime
 
         async with session_factory() as session:
@@ -150,6 +154,8 @@ class PipelineService:
             script = dict(item.script_json or {})
             if bili_title is not None:
                 script["bili_title"] = bili_title.strip()
+            if bili_desc is not None:
+                script["bili_desc"] = bili_desc.strip()
             if bili_tags is not None:
                 script["bili_tags"] = bili_tags.strip()
             if bili_tid:
@@ -230,6 +236,11 @@ class PipelineService:
             row.status = ItemStatus.PUBLISHED
             row.publish_json = {"target": target, **result}
             row.published_at = datetime.now(UTC)
+            # v0.9 对齐原项目 ensure_bilibili_dtime：biliup 顺延后回写
+            # scheduled_at，排期日历与发布卡保持一致（单一真相源）
+            bumped = result.get("dtime_bumped_to")
+            if bumped:
+                row.scheduled_at = datetime.fromtimestamp(int(bumped), UTC)
             await session.merge(row)
             await session.commit()
         self.hub.publish(
@@ -309,14 +320,14 @@ class PipelineService:
         return {"id": str(item_id), "ok": True, "stats": picked}
 
     async def score_one(self, item_id: uuid.UUID) -> dict:
-        """单条评分（v0.3.5，预处理手动评分按钮）：仅已下载条目，成本可控。"""
+        """单条评分（v0.3.5，预处理手动评分按钮）：v0.8.6 评分先行——仅未评分条目。"""
         from backend.pipeline.errors import InvalidItemStateError
 
         async with session_factory() as session:
             item = await session.get(Item, item_id)
             if item is None:
                 raise ItemNotFoundError(item_id)
-            if item.status != ItemStatus.DOWNLOADED:
+            if item.status != ItemStatus.DISCOVERED:
                 raise InvalidItemStateError(
                     f"cannot score item in state {item.status}"
                 )
@@ -328,9 +339,30 @@ class PipelineService:
             raise RuntimeError(error)
         return {"id": str(item_id), "status": "scored", "outcome": outcome}
 
+    async def download_one(self, item_id: uuid.UUID) -> dict:
+        """单条下载（v0.8.6 评分先行，预处理手动下载按钮）：仅已评分未下载条目。"""
+        from backend.pipeline.errors import InvalidItemStateError
+
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+            if item is None:
+                raise ItemNotFoundError(item_id)
+            if item.status != ItemStatus.SCORED:
+                raise InvalidItemStateError(
+                    f"cannot download item in state {item.status}"
+                )
+        outcome = await self.engine.process_one("download", item_id)
+        if outcome == "failed":
+            async with session_factory() as session:
+                row = await session.get(Item, item_id)
+                error = row.error if row is not None else "download failed"
+            raise RuntimeError(error)
+        return {"id": str(item_id), "status": "downloaded", "outcome": outcome}
+
     async def produce_one(self, item_id: uuid.UUID) -> dict:
-        """单条制作（v0.3.4，预处理「制作」按钮）：生产方式已设定、媒体已下载
-        的条目立即执行 produce（discovered/downloaded 自动转入 scored 再制作）。
+        """单条制作（v0.3.4，预处理「制作」按钮）：v0.8.6 评分先行语义——
+        produce 吃 downloaded（已下载未加工）；discovered 一键制作自动转入
+        downloaded（跳过评分/下载，宽松快捷路径）。
         """
         from backend.pipeline.errors import InvalidItemStateError
 
@@ -338,14 +370,14 @@ class PipelineService:
             item = await session.get(Item, item_id)
             if item is None:
                 raise ItemNotFoundError(item_id)
-            if item.status not in (ItemStatus.DISCOVERED, ItemStatus.DOWNLOADED, ItemStatus.SCORED):
+            if item.status not in (ItemStatus.DISCOVERED, ItemStatus.DOWNLOADED):
                 raise InvalidItemStateError(
                     f"cannot produce item in state {item.status}"
                 )
             if not item.raw_path:
                 raise InvalidItemStateError("item not downloaded yet — run download first")
-            if item.status != ItemStatus.SCORED:
-                item.status = ItemStatus.SCORED
+            if item.status != ItemStatus.DOWNLOADED:
+                item.status = ItemStatus.DOWNLOADED
                 await session.commit()
         outcome = await self.engine.process_one("produce", item_id)
         if outcome == "failed":
@@ -395,43 +427,58 @@ class PipelineService:
     # 发布负责 发布/打回审核。
 
     async def back_to_prep(self, item_id: uuid.UUID) -> dict:
-        """审核打回预处理（v0.3.9）：queued → scored。
+        """审核打回预处理（v0.3.9）：queued → downloaded（v0.8.6 评分先行语义）。
 
-        v0.8：不清除任何产物（成片/封面/字幕保留）——回到预处理后仍可
+        不清除任何产物（成片/封面/字幕保留）——回到预处理后仍可
         预览播放，是否重制由预处理侧决定；重制时 produce 覆盖产物。
         脚本保留（不强制重新生成）。
         """
-        from backend.pipeline.helpers import load_item_for_action
+        from backend.pipeline.helpers import load_item_for_action, purge_derived_media
 
         async with session_factory() as session:
             item = await load_item_for_action(
                 item_id, (ItemStatus.QUEUED,), "back-to-prep"
             )
-            item.status = ItemStatus.SCORED
+            # v0.8.9 对齐原项目 reproduce：打回即 purge 派生媒体（删旧成片文件、
+            # 清字段与旁白缓存）——预处理器/审核侧立即看不到旧成片，重制必然全新
+            await purge_derived_media(item)
+            item.status = ItemStatus.DOWNLOADED
             item.error = None
             item.error_class = ""
+            from backend.pipeline.helpers import bump_item_seq
+
+            await bump_item_seq(session, item)  # v0.8.9：打回预处理 = 最新入库序
             await session.merge(item)
             await session.commit()
         self.hub.publish(
             "pipeline",
-            {"type": "item", "item_id": str(item_id), "status": "scored", "step": "back_to_prep"},
+            {
+                "type": "item",
+                "item_id": str(item_id),
+                "status": "downloaded",
+                "step": "back_to_prep",
+            },
         )
-        return {"id": str(item_id), "status": "scored"}
+        return {"id": str(item_id), "status": "downloaded"}
 
     async def back_to_collect(self, item_id: uuid.UUID) -> dict:
-        """预处理打回采集（v0.3.9）：downloaded/scored → discovered。
+        """预处理打回采集（v0.3.9）：downloaded/scored → discovered（v0.8.6 语义）。
 
-        回到采集待下载队列，重新走下载（源可能已恢复）。
+        scored=已评分未下载 / downloaded=已下载未加工——重新走下载或评分。
         """
-        from backend.pipeline.helpers import load_item_for_action
+        from backend.pipeline.helpers import load_item_for_action, purge_derived_media
 
         async with session_factory() as session:
             item = await load_item_for_action(
                 item_id, (ItemStatus.DOWNLOADED, ItemStatus.SCORED), "back-to-collect"
             )
+            await purge_derived_media(item)  # v0.8.9：打回采集同样清除派生媒体
             item.status = ItemStatus.DISCOVERED
             item.error = None
             item.error_class = ""
+            from backend.pipeline.helpers import bump_item_seq
+
+            await bump_item_seq(session, item)  # v0.8.9：打回采集 = 最新入库序
             await session.merge(item)
             await session.commit()
         self.hub.publish(
@@ -722,23 +769,112 @@ class PipelineService:
             })
         return out
 
-    async def recent_jobs(self, limit: int = 20) -> list[dict]:
+    async def recent_jobs(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        job_name: str = "",
+        status: str = "",
+    ) -> dict:
+        """任务历史（v0.8.7 企业级对齐）：DB job_runs 全量历史——分页 + 类型/状态筛选。
+
+        v0.8.8 查漏补缺：列表返回轻量摘要（§2.3 接口存在理由 / §7.2 交互预算）——
+        逐源明细等大字段仅在展开详情时经 /jobs/{id} 懒加载。
+        """
         async with session_factory() as session:
-            result = await session.execute(
-                select(JobRun).order_by(JobRun.started_at.desc()).limit(limit)
+            stmt = select(JobRun)
+            if job_name:
+                stmt = stmt.where(JobRun.job_name == job_name)
+            if status:
+                stmt = stmt.where(JobRun.status == status)
+            total = (
+                await session.execute(
+                    select(func.count()).select_from(stmt.subquery())
+                )
+            ).scalar_one()
+            rows = (
+                await session.execute(
+                    stmt.order_by(JobRun.started_at.desc())
+                    .offset(max(offset, 0))
+                    .limit(max(1, min(limit, 200)))
+                )
+            ).scalars().all()
+            return {
+                "total": total,
+                "jobs": [self._job_dict(j, light=True) for j in rows],
+            }
+
+    async def job_detail(self, job_id: uuid.UUID) -> dict:
+        """单任务详情（v0.8.7）：完整 summary（逐源明细/delta）+ 耗时 + 错误。"""
+        from backend.errors import HertzError
+
+        async with session_factory() as session:
+            job = await session.get(JobRun, job_id)
+            if job is None:
+                raise HertzError("not_found", "job not found")
+            return self._job_dict(job)
+
+    async def collect_history(self, limit: int = 10) -> list[dict]:
+        """采集历史轮次（v0.8.7）：最近 N 轮 collect 任务——逐源明细时间线。
+
+        采集卡/活动面板共用：每轮含 sources 数组（channel/collected/inserted/
+        skipped/cooldown_s/error/empty）——「采集最近历史」的单一真相源。
+        """
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(JobRun)
+                    .where(JobRun.job_name == "collect")
+                    .order_by(JobRun.started_at.desc())
+                    .limit(max(1, min(limit, 50)))
+                )
+            ).scalars().all()
+            return [self._job_dict(j) for j in rows]
+
+    @staticmethod
+    def _job_dict(j: JobRun, *, light: bool = False) -> dict:
+        started = j.started_at
+        finished = j.finished_at
+        duration_s = None
+        if started is not None and finished is not None:
+            duration_s = round((finished - started).total_seconds(), 1)
+        summary = j.summary or {}
+        base = {
+            "id": str(j.id),
+            "job": j.job_name,
+            "status": j.status,
+            "error": j.error,
+            "started_at": started.isoformat() if started else None,
+            "finished_at": finished.isoformat() if finished else None,
+            "duration_s": duration_s,
+        }
+        if light:
+            # 轻量摘要：列表行渲染所需计数（不含逐源明细/delta——展开时懒加载）
+            sources = summary.get("sources") or []
+            sources_ok = sum(
+                1
+                for s in sources
+                if isinstance(s, dict) and not s.get("error") and not s.get("empty")
             )
-            return [
-                {
-                    "id": str(j.id),
-                    "job": j.job_name,
-                    "status": j.status,
-                    "summary": j.summary or {},
-                    "error": j.error,
-                    "started_at": j.started_at.isoformat() if j.started_at else None,
-                    "finished_at": j.finished_at.isoformat() if j.finished_at else None,
-                }
-                for j in result.scalars().all()
-            ]
+            sources_err = sum(
+                1
+                for s in sources
+                if isinstance(s, dict) and s.get("error")
+            )
+            base["summary"] = {
+                "collected": summary.get("collected"),
+                "inserted": summary.get("inserted"),
+                "skipped": summary.get("skipped"),
+                "processed": summary.get("processed"),
+                "ok": summary.get("ok"),
+                "failed": summary.get("failed"),
+                "sources_ok": sources_ok,
+                "sources_err": sources_err,
+                "empty": summary.get("empty"),
+            }
+        else:
+            base["summary"] = summary
+        return base
 
     async def sources(self) -> list[dict]:
         """采集源健康度（v0.2.1，参考原项目三态）：dead / degraded / healthy。"""
@@ -766,6 +902,7 @@ class PipelineService:
                     "last_error": s.last_error,
                     "last_error_at": s.last_error_at.isoformat() if s.last_error_at else None,
                     "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+                    "last_strategy": s.last_strategy,  # v0.8.9 通道可观测（oauth/json/rss）
                     "health": health,
                 })
             return out

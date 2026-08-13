@@ -15,6 +15,28 @@ import { RolesManager } from './RolesManager'
 import { SettingsNav, type SettingsSection } from './SettingsNav'
 import { TracePanel } from './TracePanel'
 
+/** 字幕翻译语言选项（v0.8.9 翻译方向扩展：源→目标可配） */
+const LANG_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'en-US', label: 'English' },
+  { value: 'en-GB', label: 'English (UK)' },
+  { value: 'zh-TW', label: '繁體中文' },
+  { value: 'ja', label: '日本語' },
+  { value: 'ko', label: '한국어' },
+  { value: 'vi', label: 'Tiếng Việt' },
+  { value: 'id', label: 'Bahasa Indonesia' },
+  { value: 'fil', label: 'Filipino' },
+  { value: 'pt-BR', label: 'Português (BR)' },
+  { value: 'de', label: 'Deutsch' },
+  { value: 'fr', label: 'Français' },
+  { value: 'es', label: 'Español' },
+  { value: 'ar', label: 'العربية' },
+  { value: 'ru', label: 'Русский' },
+  { value: 'it', label: 'Italiano' },
+  { value: 'tr', label: 'Türkçe' },
+  { value: 'th', label: 'ภาษาไทย' },
+]
+
 interface ConfigData {
   data_dir?: string
   output_dir?: string
@@ -29,6 +51,9 @@ interface ConfigData {
   pipeline_subtitle_outline?: number
   pipeline_subtitle_bold?: boolean
   pipeline_subtitle_alignment?: number
+  pipeline_subtitle_lang?: string
+  pipeline_translate_source_lang?: string
+  pipeline_tts_text_source?: string
   pipeline_reddit_client_id?: string
   pipeline_reddit_client_id_set?: boolean
   pipeline_reddit_cookie?: string
@@ -135,6 +160,85 @@ function RedditCookieCard() {
 }
 
 /** B 站发布就绪状态（v0.3.8）：目标 + cookie 检查 + 登录引导。 */
+function DepsCard() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data, refetch, isFetching } = useQuery({
+    queryKey: ['deps-status'],
+    queryFn: () => api.get<Record<string, Record<string, unknown>>>('/api/deps'),
+  })
+
+  async function recheck() {
+    try {
+      await api.post<Record<string, Record<string, unknown>>>('/api/deps/check')
+      toast(t('settings.depsChecked'), 'success')
+      await refetch()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  // v0.8.9：安装指引由后端检测结果提供（install_hint，单一真相源）——
+  // 前端不再硬编码安装命令；缺失/降级项行内可见展示
+  const rows = ['ffmpeg', 'ffprobe', 'biliup', 'yt-dlp', 'edge-tts']
+  const ff = data?.ffmpeg as { status?: string; libass?: boolean; version?: string } | undefined
+
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        {rows.map((key) => {
+          const d = (data?.[key] as { status?: string; path?: string } | undefined) ?? {}
+          const ok = d.status === 'ok'
+          return (
+            <span
+              key={key}
+              title={ok ? (d.path ?? '') : undefined}
+              className={`flex items-center gap-1.5 border px-2 py-1 text-[11px] ${
+                ok ? 'border-border text-text-secondary' : 'border-error/40 text-error'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${ok ? 'bg-success' : 'bg-error'}`} />
+              {key}
+            </span>
+          )
+        })}
+        <span className="ml-auto font-mono text-[10px] text-text-disabled">
+          {t('settings.depsCheckedAt', { t: (data?.checked_at as string | undefined)?.slice(5, 19).replace('T', ' ') ?? '—' })}
+        </span>
+      </div>
+
+      {/* 缺失项安装指引（v0.8.9）：逐项可见展示 install_hint，可选中复制 */}
+      {rows.map((key) => {
+        const d = (data?.[key] as { status?: string; install_hint?: string } | undefined) ?? {}
+        if (d.status === 'ok' || !d.install_hint) return null
+        return (
+          <p key={key} className="flex items-center gap-2 text-xs leading-relaxed text-error">
+            <span className="shrink-0">{key}：</span>
+            <code className="select-all rounded bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-text-primary">
+              {d.install_hint}
+            </code>
+          </p>
+        )
+      })}
+
+      {/* libass 降级警示 + 安装命令（官方 brew 版无 libass——需社区完整版 tap） */}
+      {ff?.status === 'ok' && !ff.libass && (
+        <p className="flex items-center gap-2 text-xs leading-relaxed text-warning">
+          <span className="shrink-0">{t('settings.depsLibassHint')}：</span>
+          <code className="select-all rounded bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-text-primary">
+            brew install homebrew-ffmpeg/ffmpeg/ffmpeg
+          </code>
+        </p>
+      )}
+      <Button size="sm" variant="secondary" onClick={() => void recheck()} disabled={isFetching}>
+        <Icon name="refresh" size={12} />
+        {t('settings.depsRecheck')}
+      </Button>
+    </div>
+  )
+}
+
+/** B 站发布就绪状态（v0.3.8）：目标 + cookie 检查 + 登录引导。 */
 function PublishStatusCard({ onChanged }: { onChanged: () => void }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -163,7 +267,7 @@ function PublishStatusCard({ onChanged }: { onChanged: () => void }) {
             <span className={`h-2 w-2 rounded-full ${data.cookie_exists ? 'bg-success' : 'bg-error'}`} />
             <span className="text-text-secondary">
               {data.cookie_exists
-                ? `${t('settings.cookieReady')}${age != null ? `（${age} 小时前登录）` : ''}`
+                ? `${t('settings.cookieReady')}${age != null ? t('settings.hoursAgo', { n: age }) : ''}`
                 : t('settings.cookieMissing')}
             </span>
           </span>
@@ -180,24 +284,33 @@ function PublishStatusCard({ onChanged }: { onChanged: () => void }) {
           {t('settings.cookiePath')}: <code className="font-mono text-text-primary">{data.cookie_path}</code>
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <code className="select-all rounded bg-surface-2 px-2 py-1 font-mono text-[11px] text-text-primary">
-          biliup -u {data.cookie_path} login
-        </code>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            void refetch().then(() => {
-              toast(t('settings.cookieChecked'), 'success')
-              onChanged()
-            })
-          }}
-        >
-          <Icon name="refresh" size={12} />
-          {t('settings.checkCookie')}
-        </Button>
-      </div>
+      {data.target === 'bilibili' && !data.cookie_exists && (
+        <p className="text-xs leading-relaxed text-warning">{t('settings.cookiePlaceHint')}</p>
+      )}
+      {data.target === 'bilibili' && data.cookie_exists && (
+        <p className="text-xs leading-relaxed text-text-secondary">{t('settings.cookieAutoRefresh')}</p>
+      )}
+      {data.target === 'bilibili' && data.cookie_exists && (
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="select-all rounded bg-surface-2 px-2 py-1 font-mono text-[11px] text-text-primary">
+            biliup -u {data.cookie_path} renew
+          </code>
+          <span className="text-[11px] text-text-disabled">{t('settings.cookieRenewOptional')}</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              void refetch().then(() => {
+                toast(t('settings.cookieChecked'), 'success')
+                onChanged()
+              })
+            }}
+          >
+            <Icon name="refresh" size={12} />
+            {t('settings.checkCookie')}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
@@ -301,6 +414,9 @@ export function SettingsPage() {
       pipeline_subtitle_outline: String(cfg.pipeline_subtitle_outline ?? 2),
       pipeline_subtitle_bold: String(cfg.pipeline_subtitle_bold ?? true),
       pipeline_subtitle_alignment: String(cfg.pipeline_subtitle_alignment ?? 2),
+      pipeline_subtitle_lang: cfg.pipeline_subtitle_lang ?? 'zh-CN',
+      pipeline_translate_source_lang: cfg.pipeline_translate_source_lang ?? 'en-US',
+      pipeline_tts_text_source: cfg.pipeline_tts_text_source ?? 'script',
       pipeline_reddit_client_id: cfg.pipeline_reddit_client_id ?? '',
       pipeline_reddit_client_secret: '',
       pipeline_reddit_cookie: '',
@@ -331,6 +447,9 @@ export function SettingsPage() {
       pipeline_subtitle_outline: Number(form.pipeline_subtitle_outline) || 2,
       pipeline_subtitle_bold: form.pipeline_subtitle_bold === 'true',
       pipeline_subtitle_alignment: Number(form.pipeline_subtitle_alignment) || 2,
+      pipeline_subtitle_lang: form.pipeline_subtitle_lang || 'zh-CN',
+      pipeline_translate_source_lang: form.pipeline_translate_source_lang || 'en-US',
+      pipeline_tts_text_source: form.pipeline_tts_text_source || 'script',
     }
     if (form.pipeline_reddit_client_id?.trim())
       overrides.pipeline_reddit_client_id = form.pipeline_reddit_client_id.trim()
@@ -396,7 +515,7 @@ export function SettingsPage() {
                       value={i18n.language}
                       onChange={(e) => setLanguage(e.target.value as 'zh' | 'en')}
                       options={[
-                        { value: 'zh', label: '中文' },
+                        { value: 'zh', label: t('settings.langZh') },
                         { value: 'en', label: 'English' },
                       ]}
                     />
@@ -589,8 +708,31 @@ export function SettingsPage() {
                       ]}
                     />
                   </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <Select
+                      label={t('settings.subtitleTargetLang')}
+                      value={form.pipeline_subtitle_lang ?? 'zh-CN'}
+                      onChange={(e) => set('pipeline_subtitle_lang', e.target.value)}
+                      options={LANG_OPTIONS}
+                    />
+                    <Select
+                      label={t('settings.translateSourceLang')}
+                      value={form.pipeline_translate_source_lang ?? 'en-US'}
+                      onChange={(e) => set('pipeline_translate_source_lang', e.target.value)}
+                      options={LANG_OPTIONS}
+                    />
+                    <Select
+                      label={t('settings.ttsTextSource')}
+                      value={form.pipeline_tts_text_source ?? 'script'}
+                      onChange={(e) => set('pipeline_tts_text_source', e.target.value)}
+                      options={[
+                        { value: 'script', label: t('settings.ttsTextSourceScript') },
+                        { value: 'subtitle', label: t('settings.ttsTextSourceSubtitle') },
+                      ]}
+                    />
+                  </div>
                   <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">
-                    {t('settings.subtitleEffectHint')}
+                    {t('settings.langHint')}
                   </p>
                 </section>
 
@@ -629,13 +771,13 @@ export function SettingsPage() {
                       label={t('settings.redditCookieRaw')}
                       value={form.pipeline_reddit_cookie ?? ''}
                       onChange={(e) => set('pipeline_reddit_cookie', e.target.value)}
-                      placeholder="token_v2=…; session_tracker=…（登录 Reddit 后从浏览器复制）"
+                      placeholder={t('settings.redditCookiePlaceholder')}
                     />
                     <Input
                       label={t('settings.redditCookieBrowser')}
                       value={form.pipeline_reddit_cookies_browser ?? ''}
                       onChange={(e) => set('pipeline_reddit_cookies_browser', e.target.value)}
-                      placeholder="chrome, safari, edge（逗号分隔，空=自动）"
+                      placeholder={t('settings.redditCookieBrowserPlaceholder')}
                     />
                   </div>
                   <RedditCookieCard />
@@ -648,6 +790,16 @@ export function SettingsPage() {
                   </h2>
                   <p className={sub}>{t('settings.biliPublishHint')}</p>
                   <PublishStatusCard onChanged={() => void refetch()} />
+                </section>
+
+                {/* 基础依赖（v0.8.8）：启动时检测一次 + 手动重测——运行时零探测 */}
+                <section className={section}>
+                  <h2 className={heading}>
+                    <Icon name="config" size={15} />
+                    {t('settings.depsTitle')}
+                  </h2>
+                  <p className={sub}>{t('settings.depsHint')}</p>
+                  <DepsCard />
                 </section>
 
                 <div className="flex justify-end gap-2">

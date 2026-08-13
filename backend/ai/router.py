@@ -403,8 +403,9 @@ class TaskRouter:
         finally:
             await provider.aclose()
 
-    async def synthesize(self, text: str, voice: str = "") -> bytes:
-        """语音合成：从注册表解析 tts 角色（edge_tts），模型 key 即音色。"""
+    async def synthesize(self, text: str, voice: str = "", rate: str = "") -> bytes:
+        """语音合成：从注册表解析 tts 角色（edge_tts），模型 key 即音色。
+        v0.8.9：rate 透传（pipeline_tts_rate，对齐原项目 tts_rate）。"""
         if self._tts is not None:
             return await self._tts.synthesize(text, voice)  # 测试兜底
         resolved = await self._registry.resolve_role("tts")
@@ -414,8 +415,12 @@ class TaskRouter:
 
         provider = EdgeTTSProvider()
         try:
+            from backend.config import settings
+
             # 显式 voice 优先；否则用角色配置的音色（模型 key）
-            return await provider.synthesize(text, voice or resolved["model_key"])
+            return await provider.synthesize(
+                text, voice or resolved["model_key"], rate or settings.pipeline_tts_rate
+            )
         finally:
             await provider.aclose()
 
