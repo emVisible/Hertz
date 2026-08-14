@@ -5,6 +5,89 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.11.7] - 2026-08-14
+
+情感垂直频道第二阶段——文字故事产线（text_only 帖 → 中文故事旁白 → 配音 → 图文合成）。
+
+### 新增
+
+- **text_only 采集与存储**：Reddit 文字帖（selftext ≥ 50 字）保留为 `item_type=text_only` + `selftext` 列（alembic `wave24_story_selftext`）；短正文丢弃
+- **下载跳过**：text_only 无媒体，download 步骤直接分配 output_dir 并跳过（不消耗网络）
+- **故事旁白产线**：`produce_story_item`——LLM 中文故事脚本（钩子开场 → 情绪曲线 → 收束，`story=True` 专用 prompt）→ edge-tts 中文配音（`zh-CN-XiaoxiaoNeural`）→ 深紫渐变背景 + 标题卡渲染 → 按字符比例切句 → 字幕烧录合成 1280×720
+- **合规适配**：敏感词 Tier1 拆分 `TIER1_SAFETY`（阻断）/`TIER1_MARKETING`（广告极限词）；故事旁白走 `safety_only=True`——中文口语高频词（最/第一）降级告警而非阻断，安全红线仍强制
+- **故事源入池**：`AmItheAsshole / TrueOffMyChest / offmychest / relationship_advice / relationships / JustNoFamily / BestofRedditorUpdates` 加入采集池（runtime.yaml）
+- **Reddit Cookie 导出增强**：设置页可选浏览器（Chrome/Safari/Edge/Firefox/自动）导出；导出后自动检测会话 cookie（`session_cookie`，杜绝「只有匿名 edgebucket 的假成功」）并立即验证通道（hot.json 200/403），状态卡显示「已登录/未登录」徽章
+
+### 修复
+
+- **produce_one 对 text_only 豁免 raw_path 校验**（无原始媒体条目此前无法进入制作）
+- **`_render_story_bg` `out.save` → `img.save`**（Path 无 save 方法）
+- **`_compose_story_video` 补 `async` 声明**（SyntaxError）
+- **ASYNCIO 清理**：compose 产物校验改 `asyncio.to_thread`（ruff ASYNC240）
+
+## [v0.11.6] - 2026-08-13
+
+情感垂直频道改造（搬运阶段）——源池化 + 情感适配 + 验证门禁修复。
+
+### 新增
+
+- **采集源池勾选 UI**：设置→流水线 升级为分组勾选（情感池/情感故事池/旧源池 + 自定义源输入），`pipeline_sources` 仍为唯一真相源
+- **情感评分适配**：`DIM_WEIGHTS.emotion` 0.9 → 1.3；score prompt 引导按「共情/治愈/冲突反转/真人真事」打分，低俗/引战降分
+- **情感标题句式**：title prompt 支持共情钩子（冲突前置/反差/悬念），禁低俗擦边与性别对立标题
+- **情感版块分区映射**：情感向 subreddit 显式映射 tid 21（日常），从搞笑 138 迁出（单一键）
+- **版本单一真相源**：`backend.config.APP_VERSION`（0.11.6），main.py 引用；pyproject/package.json 对齐（此前三处 0.1.0 漂移）
+
+## [v0.11.5] - 2026-08-13
+
+发布流程按用户需求重构（立即发布/简介/转载/排期/封面）。
+
+### 新增
+
+- **立即发布**：`publish` 支持 `now=1` → 清除 `scheduled_at` 按当前时间上传（此前带排期会延迟）
+- **随机抽帧封面**：`POST /items/{id}/cover-random` + 发布卡「随机封面」按钮（5%-95% 随机位置，updated_at 触发缩略图刷新）
+- **排期高峰快捷点**：ScheduleField 升级 datetime-local + 「推荐」回填完整时刻 + 当天 10:00/12:00/18:00/20:00 即点即选
+- **排期当天优先**：`next_slot` lookahead 1 天（只排当天），窗口按本地时区解释（修复排到凌晨/几天后的偏差）；B 站 dtime 下限修正为 5 分钟（原 4h 过严）
+
+### 修复
+
+- **简介不换中文**：`bili_desc` 改为原帖标题（用户明确需求），LLM/启发式兜底同步；手动值仍优先
+- **转载变自制**：publish 传 `selfmade=1` 会把 `bili_copyright` 持久化为 1——重置受影响条目为转载，发布链路保持默认转载（--source 挂来源）
+- **排期积压**：清理 285 条旧批量分配的远期排期（曾被排到 8/25）；`next_schedule_slot` 只统计未发布条目
+
+## [v0.11.4] - 2026-08-13
+
+字幕句首逗号根因修复（用户投诉「每句翻译字幕最前方有个标点」）。
+
+### 修复
+
+- **ASS Events Format 缺 Name 字段**：`srt_to_ass` 的 Format 行 9 字段但 Dialogue 行 10 值，
+  ffmpeg 9.0.1 会把多余字段按逗号拼进文本 → 每句渲染出前导「，」——补上 Name 字段（经
+  黑底渲染 + OCR 像素级验证：`，过来听指令` → `过来听我说`）
+- **移除 `{\fad(...)}` 标签**：稳定优先（用户确认），字幕硬切
+- **phash 改用 raw 源片计算**：成片 phash 被字幕带/缩放主导（不同视频仅差 4 位 → 误判
+  「近源成片已发布」）——raw 才反映真实内容；全库 134 条存量 phash 重算
+- 回归测试补 Format 断言；验证链（渲染 + Vision OCR）修复后重产 final.mp4 确认干净
+
+## [v0.11.3] - 2026-08-13
+
+处理中感知（长任务反馈）。
+
+### 新增
+
+- `busy` 状态（itemId → {action, title}）驱动按钮 loading + 防重复提交
+- 全局反馈并入底部「运行状态」折叠条（ActivityPanel）：`正在处理 N 项 · 制作中《标题》`
+- 后端 `process_one` 开始即发 SSE `job_step` + 日志
+
+## [v0.11.2] - 2026-08-13
+
+字幕/翻译标点清洗强化（LLM 前导标点）。
+
+### 修复
+
+- `_LOCALIZE_LEAD_PUNCT` 扩展（含 `…—`）；非中文翻译 `_clean_nonzh_translation_text`
+- `_split_en_sentences` 句首剥离 + 8 词硬折行；`_write_srt_cues` 非中文句首标点剥除、纯标点丢弃
+- 字体默认切换霞鹜文楷（OFL 免费商用）
+
 ## [v0.10.1] - 2026-08-13
 
 批量运行异步队列化（修复"加入队列后立即完成"）。

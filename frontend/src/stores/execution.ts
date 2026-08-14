@@ -35,6 +35,10 @@ export interface PipelineExecState {
   tab: string
   /** 采集进度（v0.8.2）：最近一次 collect 各源明细（可视化运维） */
   collectProgress: Array<{ channel: string; collected?: number; inserted?: number; cooldown_s?: number; error?: string }>
+  /** 单条操作进行中（v0.11.3）：itemId → 操作信息——按钮转圈 + 防重复提交
+   *  的数据源。v0.11.4：升级为 {action, title}——底部「运行状态」折叠条
+   *  直接展示「制作中《标题》」，无需依赖页面内条目列表反查标题。 */
+  busy: Record<string, { action: string; title: string }>
 }
 
 interface ExecutionState {
@@ -67,6 +71,7 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
     logSeq: 0,
     tab: 'inReview',
     collectProgress: [],
+    busy: {},
   },
   setStudio: (patch) => set((s) => ({ studio: { ...s.studio, ...patch } })),
   setPipeline: (patch) => set((s) => ({ pipeline: { ...s.pipeline, ...patch } })),

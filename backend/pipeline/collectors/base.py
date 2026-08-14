@@ -22,6 +22,8 @@ class RawPost:
     created_utc: float = 0.0
     is_video: bool = False
     item_type: str = "video_raw"
+    # 文字帖正文（v0.11.7）：text_only 帖的 selftext，非文字帖为空
+    selftext: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
 
 

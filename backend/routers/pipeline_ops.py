@@ -26,11 +26,50 @@ async def reddit_cookie_status() -> dict:
 
 
 @router.post("/reddit-cookie/export")
-async def reddit_cookie_export(force: bool = False) -> dict:
-    """触发浏览器 cookie 自动导出（yt-dlp --cookies-from-browser）。"""
-    from backend.pipeline.reddit_cookies import ensure_reddit_cookies
+async def reddit_cookie_export(
+    force: bool = False,
+    browser: str = "",
+    verify: bool = False,
+) -> dict:
+    """触发浏览器 cookie 自动导出（yt-dlp --cookies-from-browser）。
 
-    return await ensure_reddit_cookies(force=force)
+    v0.11.7：支持指定浏览器；verify=true 时导出后立即试 Reddit 通道
+    （hot.json），返回 verify_status——避免「导出成功但 cookie 无效」。
+    """
+    from backend.pipeline.reddit_cookies import (
+        _has_session_cookie,
+        cookie_header_for_http,
+        ensure_reddit_cookies,
+    )
+
+    result = await ensure_reddit_cookies(force=force, browser=browser)
+    if result.get("ok"):
+        header = cookie_header_for_http()
+        result["session_cookie"] = _has_session_cookie(header)
+        if verify:
+            result["verify_status"] = await _verify_reddit_channel(header)
+    return result
+
+
+async def _verify_reddit_channel(cookie: str | None) -> dict:
+    """带 cookie 试 Reddit JSON 通道（hot.json limit=1），只报状态不报内容。"""
+    import httpx
+
+    from backend.pipeline.collectors.reddit import _UA, _system_proxy
+
+    try:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": _UA, "Cookie": cookie or ""},
+            timeout=20,
+            proxy=_system_proxy(),
+        ) as client:
+            resp = await client.get(
+                "https://www.reddit.com/r/AmItheAsshole/hot.json",
+                params={"limit": 1, "raw_json": 1},
+            )
+            return {"code": resp.status_code, "ok": resp.status_code == 200}
+    except httpx.HTTPError as exc:
+        return {"ok": False, "error": exc.__class__.__name__}
 
 
 @router.get("/collect/status")

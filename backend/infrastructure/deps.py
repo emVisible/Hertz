@@ -130,7 +130,48 @@ async def check_dependencies() -> dict:
             "edge_tts",
             "uv pip install edge-tts",
         ),
+        "font": _check_subtitle_font(),
     }
+
+
+def _subtitle_font_paths() -> list[Path]:
+    """字幕字体候选（v0.11.2）：assets 优先，系统字体目录兜底（fontconfig/libass 可识别）。"""
+    from backend.config import settings
+
+    candidates: list[Path] = []
+    for name in ("LXGWWenKai-Regular.ttf",):
+        candidates.append(Path(settings.data_dir) / "assets" / "fonts" / name)
+    for home in (Path.home() / "Library" / "Fonts", Path.home() / ".fonts"):
+        candidates.append(home / "LXGWWenKai-Regular.ttf")
+    return candidates
+
+
+def _check_subtitle_font() -> dict:
+    """霞鹜文楷（免费商用 OFL）探测：找到即 ASS/PNG 烧录可用的优雅中文字体。"""
+    for path in _subtitle_font_paths():
+        if path.exists():
+            return {
+                "status": "ok",
+                "path": str(path),
+                "family": "LXGW WenKai",
+            }
+    return {
+        "status": "missing",
+        "path": None,
+        "family": "Noto Sans CJK SC",
+        "install_hint": (
+            "下载霞鹜文楷（OFL 免费商用）到 data/assets/fonts/: "
+            "https://github.com/lxgw/LxgwWenKai/releases"
+        ),
+    }
+
+
+def font_file() -> Path | None:
+    """当前可用的字幕字体文件（无则 None，调用方回退系统字体）。"""
+    for path in _subtitle_font_paths():
+        if path.exists():
+            return path
+    return None
 
 
 def load_dependencies() -> dict | None:

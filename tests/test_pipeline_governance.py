@@ -17,7 +17,6 @@ from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.pipeline.errors import classify_error
 from backend.pipeline.phash import compute_phash
-from backend.pipeline.schedule import next_slot
 from backend.pipeline.steps.score import ScoreStep
 
 # ---------- 失败分类 ----------
@@ -96,33 +95,54 @@ async def _load(item_id):
 # ---------- 本地排期引擎 ----------
 
 def test_next_slot_respects_window_and_interval() -> None:
-    now = datetime(2026, 8, 8, 9, 0, tzinfo=UTC)  # 周六 09:00，窗口 10:00-12:00
+    """v0.11.5：窗口 = 本地时钟语义；lookahead 从 earliest 所在日起算；
+    当天窗口错过 → 当天兜底（now + 最小间隔），不排到次日。"""
+    from datetime import datetime
+
+    from backend.pipeline.schedule import next_slot
+
+    tz = datetime.now().astimezone().tzinfo
+    now = datetime(2026, 8, 8, 9, 0, tzinfo=tz)  # 本地 09:00
     slot = next_slot([], now=now, windows_raw="10:00-12:00,18:00-20:00",
                      min_interval_min=30, jitter_min=0)
-    assert slot.hour == 10 and slot.minute == 0
+    assert slot.astimezone(tz).hour == 10 and slot.astimezone(tz).minute == 0
 
     # 已有 10:00 排期 → 下一个槽位 10:30（最小间隔 30 分钟）
-    existing = [datetime(2026, 8, 8, 10, 0, tzinfo=UTC)]
+    existing = [datetime(2026, 8, 8, 10, 0, tzinfo=tz)]
     slot2 = next_slot(existing, now=now, windows_raw="10:00-12:00,18:00-20:00",
                       min_interval_min=30, jitter_min=0)
-    assert slot2.hour == 10 and slot2.minute == 30
+    assert slot2.astimezone(tz).hour == 10 and slot2.astimezone(tz).minute == 30
 
-    # 窗口内塞满（10:00/10:30/11:00/11:30）→ 跳到晚间窗口
+    # 上午窗口塞满（10:00/10:30/11:00/11:30）→ 跳到晚间窗口（本地 18:00）
     full = [
-        datetime(2026, 8, 8, 10, 0, tzinfo=UTC),
-        datetime(2026, 8, 8, 10, 30, tzinfo=UTC),
-        datetime(2026, 8, 8, 11, 0, tzinfo=UTC),
-        datetime(2026, 8, 8, 11, 30, tzinfo=UTC),
+        datetime(2026, 8, 8, 10, 0, tzinfo=tz),
+        datetime(2026, 8, 8, 10, 30, tzinfo=tz),
+        datetime(2026, 8, 8, 11, 0, tzinfo=tz),
+        datetime(2026, 8, 8, 11, 30, tzinfo=tz),
     ]
     slot3 = next_slot(full, now=now, windows_raw="10:00-12:00,18:00-20:00",
                       min_interval_min=30, jitter_min=0)
-    assert slot3.hour == 18
+    assert slot3.astimezone(tz).hour == 18 and slot3.astimezone(tz).minute == 0
 
-    # 已过窗口 → 次日 10:00
-    late = datetime(2026, 8, 8, 21, 0, tzinfo=UTC)
+    # 已过全部窗口 → v0.11.5 兜底：当天 now + 最小间隔（不再排到次日）
+    late = datetime(2026, 8, 8, 21, 0, tzinfo=tz)
     slot4 = next_slot([], now=late, windows_raw="10:00-12:00,18:00-20:00",
                       min_interval_min=30, jitter_min=0)
-    assert slot4.day == 9 and slot4.hour == 10
+    late4 = slot4.astimezone(tz)
+    assert late4.day == 8 and late4.hour == 21 and late4.minute == 30
+
+    # earliest 被已排期推到次日 → 窗口从 earliest 所在日找（次日 10:00 命中）
+    pushed = datetime(2026, 8, 10, 6, 0, tzinfo=tz)
+    slot5 = next_slot([pushed], now=late, windows_raw="10:00-12:00,18:00-20:00",
+                      min_interval_min=30, jitter_min=0)
+    late5 = slot5.astimezone(tz)
+    assert late5.day == 10 and late5.hour == 10
+
+    # 次日窗口也已排满（earliest 被推到窗口外）→ 返回 None，不推延到 n 天后
+    pushed_far = datetime(2026, 8, 10, 19, 30, tzinfo=tz)  # 次日 18-20 窗口最后槽位已占
+    slot6 = next_slot([pushed_far], now=late, windows_raw="10:00-12:00,18:00-20:00",
+                      min_interval_min=30, jitter_min=0)
+    assert slot6 is None
 
 
 # ---------- 自动过审 ----------
@@ -653,10 +673,22 @@ async def test_localize_text_falls_back_on_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_reschedule_assigns_unscheduled(client) -> None:
-    """未排期条目自动分配推荐槽位（每次进入系统都有排期）。"""
+    """未排期条目自动分配推荐槽位（每次进入系统都有排期）。
+
+    v0.2.0：窗口排满时不再推延（None → 保持无排期）——测试先清空历史
+    排期保证窗口可用（共享 DB 隔离）。"""
     from datetime import UTC, datetime
 
+    from sqlalchemy import update
+
     now = datetime.now(UTC)
+    async with session_factory() as session:
+        await session.execute(
+            update(Item)
+            .where(Item.status.in_((ItemStatus.QUEUED, ItemStatus.APPROVED)))
+            .values(scheduled_at=None)
+        )
+        await session.commit()
     async with session_factory() as session:
         a = Item(status=ItemStatus.QUEUED, source="reddit", source_id="rs-3", title="未排期A")
         b = Item(status=ItemStatus.QUEUED, source="reddit", source_id="rs-4", title="未排期B")
@@ -1339,10 +1371,22 @@ def test_subtitle_style_injected() -> None:
     header = out.read_text(encoding="utf-8")
     src.unlink(missing_ok=True)
     out.unlink(missing_ok=True)
-    # 默认：字号 26 / 描边 2 / 加粗 -1 / 对齐 2（底部）
-    assert "Noto Sans CJK SC,26" in header
-    assert ",1,2,1," in header
-    assert ",2,40,40,26,1" in header
+    # v0.11.2：霞鹜文楷优先（OFL 免费商用，测试环境无 assets 时 Noto 兜底）；
+    # 字号 24 / 描边 1 / 不加粗 / 对齐 2（底部）/ 底部留白跟随配置
+    from backend.config import settings
+
+    margin = int(getattr(settings, "pipeline_subtitle_margin_bottom", 64))
+    assert ("LXGW WenKai,24" in header) or ("Noto Sans CJK SC,24" in header)
+    assert ",1,0," in header
+    assert f",2,40,40,{margin},1" in header
+    # v0.11.4：Events Format 必须含 Name 字段（Dialogue 行 10 值，缺 Name
+    # 时 ffmpeg 9.0.1 把多余字段拼进文本 → 每句前导「，」）；并移除 {\fad(
+    assert (
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+        in header
+    )
+    assert r"\fad(" not in header
+    assert header.rstrip().endswith(",你好")
 
 
 # ---------- 发布数据回捞（v0.4 C1） ----------
@@ -1635,6 +1679,77 @@ async def test_cookie_status_and_export_endpoint(client, tmp_path, monkeypatch) 
     assert resp.json()["ok"] is False
 
 
+@pytest.mark.asyncio
+async def test_cookie_status_session_quality(client, tmp_path, monkeypatch) -> None:
+    """v0.11.7：仅匿名 edgebucket 的导出 → session_cookie=False（避免假成功）。"""
+    from backend.pipeline import reddit_cookies
+
+    def fake_path():
+        return tmp_path / "rc.txt"
+
+    monkeypatch.setattr(reddit_cookies, "cookies_file_path", fake_path)
+    # 匿名 cookie：只有 edgebucket，无会话 cookie
+    tmp_path.joinpath("rc.txt").write_text(
+        "# Netscape HTTP Cookie File\n"
+        ".reddit.com\tTRUE\t/\tFALSE\t0\tedgebucket\txyz\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(reddit_cookies, "settings", type(
+        "S", (), {"pipeline_reddit_cookie": ""})())
+    status = reddit_cookies.cookies_status()
+    assert status["exists"] is True
+    assert status["session_cookie"] is False
+    # 会话 cookie 存在 → session_cookie=True
+    tmp_path.joinpath("rc.txt").write_text(
+        "# Netscape HTTP Cookie File\n"
+        ".reddit.com\tTRUE\t/\tFALSE\t0\treddit_session\tSESS\n"
+        ".reddit.com\tTRUE\t/\tFALSE\t0\tedgebucket\txyz\n",
+        encoding="utf-8",
+    )
+    status = reddit_cookies.cookies_status()
+    assert status["session_cookie"] is True
+
+
+@pytest.mark.asyncio
+async def test_cookie_export_browser_param(client, tmp_path, monkeypatch) -> None:
+    """v0.11.7：export 支持指定浏览器，仅尝试该浏览器。"""
+    from backend.pipeline import reddit_cookies
+
+    def fake_path():
+        return tmp_path / "rc.txt"
+
+    monkeypatch.setattr(reddit_cookies, "cookies_file_path", fake_path)
+    monkeypatch.setattr(reddit_cookies, "_export_lock_until", 0.0)
+    tmp_path.joinpath("rc.txt").write_text(
+        "# Netscape HTTP Cookie File\n"
+        ".reddit.com\tTRUE\t/\tFALSE\t0\ttoken_v2\tabc\n",
+        encoding="utf-8",
+    )
+    # 模拟某浏览器导出成功（写 cookie 文件，with_suffix(".tmp") 覆盖整后缀 → rc.tmp）
+    async def fake_run(cmd):
+        assert "firefox" in cmd, "应只尝试指定浏览器"
+        tmp_path.joinpath("rc.tmp").write_text(
+            "# Netscape HTTP Cookie File\n"
+            ".reddit.com\tTRUE\t/\tFALSE\t0\treddit_session\tS\n",
+            encoding="utf-8",
+        )
+
+        class P:
+            returncode = 0
+
+        return P()
+
+    monkeypatch.setattr(reddit_cookies, "_run_export", fake_run)
+    resp = await client.post(
+        "/api/pipeline/reddit-cookie/export?browser=firefox&force=true&verify=false"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["source"] == "browser:firefox"
+    assert body["session_cookie"] is True
+
+
 # ---------- RSS 错位与 yt-dlp cookie 优先（v0.8.1，参考原项目） ----------
 
 
@@ -1889,7 +2004,8 @@ class _PackagingAi:
 
 @pytest.mark.asyncio
 async def test_generate_packaging_llm_and_fallback() -> None:
-    """LLM 成功：中文标题/清洗后标签/简介写入；LLM 失败：heuristic 兜底。"""
+    """LLM 成功：中文标题/清洗后标签/原文标题简介写入；LLM 失败：heuristic 兜底。
+    v0.11.5：简介不换中文——固定用原帖标题。"""
     from backend.pipeline.package import generate_packaging
 
     class Item:
@@ -1903,14 +2019,13 @@ async def test_generate_packaging_llm_and_fallback() -> None:
     got = await generate_packaging(ai, Item(), script)
     assert got["bili_title"] == "门一开空气都安静了"
     assert got["bili_tags"] == "神奇现象,高能"  # Reddit/r/aww 被清洗
-    assert "第一眼以为是定格" in got["bili_desc"]
+    assert got["bili_desc"] == "Man hand-feeds a giant crocodile"  # 原文标题，不换中文
 
     ai_bad = _PackagingAi(ok=False)
     got2 = await generate_packaging(ai_bad, Item(), {"mode": "script", "narration": "x", "subtitle_zh": "他居然徒手喂鳄鱼。"})  # noqa: E501
     assert got2["bili_title"].startswith("这镜头 ")
     assert "神奇现象" in got2["bili_tags"]
-    assert "他居然徒手喂鳄鱼。" in got2["bili_desc"]  # 字幕首句兜底
-    assert "r/interestingasfuck" in got2["bili_desc"]
+    assert got2["bili_desc"] == "Man hand-feeds a giant crocodile"
 
 
 @pytest.mark.asyncio
@@ -1958,7 +2073,7 @@ async def test_publish_cmd_cover_source_desc() -> None:
     assert "--cover" in captured and "/tmp/x.jpg" in captured
     joined = " ".join(captured)
     assert "--source" in joined and "reddit.com" in joined
-    assert "门一开空气都安静了" in captured  # desc 空 → bili_title 兜底
+    assert "English Fallback Title" in captured  # v0.11.5：desc 空 → 原文标题兜底（不换中文）
     assert "--tag" in joined and "神奇现象" in joined
     assert r["bvid"] == "BV1abc123XYZ"
 
@@ -3017,3 +3132,51 @@ async def test_non_voice_subtitles_use_original_audio_duration(
     # 原声 20s：字幕在 20s 内结束（对齐原声记录，不拖到视频 60s）
     assert cues[-1][1] == pytest.approx(20.0, abs=0.3)
     assert any(c[1] > 8.0 for c in cues)  # 多条 cue 铺满原声时长
+
+
+# ---------- 文字故事产线（v0.11.7） ----------
+
+
+def test_collect_text_only_kept_with_selftext() -> None:
+    """v0.11.7：text_only 帖保留（≥50 字正文）；短正文丢弃。"""
+    from backend.pipeline.collectors.reddit import RedditCollector
+
+    post = RedditCollector._to_post({
+        "id": "story-1", "title": "AITA for not paying my sister's wedding",
+        "selftext": "My sister asked me to pay for her 200-guest wedding. I refused because "
+                    "she never supported my career choices and mocked me in front of my kids.",
+        "permalink": "/r/AmItheAsshole/comments/story1/",
+        "author": "u1", "score": 8800, "upvote_ratio": 0.91,
+        "num_comments": 2300, "created_utc": 1_700_000_000.0,
+        "stickied": False, "is_video": False, "url": "",
+    })
+    assert post is not None
+    assert post.item_type == "text_only"
+    assert post.media_url == ""
+    assert len(post.selftext) >= 50
+
+    short = RedditCollector._to_post({
+        "id": "story-2", "title": "t", "selftext": "too short",
+        "permalink": "/r/AmItheAsshole/comments/story2/",
+        "author": "u2", "score": 1, "upvote_ratio": 1.0, "num_comments": 0,
+        "created_utc": 1_700_000_000.0, "stickied": False,
+        "is_video": False, "url": "",
+    })
+    assert short is None
+
+
+def test_story_safety_only_compliance() -> None:
+    """v0.11.7：故事旁白 safety_only——安全红线阻断，营销极限词降级告警。"""
+    from backend.pipeline.sensitive import check_text
+
+    blocked = check_text("他沉迷赌博，把家里钱都输了", safety_only=True)
+    assert "赌博" in blocked["tier1"]
+
+    # 「最/第一」是中文口语高频词：safety_only 下不进 tier1，降级 tier2 告警
+    ok = check_text("这是我最好的朋友，也是第一次有人这样对我", safety_only=True)
+    assert ok["tier1"] == []
+    assert "最" in ok["tier2"]
+
+    # 默认严格模式：营销极限词仍阻断（标题/简介场景）
+    strict = check_text("最顶级的产品")
+    assert "最" in strict["tier1"]

@@ -35,11 +35,12 @@ async def set_publish_stats(item_id: uuid.UUID, body: PublishStatsBody) -> dict:
 
 
 @router.post("/items/{item_id}/publish")
-async def publish_item(item_id: uuid.UUID, selfmade: int = 0, target: str = ""):
-    """发布：404/409 由全局 handler 映射；执行失败（缺 cookie/文件等）→ 502。"""
+async def publish_item(item_id: uuid.UUID, selfmade: int = 0, target: str = "", now: int = 0):
+    """发布：404/409 由全局 handler 映射；执行失败（缺 cookie/文件等）→ 502。
+    v0.11.5：now=1（立即发布）→ 清除 scheduled_at 按当前时间上传。"""
     try:
         return await _pipe().publish_one(
-            item_id, selfmade=bool(selfmade), target=target.strip() or None
+            item_id, selfmade=bool(selfmade), target=target.strip() or None, now=bool(now)
         )
     except HertzError:
         raise

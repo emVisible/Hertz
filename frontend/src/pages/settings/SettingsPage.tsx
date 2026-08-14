@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -14,6 +14,8 @@ import { PromptsManager } from './PromptsManager'
 import { RolesManager } from './RolesManager'
 import { SettingsNav, type SettingsSection } from './SettingsNav'
 import { TracePanel } from './TracePanel'
+import { HealthDashboard } from './HealthDashboard'
+import { SOURCE_CATALOG_NAMES, SOURCE_GROUPS } from '../../constants/sources'
 
 /** 字幕翻译语言选项（v0.8.9 翻译方向扩展：源→目标可配） */
 const LANG_OPTIONS: Array<{ value: string; label: string }> = [
@@ -51,6 +53,8 @@ interface ConfigData {
   pipeline_subtitle_outline?: number
   pipeline_subtitle_bold?: boolean
   pipeline_subtitle_alignment?: number
+  pipeline_subtitle_fade_ms?: number
+  pipeline_subtitle_margin_bottom?: number
   pipeline_subtitle_lang?: string
   pipeline_translate_source_lang?: string
   pipeline_tts_text_source?: string
@@ -99,25 +103,43 @@ function PathField({
   )
 }
 
-/** Reddit Cookie 状态卡（v0.8.1）：存在性/年龄 + 一键浏览器导出。 */
+/** Reddit Cookie 状态卡（v0.8.1）：存在性/年龄 + 一键浏览器导出（v0.11.7 可选浏览器 + 通道验证）。 */
+const COOKIE_BROWSERS = [
+  { value: '', label: 'auto' },
+  { value: 'chrome', label: 'Chrome' },
+  { value: 'safari', label: 'Safari' },
+  { value: 'edge', label: 'Edge' },
+  { value: 'firefox', label: 'Firefox' },
+]
+
 function RedditCookieCard() {
   const { t } = useTranslation()
   const toast = useToast()
   const { data, isError, refetch } = useQuery({
     queryKey: ['reddit-cookie-status'],
-    queryFn: () => api.get<{ exists: boolean; age_s: number | null; path: string; cookie_set: boolean }>('/api/pipeline/reddit-cookie/status'),
+    queryFn: () => api.get<{ exists: boolean; age_s: number | null; path: string; cookie_set: boolean; session_cookie?: boolean }>('/api/pipeline/reddit-cookie/status'),
     refetchInterval: 15_000,
   })
   const [busy, setBusy] = useState(false)
+  const [browser, setBrowser] = useState('')
 
   async function exportCookie(force = false) {
     setBusy(true)
     try {
-      const res = await api.post<{ ok: boolean; source: string }>(
-        `/api/pipeline/reddit-cookie/export${force ? '?force=true' : ''}`,
+      const res = await api.post<{ ok: boolean; source: string; session_cookie?: boolean; verify_status?: { ok: boolean; code?: number } }>(
+        `/api/pipeline/reddit-cookie/export?force=${force ? 'true' : 'false'}&browser=${encodeURIComponent(browser)}&verify=true`,
       )
       if (res.ok) {
-        toast(t('settings.cookieExported', { source: res.source }), 'success')
+        if (!res.session_cookie) {
+          toast(t('settings.cookieExportedNoSession'), 'warning')
+        } else if (res.verify_status?.ok) {
+          toast(t('settings.cookieExportedVerified', { source: res.source }), 'success')
+        } else {
+          toast(
+            t('settings.cookieExportedBlocked', { source: res.source, code: String(res.verify_status?.code ?? '?') }),
+            'warning',
+          )
+        }
       } else {
         toast(t('settings.cookieExportFailed'), 'warning')
       }
@@ -140,12 +162,23 @@ function RedditCookieCard() {
           <span className="text-text-secondary">{t('settings.cookieAge', { h: ageH })}</span>
         )}
         {data?.cookie_set && <Badge tone="neutral">{t('settings.cookieRawSet')}</Badge>}
+        {data?.session_cookie ? (
+          <Badge tone="success">{t('settings.cookieSessionOk')}</Badge>
+        ) : data?.exists ? (
+          <Badge tone="warning">{t('settings.cookieNoSession')}</Badge>
+        ) : null}
       </div>
       <p className="text-xs leading-relaxed text-text-secondary">
         {t('settings.cookiePath')}:{' '}
         <code className="font-mono text-text-primary">{data?.path ?? '…'}</code>
       </p>
       <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={browser}
+          onChange={(e) => setBrowser(e.target.value)}
+          className="w-36"
+          options={COOKIE_BROWSERS}
+        />
         <Button size="sm" onClick={() => void exportCookie()} loading={busy}>
           <Icon name="downloads" size={12} />
           {t('settings.cookieExport')}
@@ -410,10 +443,12 @@ export function SettingsPage() {
       pipeline_auto_collect_minutes: String(cfg.pipeline_auto_collect_minutes ?? 30),
       pipeline_publish_target: cfg.pipeline_publish_target ?? 'noop',
       pipeline_sources: (cfg.pipeline_sources ?? ['hot']).join(', '),
-      pipeline_subtitle_font_size: String(cfg.pipeline_subtitle_font_size ?? 26),
-      pipeline_subtitle_outline: String(cfg.pipeline_subtitle_outline ?? 2),
-      pipeline_subtitle_bold: String(cfg.pipeline_subtitle_bold ?? true),
+      pipeline_subtitle_font_size: String(cfg.pipeline_subtitle_font_size ?? 24),
+      pipeline_subtitle_outline: String(cfg.pipeline_subtitle_outline ?? 1),
+      pipeline_subtitle_bold: String(cfg.pipeline_subtitle_bold ?? false),
       pipeline_subtitle_alignment: String(cfg.pipeline_subtitle_alignment ?? 2),
+      pipeline_subtitle_fade_ms: String(cfg.pipeline_subtitle_fade_ms ?? 300),
+      pipeline_subtitle_margin_bottom: String(cfg.pipeline_subtitle_margin_bottom ?? 72),
       pipeline_subtitle_lang: cfg.pipeline_subtitle_lang ?? 'zh-CN',
       pipeline_translate_source_lang: cfg.pipeline_translate_source_lang ?? 'en-US',
       pipeline_tts_text_source: cfg.pipeline_tts_text_source ?? 'script',
@@ -427,6 +462,36 @@ export function SettingsPage() {
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }))
     setDirty(true)
+  }
+
+  // v0.11.6 源池勾选：pipeline_sources 字符串 ↔ 目录源/自定义源拆分
+  const enabledSources = useMemo(
+    () =>
+      (form.pipeline_sources ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    [form.pipeline_sources],
+  )
+  const customOnly = useMemo(
+    () => enabledSources.filter((s) => !SOURCE_CATALOG_NAMES.has(s)),
+    [enabledSources],
+  )
+  function toggleSource(name: string) {
+    const next = enabledSources.includes(name)
+      ? enabledSources.filter((s) => s !== name)
+      : [...enabledSources, name]
+    set('pipeline_sources', next.join(', '))
+  }
+  function setCustom(v: string) {
+    const custom = v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    set(
+      'pipeline_sources',
+      [...enabledSources.filter((s) => SOURCE_CATALOG_NAMES.has(s)), ...custom].join(', '),
+    )
   }
 
   async function save() {
@@ -443,10 +508,12 @@ export function SettingsPage() {
         ?.split(',')
         .map((s) => s.trim())
         .filter(Boolean) || ['hot'],
-      pipeline_subtitle_font_size: Number(form.pipeline_subtitle_font_size) || 26,
-      pipeline_subtitle_outline: Number(form.pipeline_subtitle_outline) || 2,
+      pipeline_subtitle_font_size: Number(form.pipeline_subtitle_font_size) || 24,
+      pipeline_subtitle_outline: Number(form.pipeline_subtitle_outline) || 1,
       pipeline_subtitle_bold: form.pipeline_subtitle_bold === 'true',
       pipeline_subtitle_alignment: Number(form.pipeline_subtitle_alignment) || 2,
+      pipeline_subtitle_fade_ms: Number(form.pipeline_subtitle_fade_ms) || 300,
+      pipeline_subtitle_margin_bottom: Number(form.pipeline_subtitle_margin_bottom) || 72,
       pipeline_subtitle_lang: form.pipeline_subtitle_lang || 'zh-CN',
       pipeline_translate_source_lang: form.pipeline_translate_source_lang || 'en-US',
       pipeline_tts_text_source: form.pipeline_tts_text_source || 'script',
@@ -504,6 +571,17 @@ export function SettingsPage() {
 
             {sectionId === 'general' && (
               <>
+                <section className={section}>
+                  <h2 className={heading}>
+                    <Icon name="config" size={15} />
+                    {t('settings.health')}
+                  </h2>
+                  {/* 系统健康看板（v0.11.6）：/api/health 可视化 */}
+                  <div className="mt-2">
+                    <HealthDashboard />
+                  </div>
+                </section>
+
                 <section className={section}>
                   <h2 className={heading}>
                     <Icon name="moon" size={15} />
@@ -646,11 +724,44 @@ export function SettingsPage() {
                     />
                   </div>
                   <div className="mt-3">
-                    <Input
-                      label={t('settings.sources')}
-                      value={form.pipeline_sources ?? ''}
-                      onChange={(e) => set('pipeline_sources', e.target.value)}
-                      placeholder="pics, MadeMeSmile, Damnthatsinteresting"
+                    <span className="text-xs font-medium text-text-primary">{t('settings.sources')}</span>
+                    {/* 源池勾选（v0.11.6 情感频道）：目录常量 + 勾选 → pipeline_sources */}
+                    {SOURCE_GROUPS.map((g) => {
+                      const enabled = enabledSources
+                      return (
+                        <div key={g.id} className="mt-2">
+                          <p className="text-[10px] uppercase tracking-wide text-text-disabled">
+                            {t(g.labelKey)}
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {g.sources.map((name) => {
+                              const on = enabled.includes(name)
+                              return (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => toggleSource(name)}
+                                  className={`border px-2 py-0.5 text-[11px] transition-colors ${
+                                    on
+                                      ? 'border-primary/50 bg-primary/15 font-medium text-primary'
+                                      : 'border-border text-text-secondary hover:border-primary hover:text-primary'
+                                  }`}
+                                >
+                                  {name}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {/* 自定义源（目录外 subreddit，逗号分隔） */}
+                    <input
+                      type="text"
+                      value={customOnly.join(', ')}
+                      onChange={(e) => setCustom(e.target.value)}
+                      placeholder={t('settings.sourcesCustomPlaceholder')}
+                      className="mt-2 h-7 w-full rounded-sm border border-border bg-surface-1 px-2 text-xs text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
                     />
                     <p className="mt-1 text-xs leading-relaxed text-text-disabled">
                       {t('settings.sourcesHint')}
@@ -706,6 +817,18 @@ export function SettingsPage() {
                         { value: '2', label: t('settings.subtitleAlignMiddle') },
                         { value: '3', label: t('settings.subtitleAlignTop') },
                       ]}
+                    />
+                    <Input
+                      label={t('settings.subtitleFadeMs')}
+                      type="number"
+                      value={form.pipeline_subtitle_fade_ms ?? '300'}
+                      onChange={(e) => set('pipeline_subtitle_fade_ms', e.target.value)}
+                    />
+                    <Input
+                      label={t('settings.subtitleMarginBottom')}
+                      type="number"
+                      value={form.pipeline_subtitle_margin_bottom ?? '72'}
+                      onChange={(e) => set('pipeline_subtitle_margin_bottom', e.target.value)}
                     />
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">

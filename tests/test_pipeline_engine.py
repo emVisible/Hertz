@@ -38,7 +38,12 @@ class ScoringLLM:
     """
 
     async def chat_stream(self, messages, *, temperature=0.7, max_tokens=4096):
-        content = "\n".join(getattr(m, "content", None) or m.get("content") for m in messages)
+        # v0.11.6：只拼接用户消息（系统提示词含「低分」字样曾误触低分分支）
+        content = "\n".join(
+            (getattr(m, "content", None) or m.get("content"))
+            for m in messages
+            if (getattr(m, "role", None) or m.get("role")) == "user"
+        )
         if "来源：" in content:
             import re
 
@@ -455,3 +460,71 @@ async def test_requeue_approved(client, pipeline_env) -> None:
     resp = await client.post(f"/api/pipeline/items/{item_id}/requeue")
     assert resp.status_code == 200
     assert resp.json()["status"] == "queued"
+
+
+class _FakeTTS:
+    """v0.11.7 故事产线测试：合成一段真实可解码的静音 mp3（ffmpeg 生成）。"""
+
+    async def synthesize(self, text: str, voice: str = "") -> bytes:
+        import asyncio
+        import tempfile
+        from pathlib import Path
+
+        async def _make() -> bytes:
+            out = Path(tempfile.mkdtemp()) / "s.mp3"
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
+                "-t", "1", "-q:a", "9", str(out),
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.communicate()
+            return out.read_bytes()
+
+        return await _make()
+
+
+@pytest.mark.asyncio
+async def test_chain_text_story_to_queued(client, pipeline_env) -> None:
+    """v0.11.7：text_only 帖全链路——采集保留 → 下载跳过 → 故事合成 → queued。"""
+    from backend.factory.registry import ServiceRegistry
+    from backend.pipeline.collectors.reddit import FakeRedditCollector
+
+    registry = ServiceRegistry.get()
+    engine = registry.pipeline.engine
+    original_ai = engine.ai
+    original_collector = engine.collector
+    try:
+        engine.ai = AIRouter(llm=ScoringLLM(), image=None, tts=_FakeTTS())
+        engine.collector = FakeRedditCollector([
+            RawPost(
+                source_id="story-1",
+                title="他第一次在她面前哭了",
+                source_url="https://www.reddit.com/comments/story1/",
+                media_url="",
+                author="tester", score=88, upvote_ratio=0.9,
+                num_comments=42, created_utc=1_700_000_000.0,
+                item_type="text_only",
+                selftext="我母亲去世后，父亲沉默了三年。昨天他第一次开口，"
+                         "说想和我一起去看海。我哭了整整一个晚上。" * 3,
+            ),
+        ])
+        resp = await client.post("/api/pipeline/chain", params={"limit": 5})
+        assert resp.status_code == 200
+        # 共享 DB 含存量 queued 条目——必须按 source_id 精确等待 story-1
+        deadline = asyncio.get_running_loop().time() + 90
+        item = None
+        while asyncio.get_running_loop().time() < deadline:
+            resp = await client.get("/api/pipeline/items", params={"status": "queued"})
+            found = [q for q in resp.json() if q["source_id"] == "story-1"]
+            if found:
+                item = found[0]
+                break
+            await asyncio.sleep(0.3)
+        assert item is not None, "story-1 未在超时内进入审核队列"
+        assert item["status"] == "queued"
+        assert item["raw_path"] is None, "text_only 无 raw（下载跳过）"
+        assert item["video_path"], "故事产线产出成片"
+        assert (item["script_json"] or {}).get("narration")
+    finally:
+        engine.ai = original_ai
+        engine.collector = original_collector

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
+import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, Icon } from '../ui'
 import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 
@@ -23,6 +24,8 @@ export function PreReviewRow({
   onReject: (item: PipelineItem) => void
 }) {
   const { t } = useTranslation()
+  // v0.11.3：单条操作进行中——按钮转圈 + 防重复提交
+  const busy = useExecutionStore((s) => s.pipeline.busy[item.id])
 
   return (
     <li className="group flex items-center gap-3 px-4 py-2 transition-colors hover:bg-surface-2/40">
@@ -79,15 +82,29 @@ export function PreReviewRow({
           <Icon name="close" size={12} />
         </Button>
         {stage === 'discovered' && (
-          <Button size="sm" variant="secondary" onClick={() => onScore(item)} title={t('console.scoreHint')}>
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={!!busy}
+            disabled={!!busy}
+            onClick={() => onScore(item)}
+            title={t('console.scoreHint')}
+          >
             <Icon name="whisper" size={12} />
-            {t('console.score')}
+            {busy ? t('console.busy.score') : t('console.score')}
           </Button>
         )}
         {stage === 'scored' && (
-          <Button size="sm" variant="secondary" onClick={() => onDownload(item)} title={t('console.downloadHint')}>
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={!!busy}
+            disabled={!!busy}
+            onClick={() => onDownload(item)}
+            title={t('console.downloadHint')}
+          >
             <Icon name="downloads" size={12} />
-            {t('console.downloadOne')}
+            {busy ? t('console.busy.download') : t('console.downloadOne')}
           </Button>
         )}
       </span>

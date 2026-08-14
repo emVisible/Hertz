@@ -135,6 +135,13 @@ class StepEngine:
             ai=self.ai,
             emit=lambda e: self._emit("item:" + item_id.hex, e),
         )
+        # v0.11.3：单条操作开始即上报（SSE job_step）——前端终端/状态条
+        # 立即感知「已开始加工」，不必等长任务（制作/翻译）HTTP 返回
+        logger.info("manual %s started for item %s", step_name, item_id)
+        self._emit(
+            "pipeline",
+            {"type": "job_step", "step": step_name, "count": 1, "item_id": str(item_id)},
+        )
         outcome = await self._process_item(ctx, step, item)
         self._emit("pipeline", {"type": "job_step", "step": step_name, "count": 1})
         return outcome

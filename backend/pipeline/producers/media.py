@@ -126,13 +126,24 @@ async def narration_budget(video_duration: float | None) -> dict:
 
 
 async def generate_script(
-    ai: AIRouter, item, *, max_words: int = 120, video_duration: float | None = None
+    ai: AIRouter, item, *, max_words: int = 120, video_duration: float | None = None,
+    content: str | None = None,
 ) -> dict:
-    """Script + metadata via the AI router; heuristic fallback if LLM is down."""
-    content = f"{item.title}\n\n来源: r/{item.subreddit} (r/{item.subreddit})"
+    """Script + metadata via the AI router; heuristic fallback if LLM is down.
+
+    v0.11（内容源重构）：content = 视频原声转写文本（视频里说的话）——旁白
+    基于视频内容生成；无转写（无音轨/ASR 不可用/失败）时回退标题+简介，
+    content_source 标注实际数据源（transcript / metadata）。
+    """
+    body = (content or "").strip()
+    if len(body) >= 20:
+        script_source = "transcript"
+    else:
+        body = f"{item.title}\n\n来源: r/{item.subreddit} (r/{item.subreddit})"
+        script_source = "metadata"
     text = ""
     try:
-        text = await ai.script(content=content, title=item.title, max_words=max_words)
+        text = await ai.script(content=body, title=item.title, max_words=max_words)
     except Exception:  # noqa: BLE001 — heuristic fallback
         logger.exception("script generation failed, using heuristic")
     if not text or len(text.strip()) < 20:
@@ -145,14 +156,17 @@ async def generate_script(
         "mode": "script",
         "narration": text.strip(),
         "source": "llm" if text else "heuristic",
+        "content_source": script_source,
     }
 
 
-def check_script_compliance(script: dict) -> dict:
-    """合规门禁（Mojito heritage）：Tier1 违禁词阻断产出。"""
+def check_script_compliance(script: dict, *, safety_only: bool = False) -> dict:
+    """合规门禁（Mojito heritage）：Tier1 违禁词阻断产出。
+    v0.11.7：safety_only=True（故事旁白）→ 只按安全红线阻断，
+    营销极限词降级 tier2 告警（中文旁白天然含「最/第一」等口语词）。"""
     from backend.pipeline.sensitive import check_script
 
-    hits = check_script(script)
+    hits = check_script(script, safety_only=safety_only)
     if hits["tier1"]:
         raise ProducerError(
             f"content blocked by compliance check: {sorted(set(hits['tier1']))}"
@@ -188,6 +202,43 @@ _LANG_NAMES = {
 }
 
 
+_LOCALIZE_LEAD_PUNCT = re.compile(r"^[\s，,、。.!?！？；;:：'\"“”‘’（）()…—]+")
+
+
+def _clean_nonzh_translation_text(text: str) -> str:
+    """非中文译文清洗（v0.11.3）：去全部标点、保留词间距（与中文
+    clean_zh_subtitle_text 的"去空格"语义不同——英文挤掉空格会糊成一片）；
+    句边界（. ! ? …）折成单空格——script_to_srt 断句依赖。
+    """
+    parts = re.split(r"[.!?…]+", text)
+    out: list[str] = []
+    for part in parts:
+        part = re.sub(
+            r"[\"'“”‘’（）()\[\]{}<>，,、：:；;·•\-_—–~～@#$%^&*+=`|/\\]+",
+            " ", part,
+        )
+        part = re.sub(r"\s+", " ", part).strip()
+        if part and not part.isdigit():  # 编号残留（"1." → "1"）不落字幕
+            out.append(part)
+    return " ".join(out)
+
+
+def _clean_translation_text(text: str) -> str:
+    """翻译文本后置清洗（v0.11.2，v0.11.3 全语言化）：字幕不需要标点——
+
+    - 去除句首/句尾标点（LLM 常在句首补“，”）
+    - v0.11.3：任何语言译文一律去全部标点（用户诉求：翻译不带标点），
+      句边界保留单空格（script_to_srt 断句依赖）
+    """
+    t = _LOCALIZE_LEAD_PUNCT.sub("", (text or "").strip())
+    t = t.strip(" .,;:!?。！？…—")
+    if not t:
+        return ""
+    if any("\u4e00" <= ch <= "\u9fff" for ch in t):
+        return clean_zh_subtitle_text(t)
+    return _clean_nonzh_translation_text(t)
+
+
 async def _localize_text(
     ai: AIRouter, text: str, target_lang: str, source_lang: str | None = None
 ) -> str:
@@ -195,6 +246,9 @@ async def _localize_text(
 
     v0.8.9 翻译方向扩展：source_lang → target_lang 显式声明（默认源 =
     narration_lang，即 en→zh 保持现状）；目标语言任意可配（settings 页面下拉）。
+
+    v0.11.2：译文后置清洗 _clean_translation_text——LLM 常在每句开头补
+    “，”且 prompt 约束失效，字幕不允许标点（用户诉求：翻译不带标点）。
 
     走 fast 角色（翻译是低成本任务，不占用 main 强推理）。
     """
@@ -219,14 +273,14 @@ async def _localize_text(
     ]
     try:
         translated = await ai.chat_messages(messages, role="fast", max_tokens=1600)
-        translated = (translated or "").strip()
-        return translated if len(translated.strip()) >= 4 else text
+        translated = _clean_translation_text(translated or "")
+        return translated if len(translated.strip()) >= 4 else _clean_translation_text(text)
     except Exception:  # noqa: BLE001 — 翻译失败回退原文，不阻塞生产
         logger.warning(
             "localize %s→%s failed, falling back to original",
             source_lang or "?", target_lang,
         )
-        return text
+        return _clean_translation_text(text)
 
 
 # 中文字幕清洗（v0.8.9，参考原项目 subtitle.py clean_zh_subtitle_text）：
@@ -274,9 +328,27 @@ def _split_zh_sentences(text: str) -> list[str]:
     return out
 
 
+# 非中文 cue 行内词数上限（v0.11.3：译文已去标点，按词数硬折行）
+_EN_LINE_WORDS = 8
+
+
 def _split_en_sentences(text: str) -> list[str]:
     parts = re.split(r"(?<=[.!?])\s+", text.strip())
-    return [p.strip() for p in parts if p.strip()]
+    out: list[str] = []
+    for part in parts:
+        part = _LOCALIZE_LEAD_PUNCT.sub("", part).strip()
+        if not part:
+            continue
+        words = part.split()
+        # 无标点长句（v0.11.3 译文已去标点）：按词数硬折行，保证单行可读
+        if len(words) <= _EN_LINE_WORDS:
+            out.append(part)
+            continue
+        for i in range(0, len(words), _EN_LINE_WORDS):
+            chunk = " ".join(words[i : i + _EN_LINE_WORDS])
+            if chunk:
+                out.append(chunk)
+    return out
 
 
 def _en_beat_weights(en_sentences: list[str]) -> list[float]:
@@ -464,9 +536,15 @@ async def apply_narration_delay(audio_path: Path, offset: float) -> Path:
 
 
 def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
-    """SRT → ASS with fade-in/out (Autarkeia heritage: subtitles should feel
-    alive, not hard-clipped). Keeps SRT timing, adds \fad(200,200).
-    v0.4 B1：样式参数读配置（字号/描边/加粗/对齐），设置页可调。"""
+    """SRT → ASS（无淡入淡出）。v0.11.4：两个修复——
+    1) Events Format 行补上 Name 字段：旧版缺 Name（9 字段）而 Dialogue
+    行为 10 值（含空 Name 槽），当前 ffmpeg 9.0.1 会把第 8 字段后的全部
+    内容按逗号 join 进文本 → 每句渲染出前导「，」（用户投诉的句首标点）。
+    2) 移除 \\fad 标签：稳定优先（fad 曾伴随此字段错位被误判为元凶，
+    一并去掉，字幕硬切）。
+    v0.4 B1：样式参数读配置（字号/描边/加粗/对齐），设置页可调。
+    v0.11.2：字体 → 霞鹜文楷（免费商用优雅楷体）；底部留白可配
+    （pipeline_subtitle_margin_bottom）。pipeline_subtitle_fade_ms 已休眠。"""
     entries: list[tuple[int, int, str]] = []
     lines = srt_path.read_text(encoding="utf-8").splitlines()
     i = 0
@@ -481,10 +559,12 @@ def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
             i += 3
             continue
         i += 1
-    font_size = int(getattr(settings, "pipeline_subtitle_font_size", 26))
-    outline = int(getattr(settings, "pipeline_subtitle_outline", 2))
-    bold = "-1" if getattr(settings, "pipeline_subtitle_bold", True) else "0"
+    font_size = int(getattr(settings, "pipeline_subtitle_font_size", 24))
+    outline = int(getattr(settings, "pipeline_subtitle_outline", 1))
+    bold = "-1" if getattr(settings, "pipeline_subtitle_bold", False) else "0"
     alignment = int(getattr(settings, "pipeline_subtitle_alignment", 2))
+    margin_v = int(getattr(settings, "pipeline_subtitle_margin_bottom", 64))
+    family = subtitle_font_family()
     header = (
         "[Script Info]\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\n"
         "WrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\n"
@@ -492,17 +572,19 @@ def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,Noto Sans CJK SC,{font_size},&H00FFFFFF,&H00FFFFFF,"
-        f"&H80000000,&H64000000,{bold},0,0,0,100,100,0,0,1,{outline},1,"
-        f"{alignment},40,40,26,1\n\n[Events]\n"
-        "Format: Layer, Start, End, Style, MarginL, MarginR, MarginV, Effect, Text\n"
+        f"Style: Default,{family},{font_size},&H00FFFFFF,&H00FFFFFF,"
+        f"&H66000000,&H32000000,{bold},0,0,0,100,100,0,0,1,{outline},0,"
+        f"{alignment},40,40,{margin_v},1\n\n[Events]\n"
+        # v0.11.4：必须含 Name——Dialogue 行有 10 个值（含空 Name 槽），
+        # Format 缺 Name 时 ffmpeg 9.0.1 会把多余字段拼进文本（前导「，」）
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     events = []
     for start_cs, end_cs, text in entries:
         if text:
             events.append(
                 f"Dialogue: 0,{_fmt_ass_cs(start_cs)},{_fmt_ass_cs(end_cs)},"
-                f"Default,,0,0,0,,{{\\fad(200,200)}}{text}"
+                f"Default,,0,0,0,,{text}"
             )
     out_path.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
     return out_path
@@ -605,13 +687,20 @@ def _write_srt_cues(out_path: Path, cues: list[tuple[float, float, str]]) -> Pat
 
     v0.10：标点清洗只对中文本体生效（ASR 英文原文要保留标点与停顿感）——
     clean_zh_subtitle_text 的"去标点"语义前提是目标为中文。
+
+    v0.11.3：句首标点全语言清除 + 纯标点 cue 丢弃——真实视频噪声下
+    whisper 偶发独立标点词（“。”/“.” 单独成词），非中文 cue 不再放行；
+    中文仍全标点清除。译文路径（任意语言）已在上游全标点清除。
     """
     lines: list[str] = []
     for i, (start, end, text) in enumerate(cues, 1):
         has_zh = any("\u4e00" <= ch <= "\u9fff" for ch in text or "")
-        body = (
-            clean_zh_subtitle_text(text) if has_zh else (text or "").strip()
-        ) or " "
+        body = clean_zh_subtitle_text(text) if has_zh else (text or "").strip()
+        if not has_zh:
+            # 只剥句首标点（含 …/—）：原声原文保留内部与句尾标点（v0.10 语义）
+            body = _LOCALIZE_LEAD_PUNCT.sub("", body).strip()
+        if not body:
+            body = " "
         lines.append(str(i))
         lines.append(f"{_fmt_ts(start)} --> {_fmt_ts(end)}")
         lines.append(body)
@@ -627,7 +716,7 @@ _TRANSLATE_SUBS_SYSTEM = (
 Rules:
 - 口语化、简洁——观众要快速读完
 - 每段译文与对应原文段落一一对应（1:1），不增删内容
-- 段内不要任何标点（。！？，、.!?），段间用空格拼接
+- 段内不要任何标点（。！？，、.!?），句首尤其不要逗号；段间用空格拼接
 - 只输出 JSON：{{"segments": ["翻译1", "翻译2", ...]}}"""
 )
 
@@ -675,6 +764,8 @@ async def _translate_srt_cues(
                 resp = {}
             trans = resp.get("segments") or []
             if len(trans) == len(batch):
+                # v0.11.2：句首标点加固（LLM 常在译文开头补“，”）
+                trans = [_LOCALIZE_LEAD_PUNCT.sub("", str(t) or "") for t in trans]
                 result.extend(trans)
             else:
                 result.extend(batch)
@@ -722,6 +813,7 @@ async def _asr_subtitles(
     target_lang: str = "zh-CN",
     *,
     translate: bool = True,
+    asr_srt: Path | None = None,
 ) -> tuple[Path, str] | None:
     """ASR 原声字幕（v0.8.9 起，v0.10 语义修正：字幕/翻译数据源 = 视频原声）：
 
@@ -729,16 +821,20 @@ async def _asr_subtitles(
     target_lang SRT（保留原声时间戳；translate=True 且目标为中文时译文标点
     统一清洗）。返回 (srt, 全文)；任一环节失败返回 None。
     translate=False：转写原文直接作字幕（原声语言），不翻译、不清洗。
+
+    v0.11：asr_srt 传入时复用 produce 步骤的预转写结果（脚本生成已依赖
+    转写全文，同一视频不转写两遍）。
     """
     from backend.pipeline.producers.asr import transcribe
 
-    has_audio = await probe_has_audio(raw_path)
-    if not has_audio:
-        return None  # 图片帖等无原声——回退旁白字幕
-    asr_srt = directory / "asr.srt"
-    got = await transcribe(raw_path, asr_srt)
-    if got is None:
-        return None
+    if asr_srt is None:
+        has_audio = await probe_has_audio(raw_path)
+        if not has_audio:
+            return None  # 图片帖等无原声——回退旁白字幕
+        asr_srt = directory / "asr.srt"
+        got = await transcribe(raw_path, asr_srt)
+        if got is None:
+            return None
     cues = parse_srt_cues(asr_srt)
     if not cues:
         return None
@@ -758,11 +854,36 @@ async def _asr_subtitles(
     return zh_srt, full
 
 
+# 字幕字体（v0.11.2）：霞鹜文楷（LXGW WenKai，SIL OFL 1.1 免费商用）优先——
+# data/assets/fonts/ 或系统字体目录（libass 经 fontconfig 按字体名匹配）；
+# 缺字体回退 PingFang / Noto。优雅楷体，减轻 Noto Bold 的厚重感。
+_FONT_NAMES = {
+    "latin": "LXGW WenKai",
+    "cjk": "霞鹜文楷",
+    "fallback": "Noto Sans CJK SC",
+}
+
+
+def subtitle_font_family() -> str:
+    """ASS Fontname：字体文件存在 → LXGW WenKai；否则 Noto 兜底。"""
+    from backend.infrastructure.deps import font_file
+
+    if font_file() is not None:
+        return _FONT_NAMES["latin"]
+    return _FONT_NAMES["fallback"]
+
+
 def _subtitle_font(size: int = 40):
-    """PNG 烧录字幕字体（原项目 _subtitle_font 移植）：系统 CJK 字体优先。"""
+    """PNG 烧录字幕字体（原项目 _subtitle_font 移植）：assets 霞鹜文楷优先。"""
     from PIL import ImageFont
 
-    candidates = [
+    from backend.infrastructure.deps import font_file
+
+    candidates: list[Path] = []
+    ff = font_file()
+    if ff is not None:
+        candidates.append(ff)
+    candidates += [
         Path("/System/Library/Fonts/PingFang.ttc"),
         Path("/System/Library/Fonts/STHeiti Light.ttc"),
         Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
@@ -799,16 +920,24 @@ def _wrap_lines(text: str, font, max_width: int, draw) -> list[str]:
 
 def _render_cue_png(text: str, out_path: Path, size: tuple[int, int] = (1280, 720)) -> Path:
     """透明全帧 PNG 字幕（v0.9 对齐原项目 edit.py _render_cue_png）：
-    白字 8 向黑色描边、底部留白 56px、最多 4 行——Homebrew ffmpeg 无 libass
-    时中文字幕烧录的降级通道。"""
+    白字单程描边（stroke_width，比 8 向叠加干净）、底部留白可配、
+    最多 4 行——Homebrew ffmpeg 无 libass 时中文字幕烧录的降级通道。
+
+    v0.11.2：字体/字号/描边/底部留白全部跟随设置（与 ASS 路径一致），
+    描边用 PIL stroke_width 单程绘制（淡而细，不再 8 向重影）。
+    """
     from PIL import Image, ImageDraw
+
+    font_size = int(getattr(settings, "pipeline_subtitle_font_size", 24))
+    outline = int(getattr(settings, "pipeline_subtitle_outline", 1))
+    margin_bottom = int(getattr(settings, "pipeline_subtitle_margin_bottom", 64))
 
     img = Image.new("RGBA", size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = _subtitle_font(40)
+    font = _subtitle_font(font_size)
     max_w = size[0] - 120
     lines = _wrap_lines(text, font, max_w, draw)[:4]
-    line_gap = 8
+    line_gap = 6
     heights: list[int] = []
     widths: list[int] = []
     for line in lines:
@@ -816,15 +945,14 @@ def _render_cue_png(text: str, out_path: Path, size: tuple[int, int] = (1280, 72
         widths.append(bbox[2] - bbox[0])
         heights.append(bbox[3] - bbox[1])
     block_h = sum(heights) + line_gap * (len(lines) - 1)
-    y = size[1] - 56 - block_h
+    y = size[1] - margin_bottom - block_h
+    stroke = max(1, outline)
     for line, w, h in zip(lines, widths, heights, strict=False):
         x = (size[0] - w) // 2
-        for dx, dy in (
-            (-2, 0), (2, 0), (0, -2), (0, 2),
-            (-1, -1), (1, 1), (-1, 1), (1, -1),
-        ):
-            draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0, 200))
-        draw.text((x, y), line, font=font, fill=(255, 255, 255, 245))
+        draw.text(
+            (x, y), line, font=font, fill=(255, 255, 255, 250),
+            stroke_width=stroke, stroke_fill=(0, 0, 0, 150),
+        )
         y += h + line_gap
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path, "PNG")
@@ -883,7 +1011,12 @@ async def compose_video(
                         sub_file = ass
                     except Exception:  # noqa: BLE001 — subtitles are best-effort
                         pass
-                    style = "FontSize=18,OutlineColour=&H80000000,Outline=1"
+                    # v0.11.2：force_style 跟随设置（字号/描边），描边色弱化
+                    style = (
+                        f"FontSize={int(getattr(settings, 'pipeline_subtitle_font_size', 24))},"
+                        f"Outline={int(getattr(settings, 'pipeline_subtitle_outline', 1))},"
+                        "OutlineColour=&H66000000"
+                    )
                     fc.append(
                         f"[{current}]subtitles={Path(sub_file).as_posix()}:"
                         f"force_style='{style}'[vsub]"
@@ -904,7 +1037,11 @@ async def compose_video(
                             _render_cue_png(text, png)
                             inputs += ["-loop", "1", "-t", str(target), "-i", str(png)]
                             dur = max(0.05, end_t - start_t)
-                            fi = fo = min(0.2, dur / 3.0)
+                            fade_s = min(
+                                int(getattr(settings, "pipeline_subtitle_fade_ms", 300)) / 1000.0,
+                                dur / 3.0,
+                            )
+                            fi = fo = max(0.05, fade_s)
                             out_st = max(start_t, end_t - fo)
                             fc.append(
                                 f"[{next_idx}:v]format=rgba,"
@@ -1126,6 +1263,11 @@ async def produce_item(
     want_translate = bool(opts.get("translate"))
     muted = bool(opts.get("mute"))
 
+    # v0.11.7 文字故事产线：text_only 帖无 raw 媒体，走独立分支
+    # （selftext → 中文旁白 → TTS → 图文合成）
+    if getattr(item, "item_type", "") == "text_only":
+        return await produce_story_item(ai, files, item, existing_script)
+
     # v0.8.8（AXIOM 25/34）：先校验 raw 存在再建目录——此前 mkdir 在 raw
     # 校验之前，raw 缺失的失败会遗留空目录（测试曾积累 300+ 个 hex 空目录）
     raw_path = Path(files.resolve(item.raw_path)) if item.raw_path else None
@@ -1165,18 +1307,46 @@ async def produce_item(
         duration = 15.0  # unknown duration → fixed budget
     budget = await narration_budget(duration)
 
+    # v0.11 内容源 = 视频原声（视频里说的话）：生产任何内容之前先转写——
+    # 旁白（script）、字幕、翻译、配音全部基于转写文本；无音轨（图片帖/
+    # 静音视频）或 ASR 通道不可用/失败 → 回退标题+简介（content_source 标注）。
+    transcript: dict | None = None
+    if bool(getattr(settings, "pipeline_enable_asr", True)):
+        try:
+            if await probe_has_audio(raw_path):
+                from backend.pipeline.producers.asr import transcribe
+
+                asr_srt = directory / "asr.srt"
+                got = await transcribe(raw_path, asr_srt)
+                if got is not None:
+                    cues = parse_srt_cues(asr_srt)
+                    if cues:
+                        transcript = {
+                            "srt": asr_srt,
+                            "cues": cues,
+                            "text": " ".join(t for _, _, t in cues).strip(),
+                        }
+        except Exception:  # noqa: BLE001 — 转写失败不阻塞生产（回退简介）
+            logger.warning("ASR transcription failed — falling back to metadata")
+
     script = existing_script or await generate_script(
-        ai, item, max_words=budget["max_words"] or 120, video_duration=duration
+        ai, item, max_words=budget["max_words"] or 120, video_duration=duration,
+        content=(transcript or {}).get("text"),
     )
     # v0.8.9 迁移数据兜底：旧项目脚本（CandleBone 时代）只有 script 键无
     # narration——重制时旁白会变成字符串 "None" 烧进字幕。无 narration 时重生成
     if not str(script.get("narration") or "").strip():
         logger.warning("existing script lacks narration — regenerating")
         script = await generate_script(
-            ai, item, max_words=budget["max_words"] or 120, video_duration=duration
+            ai, item, max_words=budget["max_words"] or 120, video_duration=duration,
+            content=(transcript or {}).get("text"),
         )
     compliance = check_script_compliance(script)
-    artifacts = {"script": script, "compliance": compliance, "directory": str(directory)}
+    artifacts = {
+        "script": script, "compliance": compliance, "directory": str(directory),
+    }
+    if transcript:
+        artifacts["transcript"] = {"path": str(transcript["srt"])}
 
     # 处理语言（v0.2.7，参考原项目 locales）：英文旁白 + 中文字幕可配置；
     # v0.3.3：翻译模块 = 仅字幕翻译（原声保留）
@@ -1205,14 +1375,42 @@ async def produce_item(
     # 中文字幕持久化（v0.8.5）：B 站简介构建复用（subtitle_zh 首句 + 署名）
     script["subtitle_zh"] = subtitle_text.strip()
 
+    # 字幕模块 · 原声字幕（v0.11：转写先行，复用预转写结果不重复转写）
+    # v0.10 语义修正：字幕/翻译的数据源 = 视频原声（视频中的人说的话），
+    # 旁白文案仅作回退——此前字幕基于简介派生的旁白文案，与用户语义
+    # 「提取视频原话→（翻译→）字幕」不符：
+    # - translate：原声转写 → 逐段翻译成 subtitle_lang（目标语言字幕）
+    # - subtitle（无 translate）：原声转写原文（保留原声语言与时间戳）
+    # - 原声缺失（图片帖/静音视频）/ ASR 通道不可用/失败 → 配音后回退旁白文案
+    srt_path = None
+    asr_subtitle = None
+    if (
+        want_subtitle
+        and bool(getattr(settings, "pipeline_enable_asr", True))
+    ):
+        try:
+            asr_subtitle = await _asr_subtitles(
+                ai, raw_path, directory,
+                target_lang=subtitle_lang, translate=want_translate,
+                asr_srt=(transcript or {}).get("srt"),
+            )
+        except Exception:  # noqa: BLE001 — ASR 失败回退旁白字幕
+            logger.warning("ASR subtitles failed, falling back to narration subs")
+        if asr_subtitle:
+            srt_path, asr_text = asr_subtitle
+            script["subtitle_zh"] = asr_text.strip()
+            artifacts["subtitle"] = {"path": str(srt_path), "source": "asr"}
+
     # 配音模块：旁白文本按 narration_lang 本地化（v0.2.7 语义）后 TTS 裁词重试；
     # 非配音模块 → 无旁白。v0.8.9：音色内容自适应（pick_voice）+ 语速（rate）
     if want_voice:
         # v0.9：配音文本来源可选——跟字幕译文配音（tts_text_source=subtitle）
         # 或跟旁白原文本地化配音（默认 script）
+        # v0.11：subtitle 源 = script["subtitle_zh"]（转写译文优先，旁白文案兜底）
         tts_src = getattr(settings, "pipeline_tts_text_source", "script") or "script"
-        if (tts_src == "subtitle" and want_translate and subtitle_text.strip()):
-            tts_text = subtitle_text.strip()
+        subtitle_zh = str(script.get("subtitle_zh") or subtitle_text or "").strip()
+        if (tts_src == "subtitle" and want_translate and subtitle_zh):
+            tts_text = subtitle_zh
         else:
             tts_text = (
                 await _localize_text(ai, narration_text, narration_lang)
@@ -1308,60 +1506,41 @@ async def produce_item(
         audio_dur = 0.0
         start_offset = 0.0
 
-    # 字幕模块：烧录字幕（不依赖旁白——subs-only 语义）
-    # v0.10 语义修正：字幕/翻译的数据源 = 视频原声（视频中的人说的话），
-    # 旁白文案仅作回退——此前字幕基于简介派生的旁白文案，与用户语义
-    # 「提取视频原话→（翻译→）字幕」不符（v0.8.9 只覆盖 translate 且
-    # 不配音的组合，v0.10 扩展到全部字幕生产方式）：
-    # - translate：原声转写 → 逐段翻译成 subtitle_lang（目标语言字幕）
-    # - subtitle（无 translate）：原声转写原文（保留原声语言与时间戳）
-    # - 原声缺失（图片帖/静音视频）/ ASR 通道不可用/失败 → 回退旁白文案字幕
-    srt_path = None
-    asr_subtitle = None
+    # 字幕模块 · 回退旁白字幕（原声缺失/ASR 不可用/失败时兜底——
+    # 配音后执行，需要旁白音频时长/起始偏移做时间轴对齐）
     if (
-        want_subtitle
+        srt_path is None
+        and want_subtitle
         and bool(getattr(settings, "pipeline_enable_asr", True))
     ):
+        srt_path = directory / "subs.srt"
         try:
-            asr_subtitle = await _asr_subtitles(
-                ai, raw_path, directory,
-                target_lang=subtitle_lang, translate=want_translate,
-            )
-        except Exception:  # noqa: BLE001 — ASR 失败回退旁白字幕
-            logger.warning("ASR subtitles failed, falling back to narration subs")
-        if asr_subtitle:
-            srt_path, asr_text = asr_subtitle
-            script["subtitle_zh"] = asr_text.strip()
-            artifacts["subtitle"] = {"path": str(srt_path), "source": "asr"}
-        if srt_path is None:
-            srt_path = directory / "subs.srt"
-            try:
-                # v0.8.9 字幕同步（对齐原项目两个制作概念）：
-                # 1. voice 模式：字幕时间轴 = 旁白音频实际时长（从 start_offset
-                #    起，中文 cue 按英文 TTS beats 词数加权 1:1 对齐）
-                # 2. 非 voice 模式（原声记录）：字幕时间轴 = 视频原声音频流的
-                #    实际时长（probe_audio_duration）——说话者说完字幕即结束，
-                #    不再铺满视频总时长；无音轨（图片帖/静音视频）回退视频时长
-                if artifacts.get("audio") is not None:
-                    timing_dur = min(
-                        audio_dur or duration, max(0.5, duration - start_offset)
-                    )
-                else:
-                    # 无音轨（图片帖/静音视频）时 probe_audio_duration 已
-                    # 回退容器时长 → min(.., duration) = duration
-                    timing_dur = min(
-                        await probe_audio_duration(raw_path) or duration, duration
-                    )
-                await asyncio.to_thread(
-                    script_to_srt, subtitle_text, timing_dur, srt_path, start_offset,
-                    align_script=tts_text if artifacts.get("audio") is not None else None,
+            # v0.8.9 字幕同步（对齐原项目两个制作概念）：
+            # 1. voice 模式：字幕时间轴 = 旁白音频实际时长（从 start_offset
+            #    起，中文 cue 按英文 TTS beats 词数加权 1:1 对齐）
+            # 2. 非 voice 模式（原声记录）：字幕时间轴 = 视频原声音频流的
+            #    实际时长（probe_audio_duration）——说话者说完字幕即结束，
+            #    不再铺满视频总时长；无音轨（图片帖/静音视频）回退视频时长
+            if artifacts.get("audio") is not None:
+                timing_dur = min(
+                    audio_dur or duration, max(0.5, duration - start_offset)
                 )
-                artifacts["subtitle"] = {
-                    "path": str(srt_path),
-                    "source": "asr" if asr_subtitle else "script",
-                }
-            except Exception:  # noqa: BLE001 — subtitles are best-effort
-                srt_path = None
+            else:
+                # 无音轨（图片帖/静音视频）时 probe_audio_duration 已
+                # 回退容器时长 → min(.., duration) = duration
+                timing_dur = min(
+                    await probe_audio_duration(raw_path) or duration, duration
+                )
+            await asyncio.to_thread(
+                script_to_srt, subtitle_text, timing_dur, srt_path, start_offset,
+                align_script=tts_text if artifacts.get("audio") is not None else None,
+            )
+            artifacts["subtitle"] = {
+                "path": str(srt_path),
+                "source": "asr" if asr_subtitle else "script",
+            }
+        except Exception:  # noqa: BLE001 — subtitles are best-effort
+            srt_path = None
 
     video_path = directory / "final.mp4"
     narration_file = Path(artifacts["audio"]["path"]) if artifacts.get("audio") else None
@@ -1399,18 +1578,16 @@ async def produce_item(
         artifacts["script"] = script
 
     # phash 去重（v0.2.1，参考原项目 Autarkeia block_publish_duplicates）：
-    # 成片平均哈希 → 发布闸门比对已发布条目
+    # 平均哈希 → 发布闸门比对已发布条目。
+    # v0.11.4：一律用 raw 源片计算——成片 phash 被烧录字幕带/统一缩放主导
+    # （实测两个不同源视频的成片 phash 仅差 4 位 → 误判重复），
+    # raw 才反映真实内容（同一素材二次加工/直发仍能正确判重）
     if artifacts.get("video") is not None:
         from backend.pipeline.phash import compute_phash
 
-        phash_src = (
-            video_path
-            if artifacts["video"].get("passthrough") is not True
-            else raw_path
-        )
-        artifacts["phash"] = await compute_phash(str(phash_src))
+        artifacts["phash"] = await compute_phash(str(raw_path))
         if artifacts["phash"]:
-            logger.debug("item phash=%s", artifacts["phash"])
+            logger.debug("item phash=%s (raw=%s)", artifacts["phash"], raw_path)
     else:
         artifacts["phash"] = None
 
@@ -1438,4 +1615,217 @@ async def produce_item(
 
     artifacts["script"] = await generate_packaging(ai, item, artifacts["script"])
 
+    return artifacts
+
+
+# ---------- 文字故事产线（v0.11.7 情感频道第二阶段·半自动内容生产） ----------
+#
+# text_only 帖（Reddit 情感版块：AmItheAsshole/TrueOffMyChest/offmychest…）：
+# selftext → LLM 中文故事旁白 → TTS 固定中文音色 → 渐变背景+标题卡 →
+# 字幕烧录合成。无原始画面，phash 无意义 → None（去重靠标题指纹）。
+
+# 深紫→暖紫垂直渐变（IP 视觉基调）
+_STORY_GRADIENT = ((24, 20, 38), (58, 42, 74), (96, 64, 94))
+
+
+def _render_story_bg(title: str, out: Path, *, credit: str = "") -> Path:
+    """PIL 渐变背景 + 标题大字卡（1280x720，RGB）。"""
+    from PIL import Image, ImageDraw
+
+    w, h = 1280, 720
+    img = Image.new("RGB", (w, h))
+    px = img.load()
+    top, mid, bot = _STORY_GRADIENT
+    for y in range(h):
+        t = y / (h - 1)
+        if t < 0.5:
+            f = t * 2
+            c = tuple(int(top[i] + (mid[i] - top[i]) * f) for i in range(3))
+        else:
+            f = (t - 0.5) * 2
+            c = tuple(int(mid[i] + (bot[i] - mid[i]) * f) for i in range(3))
+        for x in range(w):
+            px[x, y] = c
+    draw = ImageDraw.Draw(img)
+    font = _subtitle_font(56)
+    max_w = w - 160
+    lines = _wrap_lines(title, font, max_w, draw)[:3]
+    y = 200
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        lw = bbox[2] - bbox[0]
+        draw.text(((w - lw) // 2, y), line, font=font, fill=(255, 255, 255))
+        y += (bbox[3] - bbox[1]) + 20
+    # 分隔线 + 来源署名
+    draw.line((w // 2 - 140, y + 6, w // 2 + 140, y + 6), fill=(255, 255, 255), width=2)
+    if credit:
+        small = _subtitle_font(26)
+        bbox = draw.textbbox((0, 0), credit, font=small)
+        draw.text(((w - (bbox[2] - bbox[0])) // 2, y + 22), credit, font=small,
+                  fill=(235, 220, 235))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out)
+    return out
+
+
+def _split_story_sentences(text: str) -> list[str]:
+    """故事旁白断句：按句末标点切分（。！？…），超长硬折 22 字。"""
+    cleaned = clean_zh_subtitle_text(text)
+    if not cleaned:
+        return []
+    parts = re.split(r"(?<=[。！？…])\s*", cleaned)
+    out: list[str] = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if len(part) <= 22:
+            out.append(part)
+            continue
+        for i in range(0, len(part), 22):
+            piece = part[i : i + 22]
+            if piece:
+                out.append(piece)
+    return out
+
+
+def _story_cues(sentences: list[str], total_dur: float) -> list[tuple[float, float, str]]:
+    """按字符比例把旁白时长分配到各句（对齐 TTS 朗读节奏的近似）。"""
+    if not sentences:
+        return []
+    total_chars = max(1, sum(len(s) for s in sentences))
+    cues: list[tuple[float, float, str]] = []
+    t = 0.0
+    for s in sentences:
+        d = max(1.2, total_dur * len(s) / total_chars)
+        cues.append((round(t, 2), round(min(t + d, total_dur + 0.3), 2), s))
+        t += d
+    if cues:
+        last = cues[-1]
+        cues[-1] = (last[0], round(max(last[1], total_dur), 2), last[2])
+    return cues
+
+
+async def _compose_story_video(
+    bg: Path, audio: Path, ass: Path, out: Path, *, duration: float,
+) -> dict:
+    """ffmpeg 合成：背景图循环 + 旁白音频 + ASS 字幕烧录（libass）。"""
+    ffmpeg = find_ffmpeg()
+    if ffmpeg is None:
+        raise ProducerError("ffmpeg not found")
+    style = (
+        f"FontSize={int(getattr(settings, 'pipeline_subtitle_font_size', 24))},"
+        f"Outline={int(getattr(settings, 'pipeline_subtitle_outline', 1))},"
+        "OutlineColour=&H66000000"
+    )
+    vf = (
+        f"scale=1280:720,subtitles={ass.as_posix()}:force_style='{style}'"
+    )
+    cmd = [
+        str(ffmpeg), "-y",
+        "-loop", "1", "-i", str(bg),
+        "-i", str(audio),
+        "-t", f"{max(duration, 0.5):.3f}",
+        "-vf", vf,
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
+        "-c:a", "aac", "-b:a", "160k",
+        str(out),
+    ]
+    await _run_cmd(cmd)
+    size_ok = await asyncio.to_thread(out.exists) and (
+        await asyncio.to_thread(out.stat)
+    ).st_size >= 1024
+    if not size_ok:
+        raise ProducerError("story compose failed: no output video")
+    return {"burn": "ass", "mode": "story"}
+
+
+async def produce_story_item(
+    ai: AIRouter, files: FileStore, item,
+    existing_script: dict | None = None,
+) -> dict:
+    """文字故事帖 → 中文旁白 → TTS → 图文合成（v0.11.7）。
+
+    产物：final.mp4（渐变背景 + 字幕烧录）/ narration.mp3 / subs.srt /
+    cover.jpg（标题卡）。phash=None（无原始画面，去重靠标题指纹）。
+    """
+    from backend.pipeline.package import generate_packaging
+
+    directory = _artifacts_dir(files, item)
+    await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
+
+    content = (item.selftext or "").strip()[:6000]
+    if len(content) < 20:
+        content = f"{item.title}\n\n来源: r/{item.subreddit}"
+
+    # 1. 中文故事旁白（LLM → heuristic 兜底）
+    script = dict(existing_script or {})
+    narration = str(script.get("narration") or "").strip()
+    src = "existing" if narration else ""
+    if not narration:
+        try:
+            narration = await ai.script(
+                content=content, title=item.title, max_words=450, story=True,
+            )
+            src = "llm"
+        except Exception:  # noqa: BLE001 — 旁白失败兜底，不阻塞生产
+            logger.exception("story script generation failed, using heuristic")
+        if not narration or len(narration.strip()) < 30:
+            narration = clean_zh_subtitle_text(content)[:300] or item.title
+            src = "heuristic"
+    script["mode"] = "story"
+    script["narration"] = narration.strip()[:1200]
+    script["source"] = src
+    script["content_source"] = "selftext"
+
+    # 2. 合规（safety_only：安全红线阻断，营销极限词降级告警——中文旁白
+    #    天然含「最/第一」等口语词，按广告法全量会误杀）
+    compliance = check_script_compliance(script, safety_only=True)
+    artifacts: dict = {
+        "script": script, "compliance": compliance, "directory": str(directory),
+        # 文字帖无原始画面：phash 无意义（去重靠标题指纹），显式置空
+        "phash": None,
+    }
+
+    # 3. TTS 配音（固定中文女声 = IP 听觉标识；注册表手动配置优先）
+    voice = "zh-CN-XiaoxiaoNeural"
+    try:
+        from backend.ai.registry import ProviderRegistry
+
+        resolved = await ProviderRegistry().resolve_role("tts")
+        configured = resolved["model_key"] if resolved else ""
+        if configured and configured.lower() not in ("auto", "random", "smart"):
+            voice = configured
+    except Exception:  # noqa: BLE001 — 音色解析失败用默认
+        pass
+    audio_path = directory / "narration.mp3"
+    tts = await synthesize_tts(ai, script["narration"], audio_path, voice=voice)
+    audio_dur = await probe_audio_duration(audio_path)
+    if audio_dur <= 0:
+        audio_dur = 60.0  # 探测失败 → 按默认 1 分钟兜底
+    artifacts["audio"] = {"path": str(audio_path), "bytes": tts.get("bytes", 0)}
+
+    # 4. 字幕（中文旁白 → 断句 → 按字符比例对齐时长 → SRT → ASS）
+    sentences = _split_story_sentences(script["narration"])
+    srt_path = directory / "subs.srt"
+    _write_srt_cues(srt_path, _story_cues(sentences, audio_dur))
+    ass_path = directory / "subs.ass"
+    srt_to_ass(srt_path, ass_path)
+    artifacts["subtitle"] = {"path": str(srt_path)}
+
+    # 5. 背景 + 合成 + 封面
+    bg_path = directory / "bg.png"
+    credit = f"r/{item.subreddit}" if item.subreddit else ""
+    await asyncio.to_thread(_render_story_bg, item.title, bg_path, credit=credit)
+    final_path = directory / "final.mp4"
+    quality = await _compose_story_video(
+        bg_path, audio_path, ass_path, final_path, duration=audio_dur,
+    )
+    artifacts["video"] = {"path": str(final_path), "quality": quality}
+    cover_path = directory / "cover.jpg"
+    await asyncio.to_thread(_render_story_bg, item.title, cover_path, credit=credit)
+    artifacts["cover"] = {"path": str(cover_path)}
+
+    # 6. B 站包装（标题/标签；简介 = 原帖标题，v0.11.5 语义）
+    artifacts["script"] = await generate_packaging(ai, item, artifacts["script"])
     return artifacts

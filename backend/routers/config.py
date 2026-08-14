@@ -28,11 +28,13 @@ RUNTIME_ALLOWLIST = {
     "pipeline_publish_target",
     # 采集源列表（v0.4 A4）：设置页增删 subreddit 源
     "pipeline_sources",
-    # 字幕样式（v0.4 B1）：字号/描边/加粗/对齐
+    # 字幕样式（v0.4 B1）：字号/描边/加粗/对齐；v0.11.2 增淡入淡出/底部留白
     "pipeline_subtitle_font_size",
     "pipeline_subtitle_outline",
     "pipeline_subtitle_bold",
     "pipeline_subtitle_alignment",
+    "pipeline_subtitle_fade_ms",
+    "pipeline_subtitle_margin_bottom",
     # 模型单价（v0.5 E 成本估算）：model_key → {prompt, completion}（美元/百万 tokens）
     "ai_model_prices",
     # 角色分配经 PUT /api/ai/roles 写入（唯一写入口，见 routers/ai.py）

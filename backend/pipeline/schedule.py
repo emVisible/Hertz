@@ -8,7 +8,10 @@
 - pipeline_publish_windows: 每日窗口，逗号分隔 "HH:MM-HH:MM"（默认 10:00-12:00,18:00-20:00）
 - pipeline_publish_min_interval_min: 相邻发布最小间隔（默认 30 分钟）
 - pipeline_publish_jitter_min: 槽位抖动上限（默认 5 分钟，防多机/多条目同时到点）
-- pipeline_publish_lookahead_days: 向前看天数（默认 3）
+- pipeline_publish_lookahead_days: 向前看天数（默认 1 = 只排当天，v0.11.5）
+
+v0.11.5：默认只排**当天**（用户需求：定时发布不要定太久）；当天窗口
+全部错过时兜底 = 最早可用时刻 + 最小间隔（仍在当天）。窗口即流量高峰时段。
 """
 
 import random
@@ -36,10 +39,6 @@ def parse_windows(raw: str) -> list[PublishWindow]:
     return windows
 
 
-def _with_time(day: datetime, t: time) -> datetime:
-    return day.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
-
-
 def next_slot(
     existing: list[datetime],
     *,
@@ -47,27 +46,40 @@ def next_slot(
     windows_raw: str = "10:00-12:00,18:00-20:00",
     min_interval_min: int = 30,
     jitter_min: int = 5,
-    lookahead_days: int = 3,
-) -> datetime:
-    """下一个发布槽位：满足 窗口内 + 最小间隔 + 抖动 的最早时刻。
+    lookahead_days: int = 1,
+) -> datetime | None:
+    """下一个发布槽位：满足 窗口内 + 最小间隔 + 抖动 的最早时刻；无可用返回 None。
 
+    v0.11.5：
+    - lookahead_days 默认 1（只排当天）；窗口错过 → 当天兜底 now + 最小间隔
+    - 窗口排满（earliest 被推到次日）→ 返回 None（调用方保持无排期，
+      用户手动设）——绝不无限推延到 n 天后
+    - 窗口时间 = **本地时钟语义**（用户配置的高峰时段是本地时间），
+      用系统本地时区解释窗口再转 UTC 返回
     - 早于所有已排期 + 最小间隔的时间点不可用（防扎堆）
     - 窗口结束后不足 min_interval 的槽位跳过（时间太紧）
     - 抖动：候选时刻 + 0..jitter 分钟随机（确定性测试可传 jitter_min=0）
     """
     windows = parse_windows(windows_raw)
     base = (now or datetime.now(UTC)).astimezone(UTC)
+    local_tz = datetime.now().astimezone().tzinfo
     earliest = base
     if existing:
         latest = max(t.astimezone(UTC) for t in existing)
         earliest = max(base, latest + timedelta(minutes=min_interval_min))
 
     for day_offset in range(max(lookahead_days, 1)):
-        day = base + timedelta(days=day_offset)
+        # v0.11.5：从 earliest 所在日开始找窗口（earliest 可能已被已排期
+        # 条目推到未来——从「今天」起算会让 1 天 lookahead 找不到窗口）
+        local_day = (earliest.astimezone(local_tz) + timedelta(days=day_offset)).date()
         for win in windows:
-            window_end = _with_time(day, win.end)
+            day_start = datetime.combine(local_day, time.min, tzinfo=local_tz)
+            win_start_dt = day_start + timedelta(hours=win.start.hour, minutes=win.start.minute)
+            win_end_dt = day_start + timedelta(hours=win.end.hour, minutes=win.end.minute)
+            window_start = win_start_dt.astimezone(UTC)
+            window_end = win_end_dt.astimezone(UTC)
             # 候选 = 窗口起点与 earliest 的较晚者（earliest 可能落在窗口中间）
-            candidate = max(_with_time(day, win.start), earliest)
+            candidate = max(window_start, earliest)
             if candidate >= window_end:
                 continue
             if candidate > window_end - timedelta(minutes=min_interval_min):
@@ -76,5 +88,10 @@ def next_slot(
                 candidate += timedelta(minutes=random.randint(0, jitter_min))
             return candidate
 
-    # 兜底：窗口全满 → 最晚已排期 + 最小间隔（平台侧 dtime 仍兜底）
-    return earliest + timedelta(minutes=min_interval_min)
+    # 兜底：仅在「今天」内有效（v0.11.5：定时发布不要定太久）——
+    # 当天窗口已错过 → now + 最小间隔（当天内）；earliest 已被推到明天
+    # （窗口排满）→ 无可用槽位返回 None，调用方保持无排期（用户手动设），
+    # 绝不无限推延到 n 天后。
+    if earliest.astimezone(local_tz).date() == base.astimezone(local_tz).date():
+        return earliest + timedelta(minutes=min_interval_min)
+    return None

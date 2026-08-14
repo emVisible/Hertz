@@ -246,10 +246,13 @@ export const pipelineApi = {
     api.delete<{ ok: boolean }>(`/api/pipeline/produce-templates/${id}`),
   updateMeta: (id: string, meta: Record<string, string | number | null>) =>
     api.put<{ id: string; ok: boolean }>(`/api/pipeline/items/${id}/meta`, meta),
-  publish: (id: string, selfmade = false, target = '') =>
+  publish: (id: string, selfmade = false, target = '', now = false) =>
     api.post<{ id: string; status: string; noop?: boolean }>(
-      `/api/pipeline/items/${id}/publish?selfmade=${selfmade ? 1 : 0}&target=${encodeURIComponent(target)}`,
+      `/api/pipeline/items/${id}/publish?selfmade=${selfmade ? 1 : 0}&target=${encodeURIComponent(target)}&now=${now ? 1 : 0}`,
     ),
+  /** 随机抽帧封面（v0.11.5）：视频内随机一帧 → 覆盖 cover_path。 */
+  randomCover: (id: string) =>
+    api.post<{ id: string; cover_path: string }>(`/api/pipeline/items/${id}/cover-random`),
   /** 上传替换封面（v0.2.6）：FormData multipart。 */
   uploadCover: async (id: string, file: File): Promise<{ id: string; cover_path: string }> => {
     const form = new FormData()

@@ -96,6 +96,21 @@ class DownloadStep(Pipe):
             trip_cdn_circuit,
         )
 
+        # v0.11.7 情感故事产线：文字帖无媒体——分配产物目录后直接进入
+        # downloaded（produce 走文字分支：脚本 → TTS → 图文合成）
+        if (item.item_type or "") == "text_only":
+            root = Path(ctx.settings.data_dir) / "pipeline"
+            if not item.output_dir:
+                slug = next_output_slug(root)
+                async with session_factory() as session:
+                    row = await session.get(type(item), item.id)
+                    if row is not None:
+                        row.output_dir = f"pipeline/{slug}"
+                        await session.commit()
+                item.output_dir = f"pipeline/{slug}"
+            ctx.log(f"[download] text_only story — no media, skipping ({item.title[:40]})")
+            return ProcessResult(status="downloaded", data={})
+
         url = item.media_url or item.source_url
         if not url:
             raise StepError("item has no source URL to download")

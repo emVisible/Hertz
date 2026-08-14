@@ -26,6 +26,7 @@ from backend.pipeline.base import Pipe, ProcessResult, StepContext, StepError
 logger = logging.getLogger(__name__)
 
 # 维度权重（参考原项目：short_form 短视频适配加权、safety 合规加权、emotion 降权）
+# v0.11.6 情感频道适配：emotion 0.9 → 1.3（情感纯搬运为主，情绪价值是核心指标）
 DIM_WEIGHTS: dict[str, float] = {
     "entertainment": 1.0,
     "novelty": 1.0,
@@ -33,7 +34,7 @@ DIM_WEIGHTS: dict[str, float] = {
     "cultural_fit": 1.0,
     "short_form": 1.2,
     "visual_punch": 1.0,
-    "emotion": 0.9,
+    "emotion": 1.3,
     "safety": 1.1,
 }
 

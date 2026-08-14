@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem } from '../../api'
+import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, CopyButton, Icon } from '../ui'
 import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { ScoreDims } from './ScoreDims'
@@ -33,6 +34,8 @@ export function AuditCard({
   selected?: boolean
 }) {
   const { t } = useTranslation()
+  // v0.11.3：审核操作进行中——按钮转圈 + 防重复提交
+  const busy = useExecutionStore((s) => s.pipeline.busy[item.id])
   const [open, setOpen] = useState(false)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const script = item.script_json
@@ -184,17 +187,36 @@ export function AuditCard({
 
         {/* 操作区（v0.3.9 职责单一）：审核只负责 通过 / 拒绝 / 打回预处理 */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-          <Button size="sm" variant="ghost" onClick={() => onBackToPrep(item)} title={t('console.backToPrepHint')}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!!busy}
+            onClick={() => onBackToPrep(item)}
+            title={t('console.backToPrepHint')}
+          >
             <Icon name="rewind" size={12} />
             {t('console.backToPrep')}
           </Button>
-          <Button size="sm" className="w-20" onClick={() => onApprove(item)}>
+          <Button
+            size="sm"
+            className="w-20"
+            loading={busy?.action === 'approve'}
+            disabled={!!busy}
+            onClick={() => onApprove(item)}
+          >
             <Icon name="check" size={12} />
-            {t('console.approve')}
+            {busy?.action === 'approve' ? t('console.busy.approve') : t('console.approve')}
           </Button>
-          <Button size="sm" variant="danger" className="w-20" onClick={() => onReject(item)}>
+          <Button
+            size="sm"
+            variant="danger"
+            className="w-20"
+            loading={busy?.action === 'reject'}
+            disabled={!!busy}
+            onClick={() => onReject(item)}
+          >
             <Icon name="close" size={12} />
-            {t('console.reject')}
+            {busy?.action === 'reject' ? t('console.busy.reject') : t('console.reject')}
           </Button>
         </div>
       </div>

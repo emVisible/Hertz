@@ -35,12 +35,26 @@ def cookies_status() -> dict:
     path = cookies_file_path()
     exists = path.exists() and path.stat().st_size >= 40
     age_s = int(time.time() - path.stat().st_mtime) if exists else None
+    # 会话 cookie 质量（v0.11.7）：仅匿名 edgebucket 的导出对 403 无效——
+    # 明确告知「未登录」，避免假成功
+    header = cookie_header_for_http()
     return {
         "exists": exists,
         "age_s": age_s,
         "path": str(path),
         "cookie_set": bool((settings.pipeline_reddit_cookie or "").strip()),
+        "header_len": len(header) if header else 0,
+        "session_cookie": _has_session_cookie(header),
     }
+
+
+_SESSION_COOKIE_NAMES = ("reddit_session", "session_tracker", "token_v2")
+
+
+def _has_session_cookie(header: str | None) -> bool:
+    if not header:
+        return False
+    return any(name in header for name in _SESSION_COOKIE_NAMES)
 
 
 def _netscape_cookie_header(path: Path) -> str | None:
@@ -79,10 +93,11 @@ def cookie_header_for_http() -> str | None:
     return None
 
 
-async def ensure_reddit_cookies(*, force: bool = False) -> dict:
+async def ensure_reddit_cookies(*, force: bool = False, browser: str = "") -> dict:
     """确保 cookie 可用：字符串直填优先；文件新鲜跳过；否则浏览器自动导出。
 
     导出失败软降级（返回 ok=False，调用方走匿名链路）。仅报状态不报内容。
+    browser 非空时只试指定浏览器（设置页下拉，v0.11.7）。
     """
     global _export_lock_until
 
@@ -100,20 +115,20 @@ async def ensure_reddit_cookies(*, force: bool = False) -> dict:
         return {"ok": False, "source": "locked"}
     _export_lock_until = now + 120.0
 
-    raw = settings.pipeline_reddit_cookies_browser
+    raw = browser or settings.pipeline_reddit_cookies_browser
     browsers = (
         [b.strip().lower() for b in raw.split(",") if b.strip()]
         if raw
         else list(_BROWSER_CANDIDATES)
     )
-    for browser in browsers:
+    for chosen in browsers:
         try:
             dest = path.with_suffix(".tmp")
             if dest.exists():
                 dest.unlink(missing_ok=True)
             cmd = [
                 "yt-dlp",
-                "--cookies-from-browser", browser,
+                "--cookies-from-browser", chosen,
                 "--cookies", str(dest),
                 "--skip-download",
                 "--quiet",
@@ -123,11 +138,11 @@ async def ensure_reddit_cookies(*, force: bool = False) -> dict:
             proc = await _run_export(cmd)
             if dest.exists() and dest.stat().st_size >= 40:
                 dest.replace(path)
-                return {"ok": True, "source": f"browser:{browser}"}
+                return {"ok": True, "source": f"browser:{chosen}"}
             dest.unlink(missing_ok=True)
-            logger.info("cookie export skip browser=%s rc=%s", browser, proc.returncode)
+            logger.info("cookie export skip browser=%s rc=%s", chosen, proc.returncode)
         except Exception:  # noqa: BLE001 — 单个浏览器失败继续尝试下一个
-            logger.warning("cookie export failed for browser=%s", browser)
+            logger.warning("cookie export failed for browser=%s", chosen)
     return {"ok": False, "source": "none"}
 
 

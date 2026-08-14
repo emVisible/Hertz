@@ -65,6 +65,8 @@ class Item(BaseModel):
     reddit_score: Mapped[int] = mapped_column(Integer, default=0)
     upvote_ratio: Mapped[float] = mapped_column(Float, default=1.0)
     num_comments: Mapped[int] = mapped_column(Integer, default=0)
+    # 文字帖正文（v0.11.7 情感故事产线）：text_only 帖的 selftext，null = 非文字帖
+    selftext: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Scoring
     score_total: Mapped[float | None] = mapped_column(Float, nullable=True)

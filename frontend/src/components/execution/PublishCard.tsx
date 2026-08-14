@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import i18n from '../../i18n'
 
 import type { PipelineItem } from '../../api'
+import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, Icon, Select } from '../ui'
 import { MediaThumb, THUMB_LG } from './PipelineStage'
 import { ScheduleField } from './ScheduleField'
@@ -17,19 +18,24 @@ export const PUBLISH_TARGETS = [
 ]
 
 /** 发布卡片（v0.3.4）：发布元数据全集——标题/标签/分区/版权/排期 +
- *  分发目标（逐条覆盖）+ 定时/立即发布。 */
+ *  分发目标（逐条覆盖）+ 定时/立即发布（v0.11.5：立即 = now 清排期）。
+ *  封面：v0.11.5 随机抽帧按钮（onRandomCover）。 */
 export function PublishCard({
   item,
   onPublish,
   onSaveMeta,
   onRequeue,
+  onRandomCover,
 }: {
   item: PipelineItem
-  onPublish: (item: PipelineItem, selfmade: boolean, target: string) => void
+  onPublish: (item: PipelineItem, selfmade: boolean, target: string, now: boolean) => void
   onSaveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
   onRequeue: (item: PipelineItem) => void
+  onRandomCover: (item: PipelineItem) => void
 }) {
   const { t } = useTranslation()
+  // v0.11.3：发布进行中——按钮转圈 + 防重复提交（上传为长任务）
+  const busy = useExecutionStore((s) => s.pipeline.busy[item.id])
   const [titleDraft, setTitleDraft] = useState<string | null>(null)
   const [descDraft, setDescDraft] = useState<string | null>(null)
   const [tagsDraft, setTagsDraft] = useState<string | null>(null)
@@ -62,6 +68,19 @@ export function PublishCard({
     <li className="flex gap-5 px-4 py-4">
       <MediaThumb item={item} className={THUMB_LG} />
       <div className="min-w-0 flex-1">
+        {/* 随机抽帧封面（v0.11.5）：视频内随机一帧 → 替换封面，点击可反复换 */}
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={busy?.action === 'cover'}
+            onClick={() => onRandomCover(item)}
+            title={t('console.coverRandomHint')}
+            className="flex items-center gap-1 border border-border px-2 py-0.5 text-[10px] text-text-secondary transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Icon name="refresh" size={11} className={busy?.action === 'cover' ? 'animate-spin' : ''} />
+            {t('console.coverRandom')}
+          </button>
+        </div>
         {/* 标题（发布元数据，可编辑） */}
         <div className="flex items-start gap-2">
           {titleDraft !== null ? (
@@ -259,22 +278,29 @@ export function PublishCard({
           />
         </div>
 
-        {/* 发布操作：定时（需排期）/ 立即（版权开关决定自制，分发目标逐条生效） */}
+        {/* 发布操作：定时（需排期）/ 立即（v0.11.5：now=清排期按当前时间上传） */}
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            disabled={!scheduled}
+            loading={busy?.action === 'publish'}
+            disabled={!scheduled || !!busy}
             title={!scheduled ? t('console.scheduleFirst') : undefined}
-            onClick={() => onPublish(item, selfmade, target)}
+            onClick={() => onPublish(item, selfmade, target, false)}
           >
             <Icon name="play" size={12} />
             {t('console.publishTimed')}
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => onPublish(item, selfmade, target)}>
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={busy?.action === 'publish'}
+            disabled={!!busy}
+            onClick={() => onPublish(item, selfmade, target, true)}
+          >
             <Icon name="send" size={12} />
-            {t('console.publishNow')}
+            {busy?.action === 'publish' ? t('console.busy.publish') : t('console.publishNow')}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => onRequeue(item)}>
+          <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => onRequeue(item)}>
             {t('console.backToReview')}
           </Button>
         </div>

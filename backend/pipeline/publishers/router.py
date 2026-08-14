@@ -127,12 +127,8 @@ class BilibiliPublisher(Publisher):
         script = item.script_json or {}
         result_extra: dict = {}
         title = script.get("bili_title") or item.title[:80]
-        # 简介兜底（v0.8.5）：中文包装 > 中文标题 > 原标题（避免英文裸传）
-        desc = (
-            script.get("bili_desc")
-            or script.get("bili_title")
-            or item.title[:200]
-        )
+        # 简介（v0.11.5）：优先手动值，兜底原文标题——不换成中文（用户需求）
+        desc = script.get("bili_desc") or item.title[:200]
         cmd = [
             "biliup", "-u", cookie, "upload", str(video),
             "--submit", "web",
@@ -162,12 +158,12 @@ class BilibiliPublisher(Publisher):
         # 排期发布：scheduled_at 存在 → biliup 定时上传（v5.10）
         # biliup-cli（Rust 版）参数为 --dtime（Unix 10 位时间戳）；
         # --timedpublish 是旧版 Python biliup 的参数，Rust 版已移除。
-        # v0.9 对齐原项目 ensure_bilibili_dtime：B 站要求提交后 ≥ N 小时，
-        # 不足则自动顺延（result 标记 dtime_bumped_to 由调用方回写落库）
+        # v0.11.5：B 站 dtime 下限 = 提交后 5 分钟（原 4h 门槛过严，用户修正）；
+        # scheduled_at 不足则顺延到 now+5min（result 标记 dtime_bumped_to 由调用方回写落库）
         if item.scheduled_at:
             dtime = item.scheduled_at
             min_hours = int(
-                getattr(ctx.settings, "pipeline_bili_dtime_min_hours", 4) or 4
+                getattr(ctx.settings, "pipeline_bili_dtime_min_hours", 0) or 0
             )
             earliest = datetime.now(UTC) + timedelta(hours=min_hours, minutes=5)
             if dtime < earliest:
@@ -175,7 +171,7 @@ class BilibiliPublisher(Publisher):
                 result_extra["dtime_bumped_to"] = int(dtime.timestamp())
                 ctx.log(
                     f"[publish] scheduled_at {item.scheduled_at} within "
-                    f"{min_hours}h of submit — bumped to {dtime.isoformat()}"
+                    f"{min_hours}h+5min of submit — bumped to {dtime.isoformat()}"
                 )
             cmd += ["--dtime", str(int(dtime.timestamp()))]
         # 封面（v0.8.5，对齐原项目）：biliup 自动上传本地文件转 URL，缺失时忽略

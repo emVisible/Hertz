@@ -188,13 +188,15 @@ class PipelineService:
         return {"id": str(item_id), "ok": True}
 
     async def publish_one(
-        self, item_id: uuid.UUID, *, selfmade: bool = False, target: str | None = None
+        self, item_id: uuid.UUID, *,
+        selfmade: bool = False, target: str | None = None, now: bool = False,
     ) -> dict:
         """单条发布（审核通过后的人工操作）：执行 publisher 并落发布结果。
 
-        定时由 item.scheduled_at 驱动（biliup --timedpublish）；自制由
+        定时由 item.scheduled_at 驱动（biliup --dtime）；自制由
         bili_copyright=1 驱动。v0.3.4：target 逐条可覆盖（分发目标），
         缺省回退 pipeline_publish_target（发布安全）。
+        v0.11.5：now=True（立即发布）→ 清除 scheduled_at，按当前时间立即上传。
         approved（首次发布）与 published（重新发布）均可。
         """
         from datetime import UTC, datetime
@@ -226,6 +228,9 @@ class PipelineService:
                 script = dict(item.script_json or {})
                 script["bili_copyright"] = 1
                 item.script_json = script
+            if now:
+                # v0.11.5：立即发布 → 清空排期，publisher 不再带 --dtime
+                item.scheduled_at = None
             await session.commit()
 
         ctx = StepContext(
@@ -384,8 +389,10 @@ class PipelineService:
                 raise InvalidItemStateError(
                     f"cannot produce item in state {item.status}"
                 )
-            if not item.raw_path:
-                raise InvalidItemStateError("item not downloaded yet — run download first")
+            if not item.raw_path and (item.item_type or "") != "text_only":
+                raise InvalidItemStateError(
+                    "item not downloaded yet — run download first"
+                )
             if item.status != ItemStatus.DOWNLOADED:
                 item.status = ItemStatus.DOWNLOADED
                 await session.commit()
@@ -551,10 +558,14 @@ class PipelineService:
                         getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
                     ),
                     jitter_min=0,  # 批量分配不做随机抖动，避免重复
-                    lookahead_days=int(
-                        getattr(self.engine.settings, "pipeline_publish_lookahead_days", 3)
-                    ),
+                    lookahead_days=1,  # v0.11.5：只排当天，不要定到几天后
                 )
+                if slot is None:
+                    # 窗口排满/跨天无可用槽位 → 保持无排期（用户手动设），
+                    # 绝不推延到 n 天后（v0.2.0 修复：此前连续分配排到 12 天后）
+                    if item.scheduled_at is not None:
+                        item.scheduled_at = None
+                    continue
                 item.scheduled_at = slot
                 allocated.append(slot)
             await session.commit()
@@ -1018,25 +1029,32 @@ class PipelineService:
     # ---------- 本地排期引擎（v0.2.1，参考原项目 scheduler_utils） ----------
 
     async def next_schedule_slot(self) -> str:
-        """下一个发布槽位：窗口内 + 与已排期条目的最小间隔 + 抖动。"""
+        """下一个发布槽位：窗口内 + 与已排期条目的最小间隔 + 抖动。
+        v0.11.5：只统计未发布条目（queued/approved/downloaded）的排期——
+        published/failed/rejected 的历史排期不参与挤压（否则推荐被推到几天后）。"""
         from backend.pipeline.schedule import next_slot
 
         async with session_factory() as session:
             result = await session.execute(
-                select(Item.scheduled_at).where(Item.scheduled_at.isnot(None))
+                select(Item.scheduled_at).where(
+                    Item.scheduled_at.isnot(None),
+                    Item.status.in_((
+                        ItemStatus.QUEUED, ItemStatus.APPROVED, ItemStatus.DOWNLOADED,
+                    )),
+                )
             )
             existing = [t for t in result.scalars().all() if t is not None]
-        return next_slot(
+        slot = next_slot(
             existing,
             windows_raw=getattr(self.engine.settings, "pipeline_publish_windows", ""),
             min_interval_min=int(
                 getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
             ),
             jitter_min=int(getattr(self.engine.settings, "pipeline_publish_jitter_min", 5)),
-            lookahead_days=int(
-                getattr(self.engine.settings, "pipeline_publish_lookahead_days", 3)
-            ),
-        ).isoformat()
+            lookahead_days=1,  # v0.11.5：只排当天（用户需求）
+        )
+        # 当天无可用槽位 → 返回空（前端回退 now+5min 兜底）
+        return slot.isoformat() if slot else ""
 
     @staticmethod
     def _serialize(item: Item) -> dict:

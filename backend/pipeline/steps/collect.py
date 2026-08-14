@@ -81,6 +81,7 @@ async def run_collect(ctx: StepContext, channel: str, limit: int, collector) -> 
                 reddit_score=post.score,
                 upvote_ratio=post.upvote_ratio,
                 num_comments=post.num_comments,
+                selftext=post.selftext or None,
                 error=None,
             )
             session.add(item)

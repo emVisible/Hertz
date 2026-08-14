@@ -181,6 +181,9 @@ export function ActivityPanel() {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<ActivityTab>('events')
   const logs = useExecutionStore((s) => s.pipeline.logs)
+  // v0.11.4：单条操作进行中（itemId → {action,title}）——折叠条直接展示
+  // 「正在处理 N 项 · 制作中《标题》」，全局可见（含执行页之外）
+  const busyEntries = Object.entries(useExecutionStore((s) => s.pipeline.busy))
   const panelRef = useRef<HTMLDivElement>(null)
   const justNow = t('console.act.justNow')
 
@@ -313,11 +316,35 @@ export function ActivityPanel() {
           open ? 'border-b' : ''
         }`}
       >
-        <Icon name="console" size={12} className={logs.length > 0 ? 'animate-pulse text-primary' : 'text-text-disabled'} />
-        <span className="truncate">
-          {t('console.act.title')}
-          {logs.length > 0 && !open && <span className="ml-2 text-text-disabled">· {t('console.act.eventsCount', { n: logs.length })}</span>}
-        </span>
+        <Icon
+          name="console"
+          size={12}
+          className={logs.length > 0 || busyEntries.length > 0 ? 'animate-pulse text-primary' : 'text-text-disabled'}
+        />
+        {busyEntries.length > 0 ? (
+          /* 处理中（v0.11.4）：优先于标题展示——合并了原执行页顶部横幅 */
+          <span className="flex min-w-0 items-center gap-1.5 truncate">
+            <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <span className="min-w-0 truncate">
+              <span className="font-medium text-text-primary">{t('console.busyBanner', { n: busyEntries.length })}</span>
+              {busyEntries.slice(0, 2).map(([id, e]) => (
+                <span key={id} className="ml-2 text-text-secondary">
+                  {e.title
+                    ? t('console.busyItem', { action: t(`console.busy.${e.action}`), title: e.title })
+                    : t(`console.busy.${e.action}`)}
+                </span>
+              ))}
+              {busyEntries.length > 2 && (
+                <span className="ml-1 text-text-disabled">+{busyEntries.length - 2}</span>
+              )}
+            </span>
+          </span>
+        ) : (
+          <span className="truncate">
+            {t('console.act.title')}
+            {logs.length > 0 && !open && <span className="ml-2 text-text-disabled">· {t('console.act.eventsCount', { n: logs.length })}</span>}
+          </span>
+        )}
         <span className="ml-auto shrink-0">{t('console.act.toggle')}</span>
       </button>
 

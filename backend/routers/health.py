@@ -10,12 +10,13 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter
 
+from backend.config import APP_VERSION
 from backend.factory.registry import ServiceRegistry
 from backend.infrastructure.health import run_health_checks
 
 router = APIRouter(tags=["health"])
 
-APP_VERSION = "0.8.9"
+# v0.11.6：版本引用 config.APP_VERSION（此前此处独立硬编码 0.8.9 = 双真相源）
 _PROCESS_STARTED_AT = datetime.now(UTC).isoformat()
 
 

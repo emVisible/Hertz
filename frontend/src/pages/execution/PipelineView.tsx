@@ -58,9 +58,10 @@ interface PipelineViewProps {
   collectProgress: ReturnType<typeof usePipelineExecution>['collectProgress']
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue' | 'retranslate') => void
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
-  publishItem: (item: PipelineItem, selfmade?: boolean, target?: string) => void
+  publishItem: (item: PipelineItem, selfmade?: boolean, target?: string, now?: boolean) => void
   setPublishStats: (item: PipelineItem) => void
   uploadCover: (item: PipelineItem, file: File) => void
+  randomCover: (item: PipelineItem) => void
   retryClass: (cls: string, n: number) => void
   backToPrep: (item: PipelineItem) => void
   batchAction: (action: 'approve' | 'reject' | 'back_to_prep' | 'requeue', ids: string[]) => void
@@ -72,6 +73,9 @@ interface PipelineViewProps {
   scoreBatch: () => Promise<void>
   downloadOne: (item: PipelineItem) => Promise<void>
   runStep: (stepName: string, channel?: string) => Promise<void>
+  /** 单条操作进行中（v0.11.4）：itemId → {action, title}——按钮转圈数据源；
+   *  全局展示已移交底部「运行状态」折叠条（ActivityPanel） */
+  busy: Record<string, { action: string; title: string }>
 }
 
 type PipelineTabId = 'run' | 'preReview' | 'inReview' | 'postReview' | 'exceptions'
@@ -798,7 +802,13 @@ export function PipelineView(p: PipelineViewProps) {
                         item={item}
                         badge={<Badge tone="warning">low</Badge>}
                         right={
-                          <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                                loading={p.busy[item.id]?.action === 'requeue'}
+                            disabled={!!p.busy[item.id]}
+                            onClick={() => void p.act(item, 'requeue')}
+                          >
                             {t('console.restore')}
                           </Button>
                         }
@@ -847,17 +857,31 @@ export function PipelineView(p: PipelineViewProps) {
                             <Button
                               size="sm"
                               variant="ghost"
+                              loading={p.busy[item.id]?.action === 'retranslate'}
+                              disabled={!!p.busy[item.id]}
                               onClick={() => void p.act(item, 'retranslate')}
                               title={t('console.retranslateHint')}
                             >
                               {t('console.retranslate')}
                             </Button>
                             {item.status === 'failed' ? (
-                              <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'retry')}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                loading={p.busy[item.id]?.action === 'retry'}
+                                disabled={!!p.busy[item.id]}
+                                onClick={() => void p.act(item, 'retry')}
+                              >
                                 {t('common.retry')}
                               </Button>
                             ) : (
-                              <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                            loading={p.busy[item.id]?.action === 'requeue'}
+                                disabled={!!p.busy[item.id]}
+                                onClick={() => void p.act(item, 'requeue')}
+                              >
                                 {t('console.restore')}
                               </Button>
                             )}
@@ -954,9 +978,10 @@ export function PipelineView(p: PipelineViewProps) {
                   <PublishCard
                     key={item.id}
                     item={item}
-                    onPublish={(i, selfmade, target) => p.publishItem(i, selfmade, target)}
+                    onPublish={(i, selfmade, target, now) => p.publishItem(i, selfmade, target, now)}
                     onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
                     onRequeue={(i) => void p.act(i, 'requeue')}
+                    onRandomCover={(i) => void p.randomCover(i)}
                   />
                 ))}
               </ul>

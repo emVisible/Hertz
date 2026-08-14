@@ -104,6 +104,7 @@ export function ExecutionPage() {
           publishItem={pipeline.publishItem}
           setPublishStats={pipeline.setPublishStats}
           uploadCover={pipeline.uploadCover}
+          randomCover={pipeline.randomCover}
           retryClass={pipeline.retryClass}
           backToPrep={pipeline.backToPrep}
           batchAction={pipeline.batchAction}
@@ -112,8 +113,9 @@ export function ExecutionPage() {
           produceOne={pipeline.produceOne}
           produceBatch={pipeline.produceBatch}
           scoreOne={pipeline.scoreOne}
-          downloadOne={pipeline.downloadOne}
           scoreBatch={pipeline.scoreBatch}
+          downloadOne={pipeline.downloadOne}
+          busy={pipeline.busy}
           runStep={pipeline.runStep}
         />
       )}

@@ -1,7 +1,8 @@
-"""Bilibili 中文包装生成（v0.8.5，对齐原项目 Autarkeia pipeline/script.py + title.py）。
+"""Bilibili 发布包装生成（v0.8.5 起，对齐原项目 pipeline/script.py + title.py）。
 
 produce 阶段自动补齐 bili_title（中文 ≤40 字）/ bili_tags（4-8 中文标签）/
-bili_desc（中文字幕首句 + 署名），LLM 失败一律 heuristic 兜底，绝不阻塞生产。
+bili_desc（v0.11.5：**原文标题，不换中文**——用户发布需求：简介保持原样）。
+LLM 失败一律 heuristic 兜底，绝不阻塞生产。
 """
 
 from __future__ import annotations
@@ -76,12 +77,11 @@ def normalize_tags(raw: list) -> list[str]:
 
 
 def heuristic_packaging(item) -> dict:
-    """无 LLM 时的包装兜底：中文标题 + 默认标签 + 署名简介。"""
+    """无 LLM 时的包装兜底：中文标题 + 默认标签 + 原文标题简介（v0.11.5 不换中文）。"""
     title = _heuristic_bili_title(item.title or "")
-    desc = build_description("", item.subreddit or "", item.author or "")
     return {
         "bili_title": title,
-        "bili_desc": desc,
+        "bili_desc": (item.title or "").strip()[:200],
         "bili_tags": ",".join(_FALLBACK_TAGS),
     }
 
@@ -116,38 +116,37 @@ def build_description(
 
 
 async def generate_packaging(ai, item, script: dict) -> dict:
-    """为条目生成 B 站中文包装，就地补齐 script（bili_title/bili_desc/bili_tags）。
+    """为条目生成 B 站包装，就地补齐 script（bili_title/bili_desc/bili_tags）。
 
     已存在的手动值不覆盖（发布卡可随时改）；LLM 失败走 heuristic。
+    v0.11.5：bili_desc = 原文标题（不翻译成中文，用户明确要求）；
+    标题/标签仍走 LLM 中文生成。
     """
     script = dict(script or {})
     if script.get("bili_title") and script.get("bili_tags"):
         return script
 
     narration = str(script.get("narration") or "")[:800]
-    subtitle_zh = str(script.get("subtitle_zh") or "")
     try:
         result = await ai.title_and_tags(
             script=narration, content=f"{item.title}\n\n来源: r/{item.subreddit}"
         )
         title = (result.title or "").strip()
         tags = normalize_tags(result.tags)
-        desc = (result.description or "").strip()
         logger.info(
-            "packaging via llm: title=%s tags=%s desc=%s", title[:20], tags, desc[:30]
+            "packaging via llm: title=%s tags=%s", title[:20], tags[:30]
         )
     except Exception:  # noqa: BLE001 — 包装失败兜底，不阻塞生产
         logger.exception("packaging generation failed, using heuristic")
-        title, tags, desc = "", [], ""
+        title, tags = "", []
 
     if not title:
         title = _heuristic_bili_title(item.title or "")
     if not tags:
         tags = list(_FALLBACK_TAGS)
-    if not desc:
-        desc = build_description(subtitle_zh, item.subreddit or "", item.author or "")
 
     script["bili_title"] = title[:40]
-    script["bili_desc"] = desc
+    # v0.11.5：简介不换中文——直接用原帖标题（转载发布语义，来源链随 --source 挂载）
+    script["bili_desc"] = (item.title or "").strip()[:200]
     script["bili_tags"] = ",".join(tags)
     return script

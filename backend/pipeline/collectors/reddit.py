@@ -386,8 +386,26 @@ class RedditCollector(SourceCollector):
             return None
         url = str(data.get("url") or "")
         kind = classify_media(url, bool(data.get("is_video")), data)
+        # v0.11.7 情感故事产线：text_only 帖不再丢弃——保留 selftext（≥50 字
+        # 才算有效故事帖，不足则跳过避免产出弱内容）；下载/制作走文字分支
         if kind == "text_only":
-            return None  # text-only posts have no producible media
+            selftext = str(data.get("selftext") or "").strip()
+            if len(selftext) < 50:
+                return None
+            return RawPost(
+                source_id=str(data.get("id") or ""),
+                title=str(data.get("title") or "")[:300],
+                source_url=f"https://www.reddit.com{data.get('permalink') or ''}",
+                media_url="",
+                author=str(data.get("author") or ""),
+                score=int(data.get("score") or 0),
+                upvote_ratio=float(data.get("upvote_ratio") or 0.0),
+                num_comments=int(data.get("num_comments") or 0),
+                created_utc=float(data.get("created_utc") or time.time()),
+                is_video=False,
+                item_type="text_only",
+                selftext=selftext,
+            )
         media_url = url
         if kind == "video_raw" and not media_url:
             media_url = f"https://v.redd.it/{data.get('id')}/DASH_720.mp4"

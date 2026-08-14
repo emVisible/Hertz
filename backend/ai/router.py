@@ -336,11 +336,18 @@ class TaskRouter:
             return self._heuristic_score(title=title, content=content)
 
     async def script(
-        self, *, content: str, title: str = "", max_words: int = 90, task_id: str | None = None
+        self, *, content: str, title: str = "", max_words: int = 90,
+        task_id: str | None = None, story: bool = False,
     ) -> str:
-        msgs = script_prompts.build_script_messages(
-            content=content, title=title, max_words=max_words
-        )
+        # v0.11.7 情感故事产线：story=True → 中文故事旁白 prompt
+        if story:
+            msgs = script_prompts.build_story_messages(
+                content=content, title=title, max_words=max_words or 450
+            )
+        else:
+            msgs = script_prompts.build_script_messages(
+                content=content, title=title, max_words=max_words
+            )
         return (
             await self._collect(
                 [ChatMessage(**m) for m in msgs], temperature=0.8,

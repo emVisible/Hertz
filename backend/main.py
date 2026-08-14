@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from backend.config import settings
+from backend.config import APP_VERSION, settings
 from backend.factory.registry import ServiceRegistry
 from backend.infrastructure.errors import register_exception_handlers
 from backend.infrastructure.logging import log_manager
@@ -88,7 +88,7 @@ async def _heal_legacy_crews() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    log_manager.get().info("Hertz backend starting (v0.1.0)")
+    log_manager.get().info(f"Hertz backend starting (v{APP_VERSION})")
     registry = ServiceRegistry.get()
     registry.initialize(settings)
     # v0.8.8：基础依赖初次运行检测一次（结果持久化；后续仅设置页手动重测）
@@ -103,7 +103,7 @@ async def lifespan(_: FastAPI):
     log_manager.get().info("Hertz backend stopped")
 
 
-app = FastAPI(title="Hertz", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Hertz", version=APP_VERSION, lifespan=lifespan)
 
 register_exception_handlers(app)
 

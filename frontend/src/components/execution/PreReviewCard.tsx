@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { PipelineItem, ProduceOptions } from '../../api'
+import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, Icon } from '../ui'
 import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { normalizeOptions, ProduceOptionsPicker } from './ProduceOptionsPicker'
@@ -22,6 +23,8 @@ export function PreReviewCard({
   onUploadCover: (item: PipelineItem, file: File) => void
 }) {
   const { t } = useTranslation()
+  // v0.11.3：制作进行中——按钮转圈 + 防重复提交（长任务，禁连点）
+  const busy = useExecutionStore((s) => s.pipeline.busy[item.id])
   const [options, setOptions] = useState<ProduceOptions>(() =>
     normalizeOptions(item.produce_options),
   )
@@ -140,13 +143,19 @@ export function PreReviewCard({
 
         {/* 主操作（v0.8.9：卡片仅服务已下载未加工阶段——评分/下载已在行内完成） */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-          <Button size="sm" variant="danger" onClick={() => onReject(item)}>
+          <Button size="sm" variant="danger" disabled={!!busy} onClick={() => onReject(item)}>
             <Icon name="close" size={12} />
             {t('console.reject')}
           </Button>
-          <Button size="sm" onClick={() => onProduce(item)} title={t('console.produce.nowHint')}>
+          <Button
+            size="sm"
+            loading={!!busy}
+            disabled={!!busy}
+            onClick={() => onProduce(item)}
+            title={t('console.produce.nowHint')}
+          >
             <Icon name="play" size={12} />
-            {t('console.produce.now')}
+            {busy ? t('console.busy.produce') : t('console.produce.now')}
           </Button>
         </div>
       </div>

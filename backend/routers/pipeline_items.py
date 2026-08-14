@@ -5,6 +5,7 @@ v0.8.9 AXIOM 2.1 路由域拆分：原 pipeline.py 30+ 端点 7 域挤一文件�
 """
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
@@ -256,6 +257,52 @@ async def upload_cover(item_id: uuid.UUID, file: UploadFile = File(...)):  # noq
         if item is None:
             raise ItemNotFoundError(item_id)
         item.cover_path = str(dest)
+        await session.merge(item)
+        await session.commit()
+    return {"id": str(item_id), "cover_path": str(dest)}
+
+
+@router.post("/items/{item_id}/cover-random")
+async def random_cover(item_id: uuid.UUID):
+    """随机抽帧封面（v0.11.5）：从成片/原片随机取一帧 → 1280x720 裁切 →
+    覆盖 cover_path。点击一次换一帧（随机位置 5%-95%），updated_at 触发缩略图刷新。"""
+    import random
+
+    from backend.factory.registry import ServiceRegistry
+    from backend.models.item import Item
+    from backend.models.session import session_factory
+    from backend.pipeline.producers.media import _run_cmd, find_ffmpeg, probe_duration
+
+    async with session_factory() as session:
+        item = await session.get(Item, item_id)
+        if item is None:
+            raise ItemNotFoundError(item_id)
+        video = item.video_path or item.raw_path
+        if not video:
+            raise HTTPException(status_code=422, detail="条目没有可抽帧的视频")
+        ffmpeg = find_ffmpeg()
+        if ffmpeg is None:
+            raise HTTPException(status_code=502, detail="ffmpeg 不可用")
+        try:
+            duration = await probe_duration(video)
+        except Exception as exc:  # noqa: BLE001 — 探测失败给出可读错误
+            raise HTTPException(status_code=502, detail=f"视频探测失败：{exc}") from exc
+        # 避开首尾（黑场/片尾），5%-95% 均匀随机
+        pos = max(0.0, min(duration * (0.05 + 0.9 * random.random()), duration - 0.1))
+        files = ServiceRegistry.get().files
+        dest = files.resolve(f"media/covers/{item_id}-random.jpg")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            await _run_cmd([
+                str(ffmpeg), "-y", "-ss", f"{pos:.3f}",
+                "-i", str(video), "-frames:v", "1",
+                "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+                str(dest),
+            ])
+        except Exception as exc:  # noqa: BLE001 — 抽帧失败给出可读错误
+            raise HTTPException(status_code=502, detail=f"抽帧失败：{exc}") from exc
+        item.cover_path = str(dest)
+        item.updated_at = datetime.now()  # 缩略图 URL 缓存版本（v0.8.9）
         await session.merge(item)
         await session.commit()
     return {"id": str(item_id), "cover_path": str(dest)}

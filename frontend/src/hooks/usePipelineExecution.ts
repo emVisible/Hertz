@@ -100,10 +100,32 @@ export function usePipelineExecution() {
   })
 
   const store = useExecutionStore()
-  const { limit, logSeq, tab, collectProgress } = store.pipeline
+  const { limit, logSeq, tab, collectProgress, busy } = store.pipeline
   const setPipeline = store.setPipeline
 
   const runningRef = useRef(false)
+
+  /** 单条操作 busy 包裹（v0.11.3）：点击即标记处理中——按钮转圈 +
+   *  全局反馈 + 防重复提交；请求结束（成败）统一清除。
+   *  v0.11.4：busy 值升级为 {action, title}——底部「运行状态」折叠条
+   *  直接展示「制作中《标题》」，无需页面反查。 */
+  function withBusy<T>(item: { id: string; title?: string }, action: string, fn: () => Promise<T>): Promise<T> {
+    const entry = { action, title: item.title ?? '' }
+    setPipeline({ busy: { ...useExecutionStore.getState().pipeline.busy, [item.id]: entry } })
+    return fn().finally(() => {
+      const next = { ...useExecutionStore.getState().pipeline.busy }
+      delete next[item.id]
+      setPipeline({ busy: next })
+    })
+  }
+
+  /** 批量操作的标题反查（v0.11.4）：hook 内已有全量列表，无需页面参与。 */
+  const titleOf = (id: string) => {
+    for (const it of [...discoveryAll, ...queueAll, ...stagePublished]) {
+      if (it.id === id) return it.title
+    }
+    return ''
+  }
 
   useEventSource(pipelineApi.eventsUrl(), (ev) => {
     const event = JSON.parse((ev as { data: string }).data) as PipelineEvent
@@ -204,7 +226,7 @@ export function usePipelineExecution() {
   /** 单条评分（v0.3.5，预处理手动评分按钮）。 */
   async function scoreOne(item: PipelineItem) {
     try {
-      await pipelineApi.score(item.id)
+      await withBusy(item, 'score', () => pipelineApi.score(item.id))
       refresh()
       toast(t('console.scored'), 'success')
     } catch (err) {
@@ -215,7 +237,7 @@ export function usePipelineExecution() {
   /** 单条下载（v0.8.6 评分先行，预处理手动下载按钮）。 */
   async function downloadOne(item: PipelineItem) {
     try {
-      await pipelineApi.download(item.id)
+      await withBusy(item, 'download', () => pipelineApi.download(item.id))
       refresh()
       toast(t('console.downloaded'), 'success')
     } catch (err) {
@@ -231,7 +253,9 @@ export function usePipelineExecution() {
   /** 单条制作（v0.3.4，预处理「制作」按钮）。 */
   async function produceOne(item: PipelineItem) {
     try {
-      await pipelineApi.produce(item.id)
+      // v0.11.3：开始即反馈（长任务）——按钮转圈 + 横幅 + 终端 job_step
+      toast(t('console.produceStart', { title: item.title }), 'info')
+      await withBusy(item, 'produce', () => pipelineApi.produce(item.id))
       refresh()
       toast(t('console.produceOneDone'), 'success')
     } catch (err) {
@@ -270,19 +294,20 @@ export function usePipelineExecution() {
   ) {
     try {
       if (action === 'approve') {
-        await pipelineApi.approve(item.id)
+        await withBusy(item, 'approve', () => pipelineApi.approve(item.id))
         toast(t('console.approvedHint'), 'success')
       } else if (action === 'reject') {
-        await pipelineApi.reject(item.id)
+        await withBusy(item, 'reject', () => pipelineApi.reject(item.id))
         toast(t('console.rejectedHint'), 'success')
       } else if (action === 'requeue') {
-        await pipelineApi.requeue(item.id)
+        await withBusy(item, 'requeue', () => pipelineApi.requeue(item.id))
         toast(t('console.requeuedHint'), 'success')
       } else if (action === 'retranslate') {
-        await pipelineApi.retranslate(item.id)
+        toast(t('console.retranslateStart', { title: item.title }), 'info')
+        await withBusy(item, 'retranslate', () => pipelineApi.retranslate(item.id))
         toast(t('console.retranslatedHint'), 'success')
       } else {
-        await pipelineApi.retry(item.id)
+        await withBusy(item, 'retry', () => pipelineApi.retry(item.id))
         toast(t('console.retriedHint'), 'success')
       }
       refresh()
@@ -306,7 +331,11 @@ export function usePipelineExecution() {
     ids: string[],
   ) {
     if (ids.length === 0) return
+    const busyKey = action === 'back_to_prep' ? 'backToPrep' : action
     try {
+      const busyPatch = { ...useExecutionStore.getState().pipeline.busy }
+      for (const id of ids) busyPatch[id] = { action: busyKey, title: titleOf(id) }
+      setPipeline({ busy: busyPatch })
       const res = await pipelineApi.batch(action, ids)
       refresh()
       const hint =
@@ -316,6 +345,10 @@ export function usePipelineExecution() {
       toast(hint, res.failed.length > 0 ? 'warning' : 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
+    } finally {
+      const next = { ...useExecutionStore.getState().pipeline.busy }
+      for (const id of ids) delete next[id]
+      setPipeline({ busy: next })
     }
   }
 
@@ -348,9 +381,12 @@ export function usePipelineExecution() {
     }
   }
 
-  async function publishItem(item: PipelineItem, selfmade = false, target = '') {
+  async function publishItem(item: PipelineItem, selfmade = false, target = '', now = false) {
     try {
-      const res = await pipelineApi.publish(item.id, selfmade, target)
+      toast(t('console.publishStart', { title: item.title }), 'info')
+      const res = await withBusy(item, 'publish', () =>
+        pipelineApi.publish(item.id, selfmade, target, now),
+      )
       refresh()
       // v0.3.8：noop 目标只记录意图——toast 明确警示，避免「点了发布=已上 B 站」误解
       if (res.noop) {
@@ -377,6 +413,17 @@ export function usePipelineExecution() {
     }
   }
 
+  /** 随机抽帧封面（v0.11.5）：视频内随机取一帧 → 替换封面，点击可反复换。 */
+  async function randomCover(item: PipelineItem) {
+    try {
+      await withBusy(item, 'cover', () => pipelineApi.randomCover(item.id))
+      refresh()
+      toast(t('console.coverRandom'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   /** 同类批量重试（失败分类看板）：批量副作用，先确认（AXIOM §13.1）。 */
   async function retryClass(cls: string, n: number) {
     if (!window.confirm(t('console.retryClassConfirm', { cls, n }))) return
@@ -392,7 +439,7 @@ export function usePipelineExecution() {
   /** 审核打回预处理（v0.3.9 相邻双向）：queued → scored，重新制作。 */
   async function backToPrep(item: PipelineItem) {
     try {
-      await pipelineApi.backToPrep(item.id)
+      await withBusy(item, 'backToPrep', () => pipelineApi.backToPrep(item.id))
       refresh()
       toast(t('console.backToPrepDone'), 'success')
     } catch (err) {
@@ -430,6 +477,7 @@ export function usePipelineExecution() {
   return {
     status,
     counts,
+    busy,
     stageError,
     refetchStage,
     stageDiscovered: discoveryAll,
@@ -460,6 +508,7 @@ export function usePipelineExecution() {
     collectProgress,
     stop,
     uploadCover,
+    randomCover,
     retryClass,
     backToPrep,
     rescheduleExpired,

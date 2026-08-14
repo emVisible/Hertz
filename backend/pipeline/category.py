@@ -12,12 +12,11 @@ SUBREDDIT_TID_MAP: dict[str, int] = {
     "nature": 152, "EarthPorn": 152, "awwnverts": 152, "animalsdoingstuff": 152,
     "NatureIsFuckingLit": 152, "petsthefast": 152,
     # 搞笑（138）
-    "funny": 138, "ContagiousLaughter": 138, "Whatcouldgowrong": 138, "therewasanattempt": 138,
+    "funny": 138, "Whatcouldgowrong": 138, "therewasanattempt": 138,
     "instant_regret": 138, "maybemaybemaybe": 138, "nonononoyes": 138, "yesyesyesno": 138,
-    "WatchPeopleDieInside": 138, "facepalm": 138, "PublicFreakout": 138, "AbruptChaos": 138,
+    "facepalm": 138, "PublicFreakout": 138, "AbruptChaos": 138,
     "IdiotsInCars": 138, "holdmyfeedingtube": 138, "WTF": 138, "mildlyinfuriating": 138,
-    "MadeMeSmile": 138, "wholesomememes": 138,
-    # 日常（21）
+    # 日常（21）——v0.11.6：情感向版块从搞笑 138 移入（情感频道定位，单一键不重复）
     "oddlysatisfying": 21, "blackmagicfuckery": 21, "nextfuckinglevel": 21, "BeAmazed": 21,
     "mildlyinteresting": 21, "interestingasfuck": 21, "toptalent": 21,
     "Damnthatsinteresting": 21, "pics": 21, "gifs": 21, "videos": 21, "Unexpected": 21,
@@ -31,6 +30,13 @@ SUBREDDIT_TID_MAP: dict[str, int] = {
     "travel": 155, "traveltips": 155,
     "fitness": 158, "bodybuilding": 158, "running": 158, "progresspics": 158,
     "weightlifting": 158,
+    # 情感类（v0.11.6 情感频道）：B 站无情感一级分区 → 生活日常（21）
+    "MadeMeSmile": 21, "MadeMeCry": 21, "HumansBeingBros": 21,
+    "wholesome": 21, "wholesomememes": 21,
+    "TikTokCringe": 21, "ContagiousLaughter": 21, "WatchPeopleDieInside": 21,
+    "AmItheAsshole": 21, "TrueOffMyChest": 21, "offmychest": 21,
+    "relationship_advice": 21, "relationships": 21, "JustNoFamily": 21,
+    "BestofRedditorUpdates": 21, "confessions": 21, "happycryingdads": 21,
 }
 
 _KEYWORD_TID_MAP: list[tuple[str, int]] = [

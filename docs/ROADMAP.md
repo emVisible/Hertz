@@ -9,6 +9,8 @@
 - **Wave 5**：灵感画布（相似度/聚类/低语/粉笔渲染）与对话流（SSE 持久化）
 - **Wave 6**：健康检查（工具/磁盘/AI）、错误边界与全局异常处理、Electron 打包（backend 随包 + 自动更新）
 - **Wave 6.5**：Axiom 全局审计——SSRF/路径穿越/密钥配置加固、media_url 落库、i18n 全量、SSE 重连、ChatPage 单源、persist 节流（详见 HERTZ_RECONSTRUCTION.md §9）
+- **v0.11.2-0.11.6**：字幕标点清洗强化 → 句首逗号根因修复（ASS Format 缺 Name）→ 发布流程重构（立即发布/原文简介/当天高峰排期/随机封面）→ 情感垂直频道（源池勾选 UI + emotion 加权评分 + 情感标题/分区）→ 健康看板 UI（设置页，v0.11.6 清偿本表「健康检查 UI」项）→ 版本单一真相源（backend.config.APP_VERSION）
+- **v0.11.7**：文字故事产线主体（text_only 采集存储 + 下载跳过 + LLM 中文故事旁白 + 固定中文 TTS + 渐变背景/标题卡图文合成 + 敏感词 SAFETY/MARKETING 分层 + 故事源入池）——已端到端验证（真实条目 29s 成片，OCR 确认字幕无前导逗号）；**待数据通道修复后全量启用**（Reddit 匿名 JSON/RSS 403 Blocked，cookie 失效，需 OAuth 凭证）
 
 ## 已知缺口
 
@@ -18,7 +20,8 @@
 | API 鉴权接入 | auth.py 已有 JWT 原语零调用；桌面单用户场景接受，部署为服务时必须接入 | 高 |
 | 自动更新发布通道 | 已接 electron-updater，需部署 `HERTZ_UPDATE_URL` 源与 CI 发布流程 | 中 |
 | 应用图标与代码签名 | 当前用默认 Electron 图标；macOS 需 Developer ID、Windows 需 EV 证书 | 中 |
-| 健康检查 UI | 目前仅 `/api/health` JSON；计划接入设置页可视化看板 | 中 |
+| 文字故事产线 | 主体已完成（v0.11.7 已验证）；剩余：数据通道修复（Reddit OAuth/cookie）→ 全量启用 + IP 化 | 中 |
+| 半自动内容生产 | 情感频道第二阶段整体规划（文字产线 + 片头/IP 化） | 中 |
 | Agent 工具调用 | 对话的 agent 模式（shell/playwright 等）为非目标，列为后续 | 低 |
 | 向量检索/记忆 | Milvus/Redis 体系，增强对话上下文 | 低 |
 | 多平台发布 | Bilibili 之外的 YouTube/其他平台发布器 | 低 |
@@ -26,7 +29,7 @@
 ## 下一步候选
 
 1. **P0 安装即用闭环**：PyInstaller 打包后端 → CI（GitHub Actions）产物发布到更新源 → 全新机器零配置安装验收（AXIOM §17.5）
-2. **P1 设置页**：`/config` 占位页替换为可视化配置 + 健康看板 + 依赖检测向导
+2. **P1 情感频道第二阶段（收尾）**：故事源数据通道修复（Reddit OAuth 凭证配置/cookie 刷新）→ 全量采集启用，IP 化（片头/固定音色/栏目化）
 3. **P1 体验打磨**：下载队列重排、画布多板/图层/图片卡片、对话引用画布卡片
 4. **P2 发布扩展**：更多平台发布器、定时自动发布、数据导出/导入
 

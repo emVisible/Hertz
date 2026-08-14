@@ -15,6 +15,10 @@ from pathlib import Path
 import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 应用版本单一真相源（v0.11.6 Axiom §1.2 修复）：后端 main.py 引用此处；
+# pyproject.toml / frontend·electron package.json 在发版时对齐本值。
+APP_VERSION = "0.11.6"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -84,10 +88,11 @@ class Settings(BaseSettings):
     pipeline_publish_windows: str = "10:00-12:00,18:00-20:00"
     pipeline_publish_min_interval_min: int = 30
     pipeline_publish_jitter_min: int = 5
-    pipeline_publish_lookahead_days: int = 3
+    pipeline_publish_lookahead_days: int = 1  # v0.11.5：只排当天（用户需求）
     # 排期发布硬门槛（v0.9 对齐原项目 ensure_bilibili_dtime）：
-    # B 站要求 dtime 提交后 ≥ N 小时；scheduled_at 不足时自动顺延
-    pipeline_bili_dtime_min_hours: int = 4
+    # B 站要求 dtime 提交后 ≥5 分钟（v0.11.5 修正：原 4h 过严）；
+    # scheduled_at 不足时自动顺延
+    pipeline_bili_dtime_min_hours: int = 0
     # 自动过审（v0.2.1，参考原项目 auto_approve）：默认关闭；
     # 开启后停留审核队列超过 N 小时的条目自动 approve（人工审核仍是默认路径）
     pipeline_auto_approve: bool = False
@@ -119,10 +124,14 @@ class Settings(BaseSettings):
     pipeline_narration_min_words: int = 6  # 词预算低于此值不生成旁白
     pipeline_narration_max_words: int = 42  # 旁白词数硬上限（原项目 42）
     # 字幕样式（v0.4 B1）：ASS 参数可调——字号/描边宽/加粗/对齐(1底2中3顶)
-    pipeline_subtitle_font_size: int = 26
-    pipeline_subtitle_outline: int = 2
-    pipeline_subtitle_bold: bool = True
+    # v0.11.2：默认字体换霞鹜文楷（LXGW WenKai，SIL OFL 1.1 免费商用）；
+    # 新增淡入淡出毫秒 + 底部留白（原项目字幕过渡参考）
+    pipeline_subtitle_font_size: int = 24
+    pipeline_subtitle_outline: int = 1
+    pipeline_subtitle_bold: bool = False
     pipeline_subtitle_alignment: int = 2
+    pipeline_subtitle_fade_ms: int = 300  # 字幕淡入淡出时长（ASS fad / PNG alpha fade）
+    pipeline_subtitle_margin_bottom: int = 64  # 距视频底部留白（720p 口径）
     # 下载韧性（v0.2.9，参考原项目 download.py）：条间延迟抖动 + CDN 403 熔断
     pipeline_download_delay_seconds: float = 1.2
     # 下载资源冷却（v0.3.6 冰川式）：按媒体域指数退避冻结，base 起步、max 封顶
