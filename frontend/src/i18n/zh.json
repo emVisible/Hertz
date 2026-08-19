@@ -11,7 +11,8 @@
     "config": "设置",
     "docs": "文档",
     "execution": "执行",
-    "dashboard": "看板"
+    "dashboard": "看板",
+    "queue": "发布队列"
   },
   "common": {
     "loading": "加载中…",
@@ -34,7 +35,8 @@
     "clear": "清空",
     "yes": "是",
     "no": "否",
-    "copyTitle": "复制"
+    "copyTitle": "复制",
+    "deleteConfirm": "确定删除「{{name}}」？此操作不可撤销。"
   },
   "error": {
     "title": "界面出错了",
@@ -125,11 +127,23 @@
     "roleMain": "主模型（创作）",
     "roleMainHint": "编排创作、对话用哪个模型——你最常用的那个。切换后下次运行生效",
     "roleFast": "快速（fast）",
-    "roleFastHint": "评分/标题/脚本：用便宜快速模型，留空跟随主模型",
+    "roleFastHint": "素材 AI 整理 / 字幕翻译 / 评分 / 标题：用便宜快速模型，留空跟随主模型",
     "roleEmbedding": "嵌入（embedding）",
     "roleEmbeddingHint": "知识库预留（v2.2）",
     "roleTts": "语音音色（tts）",
     "roleTtsHint": "配音音色（Edge TTS 神经语音）",
+    "roleImage": "图像（image）",
+    "features": "功能与模型",
+    "featuresHint": "每个功能由哪个模型驱动一览；在下方「默认模型」中调整各角色的模型，素材页的「AI 整理」等轻量任务走快速模型",
+    "featureOrganize": "素材 AI 整理（标签 / 建议命名）",
+    "featureTranslate": "字幕翻译",
+    "featureScore": "评分 / 脚本 / 标题",
+    "featureChat": "编排创作与对话",
+    "featureImage": "图像生成",
+    "featureTts": "配音",
+    "featureUnconfigured": "未配置",
+    "redditCollect": "Reddit 采集",
+    "redditCollectHint": "OAuth 凭证与登录 Cookie 双通道，任一可用即可稳定采集",
     "prompts": "提示词模板库",
     "aiPromptsHint": "系统提示词可编辑，保存后下次运行生效；「恢复默认」回到出厂值",
     "aiPromptReset": "恢复默认",
@@ -257,7 +271,13 @@
     "langZh": "中文",
     "redditCookiePlaceholder": "token_v2=…; session_tracker=…（登录 Reddit 后从浏览器复制）",
     "redditCookieBrowserPlaceholder": "chrome, safari, edge（逗号分隔，空=自动）",
-    "rolesDefaultModel": "默认模型设置"
+    "rolesDefaultModel": "默认模型设置",
+    "autoPublish": "自动发布队列",
+    "autoPublishEnabled": "启用自动发布",
+    "autoPublishDailyLimit": "每日产能上限（条）",
+    "autoPromoteDaily": "每日自动转正（条）",
+    "autoPublishTickMinutes": "检查间隔（分钟）",
+    "autoPublishHint": "开启后，预发布队列每天自动转正 N 条进发布队列，到点自动发布（总开关关闭时队列只存不发）。产能只计自动发布，手动发布不占额度。"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -314,7 +334,12 @@
     "tagPlaceholder": "输入标签，用逗号分隔（如: 精选, 剪辑）",
     "tagged": "已保存标签",
     "tagSelected": "精选",
-    "tagDraft": "草稿"
+    "tagDraft": "草稿",
+    "viewGrid": "网格视图",
+    "viewDetail": "详情列表",
+    "goDownload": "去下载",
+    "open": "打开",
+    "folder": "文件夹"
   },
   "download": {
     "title": "下载",
@@ -348,7 +373,10 @@
     "created": "任务已创建",
     "started": "下载已开始",
     "cancelledOk": "已取消",
-    "deleted": "任务已删除"
+    "deleted": "任务已删除",
+    "speed": "{{speed}}/s",
+    "errorDetail": "原因：{{error}}",
+    "savedTo": "保存到 {{path}}"
   },
   "library": {
     "metadata": "元数据",
@@ -370,7 +398,10 @@
       "resolution": "分辨率",
       "duration": "时长",
       "bitrate": "码率"
-    }
+    },
+    "sortName": "名称",
+    "sortSize": "大小",
+    "sortDate": "时间"
   },
   "briefs": {
     "title": "策略 · Brief",
@@ -573,9 +604,7 @@
     "noJobs": "还没有任务记录",
     "noSources": "还没有采集源记录",
     "collected": "采集 {{n}} 条",
-    "processed": "处理 {{n}} 项",
     "jobQueued": "{{step}} 已加入队列，后台处理中",
-    "item": "内容项",
     "stageAudit": "审核",
     "auditSort.videoFirst": "有成片优先",
     "auditSort.random": "🎲 随机",
@@ -638,6 +667,7 @@
     "recentPublishes": "最近发布",
     "calendar": "日历",
     "calendarList": "列表",
+    "queueView": "队列",
     "calendarToday": "今天",
     "calendarPrev": "上一月",
     "calendarNext": "下一月",
@@ -690,7 +720,6 @@
     },
     "collectEmpty": "采集 0 条——源可能异常，已进入冷却",
     "inserted": "新入库 {{n}}",
-    "skipped": "跳过 {{n}}",
     "noPending": "无待处理条目",
     "sysLogs": "系统日志（后端/Scheduler）",
     "sysLogsEmpty": "暂无系统日志",
@@ -721,6 +750,8 @@
       "deselectAll": "取消全选",
       "now": "制作",
       "nowHint": "按生产方式立即制作（下载后可用）",
+      "cancel": "取消制作",
+      "cancelHint": "取消本次制作（点错/视频过长省资源）——条目回到已下载状态",
       "noRawHint": "先下载素材再制作",
       "batchProduce": "批量制作",
       "batchProduceHint": "批量执行制作（produce 批处理）",
@@ -734,6 +765,7 @@
     "stageCollect": "采集",
     "produceOneDone": "已开始制作，完成后进入审核",
     "produceStart": "已开始制作《{{title}}》，正在后台加工…",
+    "produceCancelled": "已取消制作《{{title}}》，条目回到已下载状态",
     "retranslateStart": "已开始重新翻译《{{title}}》，正在提取原声…",
     "publishStart": "已开始发布《{{title}}》，正在上传…",
     "busy": {
@@ -752,10 +784,7 @@
     "busyItem": "{{action}}《{{title}}》",
     "act": {
       "title": "运行状态",
-      "events": "实时事件",
       "toggle": "展开/收起",
-      "eventsCount": "{{n}} 事件",
-      "historyHint": "实时流仅保留最近 500 条——完整历史见「系统日志」与「最近任务」",
       "jobFilterAll": "全部任务",
       "statusAll": "全部",
       "statusOk": "成功",
@@ -827,11 +856,16 @@
     "sort.randomHint": "随机洗牌（每次开启重新洗牌）",
     "scrollMore": "滚动加载更多（已显示 {{shown}} / {{total}}）",
     "batchSelected": "已选 {{n}} 条",
-    "batchHint": "批量处理所选条目",
+    "batchSelectAll": "全选",
+    "batchDeselectAll": "取消全选",
+    "batchSelectHint": "点击条目卡片切换选中",
+    "batchModeEnter": "批量选择",
+    "batchModeExit": "退出批量（已选 {{n}} 条）",
+    "batchModeExitShort": "退出批量",
+    "batchModeHint": "进入批量选择模式：点击卡片整卡选中，全选当前列表",
     "batchApprove": "批量通过",
     "batchReject": "批量拒绝",
     "batchBackToPrep": "批量打回预处理",
-    "batchClear": "取消选择",
     "batchDone": "批量完成：{{n}} 条成功",
     "batchDoneWithErrors": "批量完成：{{ok}} 成功 / {{failed}} 失败（已跳过）",
     "calendarBatchSelected": "已选 {{n}} 条排期",
@@ -854,6 +888,24 @@
     "lowScorePool": "低分回收池",
     "lowScorePoolHint": "低分标记的条目（可人工决定复用/恢复）",
     "lowScoreRestoreAll": "全部恢复待审（{{n}}）",
+    "exTab": {
+      "lowscore": "低分池",
+      "exceptions": "异常",
+      "archive": "归档清理",
+      "backup": "备用库"
+    },
+    "archivePoolHint": "终态条目（已发布/待发/失败/拒绝）：归档后清理磁盘与冗余数据，仅保留基础信息入备用库",
+    "archivePoolEmpty": "没有可归档的条目",
+    "archiveAll": "全部归档（{{n}}）",
+    "archiveSelected": "归档所选（{{n}}）",
+    "archiveDone": "已归档 {{n}} 条，磁盘资源已清理",
+    "backupHint": "备用库：已归档条目的基础信息（标题/来源/评分）。恢复后自动重新下载制作；彻底删除不可逆",
+    "backupEmpty": "备用库为空",
+    "restoreSelected": "恢复所选（{{n}}）",
+    "unarchiveDone": "已恢复 {{n}} 条（资源将按需重新生成）",
+    "purgeSelected": "彻底删除（{{n}}）",
+    "purgeConfirm": "确认彻底删除 {{n}} 条？此操作不可逆，将移除数据库记录",
+    "purgeDone": "已彻底删除 {{n}} 条",
     "previewMedia": "预览媒体（视频播放 / 图片查看）",
     "typeVideo": "视频",
     "typeImage": "图片",
@@ -899,7 +951,23 @@
     "collectEmptyCool": "⚠ 源返回空，已进入冷却",
     "degradedRaw": "原片兜底",
     "subsBurnFallback": "字幕未烧录（无 libass，PNG 降级）",
-    "auditSearch": "搜索标题…"
+    "auditSearch": "搜索标题…",
+    "queueLabel": "发布队列",
+    "queueToHolding": "加入预发布",
+    "queueToReady": "加入发布队列",
+    "queueLeave": "移出队列",
+    "queueLeaveReady": "移出队列",
+    "queueHoldingOk": "已加入预发布队列（每日自动转正）",
+    "queueReadyOk": "已加入发布队列",
+    "queueLeaveOk": "已移出发布队列",
+    "phaseHolding": "预发布",
+    "phaseReady": "队列中",
+    "scheduleMissing": "未排期",
+    "titleLabel": "标题",
+    "groupContent": "内容",
+    "groupDistribute": "分发",
+    "publishMenu": "发布方式",
+    "publishTimedHint": "按排期发布（到点自动上传）"
   },
   "canvas": {
     "tool": {
@@ -1068,7 +1136,21 @@
     "cost": "成本估算（近 500 次调用）",
     "costTotal": "合计估算",
     "costEmpty": "未配置模型单价（设置 → AI → 模型单价）",
-    "costHint": "按调用 tokens × 单价估算；无 usage 数据的 provider 不计"
+    "costHint": "按调用 tokens × 单价估算；无 usage 数据的 provider 不计",
+    "publishChannel": "发布通道",
+    "target": "目标",
+    "cookie": "B 站 Cookie",
+    "noopWarning": "当前为 noop 目标——发布只记录意图，未真正上传。",
+    "autoPublish": "自动发布",
+    "todayCapacity": "今日产能",
+    "autoPublishOn": "自动发布已开启：到点自动发，手动发布不占产能。",
+    "autoPublishOff": "自动发布未开启：队列只存不发，手动发布照常。",
+    "queueDepth": "发布队列深度",
+    "queueReady": "待发布（ready）",
+    "queueHolding": "预发布（holding）",
+    "queueTotal": "合计",
+    "failures": "失败分布",
+    "failuresEmpty": "暂无失败记录"
   },
   "onboarding": {
     "title": "欢迎使用 Hertz",
@@ -1120,5 +1202,22 @@
     "catPipeScore": "流水线·评分",
     "catPipeScript": "流水线·脚本",
     "catPipeTitle": "流水线·标题"
+  },
+  "queue": {
+    "todayCapacity": "今日自动发布产能",
+    "autoOn": "自动发布已开启",
+    "autoOff": "自动发布未开启",
+    "capacityHint": "每日自动发布上限只计入自动发布；手动发布不占产能。预发布条目每天自动转正 N 条进发布队列。",
+    "ready": "发布队列",
+    "holding": "预发布队列",
+    "emptyReadyTitle": "发布队列为空",
+    "emptyReadyDesc": "从预发布队列转入，或在审核页直接加入发布队列。",
+    "emptyHoldingTitle": "预发布队列为空",
+    "emptyHoldingDesc": "在审核页把通过审核的条目加入预发布队列，每天会自动转正发布。",
+    "dequeue": "移出队列",
+    "toReady": "转入发布队列",
+    "scheduledAt": "排期",
+    "noSchedule": "无排期",
+    "promoteDaily": "每日自动转正"
   }
 }

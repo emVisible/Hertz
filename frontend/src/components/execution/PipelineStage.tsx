@@ -373,14 +373,41 @@ export function StageItemRow({
   item,
   badge,
   right,
+  selected,
+  selectMode,
+  onSelect,
 }: {
   item: PipelineItem
   badge?: ReactNode
   right?: ReactNode
+  /** 已选中（wave10.1 批量选择模式）：高亮 */
+  selected?: boolean
+  /** 批量选择模式（wave10.1）：点击整行切换选中（交互元素除外） */
+  selectMode?: boolean
+  onSelect?: (item: PipelineItem) => void
 }) {
   const { t } = useTranslation()
   return (
-    <li className="flex items-center gap-3 px-3 py-2">
+    <li
+      onClick={(e) => {
+        if (!onSelect || !selectMode) return
+        if ((e.target as HTMLElement).closest('button,a,label,input,textarea,summary')) return
+        e.preventDefault()
+        onSelect(item)
+      }}
+      className={`flex items-center gap-3 px-3 py-2 ${
+        selected ? 'bg-primary/5' : ''
+      } ${selectMode ? 'cursor-pointer' : ''}`}
+    >
+      {/* 选中指示（wave10.1）：左侧竖条——不占布局、无常驻 checkbox */}
+      {selectMode && (
+        <span
+          className={`w-1 shrink-0 rounded-full transition-colors ${
+            selected ? 'bg-primary' : 'bg-transparent'
+          }`}
+          aria-hidden
+        />
+      )}
       <MediaThumb item={item} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">

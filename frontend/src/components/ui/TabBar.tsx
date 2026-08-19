@@ -7,6 +7,8 @@ export interface TabBarItem<T extends string> {
   icon?: ReactNode
   /** 渲染分隔线（v0.2.7）：把特殊 menu（如异常）与正常流程区分开 */
   dividerBefore?: boolean
+  /** 推至行尾（wave10.2）：ml-auto 右对齐——异常 menu 独立区放单行最右侧 */
+  end?: boolean
 }
 
 /** 应用级 tab 栏（底部指示条语言，wave13 统一 L2/L3 导航）：
@@ -38,7 +40,7 @@ export function TabBar<T extends string>({
                 isActive
                   ? 'border-primary text-text-primary'
                   : 'border-transparent text-text-secondary hover:bg-surface-2 hover:text-text-primary'
-              }`}
+              } ${it.end ? 'ml-auto' : ''}`}
             >
               {it.icon}
               {it.label}

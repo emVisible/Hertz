@@ -12,6 +12,7 @@ import { useThemeStore, type Theme } from '../../stores/theme'
 import { ProviderManager } from './ProviderManager'
 import { PromptsManager } from './PromptsManager'
 import { RolesManager } from './RolesManager'
+import { FeaturesMap } from './FeaturesMap'
 import { SettingsNav, type SettingsSection } from './SettingsNav'
 import { TracePanel } from './TracePanel'
 import { HealthDashboard } from './HealthDashboard'
@@ -48,6 +49,11 @@ interface ConfigData {
   pipeline_collect_limit?: number
   pipeline_auto_collect_minutes?: number
   pipeline_publish_target?: string
+  /** 自动发布队列（v0.12）：总开关 / 每日产能上限 / 预发布每日转正数 / tick 间隔 */
+  pipeline_auto_publish?: boolean
+  pipeline_auto_publish_daily_limit?: number
+  pipeline_auto_promote_daily?: number
+  pipeline_auto_publish_tick_minutes?: number
   pipeline_sources?: string[]
   pipeline_subtitle_font_size?: number
   pipeline_subtitle_outline?: number
@@ -442,6 +448,10 @@ export function SettingsPage() {
       pipeline_collect_limit: String(cfg.pipeline_collect_limit ?? 25),
       pipeline_auto_collect_minutes: String(cfg.pipeline_auto_collect_minutes ?? 30),
       pipeline_publish_target: cfg.pipeline_publish_target ?? 'noop',
+      pipeline_auto_publish: String(cfg.pipeline_auto_publish ?? false),
+      pipeline_auto_publish_daily_limit: String(cfg.pipeline_auto_publish_daily_limit ?? 5),
+      pipeline_auto_promote_daily: String(cfg.pipeline_auto_promote_daily ?? 3),
+      pipeline_auto_publish_tick_minutes: String(cfg.pipeline_auto_publish_tick_minutes ?? 5),
       pipeline_sources: (cfg.pipeline_sources ?? ['hot']).join(', '),
       pipeline_subtitle_font_size: String(cfg.pipeline_subtitle_font_size ?? 24),
       pipeline_subtitle_outline: String(cfg.pipeline_subtitle_outline ?? 1),
@@ -504,6 +514,10 @@ export function SettingsPage() {
       pipeline_collect_limit: Number(form.pipeline_collect_limit),
       pipeline_auto_collect_minutes: Number(form.pipeline_auto_collect_minutes) || 0,
       pipeline_publish_target: form.pipeline_publish_target,
+      pipeline_auto_publish: form.pipeline_auto_publish === 'true',
+      pipeline_auto_publish_daily_limit: Number(form.pipeline_auto_publish_daily_limit) || 5,
+      pipeline_auto_promote_daily: Number(form.pipeline_auto_promote_daily) || 3,
+      pipeline_auto_publish_tick_minutes: Number(form.pipeline_auto_publish_tick_minutes) || 5,
       pipeline_sources: form.pipeline_sources
         ?.split(',')
         .map((s) => s.trim())
@@ -636,6 +650,17 @@ export function SettingsPage() {
 
             {sectionId === 'ai' && (
               <>
+                {/* 功能 → 模型 总览（素材 AI 整理/翻译/评分都走 fast 池，配置点在下方） */}
+                <section className={section}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Icon name="layers" size={15} />
+                    <h2 className="text-sm font-semibold text-text-primary">{t('settings.features')}</h2>
+                  </div>
+                  <div className="mt-2">
+                    <FeaturesMap />
+                  </div>
+                </section>
+
                 <section className={section}>
                   <div className="mb-3 flex items-center justify-between">
                     <h2 className={heading}>
@@ -778,6 +803,45 @@ export function SettingsPage() {
                       {t('settings.autoCollectHint')}
                     </p>
                   </div>
+                  {/* 自动发布队列（v0.12）：总开关 + 每日产能 + 预发布转正 + tick 间隔 */}
+                  <div className="mt-4 border-t border-border/60 pt-3">
+                    <p className="text-xs font-medium text-text-primary">{t('settings.autoPublish')}</p>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                      <Select
+                        label={t('settings.autoPublishEnabled')}
+                        value={form.pipeline_auto_publish ?? 'false'}
+                        onChange={(e) => set('pipeline_auto_publish', e.target.value)}
+                        options={[
+                          { value: 'true', label: t('common.yes') },
+                          { value: 'false', label: t('common.no') },
+                        ]}
+                      />
+                      <Input
+                        label={t('settings.autoPublishDailyLimit')}
+                        type="number"
+                        min={0}
+                        value={form.pipeline_auto_publish_daily_limit ?? '5'}
+                        onChange={(e) => set('pipeline_auto_publish_daily_limit', e.target.value)}
+                      />
+                      <Input
+                        label={t('settings.autoPromoteDaily')}
+                        type="number"
+                        min={0}
+                        value={form.pipeline_auto_promote_daily ?? '3'}
+                        onChange={(e) => set('pipeline_auto_promote_daily', e.target.value)}
+                      />
+                      <Input
+                        label={t('settings.autoPublishTickMinutes')}
+                        type="number"
+                        min={1}
+                        value={form.pipeline_auto_publish_tick_minutes ?? '5'}
+                        onChange={(e) => set('pipeline_auto_publish_tick_minutes', e.target.value)}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-text-disabled">
+                      {t('settings.autoPublishHint')}
+                    </p>
+                  </div>
                 </section>
 
                 <section className={section}>
@@ -859,51 +923,51 @@ export function SettingsPage() {
                   </p>
                 </section>
 
-                <section className={section}>
-                  <h2 className={heading}>
-                    <Icon name="config" size={15} />
-                    {t('settings.redditOAuth')}
-                  </h2>
-                  <p className={sub}>{t('settings.redditOAuthHint')}</p>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                    <Input
-                      label={t('settings.redditClientId')}
-                      value={form.pipeline_reddit_client_id ?? ''}
-                      onChange={(e) => set('pipeline_reddit_client_id', e.target.value)}
-                      placeholder={cfg?.pipeline_reddit_client_id ? '••••••••' : ''}
-                    />
-                    <Input
-                      label={t('settings.redditClientSecret')}
-                      type="password"
-                      value={form.pipeline_reddit_client_secret ?? ''}
-                      onChange={(e) => set('pipeline_reddit_client_secret', e.target.value)}
-                      placeholder={cfg?.pipeline_reddit_client_secret_set ? '••••••••' : ''}
-                    />
-                  </div>
-                </section>
-
-                {/* Reddit Cookie 方案（v0.8.1）：OAuth 个人拿不到 → 浏览器登录 Cookie */}
+                {/* Reddit 采集（v0.8.1 起 OAuth 与 Cookie 双通道，合并为一个配置区） */}
                 <section className={section}>
                   <h2 className={heading}>
                     <Icon name="downloads" size={15} />
-                    {t('settings.redditCookie')}
+                    {t('settings.redditCollect')}
                   </h2>
-                  <p className={sub}>{t('settings.redditCookieHint')}</p>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                    <Input
-                      label={t('settings.redditCookieRaw')}
-                      value={form.pipeline_reddit_cookie ?? ''}
-                      onChange={(e) => set('pipeline_reddit_cookie', e.target.value)}
-                      placeholder={t('settings.redditCookiePlaceholder')}
-                    />
-                    <Input
-                      label={t('settings.redditCookieBrowser')}
-                      value={form.pipeline_reddit_cookies_browser ?? ''}
-                      onChange={(e) => set('pipeline_reddit_cookies_browser', e.target.value)}
-                      placeholder={t('settings.redditCookieBrowserPlaceholder')}
-                    />
+                  <p className={sub}>{t('settings.redditCollectHint')}</p>
+                  {/* OAuth 凭证（官方认证通道） */}
+                  <div className="mt-2">
+                    <p className="text-xs font-medium text-text-primary">{t('settings.redditOAuth')}</p>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                      <Input
+                        label={t('settings.redditClientId')}
+                        value={form.pipeline_reddit_client_id ?? ''}
+                        onChange={(e) => set('pipeline_reddit_client_id', e.target.value)}
+                        placeholder={cfg?.pipeline_reddit_client_id ? '••••••••' : ''}
+                      />
+                      <Input
+                        label={t('settings.redditClientSecret')}
+                        type="password"
+                        value={form.pipeline_reddit_client_secret ?? ''}
+                        onChange={(e) => set('pipeline_reddit_client_secret', e.target.value)}
+                        placeholder={cfg?.pipeline_reddit_client_secret_set ? '••••••••' : ''}
+                      />
+                    </div>
                   </div>
-                  <RedditCookieCard />
+                  {/* Cookie 通道（登录解锁） */}
+                  <div className="mt-4 border-t border-border/60 pt-3">
+                    <p className="text-xs font-medium text-text-primary">{t('settings.redditCookie')}</p>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                      <Input
+                        label={t('settings.redditCookieRaw')}
+                        value={form.pipeline_reddit_cookie ?? ''}
+                        onChange={(e) => set('pipeline_reddit_cookie', e.target.value)}
+                        placeholder={t('settings.redditCookiePlaceholder')}
+                      />
+                      <Input
+                        label={t('settings.redditCookieBrowser')}
+                        value={form.pipeline_reddit_cookies_browser ?? ''}
+                        onChange={(e) => set('pipeline_reddit_cookies_browser', e.target.value)}
+                        placeholder={t('settings.redditCookieBrowserPlaceholder')}
+                      />
+                    </div>
+                    <RedditCookieCard />
+                  </div>
                 </section>
 
                 <section className={section}>

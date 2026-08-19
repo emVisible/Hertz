@@ -76,7 +76,8 @@ export function OrganizeModal({
         if (!checked.has(s.path)) continue
         try {
           if (mode === 'tags' && s.tags.length > 0) {
-            await api.post('/api/library/tags', { path: s.path, tags: s.tags })
+            // merge：AI 建议并入现有标签（保留 ⭐/来源等手打 tag，避免覆盖丢失）
+            await api.post('/api/library/tags', { path: s.path, tags: s.tags, merge: true })
             ok += 1
           } else if (mode === 'rename' && s.suggested_name && s.suggested_name !== s.path.split('/').pop()) {
             await api.post('/api/library/rename', { path: s.path, new_name: s.suggested_name })

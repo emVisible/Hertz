@@ -128,6 +128,13 @@ async def produce_item(item_id: uuid.UUID):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@router.post("/items/{item_id}/produce-cancel")
+async def cancel_produce(item_id: uuid.UUID):
+    """取消单条制作（wave11）：置位协作取消标志——产线检查点命中即中止，
+    条目回滚 downloaded（不标失败）。幂等：条目未在制作也无害。"""
+    return await _pipe().produce_cancel(item_id)
+
+
 @router.post("/items/{item_id}/requeue")
 async def requeue_item(item_id: uuid.UUID):
     return await _pipe().requeue(item_id)
@@ -148,6 +155,37 @@ async def batch_items(body: BatchBody):
         return await _pipe().batch_action(body.action, body.ids)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+# ---------- 归档 / 备用库（wave10：删除入口收口异常区） ----------
+
+
+class ArchiveBody(BaseModel):
+    ids: list[uuid.UUID] = Field(..., max_length=200)  # AXIOM 8.1：防大查询/长事务
+
+
+@router.get("/items/archived")
+async def archived_items(limit: int = Query(200, ge=1, le=500)):
+    """备用库：archived 条目列表（seq desc）。"""
+    return await _pipe().archived_items(limit=limit)
+
+
+@router.post("/items/archive")
+async def archive_items(body: ArchiveBody):
+    """批量归档：磁盘清理 + 字段清洗 + 标记 archived（数据保留作备用库）。"""
+    return await _pipe().archive(body.ids)
+
+
+@router.post("/items/unarchive")
+async def unarchive_items(body: ArchiveBody):
+    """批量恢复：清除 archived 标记（磁盘已删，重制重新生成）。"""
+    return await _pipe().unarchive(body.ids)
+
+
+@router.post("/items/purge")
+async def purge_items(body: ArchiveBody):
+    """批量彻底删除（不可逆）：仅归档条目，物理删行。"""
+    return await _pipe().purge(body.ids)
 
 
 # ---------- 生产方式预设模板（v0.4 B3） ----------

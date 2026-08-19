@@ -1,6 +1,7 @@
 /** B站分区（tid）常量——单一真相源（AXIOM §1.2）。
- *  参考原项目 Autarkeia pipeline/category.py 的 BILIBILI_CATEGORIES，
- *  补充当前常用一级分区。审核卡「分区」下拉使用，禁止内联数字。 */
+ *  官方现行一级分区（对照 bilibili-API-collect「视频分区一览」与
+ *  biliup archive/pre typelist），旧版混入的二级分区/废弃 tid 已清理，
+ *  保证 tid 与名称均唯一。审核卡「分区」下拉使用，禁止内联数字。 */
 
 export interface BiliTid {
   tid: number
@@ -14,27 +15,24 @@ export const BILI_TIDS: BiliTid[] = [
   { tid: 1, name: '动画', en: 'Anime' },
   { tid: 3, name: '音乐', en: 'Music' },
   { tid: 4, name: '游戏', en: 'Game' },
-  { tid: 21, name: '日常', en: 'Daily' },
+  { tid: 5, name: '娱乐', en: 'Entertainment' },
+  { tid: 11, name: '电视剧', en: 'TV Series' },
+  { tid: 13, name: '番剧', en: 'Bangumi' },
+  { tid: 23, name: '电影', en: 'Movie' },
   { tid: 36, name: '知识', en: 'Knowledge' },
-  { tid: 54, name: '生活', en: 'Life' },
-  { tid: 85, name: '科学', en: 'Science' },
-  { tid: 95, name: '数码', en: 'Digital' },
-  { tid: 138, name: '搞笑', en: 'Funny' },
-  { tid: 152, name: '动物', en: 'Animals' },
-  { tid: 154, name: '健身', en: 'Fitness' },
-  { tid: 155, name: '旅行', en: 'Travel' },
-  { tid: 160, name: '生活日常', en: 'Daily life' },
-  { tid: 161, name: '生活记录', en: 'Vlog' },
-  { tid: 167, name: '影视', en: 'Film & TV' },
-  { tid: 179, name: '影视剪辑', en: 'Clip' },
+  { tid: 119, name: '鬼畜', en: 'Kichiku' },
+  { tid: 129, name: '舞蹈', en: 'Dance' },
+  { tid: 155, name: '时尚', en: 'Fashion' },
+  { tid: 160, name: '生活', en: 'Life' },
+  { tid: 167, name: '国创', en: 'Chinese Animation' },
+  { tid: 177, name: '纪录片', en: 'Documentary' },
+  { tid: 181, name: '影视', en: 'Film & TV' },
   { tid: 188, name: '科技', en: 'Tech' },
-  { tid: 201, name: '知识', en: 'Knowledge' },
+  { tid: 202, name: '资讯', en: 'Information' },
   { tid: 211, name: '美食', en: 'Food' },
-  { tid: 221, name: '动物圈', en: 'Animal circle' },
+  { tid: 217, name: '动物圈', en: 'Animal' },
   { tid: 223, name: '汽车', en: 'Auto' },
   { tid: 234, name: '运动', en: 'Sports' },
-  { tid: 254, name: '搞笑', en: 'Funny' },
-  { tid: 250, name: '记录', en: 'Documentary' },
 ]
 
 /** tid → 分区名（含未知兜底） */

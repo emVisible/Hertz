@@ -126,6 +126,15 @@ class ServiceRegistry:
             trigger="interval",
             minutes=1,
         )
+        # 自动发布队列（v0.12）：固定每分钟 tick，间隔按运行时配置判断
+        # （pipeline_auto_publish_tick_minutes，默认 5）；总开关
+        # pipeline_auto_publish 关闭时 tick 直接跳过
+        self.scheduler.add_job(
+            "auto_publish",
+            self._auto_publish_tick,
+            trigger="interval",
+            minutes=1,
+        )
         self.log.get().info("ServiceRegistry initialized (AI via ProviderRegistry)")
 
     async def _collect_tick(self) -> None:
@@ -163,6 +172,31 @@ class ServiceRegistry:
                 self.log.get().info("auto_approve approved %d item(s)", result["approved"])
         except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
             self.log.get().exception("auto_approve tick failed (best effort)")
+
+    async def _auto_publish_tick(self) -> None:
+        """自动发布：按配置间隔节流；失败不拖垮调度器。"""
+        import time as _time
+
+        from backend.config import settings  # 不依赖实例 initialize（单例直取）
+
+        interval_min = int(
+            getattr(settings, "pipeline_auto_publish_tick_minutes", 5) or 5
+        )
+        now = _time.time()
+        last = getattr(self, "_last_auto_publish", 0.0)
+        if now - last < interval_min * 60:
+            return
+        try:
+            self._last_auto_publish = now
+            result = await self.pipeline.auto_publish_tick()
+            if result.get("published", 0) > 0 or result.get("promoted", 0) > 0:
+                self.log.get().info(
+                    "auto publish: promoted=%d published=%d (used %s/%s)",
+                    result["promoted"], result["published"],
+                    result.get("used_today"), result.get("daily_limit"),
+                )
+        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+            self.log.get().exception("auto publish tick failed (best effort)")
 
     async def _publish_stats_tick(self) -> None:
         try:

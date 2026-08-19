@@ -4,14 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiRegistryApi } from '../../api/ai'
 import { Badge, Button, Icon, Select, useToast } from '../../components/ui'
-
-interface ModelOption {
-  value: string
-  label: string
-  providerName: string
-  modelKey: string
-  capability: string
-}
+import { buildModelPool, effectiveModel, type ModelOption } from './roleModel'
 
 /**
  * 默认模型（使用层，v2.1/Cherryt('settings.rolesDefaultModel')）：
@@ -60,21 +53,10 @@ export function RolesManager() {
   const enabledChat: ModelOption[] = []
   const enabledEmbedding: ModelOption[] = []
   const enabledTts: ModelOption[] = []
-  for (const p of providers) {
-    if (!p.enabled) continue
-    for (const m of models.filter((x) => x.provider_id === p.id && x.enabled)) {
-      const opt: ModelOption = {
-        value: `${p.key}:${m.key}`,
-        label: `${p.name} · ${m.key}`,
-        providerName: p.name,
-        modelKey: m.key,
-        capability: m.capability,
-      }
-      if (m.capability === 'chat') enabledChat.push(opt)
-      if (m.capability === 'embedding') enabledEmbedding.push(opt)
-      if (m.capability === 'tts') enabledTts.push(opt)
-    }
-  }
+  const pool = buildModelPool(providers, models)
+  enabledChat.push(...pool.chat)
+  enabledEmbedding.push(...pool.embedding)
+  enabledTts.push(...pool.tts)
 
   function chatOptions(withAuto = true) {
     const opts: { value: string; label: string }[] = []
@@ -82,21 +64,9 @@ export function RolesManager() {
     return [...opts, ...enabledChat.map((m) => ({ value: m.value, label: m.label }))]
   }
 
-  /** 当前生效解析：角色配置 → 回退链 → 首个可用。 */
+  /** 当前生效解析：角色配置 → 回退链 → 首个可用（与后端 resolve_role 一致）。 */
   function effective(roleKey: string): ModelOption | null {
-    const configured = roles[roleKey]
-    const pool = [...enabledChat, ...enabledEmbedding, ...enabledTts]
-    if (configured) {
-      const hit = pool.find((m) => m.value === configured)
-      if (hit) return hit
-    }
-    // 回退链：fast/embedding → main → 首个 chat；tts → 首个音色；main → 首个 chat
-    if (roleKey === 'tts') return enabledTts[0] ?? null
-    if (roleKey !== 'main' && roles.main) {
-      const hit = enabledChat.find((m) => m.value === roles.main)
-      if (hit) return hit
-    }
-    return enabledChat[0] ?? null
+    return effectiveModel(roleKey, roles, pool)
   }
 
   function labelFor(roleKey: string) {

@@ -15,6 +15,13 @@ from backend.ai.router import AIRouter
 from backend.config import settings
 from backend.infrastructure.storage import FileStore
 from backend.library.thumbnails import find_ffmpeg
+from backend.pipeline.cancel import (
+    ItemCancelledError,
+    active_item,
+    is_cancelled,
+    reset_active_item,
+    set_active_item,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +41,20 @@ def _artifacts_dir(files: FileStore, item) -> Path:
     return files.output_root() / "pipeline" / slug
 
 
+def _raise_if_cancelled() -> None:
+    """协作式取消检查点（wave11）：命中即抛 ItemCancelledError 中止产线。
+
+    读取 ContextVar 活动条目（produce_item 入口登记）——检查点无需
+    透传 item_id 参数；无活动条目（测试直接调用/其他产线）时为空操作。
+    ItemCancelledError 继承 Exception——但 produce 内所有 except Exception
+    的降级分支都只会吞 ProducerError 等业务异常，检查点放在阶段之间，
+    不会被误吞（各降级 try 块内部不设检查点）。
+    """
+    current = active_item()
+    if current is not None and is_cancelled(current):
+        raise ItemCancelledError(f"produce cancelled for item {current}")
+
+
 async def _run_cmd(cmd: list[str], *, timeout_s: int = 300) -> bytes:
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -41,7 +62,27 @@ async def _run_cmd(cmd: list[str], *, timeout_s: int = 300) -> bytes:
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+        # 协作式取消（wave11）：0.25s 粒度轮询取消标志——命中即 terminate
+        # （合成/转码是耗时大头，必须真杀进程才能省资源）
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
+        while True:
+            current = active_item()
+            if current is not None and is_cancelled(current):
+                if proc.returncode is None:
+                    proc.terminate()
+                out, err = await proc.communicate()
+                raise ItemCancelledError(f"command cancelled: {cmd[0]}")
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                proc.kill()
+                raise ProducerError(f"command timed out after {timeout_s}s: {cmd[0]}") from None
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=min(0.25, remaining))
+                break
+            except asyncio.TimeoutError:
+                continue
+        out, err = await proc.communicate()
     except TimeoutError:
         proc.kill()
         raise ProducerError(f"command timed out after {timeout_s}s: {cmd[0]}") from None
@@ -754,7 +795,9 @@ async def _translate_srt_cues(
                 ],
                 role="fast",
                 temperature=0.15,
-                max_tokens=1600,
+                # v0.2.1：动态 token 预算——长段字幕 1600 固定值会被截断，
+                # 截断 → segments 数量不符 → 整批回退英文（长视频中间混合字幕）
+                max_tokens=max(1600, len(batch) * 200),
             )
             import json as _json
 
@@ -763,13 +806,16 @@ async def _translate_srt_cues(
             except _json.JSONDecodeError:
                 resp = {}
             trans = resp.get("segments") or []
-            if len(trans) == len(batch):
-                # v0.11.2：句首标点加固（LLM 常在译文开头补“，”）
-                trans = [_LOCALIZE_LEAD_PUNCT.sub("", str(t) or "") for t in trans]
-                result.extend(trans)
-            else:
-                result.extend(batch)
-        except Exception:  # noqa: BLE001 — 翻译失败回退原文
+            # v0.2.1 修复：逐段对齐——LLM 截断/漏段时只对缺失段回退原文，
+            # 绝不整批回退（否则长视频中间出现一整段英文，前后却是中文）。
+            # 每段独立判定：有译文用译文，缺译文才保留原文。
+            for j, orig in enumerate(batch):
+                if j < len(trans) and str(trans[j] or "").strip():
+                    result.append(_LOCALIZE_LEAD_PUNCT.sub("", str(trans[j])))
+                else:
+                    result.append(orig)
+        except Exception:  # noqa: BLE001 — 翻译服务异常整批回退原文（保底，
+            # 拿不到译文时无法逐段翻译；正常路径绝不整批英文）
             result.extend(batch)
     return [(s, e, zh) for (s, e, _), zh in zip(cues, result, strict=True)]
 
@@ -1249,14 +1295,44 @@ async def produce_item(
     TTS/字幕/合成，基于原视频重新翻译。
     v0.3.3：生产方式模块（item.produce_options）——直发/配音/字幕/翻译/静音
     按模块执行；直发跳过全部加工（原片即成片），仍抽封面 + phash。
+
+    wave11 取消制作：入口登记活动条目（ContextVar）——产线内部检查点/
+    _run_cmd 轮询据此查取消标志；收尾复位。无 id 的测试桩不受影响。
     """
-    # v0.9（AXIOM 26/34）：默认生产方式 = 翻译+字幕（无配音）——produce_options
-    # 从未设置（None/{}）时不再退化为三无直发，与前端 DEFAULT_PRODUCE_OPTIONS 对齐。
+    token = set_active_item(getattr(item, "id", None))
+    try:
+        return await _produce_item(ai, files, item, existing_script)
+    finally:
+        reset_active_item(token)
+
+
+async def _produce_item(
+    ai: AIRouter, files: FileStore, item, existing_script: dict | None = None
+) -> dict:
+    """Full production for one item. Returns artifact dict; raises ProducerError
+    only when no producible media exists (item-level failures). Individual
+    artifact failures degrade gracefully (missing cover, subs-only, etc.).
+
+    v0.2.7：existing_script 提供时（重新翻译）跳过脚本生成——只重跑
+    TTS/字幕/合成，基于原视频重新翻译。
+    v0.3.3：生产方式模块（item.produce_options）——直发/配音/字幕/翻译/静音
+    按模块执行；直发跳过全部加工（原片即成片），仍抽封面 + phash。
+    """
+    # v0.11.9：默认生产方式 = 直发——produce_options 从未设置（None/{}）
+    # 的新入库未加工条目原片直接发布（对齐前端 DEFAULT_PRODUCE_OPTIONS）；
+    # 部分显式设置（如 voice+subtitle）保持 v0.9 语义（翻译+字幕兜底），
+    # 不被直发劫持（此前 setdefault 顺序曾导致 voice/subtitle 与 passthrough 并存）。
     opts = dict(item.produce_options or {})
-    opts.setdefault("voice", False)
-    opts.setdefault("subtitle", True)
-    opts.setdefault("translate", True)
-    opts.setdefault("mute", False)
+    if not opts:
+        opts = {
+            "passthrough": True, "voice": False,
+            "subtitle": False, "translate": False, "mute": False,
+        }
+    else:
+        opts.setdefault("voice", False)
+        opts.setdefault("subtitle", True)
+        opts.setdefault("translate", True)
+        opts.setdefault("mute", False)
     passthrough = bool(opts.get("passthrough"))
     want_voice = bool(opts.get("voice"))
     want_subtitle = bool(opts.get("subtitle"))
@@ -1328,6 +1404,7 @@ async def produce_item(
                         }
         except Exception:  # noqa: BLE001 — 转写失败不阻塞生产（回退简介）
             logger.warning("ASR transcription failed — falling back to metadata")
+    _raise_if_cancelled()
 
     script = existing_script or await generate_script(
         ai, item, max_words=budget["max_words"] or 120, video_duration=duration,
@@ -1342,6 +1419,7 @@ async def produce_item(
             content=(transcript or {}).get("text"),
         )
     compliance = check_script_compliance(script)
+    _raise_if_cancelled()
     artifacts = {
         "script": script, "compliance": compliance, "directory": str(directory),
     }
@@ -1447,6 +1525,7 @@ async def produce_item(
         audio_dur = 0.0
         current_text = tts_text
         for attempt in range(3):
+            _raise_if_cancelled()
             try:
                 candidate = await synthesize_tts(
                     ai, current_text, audio_path, voice=voice or None
@@ -1544,6 +1623,7 @@ async def produce_item(
 
     video_path = directory / "final.mp4"
     narration_file = Path(artifacts["audio"]["path"]) if artifacts.get("audio") else None
+    _raise_if_cancelled()
     try:
         edit = await compose_video(
             raw_path, narration_file, srt_path, video_path, muted=muted,
@@ -1777,6 +1857,7 @@ async def produce_story_item(
     script["narration"] = narration.strip()[:1200]
     script["source"] = src
     script["content_source"] = "selftext"
+    _raise_if_cancelled()
 
     # 2. 合规（safety_only：安全红线阻断，营销极限词降级告警——中文旁白
     #    天然含「最/第一」等口语词，按广告法全量会误杀）
@@ -1804,6 +1885,7 @@ async def produce_story_item(
     if audio_dur <= 0:
         audio_dur = 60.0  # 探测失败 → 按默认 1 分钟兜底
     artifacts["audio"] = {"path": str(audio_path), "bytes": tts.get("bytes", 0)}
+    _raise_if_cancelled()
 
     # 4. 字幕（中文旁白 → 断句 → 按字符比例对齐时长 → SRT → ASS）
     sentences = _split_story_sentences(script["narration"])
@@ -1818,6 +1900,7 @@ async def produce_story_item(
     credit = f"r/{item.subreddit}" if item.subreddit else ""
     await asyncio.to_thread(_render_story_bg, item.title, bg_path, credit=credit)
     final_path = directory / "final.mp4"
+    _raise_if_cancelled()
     quality = await _compose_story_video(
         bg_path, audio_path, ass_path, final_path, duration=audio_dur,
     )

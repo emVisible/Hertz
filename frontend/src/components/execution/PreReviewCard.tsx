@@ -8,17 +8,20 @@ import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage
 import { normalizeOptions, ProduceOptionsPicker } from './ProduceOptionsPicker'
 
 /** 预处理卡片（v0.8.9）：仅服务「已下载未加工」阶段——大媒体 + 生产方式选择 +
- *  制作主操作（评分/下载已在紧凑行完成，步骤条与子 menu 重复已移除）。 */
+ *  制作主操作（评分/下载已在紧凑行完成，步骤条与子 menu 重复已移除）。
+ *  wave11：制作中按钮变「取消制作」——点错/视频过长可中止（后端检查点回滚）。 */
 export function PreReviewCard({
   item,
   onSaveOptions,
   onProduce,
+  onCancelProduce,
   onReject,
   onUploadCover,
 }: {
   item: PipelineItem
   onSaveOptions: (item: PipelineItem, options: Partial<ProduceOptions>) => void
   onProduce: (item: PipelineItem) => void
+  onCancelProduce: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
   onUploadCover: (item: PipelineItem, file: File) => void
 }) {
@@ -147,16 +150,24 @@ export function PreReviewCard({
             <Icon name="close" size={12} />
             {t('console.reject')}
           </Button>
-          <Button
-            size="sm"
-            loading={!!busy}
-            disabled={!!busy}
-            onClick={() => onProduce(item)}
-            title={t('console.produce.nowHint')}
-          >
-            <Icon name="play" size={12} />
-            {busy ? t('console.busy.produce') : t('console.produce.now')}
-          </Button>
+          {busy?.action === 'produce' ? (
+            // wave11：制作中 → 取消按钮（点错/视频过长省资源；后端检查点回滚）
+            <Button size="sm" variant="ghost" onClick={() => onCancelProduce(item)} title={t('console.produce.cancelHint')}>
+              <Icon name="close" size={12} />
+              {t('console.produce.cancel')}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              loading={!!busy}
+              disabled={!!busy}
+              onClick={() => onProduce(item)}
+              title={t('console.produce.nowHint')}
+            >
+              <Icon name="play" size={12} />
+              {busy ? t('console.busy.produce') : t('console.produce.now')}
+            </Button>
+          )}
         </div>
       </div>
     </li>

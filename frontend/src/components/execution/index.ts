@@ -6,6 +6,7 @@ export { StatusSteps, type StatusStepsProps, type StatusStepItem } from './Statu
 export { PipelineStage, StageItemRow, StageList, MediaThumb, PIPELINE_ITEM_TONE, ITEM_TYPE_BADGE } from './PipelineStage'
 export { AuditCard } from './AuditCard'
 export { PublishCard } from './PublishCard'
+export { QueueView } from './QueueView'
 export { ScheduleField } from './ScheduleField'
 export { PreReviewCard } from './PreReviewCard'
 export { SortControl, type SortField, type SortSpec } from './SortControl'

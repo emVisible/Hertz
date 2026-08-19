@@ -89,3 +89,45 @@ async def purge_derived_media(item: Item, *, keep_raw: bool = True) -> None:
     if not keep_raw:
 
         item.raw_path = None
+
+
+async def clear_item_disk(item: Item) -> None:
+    """归档磁盘清理（wave10）：删除条目全部磁盘资源并清空对应字段。
+
+    覆盖 raw/video/audio/subtitle/cover 文件（含 srt/ass/asr.srt/thumb 变体）
+    与整个 output_dir 目录（pipeline/{slug}/）；路径为空或文件缺失静默跳过。
+    调用方负责 commit。"""
+    import asyncio
+    from pathlib import Path
+
+    from backend.infrastructure.storage import FileStore
+
+    async def unlink(p: str | None) -> None:
+        if not p:
+            return
+        path = Path(p)
+        for suffix in ("", ".srt", ".ass", ".asr.srt", ".thumb.jpg"):
+            target = path.with_suffix(path.suffix + suffix) if suffix else path
+            try:
+                await asyncio.to_thread(target.unlink, missing_ok=True)
+            except OSError:
+                pass
+
+    for field in ("video_path", "audio_path", "subtitle_path", "cover_path"):
+        await unlink(getattr(item, field))
+        setattr(item, field, None)
+
+    await unlink(item.raw_path)
+    item.raw_path = None
+
+    if item.output_dir:
+        try:
+            store = FileStore()
+            out = store.data_dir / item.output_dir
+            if out.is_dir():
+                import shutil
+
+                await asyncio.to_thread(shutil.rmtree, out, ignore_errors=True)
+        except OSError:
+            pass
+        item.output_dir = None

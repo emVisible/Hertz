@@ -190,6 +190,7 @@ class PipelineService:
     async def publish_one(
         self, item_id: uuid.UUID, *,
         selfmade: bool = False, target: str | None = None, now: bool = False,
+        auto: bool = False,
     ) -> dict:
         """单条发布（审核通过后的人工操作）：执行 publisher 并落发布结果。
 
@@ -197,6 +198,8 @@ class PipelineService:
         bili_copyright=1 驱动。v0.3.4：target 逐条可覆盖（分发目标），
         缺省回退 pipeline_publish_target（发布安全）。
         v0.11.5：now=True（立即发布）→ 清除 scheduled_at，按当前时间立即上传。
+        v0.12：auto=True（自动发布 tick 调用）→ publish_json 记 auto 标记，
+        产能计数依据（手动发布不标记、不占产能）。
         approved（首次发布）与 published（重新发布）均可。
         """
         from datetime import UTC, datetime
@@ -249,7 +252,11 @@ class PipelineService:
         async with session_factory() as session:
             row = await session.get(Item, item_id)
             row.status = ItemStatus.PUBLISHED
-            row.publish_json = {"target": target, **result}
+            pub_json: dict = {"target": target, **result}
+            if auto:
+                # v0.12 产能计数依据：仅自动发布标记，手动发布不计入每日上限
+                pub_json["auto"] = True
+            row.publish_json = pub_json
             row.published_at = datetime.now(UTC)
             # v0.9 对齐原项目 ensure_bilibili_dtime：biliup 顺延后回写
             # scheduled_at，排期日历与发布卡保持一致（单一真相源）
@@ -268,6 +275,321 @@ class PipelineService:
             "result": result,
             # v0.3.8：noop 目标标记外提——前端直接判断，无需穿透 result
             "noop": bool(result.get("noop")),
+        }
+
+    # ---------- 发布队列（v0.12：预发布/发布队列 + 每日产能自动发布） ----------
+
+    async def enqueue(
+        self, item_id: uuid.UUID, phase: str = ""
+    ) -> dict:
+        """入队/出队：''=出队（纯手动）｜holding=预发布｜ready=发布队列。
+
+        仅 approved 状态可入队；ready 必须有排期（无排期自动分配当天窗口槽位，
+        排满则拒绝）；holding 清除排期（语义：不参与排期与自动发布）。
+        """
+        from backend.pipeline.errors import InvalidItemStateError
+        from backend.pipeline.publish_queue import (
+            PHASE_HOLDING,
+            PHASE_READY,
+            QUEUE_PHASES,
+        )
+
+        if phase not in QUEUE_PHASES:
+            raise ValueError(f"unknown queue phase '{phase}'")
+        from backend.pipeline.schedule import next_slot
+
+        async with session_factory() as session:
+            item = await session.get(Item, item_id)
+            if item is None:
+                raise ItemNotFoundError(item_id)
+            if item.archived:
+                raise InvalidItemStateError("cannot enqueue an archived item (备用库)")
+            if phase:
+                if item.status != ItemStatus.APPROVED:
+                    raise InvalidItemStateError(
+                        f"cannot enqueue item in state {item.status} (需审核通过)"
+                    )
+                if phase == PHASE_READY and item.scheduled_at is None:
+                    from datetime import UTC, datetime
+
+                    now = datetime.now(UTC)
+                    allocated = [
+                        t for t in
+                        (
+                            await session.execute(
+                                select(Item.scheduled_at).where(
+                                    Item.status == ItemStatus.APPROVED,
+                                    Item.queue_phase == PHASE_READY,
+                                    Item.scheduled_at.isnot(None),
+                                    Item.scheduled_at >= now,
+                                )
+                            )
+                        ).scalars().all()
+                        if t is not None
+                    ]
+                    slot = next_slot(
+                        allocated,
+                        now=now,
+                        windows_raw=getattr(self.engine.settings, "pipeline_publish_windows", ""),
+                        min_interval_min=int(
+                            getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
+                        ),
+                        jitter_min=0,
+                        lookahead_days=1,
+                    )
+                    if slot is None:
+                        raise ValueError("今天发布窗口已排满，无法自动分配槽位（请先手动设置排期）")
+                    item.scheduled_at = slot
+                if phase == PHASE_HOLDING:
+                    # holding 语义 = 无排期待命；清掉防止内容日历/自动发布误读
+                    item.scheduled_at = None
+            item.queue_phase = phase
+            await session.commit()
+        self.hub.publish(
+            "pipeline",
+            {
+                "type": "item", "item_id": str(item_id),
+                "status": item.status, "queue_phase": phase,
+            },
+        )
+        return {"id": str(item_id), "queue_phase": phase, "scheduled_at": (
+            item.scheduled_at.isoformat() if item.scheduled_at else None
+        )}
+
+    async def enqueue_batch(self, ids: list[uuid.UUID], phase: str) -> dict:
+        """批量入队（v0.12）：逐条走 enqueue，单条失败不中断。"""
+        from backend.pipeline.errors import InvalidItemStateError
+
+        ok, failed = 0, []
+        for item_id in ids:
+            try:
+                await self.enqueue(item_id, phase)
+                ok += 1
+            except (
+                InvalidItemStateError,
+                ItemNotFoundError,
+                ValueError,
+            ) as exc:
+                failed.append({"id": str(item_id), "error": str(exc)})
+        return {"ok": ok, "failed": failed}
+
+    async def _auto_promote_now(self, now: datetime) -> int:
+        """每日转正：holding → ready（自动分配当天窗口槽位，窗口排满保持 holding）。"""
+        from backend.pipeline.publish_queue import PHASE_HOLDING, PHASE_READY
+        from backend.pipeline.schedule import next_slot
+
+        daily_n = int(getattr(self.engine.settings, "pipeline_auto_promote_daily", 3) or 0)
+        if daily_n <= 0:
+            return 0
+        async with session_factory() as session:
+            candidates = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.APPROVED,
+                        Item.queue_phase == PHASE_HOLDING,
+                        Item.archived.is_(False),
+                    ).order_by(Item.seq.asc()).limit(daily_n)
+                )
+            ).scalars().all()
+            if not candidates:
+                return 0
+            allocated = [
+                t for t in
+                (await session.execute(
+                    select(Item.scheduled_at).where(
+                        Item.status == ItemStatus.APPROVED,
+                        Item.queue_phase == PHASE_READY,
+                        Item.scheduled_at.isnot(None),
+                        Item.scheduled_at >= now,
+                    )
+                )).scalars().all()
+                if t is not None
+            ]
+            promoted = 0
+            for item in candidates:
+                slot = next_slot(
+                    allocated,
+                    now=now,
+                    windows_raw=getattr(self.engine.settings, "pipeline_publish_windows", ""),
+                    min_interval_min=int(
+                        getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
+                    ),
+                    jitter_min=0,
+                    lookahead_days=1,
+                )
+                if slot is None:
+                    continue  # 窗口排满 → 保持 holding，次日再转
+                item.queue_phase = PHASE_READY
+                item.scheduled_at = slot
+                allocated.append(slot)
+                promoted += 1
+            await session.commit()
+        return promoted
+
+    async def _auto_published_today_count(self, now: datetime) -> int:
+        """今日产能已用：本地日 + publish_json.auto 标记（手动发布不计）。"""
+        from backend.pipeline.publish_queue import local_day_bounds
+
+        day_start, day_end = local_day_bounds(now)
+        async with session_factory() as session:
+            count = await session.scalar(
+                select(func.count(Item.id)).where(
+                    Item.status == ItemStatus.PUBLISHED,
+                    Item.published_at >= day_start,
+                    Item.published_at < day_end,
+                    Item.archived.is_(False),
+                    Item.publish_json["auto"].astext == "true",
+                )
+            )
+        return int(count or 0)
+
+    async def auto_publish_tick(self) -> dict:
+        """自动发布主逻辑（调度器周期调用）：转正 + 到点发布 + 产能上限。
+
+        顺序：总开关关 → 跳过；当天首个 tick 转正；产能已满 → 只转正不发布；
+        发布 ready & approved & scheduled_at ≤ now（按排期升序），发满上限即停；
+        单条失败 → 标记 failed（error_class=publish），不阻塞其余。
+        跨天未发完的 ready 条目（排期已过期）→ 重新分配当天窗口，次日自然续发。
+        """
+        from datetime import UTC
+
+        from backend.pipeline.errors import InvalidItemStateError
+        from backend.pipeline.publish_queue import PHASE_READY
+        from backend.pipeline.schedule import next_slot
+
+        settings = self.engine.settings
+        if not bool(getattr(settings, "pipeline_auto_publish", False)):
+            return {"enabled": False, "promoted": 0, "published": 0, "failed": 0}
+        now = datetime.now(UTC)
+        local_day = now.astimezone(datetime.now().astimezone().tzinfo).date().isoformat()
+        promoted = 0
+        if getattr(self, "_last_promote_day", None) != local_day:
+            try:
+                promoted = await self._auto_promote_now(now)
+            except Exception:  # noqa: BLE001 — 转正失败不拖垮 tick
+                logger.exception("auto publish: promote failed (best effort)")
+            self._last_promote_day = local_day
+
+        daily_limit = int(getattr(settings, "pipeline_auto_publish_daily_limit", 5) or 5)
+        used = await self._auto_published_today_count(now)
+        published = failed = 0
+        while used < daily_limit:
+            async with session_factory() as session:
+                due = (
+                    await session.execute(
+                        select(Item).where(
+                            Item.status == ItemStatus.APPROVED,
+                            Item.queue_phase == PHASE_READY,
+                            Item.scheduled_at.isnot(None),
+                            Item.scheduled_at <= now,
+                            Item.archived.is_(False),
+                        ).order_by(Item.scheduled_at.asc()).limit(daily_limit - used)
+                    )
+                ).scalars().all()
+            if not due:
+                break
+            for item in due:
+                try:
+                    await self.publish_one(item.id, auto=True)
+                    published += 1
+                    used += 1
+                except InvalidItemStateError:
+                    continue  # 并发（手动/其他 tick）已发布/状态迁移
+                except Exception as exc:  # noqa: BLE001 — 单条失败标记 failed，不阻塞
+                    async with session_factory() as session:
+                        row = await session.get(Item, item.id)
+                        if row is not None and row.status == ItemStatus.APPROVED:
+                            row.status = ItemStatus.FAILED
+                            row.error = f"auto publish failed: {exc}"
+                            row.error_class = "publish"
+                            await session.commit()
+                            failed += 1
+        # 跨天遗留：仍 ready 但排期已过（昨天发满未发）→ 重排当天窗口
+        if daily_limit > 0:
+            async with session_factory() as session:
+                stale = (
+                    await session.execute(
+                        select(Item).where(
+                            Item.status == ItemStatus.APPROVED,
+                            Item.queue_phase == PHASE_READY,
+                            Item.scheduled_at.isnot(None),
+                            Item.scheduled_at < now,
+                            Item.archived.is_(False),
+                        ).order_by(Item.seq.asc()).limit(30)
+                    )
+                ).scalars().all()
+                for item in stale:
+                    slot = next_slot(
+                        [],
+                        now=now,
+                        windows_raw=getattr(settings, "pipeline_publish_windows", ""),
+                        min_interval_min=int(
+                            getattr(settings, "pipeline_publish_min_interval_min", 30)
+                        ),
+                        jitter_min=0,
+                        lookahead_days=1,
+                    )
+                    if slot is not None:
+                        item.scheduled_at = slot
+                await session.commit()
+        return {
+            "enabled": True, "promoted": promoted,
+            "published": published, "failed": failed,
+            "used_today": used, "daily_limit": daily_limit,
+        }
+
+    async def queue_view(self) -> dict:
+        """发布队列看板：ready（按排期）+ holding（按入库序）+ 今日产能。"""
+        from backend.pipeline.publish_queue import (
+            PHASE_HOLDING,
+            PHASE_READY,
+            local_day_bounds,
+        )
+
+        now = datetime.now(UTC)
+        day_start, _day_end = local_day_bounds(now)
+        daily_limit = int(
+            getattr(self.engine.settings, "pipeline_auto_publish_daily_limit", 5) or 5
+        )
+        async with session_factory() as session:
+            ready = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.APPROVED,
+                        Item.queue_phase == PHASE_READY,
+                        Item.archived.is_(False),
+                    ).order_by(Item.scheduled_at.asc().nulls_last())
+                )
+            ).scalars().all()
+            holding = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.APPROVED,
+                        Item.queue_phase == PHASE_HOLDING,
+                        Item.archived.is_(False),
+                    ).order_by(Item.seq.asc()).limit(200)
+                )
+            ).scalars().all()
+            published_today = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.PUBLISHED,
+                        Item.published_at >= day_start,
+                        Item.archived.is_(False),
+                    )
+                )
+            ).scalars().all()
+        used = sum(
+            1 for i in published_today if (i.publish_json or {}).get("auto")
+        )
+        return {
+            "ready": [self._serialize(i) for i in ready],
+            "holding": [self._serialize(i) for i in holding],
+            "today": {
+                "auto_published": used,
+                "daily_limit": daily_limit,
+                "auto_enabled": bool(getattr(self.engine.settings, "pipeline_auto_publish", False)),
+            },
         }
 
     # ---------- 发布数据（v0.4 C1：回捞 + 手动补录） ----------
@@ -378,9 +700,14 @@ class PipelineService:
         """单条制作（v0.3.4，预处理「制作」按钮）：v0.8.6 评分先行语义——
         produce 吃 downloaded（已下载未加工）；discovered 一键制作自动转入
         downloaded（跳过评分/下载，宽松快捷路径）。
+
+        wave11 取消制作：开始前清除陈旧取消标志；产线检查点命中抛
+        ItemCancelledError → 清理半成品回滚 downloaded，不标 failed。
         """
+        from backend.pipeline.cancel import ItemCancelledError, clear_cancel
         from backend.pipeline.errors import InvalidItemStateError
 
+        clear_cancel(item_id)
         async with session_factory() as session:
             item = await session.get(Item, item_id)
             if item is None:
@@ -396,13 +723,53 @@ class PipelineService:
             if item.status != ItemStatus.DOWNLOADED:
                 item.status = ItemStatus.DOWNLOADED
                 await session.commit()
-        outcome = await self.engine.process_one("produce", item_id)
+        try:
+            outcome = await self.engine.process_one("produce", item_id)
+        except ItemCancelledError:
+            # wave11：用户取消 → 清理半成品派生媒体，条目回 downloaded 干净态
+            await self._rollback_cancelled_produce(item_id)
+            return {"id": str(item_id), "status": "cancelled", "outcome": "cancelled"}
+        finally:
+            clear_cancel(item_id)
         if outcome == "failed":
             async with session_factory() as session:
                 row = await session.get(Item, item_id)
                 error = row.error if row is not None else "produce failed"
             raise RuntimeError(error)
         return {"id": str(item_id), "status": "queued", "outcome": outcome}
+
+    async def _rollback_cancelled_produce(self, item_id: uuid.UUID) -> None:
+        """取消制作收尾（wave11）：条目回滚到 downloaded 可再制作态。
+
+        清理半成品（final.mp4/narration.mp3/subs/cover 等派生媒体），保留
+        raw 源片；script_json 保留用户手动改过的发布元数据（purge 语义）。
+        """
+        from backend.pipeline.helpers import purge_derived_media
+
+        async with session_factory() as session:
+            row = await session.get(Item, item_id)
+            if row is None:
+                return
+            await purge_derived_media(row)
+            row.status = ItemStatus.DOWNLOADED
+            row.error = None
+            row.error_class = ""
+            await session.merge(row)
+            await session.commit()
+        self.engine._emit(
+            "item:" + item_id.hex,
+            {"type": "item", "item_id": str(item_id), "status": "downloaded",
+             "error": "cancelled"},
+        )
+
+    async def produce_cancel(self, item_id: uuid.UUID) -> dict:
+        """取消单条制作（wave11）：置位协作取消标志——产线下一检查点
+        （阶段间 / ffmpeg 0.25s 轮询）命中即中止，条目回滚 downloaded。
+        """
+        from backend.pipeline.cancel import request_cancel
+
+        request_cancel(item_id)
+        return {"ok": True, "cancelling": True}
 
     # ---------- 生产方式（v0.3.3，预处理人工选择） ----------
 
@@ -509,6 +876,115 @@ class PipelineService:
         )
         return {"id": str(item_id), "status": "discovered"}
 
+    # ---------- 归档 / 备用库（wave10：删除入口收口异常区） ----------
+
+    # 归档清洗保留的脚本键（发布元数据；旁白/字幕等重制缓存删除）
+    _ARCHIVE_KEEP_SCRIPT_KEYS = (
+        "bili_title", "bili_desc", "bili_tags", "bili_tid", "bili_copyright",
+    )
+
+    async def archive(self, ids: list[uuid.UUID]) -> dict:
+        """归档（批量）：磁盘清理 + 字段清洗 + 标记 archived。
+
+        仅终态（published/approved/failed/rejected）可归档——流程中条目
+        不提供归档入口；单条失败不中断。数据保留基础字段（标题/来源/评分/
+        发布记录）作备用库，磁盘资源全部删除。"""
+        from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError
+        from backend.pipeline.helpers import clear_item_disk
+
+        ok, failed = 0, []
+        for item_id in ids:
+            try:
+                async with session_factory() as session:
+                    item = await session.get(Item, item_id)
+                    if item is None:
+                        raise ItemNotFoundError(item_id)
+                    if item.archived:
+                        raise InvalidItemStateError("item already archived")
+                    if item.status not in (
+                        ItemStatus.APPROVED, ItemStatus.PUBLISHED,
+                        ItemStatus.REJECTED, ItemStatus.FAILED,
+                    ):
+                        raise InvalidItemStateError(
+                            f"cannot archive item in state {item.status}"
+                        )
+                    await clear_item_disk(item)
+                    if item.script_json:
+                        item.script_json = {
+                            k: v for k, v in (item.script_json or {}).items()
+                            if k in self._ARCHIVE_KEEP_SCRIPT_KEYS
+                        } or None
+                    item.scheduled_at = None
+                    item.queue_phase = ""
+                    item.archived = True
+                    await session.commit()
+                ok += 1
+            except (InvalidItemStateError, ItemNotFoundError) as exc:
+                failed.append({"id": str(item_id), "error": str(exc)})
+        return {"ok": ok, "failed": failed}
+
+    async def unarchive(self, ids: list[uuid.UUID]) -> dict:
+        """恢复（批量）：清除 archived 标记回到原状态列表。
+
+        磁盘资源已删，重制/重新下载自动生成；单条失败不中断。"""
+        from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError
+
+        ok, failed = 0, []
+        for item_id in ids:
+            try:
+                async with session_factory() as session:
+                    item = await session.get(Item, item_id)
+                    if item is None:
+                        raise ItemNotFoundError(item_id)
+                    if not item.archived:
+                        raise InvalidItemStateError("item is not archived")
+                    item.archived = False
+                    await session.commit()
+                ok += 1
+            except (InvalidItemStateError, ItemNotFoundError) as exc:
+                failed.append({"id": str(item_id), "error": str(exc)})
+        return {"ok": ok, "failed": failed}
+
+    async def purge(self, ids: list[uuid.UUID]) -> dict:
+        """彻底删除（批量，不可逆）：物理删行。
+
+        仅归档条目可彻底删除（已清磁盘的二次确认语义）；删行前 best-effort
+        再清一次磁盘（恢复后重新下载的文件兜底）；单条失败不中断。"""
+        from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError
+        from backend.pipeline.helpers import clear_item_disk
+
+        ok, failed = 0, []
+        for item_id in ids:
+            try:
+                async with session_factory() as session:
+                    item = await session.get(Item, item_id)
+                    if item is None:
+                        raise ItemNotFoundError(item_id)
+                    if not item.archived:
+                        raise InvalidItemStateError(
+                            "only archived items can be purged — archive first"
+                        )
+                    await clear_item_disk(item)
+                    await session.delete(item)
+                    await session.commit()
+                ok += 1
+            except (InvalidItemStateError, ItemNotFoundError) as exc:
+                failed.append({"id": str(item_id), "error": str(exc)})
+        return {"ok": ok, "failed": failed}
+
+    async def archived_items(self, limit: int = 200) -> list[dict]:
+        """备用库（wave10）：archived 条目列表，seq desc 有界。"""
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(Item)
+                    .where(Item.archived.is_(True))
+                    .order_by(Item.seq.desc().nulls_last())
+                    .limit(limit)
+                )
+            ).scalars().all()
+            return [self._serialize(i) for i in rows]
+
     # ---------- 排期自动维护（v0.2.7） ----------
 
     async def reschedule_expired(self) -> int:
@@ -520,6 +996,7 @@ class PipelineService:
         """
         from datetime import UTC, datetime
 
+        from backend.pipeline.publish_queue import PHASE_HOLDING
         from backend.pipeline.schedule import next_slot
 
         now = datetime.now(UTC)
@@ -528,6 +1005,8 @@ class PipelineService:
                 await session.execute(
                     select(Item).where(
                         Item.status.in_((ItemStatus.QUEUED, ItemStatus.APPROVED)),
+                        # v0.12：预发布队列不自动分槽（排期由转正/用户决定）
+                        Item.queue_phase != PHASE_HOLDING,
                     ).order_by(Item.created_at.desc())
                 )
             ).scalars().all()
@@ -542,6 +1021,7 @@ class PipelineService:
                 (await session.execute(
                     select(Item.scheduled_at).where(
                         Item.status.in_((ItemStatus.QUEUED, ItemStatus.APPROVED)),
+                        Item.queue_phase != PHASE_HOLDING,
                         Item.scheduled_at.isnot(None),
                         Item.scheduled_at >= now,
                     )
@@ -608,11 +1088,13 @@ class PipelineService:
     # ---------- queries ----------
 
     async def list_items(
-        self, status: str | None = None, limit: int = 50, source: str | None = None
+        self, status: str | None = None, limit: int = 50, source: str | None = None,
+        include_archived: bool = False,
     ) -> list[dict]:
         """条目列表；status 支持逗号分隔多状态（wave13：前端单查询聚合阶段队列）。
         排序：入库序号 seq desc（v0.3.1——同批 created_at 相同，seq 才是真实先后）。
-        v0.5 A：QUEUED 条目标注相似内容（phash 汉明 ≤5，排除同 source_id 同源）。"""
+        v0.5 A：QUEUED 条目标注相似内容（phash 汉明 ≤5，排除同 source_id 同源）。
+        wave10：默认排除 archived（备用库用独立 archived_items 查询）。"""
         statuses = [s.strip() for s in (status or "").split(",") if s.strip()] or None
         async with session_factory() as session:
             order = Item.seq.desc().nulls_last()
@@ -622,6 +1104,8 @@ class PipelineService:
                 conditions.append(Item.status.in_(statuses))
             if source:
                 conditions.append(Item.source == source)
+            if not include_archived:
+                conditions.append(Item.archived.is_(False))
             if conditions:
                 stmt = select(Item).where(*conditions).order_by(order).limit(limit)
             result = await session.execute(stmt)
@@ -689,7 +1173,9 @@ class PipelineService:
 
         async with session_factory() as session:
             rows = await session.execute(
-                select(Item.status, func.count()).group_by(Item.status)
+                select(Item.status, func.count())
+                .where(Item.archived.is_(False))
+                .group_by(Item.status)
             )
             return {str(status): count for status, count in rows.all()}
 
@@ -737,11 +1223,21 @@ class PipelineService:
         """看板趋势（v0.5 B）：按天聚合 采集/入库（job_runs.summary）+ 发布（published_at）。
 
         summary 为 JSONB：collect 任务含 collected/inserted；跨天任务记在 started_at 当天。
+        v0.12 修正：日分组用**本地日**（与排期/日历同一时钟语义，AXIOM 单一真相源）
+        ——UTC 日会把本地 0-8 点的数据错记到前一天。
         """
         from datetime import UTC, datetime, timedelta
 
-        start = datetime.now(UTC) - timedelta(days=days - 1)
-        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        local_tz = datetime.now().astimezone().tzinfo
+
+        def _local_day(ts: datetime) -> str:
+            return ts.astimezone(local_tz).strftime("%Y-%m-%d")
+
+        now_local = datetime.now(local_tz)
+        start_local = (now_local - timedelta(days=days - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        start = start_local.astimezone(UTC)
 
         async with session_factory() as session:
             # 采集/入库趋势：job_runs 中 collect 成功任务的 summary
@@ -757,7 +1253,7 @@ class PipelineService:
             collect_by_day: dict[str, dict[str, int]] = {}
             for run in runs:
                 summary = run.summary or {}
-                day = run.started_at.astimezone(UTC).strftime("%Y-%m-%d")
+                day = _local_day(run.started_at)
                 bucket = collect_by_day.setdefault(day, {"collected": 0, "inserted": 0})
                 bucket["collected"] += int(summary.get("collected") or 0)
                 bucket["inserted"] += int(summary.get("inserted") or 0)
@@ -775,12 +1271,12 @@ class PipelineService:
             ).scalars().all()
             published_by_day: dict[str, int] = {}
             for ts in published_rows:
-                day = ts.astimezone(UTC).strftime("%Y-%m-%d")
+                day = _local_day(ts)
                 published_by_day[day] = published_by_day.get(day, 0) + 1
 
         out: list[dict] = []
         for offset in range(days):
-            day = (start + timedelta(days=offset)).strftime("%Y-%m-%d")
+            day = (start_local + timedelta(days=offset)).strftime("%Y-%m-%d")
             cb = collect_by_day.get(day, {})
             out.append({
                 "date": day,
@@ -970,6 +1466,7 @@ class PipelineService:
         async with session_factory() as session:
             result = await session.execute(
                 select(Item).where(
+                    Item.archived.is_(False),
                     or_(
                         Item.scheduled_at.between(from_dt, to_dt),
                         Item.published_at.between(from_dt, to_dt),
@@ -981,6 +1478,7 @@ class PipelineService:
             unscheduled = (
                 await session.execute(
                     select(Item).where(
+                        Item.archived.is_(False),
                         Item.status.in_((ItemStatus.APPROVED, ItemStatus.QUEUED)),
                         Item.scheduled_at.is_(None),
                     ).order_by(Item.created_at.desc()).limit(200)
@@ -994,7 +1492,10 @@ class PipelineService:
         """failed 条目按 error_class 聚合统计（空类 = 旧数据/未分类）。"""
         async with session_factory() as session:
             result = await session.execute(
-                select(Item.error_class, Item.id).where(Item.status == ItemStatus.FAILED)
+                select(Item.error_class, Item.id).where(
+                    Item.status == ItemStatus.FAILED,
+                    Item.archived.is_(False),
+                )
             )
             counts: dict[str, int] = {}
             for cls, _ in result:
@@ -1013,6 +1514,7 @@ class PipelineService:
                     select(Item).where(
                         Item.status == ItemStatus.FAILED,
                         Item.error_class == cls,
+                        Item.archived.is_(False),
                     )
                 )
             ).scalars().all()
@@ -1082,6 +1584,8 @@ class PipelineService:
             "cover_path": item.cover_path,
             "script_json": item.script_json,
             "publish_json": item.publish_json,
+            # 发布队列相位（v0.12）：''=手动 / holding=预发布 / ready=发布队列
+            "queue_phase": item.queue_phase,
             "error": item.error,
             "error_class": item.error_class,
             "retry_count": item.retry_count,
@@ -1097,4 +1601,6 @@ class PipelineService:
                 else _auto_tid(item)
             ),
             "published_at": item.published_at.isoformat() if item.published_at else None,
+            # 软归档（wave10）：备用库标记
+            "archived": item.archived,
         }

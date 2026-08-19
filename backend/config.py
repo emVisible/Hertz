@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     # B 站要求 dtime 提交后 ≥5 分钟（v0.11.5 修正：原 4h 过严）；
     # scheduled_at 不足时自动顺延
     pipeline_bili_dtime_min_hours: int = 0
+    # 自动发布队列（v0.12）：产能 = 每日自动发布条数上限；
+    # 每天首个 tick 从预发布队列自动转正 N 条（pipeline_auto_promote_daily）
+    # 到发布队列（自动分配当天窗口槽位），到点自动发布；手动发布不受限制。
+    # 总开关默认关闭——开启后请确认 pipeline_publish_target 与凭据就绪
+    pipeline_auto_publish: bool = False
+    pipeline_auto_publish_daily_limit: int = 5  # 每日自动发布上限（产能）
+    pipeline_auto_promote_daily: int = 3  # 每日从预发布自动转正条数（≤ 上限）
+    pipeline_auto_publish_tick_minutes: int = 5  # 调度扫描间隔
     # 自动过审（v0.2.1，参考原项目 auto_approve）：默认关闭；
     # 开启后停留审核队列超过 N 小时的条目自动 approve（人工审核仍是默认路径）
     pipeline_auto_approve: bool = False

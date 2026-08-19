@@ -69,47 +69,60 @@ class LibraryBrowser:
         if not directory.exists() or not directory.is_dir():
             return []
         entries: list[LibraryEntry] = []
-        files = sorted(directory.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
-        for p in files:
-            try:
-                st = p.stat()
-            except OSError:
-                continue
-            if (
-                p.name.endswith(THUMB_SUFFIX)
-                or p.name.endswith(META_SUFFIX)
-                or p.name in RUNTIME_FILES
-                or p.name.startswith(".")
-            ):
-                continue
-            if p.is_dir() and not recursive:
-                entries.append(
-                    LibraryEntry(
-                        name=p.name + "/",
-                        path=str(p),
-                        kind="directory",
-                        size=0,
-                        mtime=st.st_mtime,
-                    )
-                )
-                continue
-            if p.is_file():
-                t = Path(f"{p}{THUMB_SUFFIX}")
-                meta = Path(f"{p}{META_SUFFIX}")
-                entries.append(
-                    LibraryEntry(
-                        name=p.name,
-                        path=str(p),
-                        kind=classify(p.name),
-                        size=st.st_size,
-                        mtime=st.st_mtime,
-                        thumb=str(t) if t.exists() else None,
-                        mime=mimetypes.guess_type(p.name)[0],
-                        tags=_read_tags(meta) if meta.exists() else None,
-                    )
-                )
+
+        def walk(d: Path) -> None:
             if len(entries) >= limit:
-                break
+                return
+            try:
+                files = sorted(d.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+            except OSError:
+                return
+            for p in files:
+                if len(entries) >= limit:
+                    return
+                try:
+                    st = p.stat()
+                except OSError:
+                    continue
+                if (
+                    p.name.endswith(THUMB_SUFFIX)
+                    or p.name.endswith(META_SUFFIX)
+                    or p.name in RUNTIME_FILES
+                    or p.name.startswith(".")
+                ):
+                    continue
+                if p.is_dir():
+                    if recursive:
+                        # 递归模式：深入子目录聚合（Tag 侧栏用），不产出目录条目
+                        walk(p)
+                    else:
+                        entries.append(
+                            LibraryEntry(
+                                name=p.name + "/",
+                                path=str(p),
+                                kind="directory",
+                                size=0,
+                                mtime=st.st_mtime,
+                            )
+                        )
+                    continue
+                if p.is_file():
+                    t = Path(f"{p}{THUMB_SUFFIX}")
+                    meta = Path(f"{p}{META_SUFFIX}")
+                    entries.append(
+                        LibraryEntry(
+                            name=p.name,
+                            path=str(p),
+                            kind=classify(p.name),
+                            size=st.st_size,
+                            mtime=st.st_mtime,
+                            thumb=str(t) if t.exists() else None,
+                            mime=mimetypes.guess_type(p.name)[0],
+                            tags=_read_tags(meta) if meta.exists() else None,
+                        )
+                    )
+
+        walk(directory)
         return [e.__dict__ for e in entries]
 
     def search(

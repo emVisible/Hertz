@@ -783,3 +783,38 @@ async def test_produce_story_item_artifacts(tmp_path, monkeypatch) -> None:
         lambda: Path(artifacts["subtitle"]["path"]).read_text(encoding="utf-8")
     )
     assert "结婚十年" in subs
+
+
+async def test_translate_srt_cues_partial_segments_aligns_per_segment():
+    """v0.2.1 修复：LLM 返回 segments 不足（截断）时逐段对齐——
+    缺失段回退原文，绝不整批英文（长视频中间不得混合字幕）。"""
+    import backend.pipeline.producers.media as m
+
+    class TruncatedAI:
+        """模拟 LLM 输出截断：只返回前 3 段译文。"""
+        async def chat_messages(self, messages, **kw):
+            return '{"segments": ["译文一", "译文二", "译文三"]}'
+
+    cues = [
+        (float(i), float(i) + 1, f"English line {i}") for i in range(7)
+    ]
+    out = await m._translate_srt_cues(TruncatedAI(), cues, target_lang="zh-CN", batch_size=20)
+    texts = [t for _, _, t in out]
+    # 前 3 段 = 译文；后 4 段 = 原文（逐段回退）
+    assert texts[:3] == ["译文一", "译文二", "译文三"]
+    assert texts[3:] == [f"English line {i}" for i in range(3, 7)]
+    # 时间戳保留
+    assert out[0][0] == 0.0 and out[-1][1] == 7.0
+
+
+async def test_translate_srt_cues_empty_segments_keeps_original():
+    """LLM 返回空/非法 JSON → 整批保留原文（保底，不产出空字幕）。"""
+    import backend.pipeline.producers.media as m
+
+    class BadAI:
+        async def chat_messages(self, messages, **kw):
+            return "not json"
+
+    cues = [(0.0, 1.0, "Hello world"), (1.0, 2.0, "Second line")]
+    out = await m._translate_srt_cues(BadAI(), cues, target_lang="zh-CN")
+    assert [t for _, _, t in out] == ["Hello world", "Second line"]

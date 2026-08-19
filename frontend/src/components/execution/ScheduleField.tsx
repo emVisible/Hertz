@@ -11,9 +11,12 @@ import { pipelineApi } from '../../api'
 export function ScheduleField({
   scheduledAt,
   onSave,
+  showLabel = true,
 }: {
   scheduledAt: string | null
   onSave: (value: string) => void
+  /** 外部表单已提供 label 时隐藏内置标签（AXIOM 四部：展示层对齐单一职责） */
+  showLabel?: boolean
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -58,7 +61,7 @@ export function ScheduleField({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.schedule')}</span>
+      {showLabel && <span className="text-[10px] uppercase tracking-wide text-text-disabled">{t('console.schedule')}</span>}
       <input
         type="datetime-local"
         aria-label={t('console.schedule')}

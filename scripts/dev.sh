@@ -39,7 +39,8 @@ done
 cleanup() { kill 0 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
-uv run uvicorn backend.main:app --port 8787 &
+# --reload（wave10.2）：后端代码改动自动热加载，避免旧进程无新路由导致 404
+uv run uvicorn backend.main:app --port 8787 --reload &
 BACKEND_PID=$!
 
 (cd frontend && pnpm dev) &

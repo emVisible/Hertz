@@ -54,11 +54,11 @@ export function AppShell() {
   const anyRunning = studioRunning || pipelineRunning
 
   const navItems: NavItem[] = [
+    // 看板（v0.12 置顶）：系统评估首页——漏斗/趋势/产能/健康 一屏总览
+    { to: '/dashboard', icon: 'whisper', label: t('nav.dashboard'), group: 'produce' },
     // 生产
     { to: '/execution', icon: 'console', label: t('nav.execution'), group: 'produce' },
     { to: '/plans', icon: 'plans', label: t('nav.plans'), group: 'produce' },
-    // 看板（v0.4 C2：漏斗/发布/AI 用量）
-    { to: '/dashboard', icon: 'whisper', label: t('nav.dashboard'), group: 'produce' },
     // 素材（唯一出口：下载/资源/文档）
     { to: '/assets', icon: 'box', label: t('nav.assets'), group: 'assets' },
     // 画布（v0.8.8：低频工具——移至素材下方，与素材/资源同域）
@@ -110,15 +110,18 @@ export function AppShell() {
         <main className="flex flex-1 flex-col overflow-hidden bg-bg pb-7">
           <PageTransition>
             <Routes>
-              <Route path="/canvas" element={<CanvasPage />} />
               <Route path="/execution" element={<ExecutionPage />} />
               <Route path="/studio" element={<Navigate to="/execution?mode=studio" replace />} />
               <Route path="/console" element={<Navigate to="/execution?mode=pipeline" replace />} />
+              {/* v0.12：发布队列并入执行页第三 tab（队列也是执行域） */}
+              <Route path="/queue" element={<Navigate to="/execution?mode=queue" replace />} />
               <Route path="/plans" element={<PlansPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/assets" element={<AssetsPage />} />
+              <Route path="/canvas" element={<CanvasPage />} />
               <Route path="/config" element={<SettingsPage />} />
-              <Route path="*" element={<Navigate to="/canvas" replace />} />
+              {/* v0.12：默认首页 = 看板（系统评估第一屏） */}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </PageTransition>
         </main>

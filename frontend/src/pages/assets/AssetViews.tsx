@@ -16,6 +16,37 @@ const KIND_ICON: Record<string, IconName> = {
   other: 'more',
 }
 
+// 类型图标着色（区分不同类型文件；目录/图片/视频=主色系，音频=绿色，文档/其他=中性）
+function kindIconTone(kind: string): string {
+  switch (kind) {
+    case 'directory':
+    case 'video':
+    case 'image':
+      return 'text-primary'
+    case 'audio':
+      return 'text-success'
+    case 'document':
+      return 'text-text-secondary'
+    default:
+      return 'text-text-disabled'
+  }
+}
+
+function kindIconBox(kind: string): string {
+  switch (kind) {
+    case 'directory':
+    case 'video':
+    case 'image':
+      return 'bg-primary/10 text-primary'
+    case 'audio':
+      return 'bg-success/10 text-success'
+    case 'document':
+      return 'bg-surface-2 text-text-secondary'
+    default:
+      return 'bg-surface-2 text-text-disabled'
+  }
+}
+
 
 export function formatBytes(n: number | null | undefined): string {
   if (n == null) return '—'
@@ -36,6 +67,47 @@ export function formatDuration(seconds?: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+export function formatMtime(ts: number): string {
+  if (!ts) return '—'
+  return new Date(ts * 1000).toLocaleString(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+// ---- 视图模式切换（对标 Heartstone Segmented：网格 / 详情列表，数据源与操作集共享）----
+export type AssetView = 'grid' | 'detail'
+
+const VIEW_ICON: Record<AssetView, IconName> = { grid: 'grid', detail: 'list' }
+
+export function ViewSwitch({ value, onChange }: { value: AssetView; onChange: (v: AssetView) => void }) {
+  const { t } = useTranslation()
+  const VIEW_LABEL: Record<AssetView, string> = {
+    grid: t('assets.viewGrid'),
+    detail: t('assets.viewDetail'),
+  }
+  return (
+    <div className="flex items-center gap-0.5 rounded-md border border-border bg-surface-1">
+      {(['grid', 'detail'] as AssetView[]).map((v) => (
+        <button
+          key={v}
+          type="button"
+          title={VIEW_LABEL[v]}
+          aria-pressed={value === v}
+          onClick={() => onChange(v)}
+          className={`flex h-5 w-7 items-center justify-center rounded transition-colors ${
+            value === v ? 'bg-primary/15 text-primary' : 'text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          <Icon name={VIEW_ICON[v]} size={12} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
 
 
 export function AssetCard({
@@ -44,6 +116,8 @@ export function AssetCard({
   onDetail,
   onContext,
   onFavorite,
+  onShowInFolder,
+  onDelete,
 }: {
   entry: LibraryEntry
   onPreview: () => void
@@ -51,15 +125,19 @@ export function AssetCard({
   onContext: (x: number, y: number) => void
   /** 收藏切换（v0.4 E5）：⭐ tag 快捷打标/移除 */
   onFavorite?: (entry: LibraryEntry) => void
+  onShowInFolder?: () => void
+  onDelete?: () => void
 }) {
+  const { t } = useTranslation()
   const favorite = (entry.tags ?? []).includes('⭐')
+  const ext = entry.kind === 'directory' ? null : (entry.name.split('.').pop() ?? '').toUpperCase()
   return (
     <div
       onContextMenu={(e) => {
         e.preventDefault()
         onContext(e.clientX, e.clientY)
       }}
-      className="group flex flex-col rounded-md border border-transparent p-1.5 transition-[background-color,border-color,box-shadow] hover:border-border hover:bg-surface-1 hover:shadow-sm"
+      className="group flex flex-col rounded-md border border-transparent p-1.5 transition-[background-color,border-color,box-shadow] hover:border-border hover:bg-surface-1 hover:shadow-md"
     >
       {/* 图像区：图片/视频/音频直接预览；文件夹直接进入 */}
       <button
@@ -74,24 +152,30 @@ export function AssetCard({
         ) : entry.thumb ? (
           <img src={fileUrl(entry.thumb)} alt={entry.name} className="h-full w-full object-cover" loading="lazy" />
         ) : (
-          <Icon name={KIND_ICON[entry.kind]} size={26} className="text-text-disabled" />
+          <Icon name={KIND_ICON[entry.kind]} size={26} className={kindIconTone(entry.kind)} />
         )}
         {(entry.kind === 'video' || entry.kind === 'audio') && (
           <span className="absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity group-hover:opacity-100">
             <Icon name="play" size={26} className="text-white/90" />
           </span>
         )}
-        {/* Tag 徽章 */}
+        {/* Tag 徽章（黑底白字，深浅主题通用） */}
         {(entry.tags ?? []).length > 0 && (
           <span className="absolute left-1 top-1 flex max-w-[90%] gap-1 overflow-hidden">
             {(entry.tags ?? []).slice(0, 2).map((tag) => (
               <span
                 key={tag}
-                className="truncate border border-border bg-black/55 px-1.5 py-0.5 text-[9px] font-medium text-text-primary backdrop-blur-sm"
+                className="truncate border border-white/20 bg-black/55 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm"
               >
                 {tag}
               </span>
             ))}
+          </span>
+        )}
+        {/* 格式角标（黑底白字，深浅主题通用，对标 Heartstone 网格卡片右下角） */}
+        {ext && (
+          <span className="absolute bottom-1 right-1 border border-white/20 bg-black/55 px-1 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm">
+            {ext}
           </span>
         )}
         {/* 收藏星标（v0.4 E5）：hover 显示，已收藏常亮 */}
@@ -103,7 +187,7 @@ export function AssetCard({
               onFavorite(entry)
             }}
             title={favorite ? '⭐' : '☆'}
-            className={`absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${
+            className={`absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${
               favorite
                 ? 'border-warning/60 bg-warning/20 text-warning'
                 : 'border-border bg-black/40 text-white/70 opacity-0 group-hover:opacity-100 hover:text-warning'
@@ -122,7 +206,136 @@ export function AssetCard({
       >
         {entry.name}
       </button>
+      {/* 元数据行：恒占位保证卡片等高（directory 显示「文件夹」） */}
+      <p className="mt-0.5 h-3.5 text-center text-[10px] text-text-disabled">
+        {entry.kind === 'directory' ? t('assets.folder') : formatBytes(entry.size)}
+      </p>
+      {/* 底部操作行（渐进披露：hover 渐显；「打开」= 系统文件管理器查看，目录进入点卡片/名称） */}
+      <div className="mt-1 flex items-center justify-center gap-1 border-t border-border pt-1 opacity-0 transition-opacity group-hover:opacity-100">
+        {entry.kind === 'directory' ? (
+          onShowInFolder && <MiniAction icon="folder" label={t('assets.open')} onClick={onShowInFolder} />
+        ) : (
+          <>
+            {onShowInFolder && (
+              <MiniAction icon="folder" label={t('assets.open')} onClick={onShowInFolder} />
+            )}
+            {onDelete && <MiniAction icon="trash" label={t('common.delete')} onClick={onDelete} tone="danger" />}
+          </>
+        )}
+      </div>
     </div>
+  )
+}
+
+interface AssetRowProps {
+  entry: LibraryEntry
+  onPreview: () => void
+  onDetail: () => void
+  onContext: (x: number, y: number) => void
+  onShowInFolder?: () => void
+  onDelete?: () => void
+}
+
+function MiniAction({
+  icon,
+  label,
+  onClick,
+  tone,
+}: {
+  icon: IconName
+  label: string
+  onClick: () => void
+  tone?: 'danger'
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={`flex h-6 items-center gap-1 rounded px-1.5 text-[10px] font-medium transition-colors ${
+        tone === 'danger'
+          ? 'text-error hover:bg-error/10'
+          : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary'
+      }`}
+    >
+      <Icon name={icon} size={11} />
+      {label}
+    </button>
+  )
+}
+
+// ---- 详情列表行（对标 Heartstone detail 模式：卡片式行 + 列对齐 + hover 渐显操作，管理表格）----
+export function AssetDetailRow({ entry, onPreview, onDetail, onContext, onShowInFolder, onDelete }: AssetRowProps) {
+  const { t } = useTranslation()
+  return (
+    <li
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onContext(e.clientX, e.clientY)
+      }}
+      className="group flex items-center gap-3 rounded-md border border-border bg-surface-1 px-3 py-2 transition-colors hover:border-primary/40"
+    >
+      <button
+        type="button"
+        onClick={onPreview}
+        title={entry.name}
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sm transition-opacity group-hover:opacity-80 ${kindIconBox(entry.kind)}`}
+      >
+        <Icon name={KIND_ICON[entry.kind]} size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={onDetail}
+        className="min-w-0 flex-1 truncate text-left text-sm text-text-primary"
+        title={entry.name}
+      >
+        {entry.name}
+      </button>
+      {entry.kind !== 'directory' && (
+        <span className="w-16 shrink-0 text-right text-[10px] text-text-secondary">{formatBytes(entry.size)}</span>
+      )}
+      <span className="w-20 shrink-0 text-right font-mono text-[10px] text-text-disabled">{formatMtime(entry.mtime)}</span>
+      {/* 操作（渐进披露：hover 渐显；「打开」= 系统文件管理器查看，目录进入点图标/名称） */}
+      <div className="flex w-24 shrink-0 items-center justify-end gap-2.5 opacity-0 transition-opacity group-hover:opacity-100">
+        {entry.kind === 'directory' ? (
+          onShowInFolder && (
+            <button
+              type="button"
+              onClick={onShowInFolder}
+              className="flex items-center gap-1 text-[10px] font-medium text-text-secondary transition-colors hover:text-primary"
+            >
+              <Icon name="folder" size={11} />
+              {t('assets.open')}
+            </button>
+          )
+        ) : (
+          <>
+            {onShowInFolder && (
+              <button
+                type="button"
+                onClick={onShowInFolder}
+                className="flex items-center gap-1 text-[10px] font-medium text-text-secondary transition-colors hover:text-primary"
+              >
+                <Icon name="folder" size={11} />
+                {t('assets.open')}
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="flex items-center gap-1 text-[10px] font-medium text-error transition-colors hover:text-error/70"
+              >
+                <Icon name="trash" size={11} />
+                {t('common.delete')}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </li>
   )
 }
 

@@ -99,6 +99,14 @@ class Item(BaseModel):
     # 排期发布（独立发布环节，v5.10）：定时上传用
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 发布队列（v0.12，单一真相源——语义与 publish_queue 模块常量一致）：
+    #   ''      = 不入队（纯手动发布，不参与自动发布/产能）
+    #   'holding' = 预发布队列：囤着待命，无排期，不自动分槽/发布
+    #   'ready'   = 发布队列：必须有 scheduled_at，到点由 auto_publish tick 发布
+    # 约束：ready ⇒ scheduled_at 非空；holding ⇒ scheduled_at 为空
+    queue_phase: Mapped[str] = mapped_column(
+        String(16), default="", server_default="", index=True
+    )
 
     # Failure diagnostics
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -110,3 +118,7 @@ class Item(BaseModel):
     run_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("workflow_runs.id", ondelete="SET NULL"), nullable=True
     )
+
+    # 软归档（wave10）：删除入口收口异常区——归档 = 磁盘清理 + 字段清洗后标记，
+    # 保留基础数据（标题/来源/评分/发布记录）作备用库；不再出现在任何流程列表
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

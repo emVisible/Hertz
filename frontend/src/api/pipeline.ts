@@ -55,6 +55,24 @@ export interface PipelineItem {
   approved_at: string | null
   scheduled_at: string | null
   published_at: string | null
+  /** 发布队列相位（v0.12）：''=手动｜holding=预发布队列｜ready=发布队列 */
+  queue_phase?: '' | 'holding' | 'ready'
+  /** 软归档（wave10）：备用库标记——异常区删除入口 */
+  archived?: boolean
+}
+
+/** 发布队列相位（v0.12）：与后端 publish_queue 常量一致 */
+export type QueuePhase = '' | 'holding' | 'ready'
+
+/** 发布队列看板（v0.12） */
+export interface PublishQueueView {
+  ready: PipelineItem[]
+  holding: PipelineItem[]
+  today: {
+    auto_published: number
+    daily_limit: number
+    auto_enabled: boolean
+  }
 }
 
 export interface JobSummary {
@@ -215,8 +233,32 @@ export const pipelineApi = {
       '/api/pipeline/items/batch',
       { action, ids },
     ),
+  /** 备用库（wave10）：archived 条目列表 */
+  archivedItems: (limit = 200) =>
+    api.get<PipelineItem[]>(`/api/pipeline/items/archived?limit=${limit}`),
+  /** 批量归档（wave10）：磁盘清理 + 字段清洗 + 标记 archived */
+  archive: (ids: string[]) =>
+    api.post<{ ok: number; failed: Array<{ id: string; error: string }> }>(
+      '/api/pipeline/items/archive',
+      { ids },
+    ),
+  /** 批量恢复（wave10）：清除 archived 标记 */
+  unarchive: (ids: string[]) =>
+    api.post<{ ok: number; failed: Array<{ id: string; error: string }> }>(
+      '/api/pipeline/items/unarchive',
+      { ids },
+    ),
+  /** 批量彻底删除（wave10，不可逆）：仅归档条目 */
+  purge: (ids: string[]) =>
+    api.post<{ ok: number; failed: Array<{ id: string; error: string }> }>(
+      '/api/pipeline/items/purge',
+      { ids },
+    ),
   /** 单条制作（v0.3.4，预处理「制作」按钮）。 */
   produce: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/produce`),
+  // 取消制作（wave11）：协作式——产线检查点命中后条目回滚 downloaded
+  cancelProduce: (id: string) =>
+    api.post<{ ok: boolean; cancelling: boolean }>(`/api/pipeline/items/${id}/produce-cancel`),
   /** 单条评分（v0.3.5，预处理手动评分按钮）。 */
   score: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/score`),
   /** 单条下载（v0.8.6 评分先行，预处理手动下载按钮）。 */
@@ -288,5 +330,19 @@ export const pipelineApi = {
   failures: () => api.get<Record<string, number>>('/api/pipeline/failures'),
   retryClass: (cls: string) => api.post<{ cls: string; requeued: number }>('/api/pipeline/retry-class', { cls }),
   nextScheduleSlot: () => api.get<{ recommended_at: string }>('/api/pipeline/schedule/next'),
+  /** 发布队列看板（v0.12）：ready/holding 列表 + 今日产能 */
+  queueView: () => api.get<PublishQueueView>('/api/pipeline/publish/queue'),
+  /** 入队/出队（v0.12）：phase ''=出队｜holding｜ready */
+  enqueue: (id: string, phase: QueuePhase) =>
+    api.post<{ id: string; queue_phase: QueuePhase; scheduled_at: string | null }>(
+      `/api/pipeline/items/${id}/queue`,
+      { phase },
+    ),
+  /** 批量入队（v0.12）：逐条执行，失败不中断 */
+  enqueueBatch: (ids: string[], phase: QueuePhase) =>
+    api.post<{ ok: number; failed: Array<{ id: string; error: string }> }>(
+      '/api/pipeline/items/batch/queue',
+      { ids, phase },
+    ),
   eventsUrl: () => `${API_BASE}/api/pipeline/events`,
 }

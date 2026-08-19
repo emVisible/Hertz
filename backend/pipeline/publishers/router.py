@@ -141,9 +141,12 @@ class BilibiliPublisher(Publisher):
         copyright_ = script.get("bili_copyright")
         if copyright_ in (1, "1"):
             cmd += ["--copyright", "1"]
-        # 转载来源（v0.8.5，对齐原项目）：copyright != 1（转载）且存在来源 URL 时传
-        elif getattr(item, "source_url", ""):
-            cmd += ["--source", str(item.source_url)[:255]]
+        else:
+            # 转载：显式 --copyright 2（biliup 默认按自制发布，缺失会被静默投成自制）
+            cmd += ["--copyright", "2"]
+            # 转载来源（v0.8.5，对齐原项目）：存在来源 URL 时传
+            if getattr(item, "source_url", ""):
+                cmd += ["--source", str(item.source_url)[:255]]
         # 分区 tid：条目显式设置优先，其次自动建议（参考原项目 assign_bili_tid），
         # 最后配置默认（审核未设分区时兜底）
         tid = script.get("bili_tid")

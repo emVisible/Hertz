@@ -17,6 +17,7 @@ import {
   PreReviewCard,
   PreReviewRow,
   PublishCard,
+  QueueView,
   SectionCard,
   SortControl,
   StageItemRow,
@@ -28,6 +29,7 @@ import { CalendarView } from './CalendarView'
 import { CollectHistory } from './CollectHistory'
 import { ProduceBatchModal } from '../../components/execution/ProduceBatchModal'
 import { usePipelineExecution } from '../../hooks/usePipelineExecution'
+import { useBatchSelect } from '../../hooks/useBatchSelect'
 
 // ================= Pipeline 域 =================
 
@@ -62,12 +64,21 @@ interface PipelineViewProps {
   setPublishStats: (item: PipelineItem) => void
   uploadCover: (item: PipelineItem, file: File) => void
   randomCover: (item: PipelineItem) => void
+  /** 发布队列（v0.12）：holding/ready/出队 */
+  enqueueItem: (item: PipelineItem, phase: '' | 'holding' | 'ready') => void
   retryClass: (cls: string, n: number) => void
   backToPrep: (item: PipelineItem) => void
   batchAction: (action: 'approve' | 'reject' | 'back_to_prep' | 'requeue', ids: string[]) => void
   rescheduleExpired: () => Promise<void>
   setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
+  /** 备用库（wave10）：归档条目 + 归档/恢复/彻底删除 */
+  archivedItems: ReturnType<typeof usePipelineExecution>['archivedItems']
+  archiveItems: (items: PipelineItem[]) => Promise<void>
+  unarchiveItems: (items: PipelineItem[]) => Promise<void>
+  purgeItems: (items: PipelineItem[]) => Promise<void>
   produceOne: (item: PipelineItem) => Promise<void>
+  /** 取消制作（wave11）：制作中按钮切换为取消入口 */
+  cancelProduceOne: (item: PipelineItem) => Promise<void>
   produceBatch: () => Promise<void>
   scoreOne: (item: PipelineItem) => Promise<void>
   scoreBatch: () => Promise<void>
@@ -110,10 +121,14 @@ const PIPELINE_TABS = [
   countKeys?: string[]
 }>
 
+// 异常区次级 tab（wave10）：低分池｜异常｜归档清理｜备用库
+const EX_SUB_TABS = ['lowscore', 'exceptions', 'archive', 'backup'] as const
+type ExSubTabId = (typeof EX_SUB_TABS)[number]
+
 export function PipelineView(p: PipelineViewProps) {
   const { t } = useTranslation()
-  // 发布 tab 视图：列表（默认）｜内容日历（v0.2.3）
-  const [calendarView, setCalendarView] = useState(false)
+  // 发布 tab 视图：列表（默认）｜发布队列（v0.12 融合）｜内容日历（v0.2.3）
+  const [postView, setPostView] = useState<'list' | 'queue' | 'calendar'>('list')
   // 批量生产方式（v0.3.3，预处理）
   const [produceBatchOpen, setProduceBatchOpen] = useState(false)
   // 预处理排序（v0.3.12）：要素 × 方向两维度；默认 入库序+降序（最新在前）
@@ -213,23 +228,34 @@ export function PipelineView(p: PipelineViewProps) {
     ? (p.tab as PipelineTabId)
     : 'inReview'
 
-  // ---- 审核效率（v0.4 A1 快捷键 / A2 批量） ----
+  // ---- 审核效率（v0.4 A1 快捷键 / A2 批量 / wave10.1 批量选择模式） ----
   const [auditFocus, setAuditFocus] = useState<string | null>(null)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const toggleSelect = (item: PipelineItem) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(item.id)) next.delete(item.id)
-      else next.add(item.id)
-      return next
-    })
-  }
-  const clearSelection = () => setSelectedIds(new Set())
+  const auditSel = useBatchSelect(sortedQueued)
+
+  // ---- 异常区次级 tab（wave10）：低分池｜异常｜归档清理｜备用库 ----
+  const [exTab, setExTab] = useState<ExSubTabId>('exceptions')
+  // 低分回收池（v0.5 D）：is_lowscore 条目批量恢复待审（可复用）
+  const lowscorePool = useMemo(
+    () => [...p.stageQueued, ...p.stageRejected, ...p.stageFailed].filter((i) => i.is_lowscore),
+    [p.stageQueued, p.stageRejected, p.stageFailed],
+  )
+  // 归档清理候选（wave10）：终态条目；备用库条目不重复展示
+  const archivePool = useMemo(
+    () =>
+      [...p.stageApproved, ...p.stagePublished, ...p.stageFailed, ...p.stageRejected].filter(
+        (i) => !i.archived,
+      ),
+    [p.stageApproved, p.stagePublished, p.stageFailed, p.stageRejected],
+  )
+  const archiveSel = useBatchSelect(archivePool)
+  const backupSel = useBatchSelect(p.archivedItems)
+  const toggleSelect = auditSel.toggle
 
   // j/k 导航 + a/r/b 操作（仅 inReview tab；输入框/⌘ 组合键不拦截）
   useEffect(() => {
     if (pTab !== 'inReview') {
       setAuditFocus(null)
+      auditSel.exit()
       return
     }
     const onKey = (e: KeyboardEvent) => {
@@ -249,6 +275,8 @@ export function PipelineView(p: PipelineViewProps) {
         e.preventDefault()
         setAuditFocus(list[Math.max(0, Math.min(next, list.length - 1))].id)
       }
+      // 批量选择模式（wave10.1）：a/r/b 忽略，防与批量操作混淆
+      if (auditSel.mode && ['a', 'A', 'r', 'R', 'b', 'B'].includes(e.key)) return
       switch (e.key) {
         case 'j':
         case 'J':
@@ -286,14 +314,15 @@ export function PipelineView(p: PipelineViewProps) {
           break
         case 'Escape':
           setAuditFocus(null)
-          setSelectedIds(new Set())
+          if (auditSel.mode) auditSel.exit()
+          else auditSel.clear()
           break
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pTab, sortedQueued, auditFocus])
+  }, [pTab, sortedQueued, auditFocus, auditSel.mode])
 
   // 焦点项滚动到可视区（列表长时 j/k 不迷路）
   useEffect(() => {
@@ -303,11 +332,11 @@ export function PipelineView(p: PipelineViewProps) {
       ?.scrollIntoView({ block: 'nearest' })
   }, [auditFocus])
 
-  // 批量操作（v0.4 A2）
-  const selectedItems = sortedQueued.filter((i) => selectedIds.has(i.id))
+  // 批量操作（wave10.1 批量选择模式）
+  const selectedItems = auditSel.selected
   function batchRun(action: 'approve' | 'reject' | 'back_to_prep') {
-    void p.batchAction(action, [...selectedIds])
-    clearSelection()
+    void p.batchAction(action, [...auditSel.sel])
+    auditSel.clear()
   }
 
   // 进入审核自动维护排期（v0.2.7）：过期重排 + 未排期自动分配。
@@ -324,8 +353,9 @@ export function PipelineView(p: PipelineViewProps) {
   const tabItems = PIPELINE_TABS.map((tb) => ({
     id: tb.id,
     label: t(tb.labelKey),
-    // 异常 menu 与正常流程分隔（v0.2.7，最右侧独立区）
+    // 异常 menu 与正常流程分隔（v0.2.7）：wave10.2 推至单行最右侧独立区
     dividerBefore: tb.id === 'exceptions',
+    end: tb.id === 'exceptions',
     count: tb.countKeys
       ? tb.countKeys.reduce((sum, k) => sum + (p.counts[k] ?? 0), 0)
       : undefined,
@@ -637,6 +667,7 @@ export function PipelineView(p: PipelineViewProps) {
                       item={item}
                       onSaveOptions={(i, options) => void p.setProduceOptions([i], options)}
                       onProduce={(i) => void p.produceOne(i)}
+                      onCancelProduce={(i) => void p.cancelProduceOne(i)}
                       onReject={(i) => void p.act(i, 'reject')}
                       onUploadCover={(i, file) => void p.uploadCover(i, file)}
                     />
@@ -671,63 +702,94 @@ export function PipelineView(p: PipelineViewProps) {
               emptyText={t('console.emptyAudit')}
               right={
                 <span className="flex items-center gap-1.5">
-                  {/* 审核搜索（v0.8.9）：标题关键词过滤——本地过滤当前队列 */}
-                  <input
-                    type="search"
-                    value={auditQuery}
-                    onChange={(e) => setAuditQuery(e.target.value)}
-                    placeholder={t('console.auditSearch')}
-                    className="h-6 w-36 rounded-sm border border-border bg-surface-1 px-2 text-[11px] text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
-                  />
-                  {/* 审核排序（v0.3.12）：要素 × 方向 + 独立开关 */}
-                  <SortControl fields={AUDIT_SORT_FIELDS} sort={auditSort} onSort={setAuditSort} />
-                  {/* 仅看低分（v0.5 D 低分复用池）：is_lowscore 过滤 */}
-                  <button
-                    type="button"
-                    onClick={() => setLowScoreOnly((v) => !v)}
-                    title={t('console.lowScoreOnlyHint')}
-                    className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
-                      lowScoreOnly
-                        ? 'border-warning/50 bg-warning/15 font-medium text-warning'
-                        : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
-                    }`}
-                  >
-                    {t('console.lowScoreOnly')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVideoFirst((v) => !v)}
-                    title={t('console.sort.videoFirstHint')}
-                    className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
-                      videoFirst
-                        ? 'border-primary/40 bg-primary/15 font-medium text-primary'
-                        : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
-                    }`}
-                  >
-                    {t('console.sort.videoFirst')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={toggleAuditRandom}
-                    title={t('console.sort.randomHint')}
-                    className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
-                      auditRandom
-                        ? 'border-warning/50 bg-warning/15 font-medium text-warning'
-                        : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
-                    }`}
-                  >
-                    🎲 {t('console.sort.random')}
-                  </button>
+                  {/* 批量组（wave10.1）：进入后点击卡片整卡选中 */}
+                  <span className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => (auditSel.mode ? auditSel.exit() : auditSel.enter())}
+                      title={t('console.batchModeHint')}
+                      className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                        auditSel.mode
+                          ? 'border-primary/50 bg-primary/15 font-medium text-primary'
+                          : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
+                      }`}
+                    >
+                      {auditSel.mode
+                        ? t('console.batchModeExit', { n: selectedItems.length })
+                        : t('console.batchModeEnter')}
+                    </button>
+                  </span>
+                  <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden />
+                  {/* 筛选组（v0.11.9 分组重排）：关键词 + 低分池 */}
+                  <span className="flex items-center gap-1">
+                    <input
+                      type="search"
+                      value={auditQuery}
+                      onChange={(e) => setAuditQuery(e.target.value)}
+                      placeholder={t('console.auditSearch')}
+                      className="h-6 w-40 rounded-sm border border-border bg-surface-1 px-2 text-[11px] text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setLowScoreOnly((v) => !v)}
+                      title={t('console.lowScoreOnlyHint')}
+                      className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                        lowScoreOnly
+                          ? 'border-warning/50 bg-warning/15 font-medium text-warning'
+                          : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
+                      }`}
+                    >
+                      {t('console.lowScoreOnly')}
+                    </button>
+                  </span>
+                  <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden />
+                  {/* 排序组（v0.3.12）：要素 × 方向 + 视频优先/随机开关 */}
+                  <span className="flex items-center gap-1">
+                    <SortControl fields={AUDIT_SORT_FIELDS} sort={auditSort} onSort={setAuditSort} />
+                    <button
+                      type="button"
+                      onClick={() => setVideoFirst((v) => !v)}
+                      title={t('console.sort.videoFirstHint')}
+                      className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                        videoFirst
+                          ? 'border-primary/40 bg-primary/15 font-medium text-primary'
+                          : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
+                      }`}
+                    >
+                      {t('console.sort.videoFirst')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={toggleAuditRandom}
+                      title={t('console.sort.randomHint')}
+                      className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                        auditRandom
+                          ? 'border-warning/50 bg-warning/15 font-medium text-warning'
+                          : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
+                      }`}
+                    >
+                      🎲 {t('console.sort.random')}
+                    </button>
+                  </span>
                 </span>
               }
             >
-              {/* 批量操作条（v0.4 A2）：选中 ≥1 时浮现 */}
-              {selectedItems.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface-2/60 px-3 py-2 text-xs">
+              {/* 批量操作条（wave10.1 批量选择模式）：进入模式常驻——已选 n · 全选 · 操作 */}
+              {auditSel.mode && (
+                <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-border bg-surface-2/80 px-3 py-2 text-xs backdrop-blur-sm">
                   <span className="font-medium text-text-primary">
                     {t('console.batchSelected', { n: selectedItems.length })}
                   </span>
-                  <span className="text-text-disabled">{t('console.batchHint')}</span>
+                  <button
+                    type="button"
+                    onClick={auditSel.toggleAll}
+                    className="text-[11px] text-text-secondary transition-colors hover:text-text-primary"
+                  >
+                    {auditSel.sel.size === sortedQueued.length
+                      ? t('console.batchDeselectAll')
+                      : t('console.batchSelectAll')}
+                  </button>
+                  <span className="text-text-disabled">{t('console.batchSelectHint')}</span>
                   <span className="ml-auto flex items-center gap-1.5">
                     <Button size="sm" onClick={() => batchRun('approve')}>
                       <Icon name="check" size={12} />
@@ -741,8 +803,8 @@ export function PipelineView(p: PipelineViewProps) {
                       <Icon name="close" size={12} />
                       {t('console.batchReject')}
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={clearSelection}>
-                      {t('console.batchClear')}
+                    <Button size="sm" variant="ghost" onClick={auditSel.exit}>
+                      {t('console.batchModeExitShort')}
                     </Button>
                   </span>
                 </div>
@@ -755,9 +817,11 @@ export function PipelineView(p: PipelineViewProps) {
                       onApprove={(i) => void p.act(i, 'approve')}
                       onReject={(i) => void p.act(i, 'reject')}
                       onUploadCover={(i, file) => void p.uploadCover(i, file)}
+                      onRandomCover={(i) => void p.randomCover(i)}
                       onBackToPrep={(i) => void p.backToPrep(i)}
                       focused={auditFocus === item.id}
-                      selected={selectedIds.has(item.id)}
+                      selectMode={auditSel.mode}
+                      selected={auditSel.sel.has(item.id)}
                       onSelect={toggleSelect}
                     />
                 ))}
@@ -769,142 +833,324 @@ export function PipelineView(p: PipelineViewProps) {
           </div>
         )}
 
-        {/* 异常（独立 menu，v0.2.6）：失败分类看板 + 批量重试 + 恢复待审 */}
+        {/* 异常（独立 menu，v0.2.6）：次级 tab——低分池｜异常｜归档清理｜备用库（wave10 删除统一收口） */}
         {pTab === 'exceptions' && (
           <div className="p-4">
-            {/* 低分回收池（v0.5 D）：is_lowscore 条目批量恢复待审（可复用） */}
-            {(() => {
-              const low = [...p.stageQueued, ...p.stageRejected, ...p.stageFailed].filter((i) => i.is_lowscore)
-              if (low.length === 0) return null
-              return (
-                <SectionCard
-                  title={`${t('console.lowScorePool')} (${low.length})`}
-                  padded={false}
-                  className="mb-4"
+            <div className="mb-3 flex items-center gap-1">
+              {EX_SUB_TABS.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setExTab(id)
+                    // 切换次级 tab：退出批量选择模式，避免残留选中
+                    archiveSel.exit()
+                    backupSel.exit()
+                  }}
+                  className={`px-2.5 py-1 text-xs transition-colors ${
+                    exTab === id
+                      ? 'bg-surface-2 font-medium text-text-primary'
+                      : 'text-text-secondary hover:bg-surface-2/60'
+                  }`}
                 >
-                  <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
-                    <p className="text-xs text-text-secondary">{t('console.lowScorePoolHint')}</p>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="ml-auto"
-                      onClick={() => void p.batchAction('requeue', low.map((i) => i.id))}
-                    >
-                      <Icon name="refresh" size={12} />
-                      {t('console.lowScoreRestoreAll', { n: low.length })}
-                    </Button>
-                  </div>
-                  <StageList
-                    items={low}
-                    emptyText={t('console.noExceptions')}
-                    renderRow={(item) => (
-                      <StageItemRow
-                        item={item}
-                        badge={<Badge tone="warning">low</Badge>}
-                        right={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                                loading={p.busy[item.id]?.action === 'requeue'}
-                            disabled={!!p.busy[item.id]}
-                            onClick={() => void p.act(item, 'requeue')}
-                          >
-                            {t('console.restore')}
-                          </Button>
-                        }
-                      />
-                    )}
-                  />
-                </SectionCard>
-              )
-            })()}
-            <SectionCard title={t('console.exceptions')} padded={false}>
-              {p.stageError ? (
-                <QueryErrorState message={t('error.queryFailed', { detail: 'pipeline' })} onRetry={() => void p.refetchStage()} />
-              ) : p.stageFailed.length + p.stageRejected.length === 0 ? (
-                <p className="p-3 text-sm text-text-disabled">{t('console.noExceptions')}</p>
-              ) : (
-                <>
-                  {/* 失败分类看板（v0.2.1）：按类统计 + 同类批量重试 */}
-                  {Object.keys(p.failures).length > 0 && (
+                  {t(`console.exTab.${id}`)}
+                </button>
+              ))}
+            </div>
+
+            {/* 低分回收池（v0.5 D）：is_lowscore 条目批量恢复待审（可复用） */}
+            {exTab === 'lowscore' && (
+              <SectionCard
+                title={`${t('console.lowScorePool')} (${lowscorePool.length})`}
+                padded={false}
+              >
+                {lowscorePool.length === 0 ? (
+                  <p className="p-3 text-sm text-text-disabled">{t('console.noExceptions')}</p>
+                ) : (
+                  <>
                     <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
-                      {Object.entries(p.failures).map(([cls, n]) => (
-                        <span key={cls} className="inline-flex items-center gap-1.5 border border-border bg-surface-2/60 px-2 py-0.5 text-[11px] text-text-secondary">
-                          <span className="font-mono">{cls}</span>
-                          <span className="text-text-disabled">{n}</span>
-                          <button
-                            type="button"
-                            onClick={() => void p.retryClass(cls, n)}
-                            title={t('console.retryClassHint', { cls })}
-                            className=" p-0.5 text-text-disabled transition-colors hover:text-primary"
-                          >
-                            <Icon name="refresh" size={11} />
-                          </button>
-                        </span>
-                      ))}
+                      <p className="text-xs text-text-secondary">{t('console.lowScorePoolHint')}</p>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="ml-auto"
+                        onClick={() => void p.batchAction('requeue', lowscorePool.map((i) => i.id))}
+                      >
+                        <Icon name="refresh" size={12} />
+                        {t('console.lowScoreRestoreAll', { n: lowscorePool.length })}
+                      </Button>
                     </div>
-                  )}
-                  <StageList
-                    items={[...p.stageRejected, ...p.stageFailed]}
-                    emptyText={t('console.noExceptions')}
-                    total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)}
-                    renderRow={(item) => (
-                      <StageItemRow
-                        item={item}
-                        badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
-                        right={
-                          <>
+                    <StageList
+                      items={lowscorePool}
+                      emptyText={t('console.noExceptions')}
+                      renderRow={(item) => (
+                        <StageItemRow
+                          item={item}
+                          badge={<Badge tone="warning">low</Badge>}
+                          right={
                             <Button
                               size="sm"
                               variant="ghost"
-                              loading={p.busy[item.id]?.action === 'retranslate'}
+                              loading={p.busy[item.id]?.action === 'requeue'}
                               disabled={!!p.busy[item.id]}
-                              onClick={() => void p.act(item, 'retranslate')}
-                              title={t('console.retranslateHint')}
+                              onClick={() => void p.act(item, 'requeue')}
                             >
-                              {t('console.retranslate')}
+                              {t('console.restore')}
                             </Button>
-                            {item.status === 'failed' ? (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                loading={p.busy[item.id]?.action === 'retry'}
-                                disabled={!!p.busy[item.id]}
-                                onClick={() => void p.act(item, 'retry')}
-                              >
-                                {t('common.retry')}
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                            loading={p.busy[item.id]?.action === 'requeue'}
-                                disabled={!!p.busy[item.id]}
-                                onClick={() => void p.act(item, 'requeue')}
-                              >
-                                {t('console.restore')}
-                              </Button>
-                            )}
-                          </>
-                        }
-                      />
+                          }
+                        />
+                      )}
+                    />
+                  </>
+                )}
+              </SectionCard>
+            )}
+
+            {/* 异常：失败分类看板 + 拒绝/失败条目 */}
+            {exTab === 'exceptions' && (
+              <SectionCard title={t('console.exceptions')} padded={false}>
+                {p.stageError ? (
+                  <QueryErrorState message={t('error.queryFailed', { detail: 'pipeline' })} onRetry={() => void p.refetchStage()} />
+                ) : p.stageFailed.length + p.stageRejected.length === 0 ? (
+                  <p className="p-3 text-sm text-text-disabled">{t('console.noExceptions')}</p>
+                ) : (
+                  <>
+                    {/* 失败分类看板（v0.2.1）：按类统计 + 同类批量重试 */}
+                    {Object.keys(p.failures).length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
+                        {Object.entries(p.failures).map(([cls, n]) => (
+                          <span key={cls} className="inline-flex items-center gap-1.5 border border-border bg-surface-2/60 px-2 py-0.5 text-[11px] text-text-secondary">
+                            <span className="font-mono">{cls}</span>
+                            <span className="text-text-disabled">{n}</span>
+                            <button
+                              type="button"
+                              onClick={() => void p.retryClass(cls, n)}
+                              title={t('console.retryClassHint', { cls })}
+                              className=" p-0.5 text-text-disabled transition-colors hover:text-primary"
+                            >
+                              <Icon name="refresh" size={11} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
                     )}
-                  />
-                </>
-              )}
-            </SectionCard>
+                    <StageList
+                      items={[...p.stageRejected, ...p.stageFailed]}
+                      emptyText={t('console.noExceptions')}
+                      total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)}
+                      renderRow={(item) => (
+                        <StageItemRow
+                          item={item}
+                          badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
+                          right={
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                loading={p.busy[item.id]?.action === 'retranslate'}
+                                disabled={!!p.busy[item.id]}
+                                onClick={() => void p.act(item, 'retranslate')}
+                                title={t('console.retranslateHint')}
+                              >
+                                {t('console.retranslate')}
+                              </Button>
+                              {item.status === 'failed' ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  loading={p.busy[item.id]?.action === 'retry'}
+                                  disabled={!!p.busy[item.id]}
+                                  onClick={() => void p.act(item, 'retry')}
+                                >
+                                  {t('common.retry')}
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  loading={p.busy[item.id]?.action === 'requeue'}
+                                  disabled={!!p.busy[item.id]}
+                                  onClick={() => void p.act(item, 'requeue')}
+                                >
+                                  {t('console.restore')}
+                                </Button>
+                              )}
+                            </>
+                          }
+                        />
+                      )}
+                    />
+                  </>
+                )}
+              </SectionCard>
+            )}
+
+            {/* 归档清理（wave10）：终态条目批量归档——磁盘清理 + 数据清洗，入口仅此一处 */}
+            {exTab === 'archive' && (
+              <SectionCard title={`${t('console.exTab.archive')} (${archivePool.length})`} padded={false}>
+                {/* 批量模式条带（wave10.1）：已选 n · 全选 · 归档所选 · 退出 */}
+                {archiveSel.mode ? (
+                  <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-border bg-surface-2/80 px-3 py-2 text-xs backdrop-blur-sm">
+                    <span className="font-medium text-text-primary">
+                      {t('console.batchSelected', { n: archiveSel.selected.length })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={archiveSel.toggleAll}
+                      className="text-[11px] text-text-secondary transition-colors hover:text-text-primary"
+                    >
+                      {archiveSel.sel.size === archivePool.length
+                        ? t('console.batchDeselectAll')
+                        : t('console.batchSelectAll')}
+                    </button>
+                    <span className="text-text-disabled">{t('console.batchSelectHint')}</span>
+                    <span className="ml-auto flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => void p.archiveItems(archiveSel.selected)}
+                      >
+                        <Icon name="trash" size={12} />
+                        {t('console.archiveSelected', { n: archiveSel.selected.length })}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={archiveSel.exit}>
+                        {t('console.batchModeExitShort')}
+                      </Button>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
+                    <p className="text-xs text-text-secondary">{t('console.archivePoolHint')}</p>
+                    <span className="ml-auto flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={archivePool.length === 0}
+                        onClick={archiveSel.enter}
+                      >
+                        {t('console.batchModeEnter')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={archivePool.length === 0}
+                        onClick={() => void p.archiveItems(archivePool)}
+                      >
+                        <Icon name="trash" size={12} />
+                        {t('console.archiveAll', { n: archivePool.length })}
+                      </Button>
+                    </span>
+                  </div>
+                )}
+                <StageList
+                  items={archivePool}
+                  emptyText={t('console.archivePoolEmpty')}
+                  renderRow={(item) => (
+                    <StageItemRow
+                      item={item}
+                      selectMode={archiveSel.mode}
+                      selected={archiveSel.sel.has(item.id)}
+                      onSelect={archiveSel.toggle}
+                      badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
+                    />
+                  )}
+                />
+              </SectionCard>
+            )}
+
+            {/* 备用库（wave10）：archived 条目——恢复或彻底删除 */}
+            {exTab === 'backup' && (
+              <SectionCard title={`${t('console.exTab.backup')} (${p.archivedItems.length})`} padded={false}>
+                {/* 批量模式条带（wave10.1）：已选 n · 全选 · 恢复/彻底删除 · 退出 */}
+                {backupSel.mode ? (
+                  <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-border bg-surface-2/80 px-3 py-2 text-xs backdrop-blur-sm">
+                    <span className="font-medium text-text-primary">
+                      {t('console.batchSelected', { n: backupSel.selected.length })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={backupSel.toggleAll}
+                      className="text-[11px] text-text-secondary transition-colors hover:text-text-primary"
+                    >
+                      {backupSel.sel.size === p.archivedItems.length
+                        ? t('console.batchDeselectAll')
+                        : t('console.batchSelectAll')}
+                    </button>
+                    <span className="text-text-disabled">{t('console.batchSelectHint')}</span>
+                    <span className="ml-auto flex items-center gap-1.5">
+                      <Button size="sm" variant="secondary" onClick={() => void p.unarchiveItems(backupSel.selected)}>
+                        <Icon name="rewind" size={12} />
+                        {t('console.restoreSelected', { n: backupSel.selected.length })}
+                      </Button>
+                      <Button size="sm" variant="danger" onClick={() => void p.purgeItems(backupSel.selected)}>
+                        <Icon name="trash" size={12} />
+                        {t('console.purgeSelected', { n: backupSel.selected.length })}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={backupSel.exit}>
+                        {t('console.batchModeExitShort')}
+                      </Button>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
+                    <p className="text-xs text-text-secondary">{t('console.backupHint')}</p>
+                    <span className="ml-auto flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={p.archivedItems.length === 0}
+                        onClick={backupSel.enter}
+                      >
+                        {t('console.batchModeEnter')}
+                      </Button>
+                    </span>
+                  </div>
+                )}
+                <StageList
+                  items={p.archivedItems}
+                  emptyText={t('console.backupEmpty')}
+                  renderRow={(item) => (
+                    <StageItemRow
+                      item={item}
+                      selectMode={backupSel.mode}
+                      selected={backupSel.sel.has(item.id)}
+                      onSelect={backupSel.toggle}
+                      badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
+                      right={
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => void p.unarchiveItems([item])}
+                          >
+                            {t('console.restore')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => void p.purgeItems([item])}
+                          >
+                            <Icon name="trash" size={12} />
+                          </Button>
+                        </>
+                      }
+                    />
+                  )}
+                />
+              </SectionCard>
+            )}
           </div>
         )}
 
         {pTab === 'postReview' && (
           <div className="flex flex-col gap-4 p-4">
-            {/* 视图切换：列表（默认）｜内容日历（v0.2.3，Buffer/新榜同款） */}
+            {/* 视图切换：列表（默认）｜发布队列（v0.12）｜内容日历（v0.2.3，Buffer/新榜同款） */}
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setCalendarView(false)}
+                onClick={() => setPostView('list')}
                 className={`px-2.5 py-1 text-xs transition-colors ${
-                  !calendarView
+                  postView === 'list'
                     ? 'bg-surface-2 font-medium text-text-primary'
                     : 'text-text-secondary hover:bg-surface-2/60'
                 }`}
@@ -913,9 +1159,20 @@ export function PipelineView(p: PipelineViewProps) {
               </button>
               <button
                 type="button"
-                onClick={() => setCalendarView(true)}
+                onClick={() => setPostView('queue')}
                 className={`px-2.5 py-1 text-xs transition-colors ${
-                  calendarView
+                  postView === 'queue'
+                    ? 'bg-surface-2 font-medium text-text-primary'
+                    : 'text-text-secondary hover:bg-surface-2/60'
+                }`}
+              >
+                {t('console.queueView')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPostView('calendar')}
+                className={`px-2.5 py-1 text-xs transition-colors ${
+                  postView === 'calendar'
                     ? 'bg-surface-2 font-medium text-text-primary'
                     : 'text-text-secondary hover:bg-surface-2/60'
                 }`}
@@ -924,10 +1181,12 @@ export function PipelineView(p: PipelineViewProps) {
               </button>
             </div>
 
-            {calendarView ? (
+            {postView === 'calendar' ? (
               <CalendarView
                 onSaveSchedule={(item, value) => p.saveMeta(item, { scheduled_at: value })}
               />
+            ) : postView === 'queue' ? (
+              <QueueView />
             ) : (              <>
             {/* 发布目标状态（v0.3.8）：noop/缺 cookie 时醒目警示，避免「点了没反应」 */}
             {p.publishStatus && (
@@ -970,21 +1229,23 @@ export function PipelineView(p: PipelineViewProps) {
             {/* 审核后：approved（发布操作） */}
             <PipelineStage
               title={t('console.stagePublish')}
-              isEmpty={p.stageApproved.length === 0}
+              isEmpty={false}
               emptyText={t('console.emptyPublish')}
             >
-              <ul className="divide-y divide-border/60">
-                {p.stageApproved.map((item) => (
+              <StageList
+                items={p.stageApproved}
+                emptyText={t('console.emptyPublish')}
+                renderRow={(item) => (
                   <PublishCard
-                    key={item.id}
                     item={item}
                     onPublish={(i, selfmade, target, now) => p.publishItem(i, selfmade, target, now)}
                     onSaveMeta={(i, meta) => p.saveMeta(i, meta)}
                     onRequeue={(i) => void p.act(i, 'requeue')}
                     onRandomCover={(i) => void p.randomCover(i)}
+                    onEnqueue={(i, phase) => void p.enqueueItem(i, phase)}
                   />
-                ))}
-              </ul>
+                )}
+              />
               <p className="border-t border-border/60 px-3 py-2 text-[10px] text-text-disabled">
                 {t('console.publishHint')}
               </p>

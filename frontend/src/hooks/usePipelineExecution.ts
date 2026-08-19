@@ -6,11 +6,6 @@ import { api, pipelineApi, type PipelineEvent, type PipelineItem } from '../api'
 import { useEventSource } from './useEventSource'
 import { useToast } from '../components/ui'
 import { useExecutionStore } from '../stores/execution'
-import type { LogLine } from '../components/execution'
-
-export interface PipelineLog extends LogLine {
-  kind: 'job' | 'item' | 'done' | 'system'
-}
 
 // 轮询只是 SSE 的兜底：空闲时 15s 一次，流水线运行中 2s（AXIOM §7.2 性能预算）。
 // v5 Query 回调需全泛型才兼容各 useQuery 具体类型
@@ -20,6 +15,17 @@ const pollingInterval = (
   (query.state.data as { running?: boolean } | undefined)?.running
     ? 2000
     : 15000
+
+/** 批量入参分片（v0.11.8）：后端批量端点 ids max 200（AXIOM 8.1 防大查询）——
+ *  全选可超上限触发 422，按 200 切块逐批执行。 */
+const BATCH_CHUNK = 200
+export function chunkIds(ids: string[]): string[][] {
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += BATCH_CHUNK) {
+    chunks.push(ids.slice(i, i + BATCH_CHUNK))
+  }
+  return chunks
+}
 
 /** Pipeline 域执行状态（从 ConsolePage 抽取，逻辑零改动）。 */
 export function usePipelineExecution() {
@@ -100,7 +106,7 @@ export function usePipelineExecution() {
   })
 
   const store = useExecutionStore()
-  const { limit, logSeq, tab, collectProgress, busy } = store.pipeline
+  const { limit, tab, collectProgress, busy } = store.pipeline
   const setPipeline = store.setPipeline
 
   const runningRef = useRef(false)
@@ -132,15 +138,6 @@ export function usePipelineExecution() {
     handleEvent(event)
   })
 
-  function appendLog(text: string, kind: PipelineLog['kind']) {
-    const now = new Date()
-    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
-    setPipeline({
-      logs: [...useExecutionStore.getState().pipeline.logs.slice(-499), { id: logSeq, time, text, kind }],
-      logSeq: logSeq + 1,
-    })
-  }
-
   function handleEvent(event: PipelineEvent) {
     if (event.type === 'job_step') {
       // 明细（v0.3.0，参考原项目 job_summary）：collect 显示采集/入库/跳过
@@ -150,18 +147,8 @@ export function usePipelineExecution() {
           | Array<{ channel: string; collected?: number; inserted?: number; cooldown_s?: number; error?: string }>
           | undefined
         if (sources) setPipeline({ collectProgress: sources })
-        const details = [
-          t('console.collected', { n: event.collected ?? event.count ?? 0 }),
-          t('console.inserted', { n: event.inserted ?? 0 }),
-          t('console.skipped', { n: event.skipped ?? 0 }),
-        ]
-        if (event.cooldown_s) details.push(`⏳ ${Math.ceil(event.cooldown_s)}s`)
-        appendLog(`[collect] ${details.join(' · ')}`, 'job')
-      } else {
-        appendLog(`[${event.step}] ${t('console.processed', { n: event.count ?? 0 })}`, 'job')
       }
     } else if (event.type === 'item') {
-      appendLog(`${t('console.item')} ${event.status}${event.error ? `: ${event.error}` : ''}`, event.status === 'rejected' || event.status === 'failed' ? 'done' : 'item')
       // v0.10.1 异步队列：后台任务每完成一条立即刷新列表与计数（此前
       // 同步批处理完成后才一次性刷新，看不到逐个进度）
       void queryClient.invalidateQueries({ queryKey: ['pipeline-queue'] })
@@ -191,13 +178,6 @@ export function usePipelineExecution() {
           summary = t('console.noPending')
         }
       }
-      // 运行前后数据差异（v0.3.5）：discovered −1 · downloaded +1 等
-      const delta = (s?.delta ?? {}) as Record<string, number>
-      const deltaText = Object.entries(delta)
-        .filter(([, n]) => n !== 0)
-        .map(([status, n]) => `${t(`console.${status}`) ?? status} ${n > 0 ? '+' : ''}${n}`)
-        .join(' · ')
-      appendLog(`── [${event.job}] ${failed ? '✗' : empty || cooling ? '⚠' : '✓'}${summary ? ` ${summary}` : ''}${deltaText ? `  ${deltaText}` : ''}${event.error ? `: ${event.error}` : ''} ──`, 'done')
       void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
       void queryClient.invalidateQueries({ queryKey: ['pipeline-queue'] })
       void queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] })
@@ -258,6 +238,19 @@ export function usePipelineExecution() {
       await withBusy(item, 'produce', () => pipelineApi.produce(item.id))
       refresh()
       toast(t('console.produceOneDone'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 取消制作（wave11）：点错/视频过长省资源——后端产线检查点命中即中止，
+   *  条目回滚 downloaded（不标失败）。busy 状态保持到制作请求返回为止。 */
+  async function cancelProduceOne(item: PipelineItem) {
+    try {
+      await pipelineApi.cancelProduce(item.id)
+      toast(t('console.produceCancelled', { title: item.title }), 'info')
+      // 制作请求返回（检查点命中）后刷新——invalidate 提前发无害
+      refresh()
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }
@@ -325,7 +318,9 @@ export function usePipelineExecution() {
     }
   }
 
-  /** 批量操作（v0.4 A2）：多选后一次处理——成功/失败计数 + 逐条错误。 */
+  /** 批量操作（v0.4 A2）：多选后一次处理——成功/失败计数 + 逐条错误。
+   *  v0.11.8：全选可超后端 200 上限（AXIOM 8.1 防大查询）——按 200 分批
+   *  串行执行并聚合 ok/failed，避免 422 validation error。 */
   async function batchAction(
     action: 'approve' | 'reject' | 'back_to_prep' | 'requeue',
     ids: string[],
@@ -336,13 +331,19 @@ export function usePipelineExecution() {
       const busyPatch = { ...useExecutionStore.getState().pipeline.busy }
       for (const id of ids) busyPatch[id] = { action: busyKey, title: titleOf(id) }
       setPipeline({ busy: busyPatch })
-      const res = await pipelineApi.batch(action, ids)
+      let ok = 0
+      const failed: Array<{ id: string; error: string }> = []
+      for (const chunk of chunkIds(ids)) {
+        const res = await pipelineApi.batch(action, chunk)
+        ok += res.ok
+        failed.push(...res.failed)
+      }
       refresh()
       const hint =
-        res.failed.length > 0
-          ? t('console.batchDoneWithErrors', { ok: res.ok, failed: res.failed.length })
-          : t('console.batchDone', { n: res.ok })
-      toast(hint, res.failed.length > 0 ? 'warning' : 'success')
+        failed.length > 0
+          ? t('console.batchDoneWithErrors', { ok, failed: failed.length })
+          : t('console.batchDone', { n: ok })
+      toast(hint, failed.length > 0 ? 'warning' : 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     } finally {
@@ -424,6 +425,24 @@ export function usePipelineExecution() {
     }
   }
 
+  /** 入队/出队（v0.12）：holding=预发布｜ready=发布队列｜''=出队 */
+  async function enqueueItem(item: PipelineItem, phase: '' | 'holding' | 'ready') {
+    try {
+      await withBusy(item, 'enqueue', () => pipelineApi.enqueue(item.id, phase))
+      refresh()
+      toast(
+        phase === 'holding'
+          ? t('console.queueHoldingOk')
+          : phase === 'ready'
+            ? t('console.queueReadyOk')
+            : t('console.queueLeaveOk'),
+        'success',
+      )
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   /** 同类批量重试（失败分类看板）：批量副作用，先确认（AXIOM §13.1）。 */
   async function retryClass(cls: string, n: number) {
     if (!window.confirm(t('console.retryClassConfirm', { cls, n }))) return
@@ -472,6 +491,68 @@ export function usePipelineExecution() {
     }
   }
 
+  // 备用库（wave10）：归档条目——删除入口收口异常区
+  const { data: archivedItems = [] } = useQuery({
+    queryKey: ['pipeline-archived'],
+    queryFn: () => pipelineApi.archivedItems(200),
+    refetchInterval: pollingInterval,
+  })
+
+  /** 归档（wave10）：磁盘清理 + 数据清洗，条目进备用库。
+   *  v0.11.8：全选超后端 200 上限——分批聚合。 */
+  async function archiveItems(items: PipelineItem[]) {
+    try {
+      const ids = items.map((i) => i.id)
+      let ok = 0
+      for (const chunk of chunkIds(ids)) {
+        const res = await pipelineApi.archive(chunk)
+        ok += res.ok
+      }
+      await queryClient.invalidateQueries({ queryKey: ['pipeline-archived'] })
+      refresh()
+      toast(t('console.archiveDone', { n: ok }), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 恢复（wave10）：清除 archived 标记回到原状态列表。
+   *  v0.11.8：分批聚合。 */
+  async function unarchiveItems(items: PipelineItem[]) {
+    try {
+      const ids = items.map((i) => i.id)
+      let ok = 0
+      for (const chunk of chunkIds(ids)) {
+        const res = await pipelineApi.unarchive(chunk)
+        ok += res.ok
+      }
+      await queryClient.invalidateQueries({ queryKey: ['pipeline-archived'] })
+      refresh()
+      toast(t('console.unarchiveDone', { n: ok }), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 彻底删除（wave10，不可逆）：仅归档条目，物理删行。
+   *  v0.11.8：分批聚合。 */
+  async function purgeItems(items: PipelineItem[]) {
+    const n = items.length
+    if (!window.confirm(t('console.purgeConfirm', { n }))) return
+    try {
+      const ids = items.map((i) => i.id)
+      let ok = 0
+      for (const chunk of chunkIds(ids)) {
+        const res = await pipelineApi.purge(chunk)
+        ok += res.ok
+      }
+      await queryClient.invalidateQueries({ queryKey: ['pipeline-archived'] })
+      toast(t('console.purgeDone', { n: ok }), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   const running = (status as { running?: boolean } | undefined)?.running ?? false
 
   return {
@@ -496,7 +577,6 @@ export function usePipelineExecution() {
     limit,
     setLimit,
     running,
-    clearLogs: () => store.resetPipelineLogs(),
     act,
     batchAction,
     setPublishStats,
@@ -509,11 +589,17 @@ export function usePipelineExecution() {
     stop,
     uploadCover,
     randomCover,
+    enqueueItem,
     retryClass,
     backToPrep,
     rescheduleExpired,
     setProduceOptions,
+    archivedItems,
+    archiveItems,
+    unarchiveItems,
+    purgeItems,
     produceOne,
+    cancelProduceOne,
     produceBatch,
     scoreOne,
     scoreBatch,

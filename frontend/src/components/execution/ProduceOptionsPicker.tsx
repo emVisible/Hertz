@@ -12,8 +12,18 @@ export const PRODUCE_MODULES: Array<{ id: ProduceModule }> = [
   { id: 'mute' },
 ]
 
-/** 空选项（默认 = 翻译+字幕：原视频翻译成中文字幕，不配音） */
+/** 默认生产方式（v0.11.9）：直发——新入库未加工条目原片直接发布；
+ *  已显式保存过 options 的条目不受影响（normalizeOptions 只补缺键）。 */
 export const DEFAULT_PRODUCE_OPTIONS: ProduceOptions = {
+  passthrough: true,
+  voice: false,
+  subtitle: false,
+  translate: false,
+  mute: false,
+}
+
+/** 非直发回退组合（取消直发时恢复）：翻译+字幕（v0.9 语义）。 */
+export const FALLBACK_PRODUCE_OPTIONS: ProduceOptions = {
   passthrough: false,
   voice: false,
   subtitle: true,
@@ -47,9 +57,9 @@ export function ProduceOptionsPicker({
   function toggle(module: ProduceModule) {
     const next = { ...value }
     if (module === 'passthrough') {
-      // 直发互斥：选中清除其他，取消则恢复默认组合
+      // 直发互斥：选中清除其他；取消回退「翻译+字幕」组合
       if (next.passthrough) {
-        return { ...DEFAULT_PRODUCE_OPTIONS }
+        return { ...FALLBACK_PRODUCE_OPTIONS }
       }
       next.passthrough = true
       next.voice = next.subtitle = next.translate = next.mute = false

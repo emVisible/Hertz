@@ -53,6 +53,9 @@ const PATHS = {
   rewind: 'M11 19l-9-7 9-7v14zM22 19l-9-7 9-7v14z',
   'sort-asc': 'M12 5v14M12 5l-4 4M12 5l4 4M4 21h16',
   'sort-desc': 'M12 19V5M12 19l-4-4M12 19l4-4M4 21h16',
+  clock: 'M12 22a10 10 0 100-20 10 10 0 000 20zM12 6v6l4 2',
+  grid: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
+  list: 'M8 5h13M8 12h13M8 19h13M3.5 5h.01M3.5 12h.01M3.5 19h.01',
 } as const
 
 export type IconName = keyof typeof PATHS

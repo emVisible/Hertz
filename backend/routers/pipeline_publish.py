@@ -1,4 +1,4 @@
-"""发布域：publish/publish-status/发布数据回捞。
+"""发布域：publish/publish-status/发布数据回捞/发布队列。
 
 v0.8.9 AXIOM 2.1 路由域拆分：原 pipeline.py 30+ 端点 7 域挤一文件，
 按用户可感知域拆出；路径与语义不变（pipeline_publish.router 由 pipeline 聚合 include）。
@@ -7,11 +7,12 @@ v0.8.9 AXIOM 2.1 路由域拆分：原 pipeline.py 30+ 端点 7 域挤一文件�
 import uuid
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.config import settings
 from backend.errors import HertzError
 from backend.factory.registry import ServiceRegistry
+from backend.pipeline.publish_queue import QUEUE_PHASES
 from backend.pipeline.publishers.router import PUBLISHERS
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
@@ -26,6 +27,43 @@ class PublishStatsBody(BaseModel):
     favorite: int = 0
     comment: int = 0
     share: int = 0
+
+
+class QueueBody(BaseModel):
+    phase: str = Field("", description="''=出队｜holding=预发布队列｜ready=发布队列")
+
+
+class QueueBatchBody(BaseModel):
+    ids: list[uuid.UUID] = Field(..., min_length=1, max_length=200)
+    phase: str = ""
+
+
+@router.get("/publish/queue")
+async def publish_queue_view() -> dict:
+    """发布队列看板（v0.12）：ready/holding 列表 + 今日产能进度。"""
+    return await _pipe().queue_view()
+
+
+@router.post("/items/batch/queue")
+async def enqueue_batch(body: QueueBatchBody) -> dict:
+    """批量入队（v0.12）：逐条执行，失败不中断。"""
+    if body.phase not in QUEUE_PHASES:
+        raise HTTPException(status_code=422, detail=f"unknown queue phase '{body.phase}'")
+    return await _pipe().enqueue_batch(body.ids, body.phase)
+
+
+@router.post("/items/{item_id}/queue")
+async def enqueue_item(item_id: uuid.UUID, body: QueueBody) -> dict:
+    """入队/出队（v0.12）：phase 校验失败 → 422；状态不允许 → 409；
+    ready 无槽位 → 422（今天窗口已排满）。"""
+    if body.phase not in QUEUE_PHASES:
+        raise HTTPException(status_code=422, detail=f"unknown queue phase '{body.phase}'")
+    try:
+        return await _pipe().enqueue(item_id, body.phase)
+    except HertzError:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/items/{item_id}/publish-stats")

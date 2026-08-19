@@ -35,6 +35,15 @@ RUNTIME_ALLOWLIST = {
     "pipeline_subtitle_alignment",
     "pipeline_subtitle_fade_ms",
     "pipeline_subtitle_margin_bottom",
+    # 字幕/翻译/配音语言（v0.10）：生成语言与配音源语言
+    "pipeline_subtitle_lang",
+    "pipeline_translate_source_lang",
+    "pipeline_tts_text_source",
+    # 发布队列（v0.12）：自动发布产能/开关/转正数/轮询间隔
+    "pipeline_auto_publish",
+    "pipeline_auto_publish_daily_limit",
+    "pipeline_auto_promote_daily",
+    "pipeline_auto_publish_tick_minutes",
     # 模型单价（v0.5 E 成本估算）：model_key → {prompt, completion}（美元/百万 tokens）
     "ai_model_prices",
     # 角色分配经 PUT /api/ai/roles 写入（唯一写入口，见 routers/ai.py）
@@ -45,6 +54,9 @@ RUNTIME_ALLOWLIST = {
     "pipeline_reddit_client_id",
     "pipeline_reddit_client_secret",
     "pipeline_reddit_cookie",
+    # v0.11.9：设置页保存全量 overrides 含此项——缺省会整体 400，
+    # 导致「配置保存成功」但 runtime.yaml 未落盘（发布目标恒 NOOP）
+    "pipeline_reddit_cookies_browser",
 }
 
 SECRET_FIELDS = {

@@ -11,7 +11,8 @@
     "config": "Settings",
     "docs": "Docs",
     "execution": "Execute",
-    "dashboard": "Dashboard"
+    "dashboard": "Dashboard",
+    "queue": "Queue"
   },
   "common": {
     "loading": "Loading…",
@@ -34,7 +35,8 @@
     "clear": "Clear",
     "yes": "Yes",
     "no": "No",
-    "custom": "Custom"
+    "custom": "Custom",
+    "deleteConfirm": "Delete \"{{name}}\"? This cannot be undone."
   },
   "error": {
     "title": "Something went wrong",
@@ -110,11 +112,23 @@
     "roleMain": "Main model (creation)",
     "roleMainHint": "Which model powers orchestration and creation — your most-used one. Applies on the next run",
     "roleFast": "Fast",
-    "roleFastHint": "Scoring / titles / scripts: cheap fast model; leave empty to follow main",
+    "roleFastHint": "AI asset organize / subtitle translation / scoring / titles: cheap fast model; leave empty to follow main",
     "roleEmbedding": "Embedding",
     "roleEmbeddingHint": "Reserved for knowledge base (v2.2)",
     "roleTts": "TTS voice",
     "roleTtsHint": "Narration voice (Edge TTS neural voices)",
+    "roleImage": "Image",
+    "features": "Features & models",
+    "featuresHint": "Which model powers each feature at a glance. Adjust per-role models below under \"Default models\"; lightweight tasks like asset AI organize use the fast model",
+    "featureOrganize": "Asset AI organize (tags / name suggestions)",
+    "featureTranslate": "Subtitle translation",
+    "featureScore": "Scoring / scripts / titles",
+    "featureChat": "Orchestration & chat",
+    "featureImage": "Image generation",
+    "featureTts": "Narration (TTS)",
+    "featureUnconfigured": "Not configured",
+    "redditCollect": "Reddit collection",
+    "redditCollectHint": "OAuth credentials and login Cookie are two channels; either one keeps collection stable",
     "prompts": "Prompt templates",
     "aiPromptsHint": "System prompts are editable; changes apply on the next run. Reset restores factory defaults.",
     "aiPromptReset": "Reset to default",
@@ -242,7 +256,13 @@
     "langZh": "Chinese",
     "redditCookiePlaceholder": "token_v2=…; session_tracker=… (copy from browser after logging into Reddit)",
     "redditCookieBrowserPlaceholder": "chrome, safari, edge (comma separated, empty=auto)",
-    "rolesDefaultModel": "Default model settings"
+    "rolesDefaultModel": "Default model settings",
+    "autoPublish": "Auto-publish queue",
+    "autoPublishEnabled": "Enable auto-publish",
+    "autoPublishDailyLimit": "Daily capacity (items)",
+    "autoPromoteDaily": "Daily auto-promote (items)",
+    "autoPublishTickMinutes": "Check interval (min)",
+    "autoPublishHint": "When on, holding items auto-promote N per day and publish when due (queue only stores when off). Capacity counts auto publishes only; manual publishes are free."
   },
   "execution": {
     "modeStudio": "Studio",
@@ -299,7 +319,12 @@
     "tagPlaceholder": "Enter tags, comma separated (e.g. featured, cut)",
     "tagged": "Tags saved",
     "tagSelected": "Selected",
-    "tagDraft": "Draft"
+    "tagDraft": "Draft",
+    "viewGrid": "Grid view",
+    "viewDetail": "Detail list",
+    "goDownload": "Download",
+    "open": "Open",
+    "folder": "Folder"
   },
   "download": {
     "title": "Downloads",
@@ -333,7 +358,10 @@
     "created": "Task created",
     "started": "Download started",
     "cancelledOk": "Cancelled",
-    "deleted": "Task deleted"
+    "deleted": "Task deleted",
+    "speed": "{{speed}}/s",
+    "errorDetail": "Reason: {{error}}",
+    "savedTo": "Saved to {{path}}"
   },
   "library": {
     "metadata": "Metadata",
@@ -355,7 +383,10 @@
       "resolution": "Resolution",
       "duration": "Duration",
       "bitrate": "Bitrate"
-    }
+    },
+    "sortName": "Name",
+    "sortSize": "Size",
+    "sortDate": "Date"
   },
   "briefs": {
     "title": "Briefs",
@@ -558,9 +589,7 @@
     "noJobs": "No jobs recorded",
     "noSources": "No sources recorded",
     "collected": "collected {{n}}",
-    "processed": "processed {{n}}",
     "jobQueued": "{{step}} queued — running in background",
-    "item": "item",
     "stageAudit": "Review",
     "auditSort.videoFirst": "With video first",
     "auditSort.random": "🎲 Shuffle",
@@ -623,6 +652,7 @@
     "recentPublishes": "Recent publishes",
     "calendar": "Calendar",
     "calendarList": "List",
+    "queueView": "Queue",
     "calendarToday": "Today",
     "calendarPrev": "Previous month",
     "calendarNext": "Next month",
@@ -675,7 +705,6 @@
     },
     "collectEmpty": "Collected 0 items — source may be down, cooling down",
     "inserted": "inserted {{n}}",
-    "skipped": "skipped {{n}}",
     "noPending": "No pending items",
     "sysLogs": "System logs (backend/Scheduler)",
     "sysLogsEmpty": "No system logs yet",
@@ -706,6 +735,8 @@
       "deselectAll": "Deselect all",
       "now": "Produce",
       "nowHint": "Produce now per produce mode (after download)",
+      "cancel": "Cancel produce",
+      "cancelHint": "Abort this production (mistap / long video to save resources) — item returns to downloaded",
       "noRawHint": "Download the media first",
       "batchProduce": "Batch produce",
       "batchProduceHint": "Run produce as a batch",
@@ -719,6 +750,7 @@
     "stageCollect": "Collect",
     "produceOneDone": "Producing started — will return to review",
     "produceStart": "Started producing “{{title}}” — processing in background…",
+    "produceCancelled": "Produce cancelled for “{{title}}” — item back to downloaded",
     "retranslateStart": "Started re-translating “{{title}}” — extracting original audio…",
     "publishStart": "Started publishing “{{title}}” — uploading…",
     "busy": {
@@ -735,12 +767,9 @@
     },
     "busyBanner": "Processing {{n}} item(s)",
     "busyItem": "{{action}} “{{title}}”",
-    "act": {
-      "title": "Activity",
-      "events": "Live events",
-      "toggle": "Toggle",
-      "eventsCount": "{{n}} events",
-      "historyHint": "Live stream keeps the last 500 lines — full history lives in System Logs & Recent Jobs",
+"act": {
+      "title": "Run status",
+      "toggle": "Expand/collapse",
       "jobFilterAll": "All jobs",
       "statusAll": "All",
       "statusOk": "Succeeded",
@@ -812,11 +841,16 @@
     "sort.randomHint": "Random shuffle (reshuffles on each toggle)",
     "scrollMore": "Scroll for more (showing {{shown}} / {{total}})",
     "batchSelected": "{{n}} selected",
-    "batchHint": "Batch actions on selection",
+    "batchSelectAll": "Select all",
+    "batchDeselectAll": "Deselect all",
+    "batchSelectHint": "Click item cards to toggle selection",
+    "batchModeEnter": "Batch select",
+    "batchModeExit": "Exit batch ({{n}} selected)",
+    "batchModeExitShort": "Exit batch",
+    "batchModeHint": "Enter batch select mode: click cards to select, select-all covers the current list",
     "batchApprove": "Approve all",
     "batchReject": "Reject all",
     "batchBackToPrep": "Back to preprocess",
-    "batchClear": "Clear selection",
     "batchDone": "Batch done: {{n}} succeeded",
     "batchDoneWithErrors": "Batch done: {{ok}} ok / {{failed}} failed (skipped)",
     "calendarBatchSelected": "{{n}} selected",
@@ -839,6 +873,24 @@
     "lowScorePool": "Low-score pool",
     "lowScorePoolHint": "Items marked low score — review & decide, or restore",
     "lowScoreRestoreAll": "Restore all ({{n}})",
+    "exTab": {
+      "lowscore": "Low score",
+      "exceptions": "Exceptions",
+      "archive": "Archive",
+      "backup": "Backup"
+    },
+    "archivePoolHint": "Final-state items (published/approved/failed/rejected): archiving clears disk media and redundant data, keeping base info in the backup store",
+    "archivePoolEmpty": "Nothing to archive",
+    "archiveAll": "Archive all ({{n}})",
+    "archiveSelected": "Archive selected ({{n}})",
+    "archiveDone": "Archived {{n}} items; disk media cleared",
+    "backupHint": "Backup store: base info of archived items (title/source/score). Restoring re-downloads and re-produces on demand; purge is irreversible",
+    "backupEmpty": "Backup store is empty",
+    "restoreSelected": "Restore selected ({{n}})",
+    "unarchiveDone": "Restored {{n}} items (media regenerated on demand)",
+    "purgeSelected": "Purge ({{n}})",
+    "purgeConfirm": "Purge {{n}} items permanently? This cannot be undone and removes DB records",
+    "purgeDone": "Purged {{n}} items",
     "previewMedia": "Preview media (play video / view image)",
     "typeVideo": "Video",
     "typeImage": "Image",
@@ -884,7 +936,23 @@
     "collectEmptyCool": "⚠ source returned empty, cooling down",
     "degradedRaw": "raw fallback",
     "subsBurnFallback": "subtitles not burned (no libass, PNG fallback)",
-    "auditSearch": "Search titles…"
+    "auditSearch": "Search titles…",
+    "queueLabel": "Publish queue",
+    "queueToHolding": "To holding",
+    "queueToReady": "To publish queue",
+    "queueLeave": "Remove",
+    "queueLeaveReady": "Remove",
+    "queueHoldingOk": "Added to holding queue (auto-promotes daily)",
+    "queueReadyOk": "Added to publish queue",
+    "queueLeaveOk": "Removed from publish queue",
+    "phaseHolding": "holding",
+    "phaseReady": "queued",
+    "scheduleMissing": "no schedule",
+    "titleLabel": "Title",
+    "groupContent": "Content",
+    "groupDistribute": "Distribution",
+    "publishMenu": "Publish options",
+    "publishTimedHint": "Publish on schedule (auto-upload at time)"
   },
   "canvas": {
     "tool": {
@@ -1068,7 +1136,21 @@
     "cost": "Cost estimate (latest 500 calls)",
     "costTotal": "Estimated total",
     "costEmpty": "No model prices configured (Settings → AI → Model prices)",
-    "costHint": "tokens × price; providers without usage data are skipped"
+    "costHint": "tokens × price; providers without usage data are skipped",
+    "publishChannel": "Publish channel",
+    "target": "Target",
+    "cookie": "Bilibili cookie",
+    "noopWarning": "Target is noop — publishes only record intent, nothing is uploaded.",
+    "autoPublish": "Auto-publish",
+    "todayCapacity": "Today capacity",
+    "autoPublishOn": "Auto-publish on: due items publish automatically; manual publishes are free.",
+    "autoPublishOff": "Auto-publish off: queue stores only; manual publish works.",
+    "queueDepth": "Publish queue depth",
+    "queueReady": "Ready",
+    "queueHolding": "Holding",
+    "queueTotal": "Total",
+    "failures": "Failure distribution",
+    "failuresEmpty": "No failures recorded"
   },
   "onboarding": {
     "title": "Welcome to Hertz",
@@ -1120,5 +1202,22 @@
     "catPipeScore": "Pipeline·Score",
     "catPipeScript": "Pipeline·Script",
     "catPipeTitle": "Pipeline·Title"
+  },
+  "queue": {
+    "todayCapacity": "Today's auto-publish capacity",
+    "autoOn": "Auto-publish on",
+    "autoOff": "Auto-publish off",
+    "capacityHint": "Daily auto-publish cap counts auto publishes only; manual publishes are free. Holding items auto-promote N per day.",
+    "ready": "Publish queue",
+    "holding": "Holding queue",
+    "emptyReadyTitle": "Publish queue is empty",
+    "emptyReadyDesc": "Promote from the holding queue, or enqueue directly from review.",
+    "emptyHoldingTitle": "Holding queue is empty",
+    "emptyHoldingDesc": "Enqueue approved items from review; they auto-promote daily.",
+    "dequeue": "Remove from queue",
+    "toReady": "Promote to publish queue",
+    "scheduledAt": "Scheduled",
+    "noSchedule": "No schedule",
+    "promoteDaily": "Daily auto-promote"
   }
 }

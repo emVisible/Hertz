@@ -9,6 +9,7 @@ import {
   Badge,
   Button,
   CopyButton,
+  EmptyState,
   Icon,
   Modal,
   Progress,
@@ -16,6 +17,7 @@ import {
   SkeletonCard,
   SkeletonList,
   useToast,
+  type IconName,
 } from '../../components/ui'
 import { useEventSource } from '../../hooks/useEventSource'
 import type { DownloadStatus, DownloadTask } from '../../api/download'
@@ -23,10 +25,13 @@ import type { FileInfo, LibraryEntry } from '../../api'
 import ReactMarkdown from 'react-markdown'
 import {
   AssetCard,
+  AssetDetailRow,
   DownloadBar,
   QuickPreview,
   PreviewOverlay,
+  ViewSwitch,
   formatBytes,
+  type AssetView,
 } from './AssetViews'
 import { DuplicatesModal, OrganizeModal } from './AssetTools'
 
@@ -47,6 +52,24 @@ interface RootsTree {
 }
 
 type KindFilter = 'all' | 'active' | 'tasks' | 'image' | 'video' | 'audio' | 'document' | 'other'
+type SortKey = 'name' | 'size' | 'mtime'
+
+const KIND_TAB_ICON: Record<Exclude<KindFilter, 'active' | 'tasks'>, IconName> = {
+  all: 'layers',
+  image: 'library',
+  video: 'studio',
+  audio: 'console',
+  document: 'briefs',
+  other: 'more',
+}
+
+const STATUS_ICON: Record<DownloadStatus, IconName> = {
+  pending: 'clock',
+  downloading: 'downloads',
+  completed: 'check',
+  failed: 'alert',
+  cancelled: 'close',
+}
 
 export function AssetsPage() {
   const { t } = useTranslation()
@@ -72,11 +95,14 @@ export function AssetsPage() {
       api.get<{ path: string; entries: LibraryEntry[] }>(`/api/library/scan?path=${encodeURIComponent(currentPath!)}`),
     enabled: !!currentPath,
   })
-  // 根目录扫描：左侧 Tag 系统 = 固定导航（标签始终来自素材根目录，不随浏览路径变化）
+  // 根目录扫描：左侧 Tag 系统 = 固定导航（递归聚合素材根目录全部标签，
+  // 不随浏览路径变化；不递归则子目录文件的标签永远不出现）
   const rootScan = useQuery({
     queryKey: ['library-root-scan', roots.data?.root],
     queryFn: () =>
-      api.get<{ path: string; entries: LibraryEntry[] }>(`/api/library/scan?path=${encodeURIComponent(roots.data!.root)}`),
+      api.get<{ path: string; entries: LibraryEntry[] }>(
+        `/api/library/scan?path=${encodeURIComponent(roots.data!.root)}&recursive=true&limit=2000`,
+      ),
     enabled: !!roots.data?.root,
   })
   // 默认落在素材根目录（指定的数据目录），而非固定子文件夹
@@ -84,10 +110,13 @@ export function AssetsPage() {
     if (!currentPath && roots.data?.root) setCurrentPath(roots.data.root)
   }, [roots.data, currentPath])
 
-  // ---- 过滤 / 搜索 / Tag ----
+  // ---- 过滤 / 搜索 / Tag / 视图 ----
   const [kind, setKind] = useState<KindFilter>('all')
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [view, setView] = useState<AssetView>('grid')
+  const [sortKey, setSortKey] = useState<SortKey>('mtime')
+  const [sortAsc, setSortAsc] = useState(false)
   const queryRef = useRef<HTMLInputElement>(null)
 
   // ---- 下载任务（SSE 驱动）----
@@ -101,7 +130,21 @@ export function AssetsPage() {
   useEventSource(`${API_BASE}/api/download/tasks/events`, (ev) => {
     const data = JSON.parse(ev.data) as { event: string; task: DownloadTask }
     upsert(data.task)
+    if (data.event === 'progress') {
+      const prev = lastSample.current[data.task.id]
+      const now = performance.now()
+      if (prev && now - prev.t > 0) {
+        const rate = ((data.task.downloaded_bytes - prev.bytes) * 1000) / (now - prev.t)
+        setSpeeds((s) => ({ ...s, [data.task.id]: rate }))
+      }
+      lastSample.current[data.task.id] = { bytes: data.task.downloaded_bytes, t: now }
+    } else {
+      delete lastSample.current[data.task.id]
+      setSpeeds((s) => (s[data.task.id] ? { ...s, [data.task.id]: 0 } : s))
+    }
   })
+  const [speeds, setSpeeds] = useState<Record<string, number>>({})
+  const lastSample = useRef<Record<string, { bytes: number; t: number }>>({})
 
   // ---- 预览 / 右键 / 下载条 / 文档 ----
   const [quickPreview, setQuickPreview] = useState<LibraryEntry | null>(null)
@@ -110,6 +153,7 @@ export function AssetsPage() {
   const [tagEdit, setTagEdit] = useState<LibraryEntry | null>(null)
   const [tagDraft, setTagDraft] = useState('')
   const [downloadBarOpen, setDownloadBarOpen] = useState(false)
+  const [confirm, setConfirm] = useState<{ title: string; onConfirm: () => void } | null>(null)
   const [sideTab, setSideTab] = useState<'assets' | 'docs'>('assets')
   const [docPreview, setDocPreview] = useState<string | null>(null)
   const [editingDoc, setEditingDoc] = useState(false)
@@ -152,6 +196,20 @@ export function AssetsPage() {
       .filter((e) => !tagFilter || (e.tags ?? []).includes(tagFilter))
       .filter((e) => !q || e.name.toLowerCase().includes(q))
   }, [entries, kind, query, tagFilter])
+  // 全局排序（对标 Heartstone：名称 / 大小 / 修改时间，三视图共享，默认时间降序；
+  // 目录恒前置（Finder 风格），组内再按排序键排列）
+  const sorted = useMemo(() => {
+    const list = [...filtered]
+    list.sort((a, b) => {
+      const ad = a.kind === 'directory' ? 0 : 1
+      const bd = b.kind === 'directory' ? 0 : 1
+      if (ad !== bd) return ad - bd
+      const cmp =
+        sortKey === 'name' ? a.name.localeCompare(b.name) : sortKey === 'size' ? a.size - b.size : a.mtime - b.mtime
+      return sortAsc ? cmp : -cmp
+    })
+    return list
+  }, [filtered, sortKey, sortAsc])
 
   const kindCount = (k: string) => (k === 'all' ? entries.length : entries.filter((e) => e.kind === k).length)
 
@@ -199,14 +257,21 @@ export function AssetsPage() {
     }
   }
 
-  async function deleteFile(entry: LibraryEntry) {
-    try {
-      await api.delete(`/api/library/file?path=${encodeURIComponent(entry.path)}`)
-      await scan.refetch()
-      toast(t('assets.deleted'), 'success')
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'error')
-    }
+  function deleteFile(entry: LibraryEntry) {
+    setConfirm({
+      title: t('common.deleteConfirm', { name: entry.name }),
+      onConfirm: () => {
+        void (async () => {
+          try {
+            await api.delete(`/api/library/file?path=${encodeURIComponent(entry.path)}`)
+            await scan.refetch()
+            toast(t('assets.deleted'), 'success')
+          } catch (err) {
+            toast(err instanceof Error ? err.message : String(err), 'error')
+          }
+        })()
+      },
+    })
   }
 
   // ---- 项目文档（文档 = 素材根目录下可维护的 .md，项目级功能）----
@@ -222,17 +287,24 @@ export function AssetsPage() {
     }
   }
 
-  async function removeDoc() {
-    if (!docPreview || !window.confirm(t('docs.deleteConfirm'))) return
-    try {
-      await docsApi.remove(docPreview)
-      setDocPreview(null)
-      setEditingDoc(false)
-      await queryClient.invalidateQueries({ queryKey: ['docs'] })
-      toast(t('docs.deleted'), 'success')
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'error')
-    }
+  function removeDoc() {
+    if (!docPreview) return
+    setConfirm({
+      title: t('docs.deleteConfirm'),
+      onConfirm: () => {
+        void (async () => {
+          try {
+            await docsApi.remove(docPreview!)
+            setDocPreview(null)
+            setEditingDoc(false)
+            await queryClient.invalidateQueries({ queryKey: ['docs'] })
+            toast(t('docs.deleted'), 'success')
+          } catch (err) {
+            toast(err instanceof Error ? err.message : String(err), 'error')
+          }
+        })()
+      },
+    })
   }
 
   async function createDoc() {
@@ -396,7 +468,7 @@ export function AssetsPage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t('assets.search')}
-                className="h-7 w-56 border border-border bg-surface-1 pl-7 pr-2 text-xs text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
+                className="h-9 w-56 border border-border bg-surface-1 pl-7 pr-2 text-xs text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
               />
             </div>
             <Button onClick={() => setDownloadBarOpen((v) => !v)}>
@@ -473,28 +545,29 @@ export function AssetsPage() {
         <div className="flex items-center gap-1 border-b border-border px-4 py-1.5">
           {(
             [
-              { id: 'all', label: t('library.tabs.all') },
-              { id: 'active', label: t('assets.active') },
-              { id: 'tasks', label: t('assets.tasks') },
-              { id: 'image', label: t('library.tabs.image') },
-              { id: 'video', label: t('library.tabs.video') },
-              { id: 'audio', label: t('library.tabs.audio') },
-              { id: 'document', label: t('library.tabs.document') },
-              { id: 'other', label: t('library.tabs.other') },
-            ] as Array<{ id: KindFilter; label: string }>
+              { id: 'all', label: t('library.tabs.all'), icon: KIND_TAB_ICON.all },
+              { id: 'active', label: t('assets.active'), icon: 'downloads' as IconName },
+              { id: 'tasks', label: t('assets.tasks'), icon: 'clock' as IconName },
+              { id: 'image', label: t('library.tabs.image'), icon: KIND_TAB_ICON.image },
+              { id: 'video', label: t('library.tabs.video'), icon: KIND_TAB_ICON.video },
+              { id: 'audio', label: t('library.tabs.audio'), icon: KIND_TAB_ICON.audio },
+              { id: 'document', label: t('library.tabs.document'), icon: KIND_TAB_ICON.document },
+              { id: 'other', label: t('library.tabs.other'), icon: KIND_TAB_ICON.other },
+            ] as Array<{ id: KindFilter; label: string; icon: IconName }>
           ).map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setKind(tab.id)}
-              className={`border px-2.5 py-0.5 text-xs transition-colors ${
+              className={`flex items-center gap-1 border px-2.5 py-0.5 text-xs transition-colors ${
                 kind === tab.id
                   ? 'border-primary bg-primary/15 text-primary'
                   : 'border-transparent text-text-secondary hover:border-border hover:text-text-primary'
               }`}
             >
+              <Icon name={tab.icon} size={11} />
               {tab.label}
-              <span className="ml-1 text-text-disabled">
+              <span className="text-text-disabled">
                 {tab.id === 'active'
                   ? activeTasks.length
                   : tab.id === 'tasks'
@@ -505,8 +578,32 @@ export function AssetsPage() {
               </span>
             </button>
           ))}
-          {/* AI 整理 / 查重（v0.2.3）：作用于当前视图的文件 */}
+          {/* 全局排序（对标 Heartstone：名称 / 大小 / 时间，同键翻转方向） */}
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            {(['name', 'size', 'mtime'] as SortKey[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  if (sortKey === k) setSortAsc((v) => !v)
+                  else {
+                    setSortKey(k)
+                    setSortAsc(false)
+                  }
+                }}
+                className={`flex items-center gap-1 border px-2 py-0.5 text-xs transition-colors ${
+                  sortKey === k
+                    ? 'border-primary bg-primary/15 text-primary'
+                    : 'border-transparent text-text-secondary hover:border-border hover:text-text-primary'
+                }`}
+              >
+                {k === 'name' ? t('library.sortName') : k === 'size' ? t('library.sortSize') : t('library.sortDate')}
+                {sortKey === k && <Icon name={sortAsc ? 'sort-asc' : 'sort-desc'} size={11} />}
+              </button>
+            ))}
+            <span className="h-4 w-px bg-border" />
+            <ViewSwitch value={view} onChange={setView} />
+            <span className="h-4 w-px bg-border" />
             <button
               type="button"
               onClick={() => setOrganizeOpen(true)}
@@ -590,157 +687,71 @@ export function AssetsPage() {
         {/* 主体 */}
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {/* 进行中的任务 */}
-          {kind === 'all' && activeTasks.length > 0 && (
-            <div className="mb-4">
-              <p className="mb-2 text-xs font-medium text-text-secondary">{t('assets.active')}</p>
+          {(kind === 'all' || kind === 'active') && activeTasks.length > 0 && (
+            <div className={kind === 'all' ? 'mb-4' : ''}>
+              {kind === 'all' && <p className="mb-2 text-xs font-medium text-text-secondary">{t('assets.active')}</p>}
               <ul className="divide-y divide-border border border-border">
                 {activeTasks.map((task) => (
-                  <li key={task.id} className="flex items-center gap-3 px-3 py-2">
-                    <Badge tone={STATUS_TONE[task.status]}>{t(`download.status.${task.status}`)}</Badge>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-text-primary" title={task.url}>{task.url}</p>
-                      <div className="mt-1.5 flex items-center gap-3">
-                        <Progress value={task.status === 'downloading' ? task.progress : 0} className="h-1 flex-1" />
-                        <span className="shrink-0 text-xs text-text-secondary">
-                          {task.status === 'downloading'
-                            ? `${formatBytes(task.downloaded_bytes)} / ${formatBytes(task.total_bytes)}`
-                            : formatBytes(task.total_bytes)}
-                        </span>
-                      </div>
-                    </div>
-                    {task.status === 'downloading' && (
-                      <Button size="sm" variant="ghost" onClick={() => void taskAction(task.id)}>
-                        {t('download.actions.cancel')}
-                      </Button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {kind === 'active' && activeTasks.length > 0 && (
-            <div className="mb-4">
-              <ul className="divide-y divide-border border border-border">
-                {activeTasks.map((task) => (
-                  <li key={task.id} className="flex items-center gap-3 px-3 py-2">
-                    <Badge tone={STATUS_TONE[task.status]}>{t(`download.status.${task.status}`)}</Badge>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-text-primary" title={task.url}>{task.url}</p>
-                      <div className="mt-1.5 flex items-center gap-3">
-                        <Progress value={task.status === 'downloading' ? task.progress : 0} className="h-1 flex-1" />
-                        <span className="shrink-0 text-xs text-text-secondary">
-                          {task.status === 'downloading'
-                            ? `${formatBytes(task.downloaded_bytes)} / ${formatBytes(task.total_bytes)}`
-                            : formatBytes(task.total_bytes)}
-                        </span>
-                      </div>
-                    </div>
-                    {task.status === 'downloading' && (
-                      <Button size="sm" variant="ghost" onClick={() => void taskAction(task.id)}>
-                        {t('download.actions.cancel')}
-                      </Button>
-                    )}
-                  </li>
+                  <ActiveTaskRow
+                    key={task.id}
+                    task={task}
+                    speed={speeds[task.id] ?? 0}
+                    onCancel={() => void taskAction(task.id)}
+                  />
                 ))}
               </ul>
             </div>
           )}
           {kind === 'active' && activeTasks.length === 0 && (
-            <p className="p-6 text-center text-sm text-text-disabled">{t('assets.noActive')}</p>
+            <EmptyState icon="downloads" title={t('assets.noActive')} />
           )}
 
           {/* 下载记录（HeartStone 风格任务列表：封面/标题/状态/进度/操作） */}
           {kind === 'tasks' && tasks.length > 0 && (
             <div className="mb-4">
               <ul className="divide-y divide-border border border-border">
-                  {[...tasks]
-                    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-                    .map((task) => (
-                      <li key={task.id} className="flex items-center gap-4 px-3 py-2.5">
-                        {/* 封面 */}
-                        <div className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden bg-surface-2">
-                          {task.metadata?.thumbnail && typeof task.metadata.thumbnail === 'string' ? (
-                            <img
-                              src={fileUrl(task.metadata.thumbnail)}
-                              alt=""
-                              className="h-full w-full object-cover"
-                              loading="lazy"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none'
-                              }}
-                            />
-                          ) : (
-                            <Icon name={task.status === 'completed' ? 'studio' : 'downloads'} size={18} className="text-text-disabled" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm text-text-primary" title={(task.metadata?.title_hint as string) ?? task.url}>
-                            {(task.metadata?.title_hint as string) ?? task.url}
-                          </p>
-                          <div className="mt-1.5 flex items-center gap-3">
-                            <Progress
-                              value={task.status === 'downloading' ? task.progress : task.status === 'completed' ? 100 : task.progress}
-                              className="h-1 max-w-72 flex-1"
-                            />
-                            <span className="shrink-0 text-xs text-text-secondary">
-                              {task.status === 'downloading'
-                                ? `${formatBytes(task.downloaded_bytes)} / ${formatBytes(task.total_bytes)}`
-                                : formatBytes(task.total_bytes)}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 truncate text-[11px] text-text-disabled">{task.url}</p>
-                        </div>
-                        <Badge tone={STATUS_TONE[task.status]}>{t(`download.status.${task.status}`)}</Badge>
-                        <div className="flex shrink-0 items-center gap-1">
-                          {task.status === 'downloading' && (
-                            <Button size="sm" variant="ghost" onClick={() => void taskAction(task.id)}>
-                              {t('download.actions.cancel')}
-                            </Button>
-                          )}
-                          {task.status === 'failed' && (
-                            <Button size="sm" variant="ghost" onClick={() => void taskRetry(task.id)}>
-                              {t('download.actions.retry')}
-                            </Button>
-                          )}
-                          {task.status === 'completed' && task.file_path && window.electron && (
-                            <Button size="sm" variant="ghost" onClick={() => window.electron?.showItemInFolder(task.file_path!)}>
-                              {t('common.showInFolder')}
-                            </Button>
-                          )}
-                          <Button size="sm" variant="ghost" onClick={() => void taskDelete(task.id)}>
-                            {t('download.actions.delete')}
-                          </Button>
-                        </div>
-                      </li>
-                    ))}
-                </ul>
+                {[...tasks]
+                  .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+                  .map((task) => (
+                    <TaskRecordRow
+                      key={task.id}
+                      task={task}
+                      speed={speeds[task.id] ?? 0}
+                      onCancel={() => void taskAction(task.id)}
+                      onRetry={() => void taskRetry(task.id)}
+                      onShowInFolder={() => window.electron?.showItemInFolder(task.file_path!)}
+                      onDelete={() => taskDelete(task.id)}
+                    />
+                  ))}
+              </ul>
             </div>
           )}
           {kind === 'tasks' && tasks.length === 0 && (
-            <p className="p-6 text-center text-sm text-text-disabled">{t('assets.noTasks')}</p>
+            <EmptyState icon="downloads" title={t('assets.noTasks')} />
           )}
 
-          {/* 素材网格 */}
+          {/* 素材视图（两模式：网格 / 详情列表，数据源与操作集共享） */}
           {scan.isError ? (
             <QueryErrorState message={t('error.queryFailed', { detail: currentPath ?? '' })} onRetry={() => void scan.refetch()} />
           ) : scan.isLoading ? (
             <SkeletonCard count={8} className="p-3" />
-          ) : filtered.length === 0 && kind !== 'active' ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-16 text-text-secondary">
-              <Icon name="downloads" size={32} className="text-text-disabled" />
-              {isArtifactsPath ? (
-                <p className="text-sm">{t('assets.emptyArtifacts')}</p>
-              ) : (
-                <>
-                  <p className="text-sm">{t('assets.empty')}</p>
-                  <p className="text-xs opacity-60">{t('assets.emptyHint')}</p>
-                </>
-              )}
-            </div>
-          ) : (
+          ) : filtered.length === 0 && kind !== 'active' && kind !== 'tasks' ? (
+            <EmptyState
+              icon="downloads"
+              title={isArtifactsPath ? t('assets.emptyArtifacts') : t('assets.empty')}
+              description={isArtifactsPath ? undefined : t('assets.emptyHint')}
+              action={
+                !isArtifactsPath ? (
+                  <Button onClick={() => setDownloadBarOpen(true)}>
+                    <Icon name="downloads" size={14} />
+                    {t('assets.goDownload')}
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : view === 'grid' ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-              {filtered.map((entry) => (
+              {sorted.map((entry) => (
                 <AssetCard
                   key={entry.path}
                   entry={entry}
@@ -751,10 +762,39 @@ export function AssetsPage() {
                     const tags = e.tags ?? []
                     void saveTags(e, tags.includes('⭐') ? tags.filter((x) => x !== '⭐') : [...tags, '⭐'])
                   }}
+                  onShowInFolder={window.electron ? () => window.electron?.showItemInFolder(entry.path) : undefined}
+                  onDelete={() => deleteFile(entry)}
                 />
               ))}
             </div>
+          ) : (
+            <ul className="space-y-1">
+              {sorted.map((entry) => (
+                <AssetDetailRow
+                  key={entry.path}
+                  entry={entry}
+                  onPreview={() => (entry.kind === 'directory' ? openEntry(entry) : setQuickPreview(entry))}
+                  onDetail={() => openEntry(entry)}
+                  onContext={(x, y) => setMenu({ x, y, entry })}
+                  onShowInFolder={window.electron ? () => window.electron?.showItemInFolder(entry.path) : undefined}
+                  onDelete={() => deleteFile(entry)}
+                />
+              ))}
+            </ul>
           )}
+        </div>
+
+        {/* 底部状态栏：进行中任务数 + 当前路径（对标 Heartstone 下载页底部） */}
+        <div className="flex items-center gap-2 border-t border-border bg-surface-1 px-4 py-1.5">
+          <Icon name="downloads" size={13} className="shrink-0 text-text-disabled" />
+          <span className="text-xs text-text-secondary">
+            {activeTasks.length > 0
+              ? t('download.runningCount', { count: activeTasks.length })
+              : t('assets.noActive')}
+          </span>
+          <span className="ml-auto truncate font-mono text-[10px] text-text-disabled" title={currentPath ?? ''}>
+            {currentPath ?? ''}
+          </span>
         </div>
         </>
         )}
@@ -824,6 +864,26 @@ export function AssetsPage() {
           setKind('tasks')
         }}
       />
+
+      {/* 删除确认（统一 Modal，替代 window.confirm） */}
+      <Modal open={!!confirm} onClose={() => setConfirm(null)} width={400} title={t('common.confirm')}>
+        <p className="text-sm leading-relaxed text-text-secondary">{confirm?.title}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setConfirm(null)}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              confirm?.onConfirm()
+              setConfirm(null)
+            }}
+          >
+            <Icon name="trash" size={14} />
+            {t('common.delete')}
+          </Button>
+        </div>
+      </Modal>
 
       {/* 新建项目文档 */}
       <Modal open={newDocOpen} onClose={() => setNewDocOpen(false)} width={400} title={t('docs.newDoc')}>
@@ -951,13 +1011,171 @@ export function AssetsPage() {
     }
   }
 
-  async function taskDelete(taskId: string) {
-    try {
-      await api.delete(`/api/download/tasks/${taskId}`)
-      useDownloadStore.getState().remove(taskId)
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'error')
-    }
+  function taskDelete(taskId: string) {
+    const task = tasks.find((x) => x.id === taskId)
+    setConfirm({
+      title: t('common.deleteConfirm', { name: (task?.metadata?.title_hint as string) ?? task?.url ?? taskId }),
+      onConfirm: () => {
+        void (async () => {
+          try {
+            await api.delete(`/api/download/tasks/${taskId}`)
+            useDownloadStore.getState().remove(taskId)
+          } catch (err) {
+            toast(err instanceof Error ? err.message : String(err), 'error')
+          }
+        })()
+      },
+    })
   }
+}
+
+// ---- 任务行（对标 Heartstone TaskItem：状态 Badge + 进度 + 速度 / 错误原因 / 保存路径）----
+
+function ActiveTaskRow({
+  task,
+  speed,
+  onCancel,
+}: {
+  task: DownloadTask
+  speed: number
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  const title = (task.metadata?.title_hint as string | undefined) ?? task.url
+  return (
+    <li className="flex items-center gap-3 px-3 py-2">
+      <Badge tone={STATUS_TONE[task.status]}>
+        <Icon name={STATUS_ICON[task.status]} size={11} />
+        {t(`download.status.${task.status}`)}
+      </Badge>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-text-primary" title={title}>
+          {title}
+        </p>
+        <div className="mt-1.5 flex items-center gap-3">
+          <Progress
+            value={task.status === 'pending' ? undefined : task.progress}
+            className="h-1 flex-1"
+          />
+          <span className="shrink-0 text-xs text-text-secondary">
+            {task.status === 'downloading'
+              ? `${formatBytes(task.downloaded_bytes)} / ${formatBytes(task.total_bytes)}`
+              : formatBytes(task.total_bytes)}
+          </span>
+        </div>
+        {task.status === 'downloading' && speed > 0 && (
+          <p className="mt-0.5 text-[10px] text-text-disabled">{t('download.speed', { speed: formatBytes(speed) })}</p>
+        )}
+        {task.status === 'failed' && task.error && (
+          <p className="mt-0.5 truncate text-xs text-error" title={task.error}>
+            {t('download.errorDetail', { error: task.error })}
+          </p>
+        )}
+      </div>
+      {task.status === 'downloading' && (
+        <Button size="sm" variant="ghost" onClick={onCancel}>
+          <Icon name="stop" size={12} />
+          {t('download.actions.cancel')}
+        </Button>
+      )}
+    </li>
+  )
+}
+
+function TaskRecordRow({
+  task,
+  speed,
+  onCancel,
+  onRetry,
+  onDelete,
+  onShowInFolder,
+}: {
+  task: DownloadTask
+  speed: number
+  onCancel: () => void
+  onRetry: () => void
+  onDelete: () => void
+  onShowInFolder: () => void
+}) {
+  const { t } = useTranslation()
+  const title = (task.metadata?.title_hint as string | undefined) ?? task.url
+  return (
+    <li className="flex items-center gap-4 px-3 py-2.5">
+      {/* 封面 */}
+      <div className="flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden bg-surface-2">
+        {task.metadata?.thumbnail && typeof task.metadata.thumbnail === 'string' ? (
+          <img
+            src={fileUrl(task.metadata.thumbnail)}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none'
+            }}
+          />
+        ) : (
+          <Icon name={task.status === 'completed' ? 'studio' : 'downloads'} size={18} className="text-text-disabled" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-text-primary" title={title}>
+          {title}
+        </p>
+        <div className="mt-1.5 flex items-center gap-3">
+          <Progress
+            value={task.status === 'pending' ? undefined : task.status === 'completed' ? 100 : task.progress}
+            className="h-1 max-w-72 flex-1"
+          />
+          <span className="shrink-0 text-xs text-text-secondary">
+            {task.status === 'downloading'
+              ? `${formatBytes(task.downloaded_bytes)} / ${formatBytes(task.total_bytes)}`
+              : formatBytes(task.total_bytes)}
+          </span>
+        </div>
+        <p className="mt-0.5 truncate text-[11px] text-text-disabled">{task.url}</p>
+        {task.status === 'downloading' && speed > 0 && (
+          <p className="mt-0.5 text-[10px] text-text-disabled">{t('download.speed', { speed: formatBytes(speed) })}</p>
+        )}
+        {task.status === 'failed' && task.error && (
+          <p className="mt-0.5 truncate text-xs text-error" title={task.error}>
+            {t('download.errorDetail', { error: task.error })}
+          </p>
+        )}
+        {task.status === 'completed' && task.file_path && (
+          <p className="mt-0.5 truncate text-[11px] text-success" title={task.file_path}>
+            {t('download.savedTo', { path: task.file_path })}
+          </p>
+        )}
+      </div>
+      <Badge tone={STATUS_TONE[task.status]}>
+        <Icon name={STATUS_ICON[task.status]} size={11} />
+        {t(`download.status.${task.status}`)}
+      </Badge>
+      <div className="flex shrink-0 items-center gap-1">
+        {task.status === 'downloading' && (
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            <Icon name="stop" size={12} />
+            {t('download.actions.cancel')}
+          </Button>
+        )}
+        {task.status === 'failed' && (
+          <Button size="sm" variant="ghost" onClick={onRetry}>
+            <Icon name="refresh" size={12} />
+            {t('download.actions.retry')}
+          </Button>
+        )}
+        {task.status === 'completed' && task.file_path && window.electron && (
+          <Button size="sm" variant="ghost" onClick={onShowInFolder}>
+            <Icon name="folder" size={12} />
+            {t('common.showInFolder')}
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" onClick={onDelete}>
+          <Icon name="trash" size={12} />
+          {t('download.actions.delete')}
+        </Button>
+      </div>
+    </li>
+  )
 }
 

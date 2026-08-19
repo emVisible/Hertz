@@ -19,6 +19,7 @@ from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.models.system import JobRun, JobStatus
 from backend.pipeline.base import Pipe, ProcessResult, StepContext, StepError
+from backend.pipeline.cancel import ItemCancelledError
 from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError, classify_error
 from backend.pipeline.steps import PIPELINE_ORDER, get_step
 from backend.pipeline.steps.collect import run_collect
@@ -464,6 +465,10 @@ class StepEngine:
         error = ""
         try:
             result = await step.process(ctx, item)
+        except ItemCancelledError:
+            # 协作式取消（wave11）：不标 failed——由调用方（produce_one）
+            # 清理半成品并把条目回滚到可再制作状态
+            raise
         except StepError as exc:
             error = str(exc)
         except Exception as exc:  # noqa: BLE001 — any crash fails the item

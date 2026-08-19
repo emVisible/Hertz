@@ -12,11 +12,16 @@ import { PipelineView } from './PipelineView'
 type Mode = 'studio' | 'pipeline'
 
 /** 执行工作台：第二级路由（Studio / Pipeline 切换）+ 组装。
- *  Studio 域与 Pipeline 域分别位于 StudioView.tsx / PipelineView.tsx（解耦）。 */
+ *  Studio 域与 Pipeline 域分别位于 StudioView.tsx / PipelineView.tsx（解耦）。
+ *  发布队列（v0.12）已融合进 PipelineView 发布 tab（QueueView）。 */
 export function ExecutionPage() {
   const { t } = useTranslation()
   const [params, setParams] = useSearchParams()
-  const [mode, setModeState] = useState<Mode>(() => (params.get('mode') === 'pipeline' ? 'pipeline' : 'studio'))
+  const [mode, setModeState] = useState<Mode>(() => {
+    const m = params.get('mode')
+    if (m === 'pipeline') return m
+    return 'studio'
+  })
 
   const studio = useStudioExecution()
   const pipeline = usePipelineExecution()
@@ -24,7 +29,7 @@ export function ExecutionPage() {
 
   function setMode(m: Mode) {
     setModeState(m)
-    setParams(m === 'pipeline' ? { mode: 'pipeline' } : {}, { replace: true })
+    setParams(m === 'studio' ? {} : { mode: m }, { replace: true })
   }
 
   return (
@@ -105,12 +110,18 @@ export function ExecutionPage() {
           setPublishStats={pipeline.setPublishStats}
           uploadCover={pipeline.uploadCover}
           randomCover={pipeline.randomCover}
+          enqueueItem={pipeline.enqueueItem}
           retryClass={pipeline.retryClass}
           backToPrep={pipeline.backToPrep}
           batchAction={pipeline.batchAction}
           rescheduleExpired={pipeline.rescheduleExpired}
           setProduceOptions={pipeline.setProduceOptions}
+          archivedItems={pipeline.archivedItems}
+          archiveItems={pipeline.archiveItems}
+          unarchiveItems={pipeline.unarchiveItems}
+          purgeItems={pipeline.purgeItems}
           produceOne={pipeline.produceOne}
+          cancelProduceOne={pipeline.cancelProduceOne}
           produceBatch={pipeline.produceBatch}
           scoreOne={pipeline.scoreOne}
           scoreBatch={pipeline.scoreBatch}

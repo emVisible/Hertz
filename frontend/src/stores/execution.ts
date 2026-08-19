@@ -29,8 +29,6 @@ export interface StudioExecState {
 export interface PipelineExecState {
   step: string
   limit: number
-  logs: LogLine[]
-  logSeq: number
   /** 流水线平铺菜单当前部分（wave13：跨模式切换保持上下文） */
   tab: string
   /** 采集进度（v0.8.2）：最近一次 collect 各源明细（可视化运维） */
@@ -47,7 +45,6 @@ interface ExecutionState {
   setStudio: (patch: Partial<StudioExecState>) => void
   setPipeline: (patch: Partial<PipelineExecState>) => void
   resetStudioLogs: () => void
-  resetPipelineLogs: () => void
 }
 
 export const useExecutionStore = create<ExecutionState>((set) => ({
@@ -67,8 +64,6 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
   pipeline: {
     step: 'collect',
     limit: 10,
-    logs: [],
-    logSeq: 0,
     tab: 'inReview',
     collectProgress: [],
     busy: {},
@@ -77,5 +72,4 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
   setPipeline: (patch) => set((s) => ({ pipeline: { ...s.pipeline, ...patch } })),
   resetStudioLogs: () =>
     set((s) => ({ studio: { ...s.studio, logs: [], logSeq: 0, phaseStates: {} } })),
-  resetPipelineLogs: () => set((s) => ({ pipeline: { ...s.pipeline, logs: [], logSeq: 0 } })),
 }))

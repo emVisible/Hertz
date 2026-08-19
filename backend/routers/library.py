@@ -124,26 +124,38 @@ async def list_roots():
 
 @router.post("/tags")
 async def set_tags(body: dict):
-    """给素材打标（tag 系统）：写入 `<path>.meta.json` sidecar（合并保留其他字段）。"""
+    """给素材打标（tag 系统）：写入 `<path>.meta.json` sidecar（合并保留其他字段）。
+
+    merge=true 时与现有 tags 并集去重（AI 整理应用用，避免覆盖 ⭐/来源等手打 tag）；
+    默认覆盖（手动打标 Modal 编辑的是全量标签）。
+    """
     path = str(body.get("path") or "")
     raw_tags = body.get("tags") or []
+    merge = bool(body.get("merge", False))
     if not path or not isinstance(raw_tags, list):
         raise HTTPException(status_code=422, detail="path and tags[] required")
     target = await _ensure_allowed(path)
     if not target.is_file():
         raise HTTPException(status_code=404, detail="file not found")
-    from backend.library.browser import write_tags
+    from backend.library.browser import META_SUFFIX, _read_tags, write_tags
+
+    if merge:
+        meta_path = Path(f"{target}{META_SUFFIX}")
+        existing = _read_tags(meta_path) if meta_path.exists() else []
+        merged = existing + [str(t) for t in raw_tags]
+        seen: set[str] = set()
+        raw_tags = [x for x in merged if not (x in seen or seen.add(x))]
 
     meta = write_tags(target, [str(t) for t in raw_tags])
     return {"path": path, "tags": meta.get("tags", [])}
 
 
 @router.get("/scan")
-async def scan(path: str = Query(...), limit: int = Query(500, ge=1, le=2000)):
+async def scan(path: str = Query(...), limit: int = Query(500, ge=1, le=2000), recursive: bool = Query(False)):
     target = await _ensure_allowed(path)
     if not target.is_dir():
         raise HTTPException(status_code=404, detail="directory not found")
-    return {"path": str(target), "entries": browser.scan(target, limit=limit)}
+    return {"path": str(target), "entries": browser.scan(target, limit=limit, recursive=recursive)}
 
 
 @router.get("/search")

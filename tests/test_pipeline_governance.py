@@ -2073,6 +2073,8 @@ async def test_publish_cmd_cover_source_desc() -> None:
     assert "--cover" in captured and "/tmp/x.jpg" in captured
     joined = " ".join(captured)
     assert "--source" in joined and "reddit.com" in joined
+    # v0.12.1：转载必须显式 --copyright 2（biliup 默认按自制发布）
+    assert "--copyright 2" in joined
     assert "English Fallback Title" in captured  # v0.11.5：desc 空 → 原文标题兜底（不换中文）
     assert "--tag" in joined and "神奇现象" in joined
     assert r["bvid"] == "BV1abc123XYZ"
@@ -3180,3 +3182,156 @@ def test_story_safety_only_compliance() -> None:
     # 默认严格模式：营销极限词仍阻断（标题/简介场景）
     strict = check_text("最顶级的产品")
     assert "最" in strict["tier1"]
+
+
+# ---------- 归档 / 备用库（wave10：删除入口收口异常区） ----------
+
+
+@pytest.mark.asyncio
+async def test_archive_clears_disk_keeps_base_data(client, tmp_path) -> None:
+    """归档：磁盘资源全删 + 字段清洗（script 只留 bili_*）+ 基础数据保留。"""
+    from backend.config import settings
+
+    raw = tmp_path / "raw.mp4"
+    raw.write_bytes(b"raw")
+    video = tmp_path / "final.mp4"
+    video.write_bytes(b"video")
+    cover = tmp_path / "cover.jpg"
+    cover.write_bytes(b"cover")
+    out_dir = Path(settings.data_dir) / "pipeline" / "archive-slug-1"
+    out_dir.mkdir(parents=True)
+    (out_dir / "subs.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nx\n", encoding="utf-8")
+
+    async with session_factory() as session:
+        item = Item(
+            status=ItemStatus.PUBLISHED, source="reddit", source_id="arch-1",
+            title="归档条目", raw_path=str(raw), video_path=str(video),
+            cover_path=str(cover), output_dir="pipeline/archive-slug-1",
+            script_json={"narration": "old", "bili_title": "标题", "bili_tid": 201},
+            publish_json={"bvid": "BV1", "stats": {"view": 10}},
+            scheduled_at=datetime.now(UTC) + timedelta(hours=1),
+            queue_phase="ready",
+        )
+        session.add(item)
+        await session.commit()
+        item_id = str(item.id)
+
+    resp = await client.post("/api/pipeline/items/archive", json={"ids": [item_id]})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": 1, "failed": []}
+
+    assert not raw.exists() and not video.exists() and not cover.exists()
+    assert not out_dir.exists()
+
+    async with session_factory() as session:
+        row = await session.get(Item, item.id)
+        assert row is not None
+        assert row.archived is True
+        assert row.raw_path is None and row.video_path is None and row.cover_path is None
+        assert row.output_dir is None
+        assert row.scheduled_at is None and row.queue_phase == ""
+        assert row.script_json == {"bili_title": "标题", "bili_tid": 201}
+        assert row.title == "归档条目" and row.source == "reddit"
+        assert (row.publish_json or {}).get("bvid") == "BV1"
+
+
+@pytest.mark.asyncio
+async def test_archived_excluded_from_lists_counts_calendar(client) -> None:
+    """归档条目从列表/计数/日历消失，只出现在备用库。"""
+    async with session_factory() as session:
+        a = Item(status=ItemStatus.PUBLISHED, source="reddit", source_id="excl-a", title="活条目")
+        b = Item(status=ItemStatus.PUBLISHED, source="reddit", source_id="excl-b", title="归档条目")
+        session.add_all([a, b])
+        await session.commit()
+        a_id, b_id = str(a.id), str(b.id)
+
+    await client.post("/api/pipeline/items/archive", json={"ids": [b_id]})
+
+    listed = (await client.get("/api/pipeline/items?status=published&limit=500")).json()
+    ids = {i["id"] for i in listed}
+    assert a_id in ids and b_id not in ids
+
+    counts = (await client.get("/api/pipeline/items/counts")).json()
+    # 归档排除后：可见 published 列表与计数一致（其他测试可能残留 published 条目）
+    assert counts.get("published", 0) == len(ids)
+
+    cal = (
+        await client.get(
+            "/api/pipeline/calendar",
+            params={"from": "2000-01-01", "to": "2100-01-01"},
+        )
+    ).json()
+    assert b_id not in {i["id"] for i in cal["items"]}
+
+    archived = (await client.get("/api/pipeline/items/archived")).json()
+    assert b_id in {i["id"] for i in archived}
+    assert a_id not in {i["id"] for i in archived}
+
+
+@pytest.mark.asyncio
+async def test_unarchive_restores_to_lists(client) -> None:
+    """恢复：清除 archived 标记，条目回到原状态列表。"""
+    async with session_factory() as session:
+        item = Item(status=ItemStatus.APPROVED, source="reddit", source_id="unarch-1", title="恢复")
+        session.add(item)
+        await session.commit()
+        item_id = str(item.id)
+
+    await client.post("/api/pipeline/items/archive", json={"ids": [item_id]})
+    assert item_id not in {
+        i["id"] for i in (await client.get("/api/pipeline/items?status=approved")).json()
+    }
+
+    resp = await client.post("/api/pipeline/items/unarchive", json={"ids": [item_id]})
+    assert resp.json() == {"ok": 1, "failed": []}
+
+    assert item_id in {
+        i["id"] for i in (await client.get("/api/pipeline/items?status=approved")).json()
+    }
+
+
+@pytest.mark.asyncio
+async def test_purge_deletes_row_and_disk(client, tmp_path) -> None:
+    """彻底删除：仅归档条目可 purge；删行 + best-effort 再清磁盘。"""
+    raw = tmp_path / "raw2.mp4"
+    raw.write_bytes(b"raw2")
+    async with session_factory() as session:
+        item = Item(
+            status=ItemStatus.FAILED, source="reddit", source_id="purge-1",
+            title="待删", raw_path=str(raw),
+        )
+        session.add(item)
+        await session.commit()
+        item_id = str(item.id)
+
+    # 未归档条目拒绝 purge
+    resp = await client.post("/api/pipeline/items/purge", json={"ids": [item_id]})
+    assert resp.json()["ok"] == 0 and len(resp.json()["failed"]) == 1
+
+    await client.post("/api/pipeline/items/archive", json={"ids": [item_id]})
+    assert not raw.exists()
+
+    resp = await client.post("/api/pipeline/items/purge", json={"ids": [item_id]})
+    assert resp.json() == {"ok": 1, "failed": []}
+
+    async with session_factory() as session:
+        assert await session.get(Item, item.id) is None
+
+
+@pytest.mark.asyncio
+async def test_archive_rejects_flowing_states(client) -> None:
+    """流程中状态（queued 等）不可归档——单条失败不中断，其余继续。"""
+    async with session_factory() as session:
+        flow = Item(status=ItemStatus.QUEUED, source="reddit", source_id="flow-1", title="审核中")
+        done = Item(status=ItemStatus.REJECTED, source="reddit", source_id="flow-2", title="已拒")
+        session.add_all([flow, done])
+        await session.commit()
+        flow_id, done_id = str(flow.id), str(done.id)
+
+    resp = await client.post(
+        "/api/pipeline/items/archive", json={"ids": [flow_id, done_id]}
+    )
+    body = resp.json()
+    assert body["ok"] == 1
+    assert body["failed"][0]["id"] == flow_id
+    assert "state queued" in body["failed"][0]["error"]

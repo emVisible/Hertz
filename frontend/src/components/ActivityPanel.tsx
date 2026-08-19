@@ -6,9 +6,8 @@ import { api } from '../api'
 import { pipelineApi, type CollectSourceRun, type LogLineHistory, type PipelineJob } from '../api/pipeline'
 import { Icon } from './ui'
 import { useExecutionStore } from '../stores/execution'
-import type { LogLine } from './execution'
 
-type ActivityTab = 'events' | 'jobs' | 'system'
+type ActivityTab = 'jobs' | 'system'
 
 const JOB_PAGE = 50
 const LOG_PAGE = 120
@@ -173,14 +172,14 @@ function JobDetail({ jobId }: { jobId: string }) {
  * 全局活动横条（v0.3.5，浏览器下载栏语义）：AppShell 底部常驻。
  * v0.8.7 企业级对齐（Airflow run 详情 / Jenkins 构建 / GH Actions 展开 / Loki 日志）：
  * - 最近任务：DB 历史分页 + 类型/状态筛选 + 行内展开详情（collect 逐源明细/delta/错误）
- * - 系统日志：持久化文件历史（级别筛选/关键字/时间游标加载更多），不再仅限内存 buffer
- * - 实时事件：SSE 实时流（同源已落盘，完整历史见系统日志）
+ * - 系统日志：持久化文件历史（级别筛选/关键字/时间游标加载更多）
+ * wave11：删除「实时事件」栏——SSE 事件同源已落盘，系统日志即融合后的
+ * 完整历史（8s 轮询近实时），实时流不再保留内存 buffer。
  */
 export function ActivityPanel() {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const [tab, setTab] = useState<ActivityTab>('events')
-  const logs = useExecutionStore((s) => s.pipeline.logs)
+  const [tab, setTab] = useState<ActivityTab>('jobs')
   // v0.11.4：单条操作进行中（itemId → {action,title}）——折叠条直接展示
   // 「正在处理 N 项 · 制作中《标题》」，全局可见（含执行页之外）
   const busyEntries = Object.entries(useExecutionStore((s) => s.pipeline.busy))
@@ -292,7 +291,6 @@ export function ActivityPanel() {
   }, [open])
 
   const tabs: Array<{ id: ActivityTab; label: string }> = [
-    { id: 'events', label: t('console.act.events') },
     { id: 'jobs', label: t('console.jobs') },
     { id: 'system', label: t('console.sysLogs') },
   ]
@@ -319,7 +317,7 @@ export function ActivityPanel() {
         <Icon
           name="console"
           size={12}
-          className={logs.length > 0 || busyEntries.length > 0 ? 'animate-pulse text-primary' : 'text-text-disabled'}
+          className={busyEntries.length > 0 ? 'animate-pulse text-primary' : 'text-text-disabled'}
         />
         {busyEntries.length > 0 ? (
           /* 处理中（v0.11.4）：优先于标题展示——合并了原执行页顶部横幅 */
@@ -340,10 +338,7 @@ export function ActivityPanel() {
             </span>
           </span>
         ) : (
-          <span className="truncate">
-            {t('console.act.title')}
-            {logs.length > 0 && !open && <span className="ml-2 text-text-disabled">· {t('console.act.eventsCount', { n: logs.length })}</span>}
-          </span>
+          <span className="truncate">{t('console.act.title')}</span>
         )}
         <span className="ml-auto shrink-0">{t('console.act.toggle')}</span>
       </button>
@@ -370,22 +365,6 @@ export function ActivityPanel() {
 
           {/* 内容区（固定高度，内部滚动） */}
           <div className="h-56 overflow-y-auto p-2">
-            {/* ---------- 实时事件 ---------- */}
-            {tab === 'events' && (
-              <div className="flex flex-col gap-1 font-mono text-[10px] leading-relaxed">
-                {logs.length === 0 && <p className="p-2 text-text-disabled">{t('console.noLogs')}</p>}
-                {logs.map((log: LogLine) => (
-                  <div key={log.id} className="flex gap-1.5 px-1">
-                    <span className="shrink-0 select-none text-text-disabled">{log.time}</span>
-                    <span className="min-w-0 break-all text-text-secondary">{log.text}</span>
-                  </div>
-                ))}
-                <p className="mt-1 border-t border-border/50 px-1 pt-1 text-[9px] text-text-disabled">
-                  {t('console.act.historyHint')}
-                </p>
-              </div>
-            )}
-
             {/* ---------- 最近任务（历史 + 筛选 + 展开） ---------- */}
             {tab === 'jobs' && (
               <div className="flex flex-col gap-1.5">
