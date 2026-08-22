@@ -283,6 +283,47 @@ def _clean_translation_text(text: str) -> str:
     return _clean_nonzh_translation_text(t)
 
 
+_GLOSSARY_LIMIT = 100  # prompt 注入上限（updated_at 新者优先）
+
+
+async def _glossary_block() -> str:
+    """启用中的翻译术语表 → prompt 注入块（v0.15，VideoLingo 精华借鉴）。
+
+    空表/加载失败返回空串——术语表是增强不是依赖（§4.6 尽力交付：
+    DB 不可用时翻译照常进行，只是失去术语统一）。"""
+    try:
+        from sqlalchemy import select
+
+        from backend.models.glossary import GlossaryTerm
+        from backend.models.session import session_factory
+
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(GlossaryTerm)
+                    .where(GlossaryTerm.enabled.is_(True))
+                    .order_by(GlossaryTerm.updated_at.desc())
+                    .limit(_GLOSSARY_LIMIT)
+                )
+            ).scalars().all()
+    except Exception as exc:  # noqa: BLE001 — 加载失败不阻塞翻译
+        logger.warning("glossary load failed, translating without terms: %s", exc)
+        return ""
+    if not rows:
+        return ""
+    lines = "\n".join(f"- {r.source_term} = {r.target_term}" for r in rows)
+    return f"术语表（以下译名必须严格统一使用，不得改译）：\n{lines}\n"
+
+
+_TRANSLATE_SYSTEM = (
+    "你是短视频旁白翻译。把{src}文本翻译成{target}，保持口语化、可直接朗读的节奏，"
+    "不要解释、不要加引号，只输出译文。\n"
+    "烧录字幕要求：与原文句数一一对应（1 句原文 → 1 段译文），"
+    "段间用单个空格分隔；译文内不要任何标点（。！？，、.!?）"
+    "；禁止排比句、三段式口号、翻译腔长定语。"
+)
+
+
 async def _localize_text(
     ai: AIRouter, text: str, target_lang: str, source_lang: str | None = None,
     task_id: str | None = None,
@@ -296,6 +337,10 @@ async def _localize_text(
     “，”且 prompt 约束失效，字幕不允许标点（用户诉求：翻译不带标点）。
 
     走 fast 角色（翻译是低成本任务，不占用 main 强推理）。
+
+    v0.15 三步翻译法（VideoLingo 精华借鉴）：直译 → 反思审校 → 意译定稿。
+    开关 pipeline_translate_three_pass（默认开）；任一步失败降级上一步结果，
+    不阻塞产线。术语表注入所有步骤。
     """
     from backend.ai.types import ChatMessage
 
@@ -305,24 +350,46 @@ async def _localize_text(
         "en-US", "English"
     )
     target = _LANG_NAMES.get(target_lang, target_lang)
-    messages = [
-        ChatMessage(role="system", content=(
-            "你是短视频旁白翻译。把"
-            f"{src}文本翻译成{target}，保持口语化、可直接朗读的节奏，"
-            "不要解释、不要加引号，只输出译文。\n"
-            "烧录字幕要求：与原文句数一一对应（1 句原文 → 1 段译文），"
-            "段间用单个空格分隔；译文内不要任何标点（。！？，、.!?）"
-            "；禁止排比句、三段式口号、翻译腔长定语。"
-        )),
-        ChatMessage(role="user", content=text),
-    ]
-    try:
-        translated = await ai.chat_messages(
-            messages, role="fast", max_tokens=1600,
+    glossary = await _glossary_block()
+    glossary_suffix = f"\n\n{glossary}" if glossary else ""
+
+    async def _pass(system: str, user: str) -> str:
+        return await ai.chat_messages(
+            [
+                ChatMessage(role="system", content=system + glossary_suffix),
+                ChatMessage(role="user", content=user),
+            ],
+            role="fast", max_tokens=1600,
             operation="translate", caller="pipeline", task_id=task_id,
         )
-        translated = _clean_translation_text(translated or "")
-        return translated if len(translated.strip()) >= 4 else _clean_translation_text(text)
+
+    try:
+        draft = await _pass(_TRANSLATE_SYSTEM.format(src=src, target=target), text)
+        draft_clean = _clean_translation_text(draft or "")
+        if len(draft_clean.strip()) < 4:
+            return _clean_translation_text(text)
+
+        three_pass = bool(
+            getattr(settings, "pipeline_translate_three_pass", True)
+        )
+        if not three_pass:
+            return draft_clean
+
+        # 反思审校：找问题而非重写（输出短，成本可控）
+        review = await _pass(
+            "你是字幕组审校。对比原文与直译初稿，指出问题：生硬直译、漏译、"
+            "口播不顺、长定语、排比堆砌、术语不一致。逐条简短列出；没有问题就写「无」。"
+            "不要输出译文。",
+            f"原文:\n{text}\n\n直译初稿:\n{draft_clean}",
+        )
+
+        final = await _pass(
+            _TRANSLATE_SYSTEM.format(src=src, target=target)
+            + "\n参考审校意见修订直译初稿，输出最终译文（只输出译文）。",
+            f"原文:\n{text}\n\n直译初稿:\n{draft_clean}\n\n审校意见:\n{review or '无'}",
+        )
+        final_clean = _clean_translation_text(final or "")
+        return final_clean if len(final_clean.strip()) >= 4 else draft_clean
     except Exception:  # noqa: BLE001 — 翻译失败回退原文，不阻塞生产
         logger.warning(
             "localize %s→%s failed, falling back to original",
@@ -789,12 +856,15 @@ async def _translate_srt_cues(
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
         numbered = "\n".join(f"{j + 1}. {t}" for j, t in enumerate(batch))
+        # v0.15：字幕批量单步 + 术语注入（三步法仅旁白——20 条/批 ×3 成本不可接受）
+        glossary = await _glossary_block()
         try:
             resp_text = await ai.chat_messages(
                 [
                     ChatMessage(
                         role="system",
-                        content=_TRANSLATE_SUBS_SYSTEM.format(target=target),
+                        content=_TRANSLATE_SUBS_SYSTEM.format(target=target)
+                        + (f"\n\n{glossary}" if glossary else ""),
                     ),
                     ChatMessage(
                         role="user",

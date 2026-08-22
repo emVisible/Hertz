@@ -550,6 +550,9 @@ class PipelineService:
                 getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
             ),
             cfg=cfg,
+            # v0.11.5 决策对齐：只排当天——窗口满保持 holding（次日再转），
+            # 不因策略路径悄悄把排期推到未来几天
+            lookahead_days=1,
         )
         if not plan:
             return 0

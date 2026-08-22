@@ -37,7 +37,8 @@
     "yes": "Yes",
     "no": "No",
     "custom": "Custom",
-    "deleteConfirm": "Delete \"{{name}}\"? This cannot be undone."
+    "deleteConfirm": "Delete \"{{name}}\"? This cannot be undone.",
+    "add": "Add"
   },
   "error": {
     "title": "Something went wrong",
@@ -279,7 +280,22 @@
     "strategyCooldownViews": "Throttle floor (median views per publish day)",
     "strategyCooldownDays": "Floor-streak days → pause",
     "strategySameTidGap": "Same-category min gap (hours)",
-    "groupCollect": "Collect & ingest"
+    "groupCollect": "Collect & ingest",
+    "glossary": "Translation glossary",
+    "glossaryHint": "Consistent terms are the foundation of subtitle quality: names/brands/proper nouns get fixed translations, injected automatically during translation. Toggle to pause a term.",
+    "glossarySuggest": "AI-assisted term extraction",
+    "glossarySamplePlaceholder": "Paste sample text or a transcript — AI extracts proper nouns worth standardizing…",
+    "glossaryExtract": "Extract candidates",
+    "glossarySource": "Source term",
+    "glossaryTarget": "Translation",
+    "glossaryEmpty": "No terms yet — add manually or extract from sample text with AI",
+    "glossarySearch": "Search terms…",
+    "glossaryToggle": "Enable/disable",
+    "glossaryDomain": {
+      "person": "Person",
+      "brand": "Brand",
+      "term": "Term"
+    }
   },
   "execution": {
     "modeStudio": "Studio",
@@ -784,7 +800,7 @@
     },
     "busyBanner": "Processing {{n}} item(s)",
     "busyItem": "{{action}} “{{title}}”",
-"act": {
+    "act": {
       "title": "Run status",
       "toggle": "Expand/collapse",
       "jobFilterAll": "All jobs",
@@ -972,7 +988,9 @@
     "groupContent": "Content",
     "groupDistribute": "Distribution",
     "publishMenu": "Publish options",
-    "publishTimedHint": "Publish on schedule (auto-upload at time)"
+    "publishTimedHint": "Publish on schedule (auto-upload at time)",
+    "titlePrevAlt": "Previous title candidate",
+    "titleNextAlt": "Next title candidate"
   },
   "canvas": {
     "tool": {
@@ -1289,7 +1307,14 @@
       "packaging": "Bilibili packaging",
       "orchestrator": "Orchestration",
       "chat": "Chat",
-      "other": "Other"
-    }
+      "other": "Other",
+      "glossary": "Term extraction"
+    },
+    "byItem": "Per-video cost & ROI",
+    "colPublished": "Published",
+    "colViews": "Views",
+    "colCalls": "Calls",
+    "aiCostOfItem": "AI cost",
+    "costPerK": "Cost / 1k views"
   }
 }

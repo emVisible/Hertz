@@ -369,10 +369,13 @@ class TaskRouter:
             data = self._extract_json(text)
             if data is None:
                 return TitleResult(title=script[:40], tags=[], description="")
+            alts = [str(a).strip()[:80] for a in (data.get("alternatives") or [])]
             return TitleResult(
                 title=str(data.get("title", ""))[:80],
                 tags=[str(t) for t in (data.get("tags") or [])][:6],
                 description=str(data.get("description", "")),
+                # v0.15 标题 N 选 1：去重去空、剔除与主标题相同者，最多 3 个
+                alternatives=[a for a in alts if a and a != str(data.get("title", ""))][:3],
             )
         except Exception:  # noqa: BLE001 — 兜底标题
             return TitleResult(title=script[:40], tags=[], description="")

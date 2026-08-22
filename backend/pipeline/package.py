@@ -127,6 +127,7 @@ async def generate_packaging(ai, item, script: dict) -> dict:
         return script
 
     narration = str(script.get("narration") or "")[:800]
+    alternatives: list[str] = []
     try:
         result = await ai.title_and_tags(
             script=narration, content=f"{item.title}\n\n来源: r/{item.subreddit}",
@@ -134,6 +135,7 @@ async def generate_packaging(ai, item, script: dict) -> dict:
         )
         title = (result.title or "").strip()
         tags = normalize_tags(result.tags)
+        alternatives = [a.strip() for a in (result.alternatives or []) if a.strip()]
         logger.info(
             "packaging via llm: title=%s tags=%s", title[:20], tags[:30]
         )
@@ -147,6 +149,9 @@ async def generate_packaging(ai, item, script: dict) -> dict:
         tags = list(_FALLBACK_TAGS)
 
     script["bili_title"] = title[:40]
+    # v0.15 标题 N 选 1：备选候选随 script 落库——审核/发布卡可切换选用
+    if alternatives:
+        script["bili_title_alternatives"] = [a[:40] for a in alternatives][:3]
     # v0.11.5：简介不换中文——直接用原帖标题（转载发布语义，来源链随 --source 挂载）
     script["bili_desc"] = (item.title or "").strip()[:200]
     script["bili_tags"] = ",".join(tags)

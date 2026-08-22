@@ -28,8 +28,12 @@ description（1-2 句中文简介）：
 - 点明内容亮点，口语化，不喊关注/点赞/评论
 - 不重复标题本身
 
+alternatives（恰好 3 个备选中文标题，各 ≤{max_title} 字）：
+- 与 bili_title 风格差异化：一个悬念钩子、一个直给看点、一个情绪/反差
+- 同样禁止翻译腔空话与无兑现标题党
+
 只输出 JSON，不要多余文字，格式：
-{{"title": "...", "tags": ["...", "..."], "description": "..."}}"""
+{{"title": "...", "tags": ["...", "..."], "description": "...", "alternatives": ["...", "...", "..."]}}"""
 
 
 def build_title_messages(*, script: str, content: str, max_title: int = 40) -> list[dict]:

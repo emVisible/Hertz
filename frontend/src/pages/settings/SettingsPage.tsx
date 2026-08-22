@@ -13,6 +13,7 @@ import { ProviderManager } from './ProviderManager'
 import { PromptsManager } from './PromptsManager'
 import { RolesManager } from './RolesManager'
 import { FeaturesMap } from './FeaturesMap'
+import { GlossaryManager } from './GlossaryManager'
 import { SettingsNav, type SettingsSection } from './SettingsNav'
 import { TracePanel } from './TracePanel'
 import { HealthDashboard } from './HealthDashboard'
@@ -752,6 +753,15 @@ export function SettingsPage() {
                     <h2 className="text-sm font-semibold text-text-primary">{t('settings.prices')}</h2>
                   </div>
                   <ModelPrices />
+                </section>
+
+                {/* 翻译术语表（v0.15）：术语统一——字幕质量地基 */}
+                <section className={section}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Icon name="pen" size={15} />
+                    <h2 className="text-sm font-semibold text-text-primary">{t('settings.glossary')}</h2>
+                  </div>
+                  <GlossaryManager />
                 </section>
               </>
             )}

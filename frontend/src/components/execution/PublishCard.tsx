@@ -52,11 +52,24 @@ export function PublishCard({
     setTagsDraft(null)
     setTidDraft(null)
     setTarget((item.publish_json?.target as string | undefined) ?? '')
+    setAltIdx(-1)
   }, [item.id])
   const script = item.script_json
   const biliTitle = (script?.bili_title as string | undefined) ?? item.title
   const biliDesc = (script?.bili_desc as string | undefined) ?? ''
   const biliTags = (script?.bili_tags as string | undefined) ?? ''
+  // v0.15 标题 N 选 1：备选候选（‹›循环切换，直接保存——幂等可切回）
+  const titleAlts = (script?.bili_title_alternatives as string[] | undefined) ?? []
+  const [altIdx, setAltIdx] = useState<number>(-1)
+
+  function cycleTitle(delta: number) {
+    const pool = [biliTitle, ...titleAlts].filter(Boolean)
+    if (pool.length < 2) return
+    const next = (altIdx + delta + pool.length) % pool.length
+    setAltIdx(next)
+    onSaveMeta(item, { bili_title: pool[next] })
+    setTitleDraft(null)
+  }
   const biliTid = script?.bili_tid != null ? String(script.bili_tid) : ''
   // 版权（v0.3.2）：1=自制 / 2=搬运，默认搬运；发布 selfmade 由开关驱动
   const copyright = script?.bili_copyright != null ? Number(script.bili_copyright) : 2
@@ -111,6 +124,29 @@ export function PublishCard({
           <p className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary" title={biliTitle}>
             {biliTitle}
           </p>
+          {/* 标题候选切换（v0.15 N 选 1）：‹›循环 bili_title + alternatives，点击即保存 */}
+          {titleAlts.length > 0 && !titleDraft && (
+            <span className="flex shrink-0 items-center gap-0.5 text-text-disabled">
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={(e) => { e.stopPropagation(); cycleTitle(-1) }}
+                title={t('console.titlePrevAlt')}
+                className="flex h-5 w-5 items-center justify-center rounded-sm transition-colors hover:bg-surface-2 hover:text-primary"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={(e) => { e.stopPropagation(); cycleTitle(1) }}
+                title={t('console.titleNextAlt')}
+                className="flex h-5 w-5 items-center justify-center rounded-sm transition-colors hover:bg-surface-2 hover:text-primary"
+              >
+                ›
+              </button>
+            </span>
+          )}
           {ITEM_TYPE_BADGE[item.item_type] && (
             <Badge tone={ITEM_TYPE_BADGE[item.item_type].tone}>
               {t(ITEM_TYPE_BADGE[item.item_type].labelKey)}

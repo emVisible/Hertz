@@ -5,6 +5,24 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.15.0] - 2026-08-22
+
+质量与 ROI 三件套（同赛道产品调研落地，见调研报告：VideoLingo / Helicone / MoneyPrinterTurbo 精华借鉴）。
+
+### 新增
+
+- **三步翻译法**（VideoLingo 精华）：旁白文本 直译 → 反思审校 → 意译定稿——
+  任一步失败降级上一步结果不阻塞产线；开关 `pipeline_translate_three_pass`（默认开）。
+  字幕批量保持单步 + 术语注入（20 条/批 ×3 成本不可接受）
+- **翻译术语表**（结构化表 + UI）：`glossary_terms` 表 + `/api/glossary` CRUD +
+  设置 → AI「翻译术语表」管理区（启停开关/搜索/AI 辅助提取候选）；
+  术语自动注入全部翻译 prompt（上限 100 条，updated_at 优先）
+- **条目成本 ROI**（Helicone 单位经济借鉴）：成本页新增「条目成本 ROI」表——
+  每条视频的 AI 总成本 × 播放量 × 千次播放成本（publish_stats 联动）；
+  孤儿关联不计入 ROI 视图但计入总花费
+- **标题 N 选 1**（MoneyPrinterTurbo 精华）：title_and_tags 单次调用产出 3 个差异化
+  候选标题落库 `bili_title_alternatives`；发布卡标题行 ‹› 循环切换选用（点击即保存）
+
 ## [v0.14.1] - 2026-08-22
 
 成本页体验四项：执行历史溯源跳转 / hover 操作 / 看板+历史两块布局 / 报表默认人民币。

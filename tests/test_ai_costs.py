@@ -18,7 +18,6 @@ NOW = datetime.now(UTC)
 
 import uuid as _uuid  # noqa: E402
 
-
 # ---------- estimate_cost ----------
 
 
@@ -152,7 +151,7 @@ async def test_aggregate_domain_filter(client) -> None:
 @pytest.mark.asyncio
 async def test_aggregate_pagination(client) -> None:
     """limit/offset 明细分页：hasMore 由调用方以 total_calls 判断。"""
-    for i in range(3):
+    for _i in range(3):
         await _mk_call(operation="chat")
     page1 = await aggregate_costs(days=30, limit=2, offset=0, prices=PRICES, now=NOW)
     assert len(page1["calls"]) == 2
@@ -170,8 +169,53 @@ async def test_costs_endpoint_shape(client) -> None:
     resp = await client.get("/api/ai/costs?days=30")
     assert resp.status_code == 200
     body = resp.json()
-    for key in ("summary", "by_domain", "by_model", "daily", "missing_prices", "calls"):
+    for key in ("summary", "by_domain", "by_model", "daily", "missing_prices",
+                "calls", "items"):
         assert key in body
+
+
+# ---------- 条目 ROI（v0.15，Helicone 单位经济借鉴） ----------
+
+
+@pytest.mark.asyncio
+async def test_by_item_aggregates_cost_with_views(client) -> None:
+    """同一条目的多次调用聚合为 ai_cost；JOIN 出播放量；跨条目独立。"""
+    import uuid as _uuid
+
+    from backend.models.item import Item
+
+    async with session_factory() as session:
+        row = Item(
+            status="published", source="reddit", source_id="roi-1",
+            title="ROI 条目", output_dir="pipeline/roi-01",
+            published_at=NOW - timedelta(days=1),
+            publish_json={"stats": {"view": 12000}},
+        )
+        session.add(row)
+        await session.commit()
+        item_id = str(row.id)
+
+    # 同条目两次调用（1M prompt → $0.27）+ 另一条目一次 + 无关联一次
+    await _mk_call(operation="script", task_id=f"item:{item_id}",
+                   prompt_tokens=500_000, completion_tokens=50_000)
+    await _mk_call(operation="score", task_id=f"item:{item_id}",
+                   prompt_tokens=500_000)
+    other_id = str(_uuid.uuid4())
+    await _mk_call(operation="script", task_id=f"item:{other_id}",
+                   prompt_tokens=1_000_000)
+
+    report = await aggregate_costs(days=30, prices=PRICES, now=NOW)
+    items = {x["item_id"]: x for x in report["items"]}
+    roi = items[item_id]
+    assert roi["calls"] == 2
+    # call1: 500k in + 50k out；call2: 500k in + 10k out(_mk_call 默认)
+    assert roi["ai_cost"] == pytest.approx(
+        (0.5 * 0.27 + 0.05 * 1.1) + (0.5 * 0.27 + 0.01 * 1.1)
+    )
+    assert roi["views"] == 12000
+    assert roi["title"] == "ROI 条目"
+    # 关联条目已删（other_id 不在 items 表）→ ROI 视图不出现
+    assert other_id not in items
 
 
 # ---------- 溯源（v0.14.1）：task_id="item:<uuid>" → 条目/产物路径 ----------
@@ -180,7 +224,6 @@ async def test_costs_endpoint_shape(client) -> None:
 @pytest.mark.asyncio
 async def test_call_with_item_ref_resolves_asset_path(client) -> None:
     """task_id=item:<uuid> → 明细行带 item 关联（标题 + 产物目录绝对路径）。"""
-    import uuid as _uuid
 
     from backend.models.item import Item
 
@@ -200,8 +243,8 @@ async def test_call_with_item_ref_resolves_asset_path(client) -> None:
     assert call["item"] is not None
     assert call["item"]["title"] == "溯源测试条目"
     assert call["item"]["asset_path"].endswith("pipeline/trace-01")
-    # 无关联的调用 → item=None
-    other = report["calls"][0] if report["calls"][0]["task_id"] != f"item:{item_id}" else None
+    # 无关联的调用 → item=None（本文件其余调用均无 task_id）
+    assert all(c["item"] is None for c in report["calls"] if c["task_id"] != f"item:{item_id}")
 
 
 @pytest.mark.asyncio

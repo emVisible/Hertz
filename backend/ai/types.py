@@ -36,6 +36,8 @@ class TitleResult:
     title: str
     tags: list[str] = field(default_factory=list)
     description: str = ""
+    # v0.15 标题 N 选 1：备选候选（≤3），审核/发布卡可切换选用
+    alternatives: list[str] = field(default_factory=list)
 
 
 class LLMProvider(Protocol):

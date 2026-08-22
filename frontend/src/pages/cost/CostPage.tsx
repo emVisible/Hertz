@@ -44,6 +44,16 @@ interface CostReport {
   }>
   daily: Array<{ date: string; cost: number }>
   missing_prices: string[]
+  /** 条目 ROI（v0.15）：每条视频的 AI 总成本 × 播放表现 */
+  items: Array<{
+    item_id: string
+    title: string
+    published_at: string | null
+    views: number | null
+    calls: number
+    ai_cost: number | null
+    asset_path: string | null
+  }>
   calls: Array<{
     id: string
     created_at: string | null
@@ -313,7 +323,67 @@ export function CostPage() {
             </div>
           </div>
 
-          {/* ===== 块二：执行历史（溯源 + hover 操作 + 分页） ===== */}
+          {/* ===== 块二：条目 ROI（v0.15 单位经济） ===== */}
+          {data.items.length > 0 && (
+            <Card>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-medium text-text-primary">
+                <Icon name="whisper" size={14} className="text-primary" />
+                {t('cost.byItem')}
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-[10px] uppercase tracking-wide text-text-disabled">
+                      <th className="py-1.5 pr-3">{t('console.titleLabel')}</th>
+                      <th className="py-1.5 pr-3">{t('cost.colPublished')}</th>
+                      <th className="py-1.5 pr-3 text-right">{t('cost.colViews')}</th>
+                      <th className="py-1.5 pr-3 text-right">{t('cost.colCalls')}</th>
+                      <th className="py-1.5 pr-3 text-right">{t('cost.aiCostOfItem')}</th>
+                      <th className="py-1.5 pr-3 text-right">{t('cost.costPerK')}</th>
+                      <th className="py-1.5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.items.map((it) => {
+                      const perK =
+                        it.ai_cost != null && it.views && it.views > 0
+                          ? (it.ai_cost / it.views) * 1000
+                          : null
+                      return (
+                        <tr key={it.item_id} className="border-b border-border/40 last:border-0">
+                          <td className="max-w-64 truncate py-1.5 pr-3" title={it.title}>
+                            {it.title || '—'}
+                          </td>
+                          <td className="py-1.5 pr-3 font-mono text-[11px] text-text-secondary">
+                            {it.published_at ? new Date(it.published_at).toLocaleDateString() : '—'}
+                          </td>
+                          <td className="py-1.5 pr-3 text-right font-mono">
+                            {it.views != null ? fmtTokens(it.views) : '—'}
+                          </td>
+                          <td className="py-1.5 pr-3 text-right font-mono text-text-secondary">{it.calls}</td>
+                          <td className="py-1.5 pr-3 text-right font-mono">{fmtCost(symbol, it.ai_cost)}</td>
+                          <td className="py-1.5 pr-3 text-right font-mono">{perK != null ? fmtCost(symbol, perK) : '—'}</td>
+                          <td className="py-1.5">
+                            {it.asset_path && (
+                              <Link
+                                to={`/assets?path=${encodeURIComponent(it.asset_path)}`}
+                                title={t('cost.viewAsset')}
+                                className="flex h-6 w-6 items-center justify-center rounded-sm text-text-secondary transition-colors hover:bg-surface-2 hover:text-primary"
+                              >
+                                <Icon name="folder" size={13} />
+                              </Link>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
+          {/* ===== 块三：执行历史（溯源 + hover 操作 + 分页） ===== */}
           <Card>
             <h2 className="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium text-text-primary">
               <Icon name="list" size={14} className="text-primary" />

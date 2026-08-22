@@ -39,6 +39,8 @@ RUNTIME_ALLOWLIST = {
     "pipeline_subtitle_lang",
     "pipeline_translate_source_lang",
     "pipeline_tts_text_source",
+    # 三步翻译法（v0.15）：旁白直译→反思→意译
+    "pipeline_translate_three_pass",
     # 发布队列（v0.12）：自动发布产能/开关/转正数/轮询间隔
     "pipeline_auto_publish",
     "pipeline_auto_publish_daily_limit",

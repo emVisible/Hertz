@@ -37,7 +37,8 @@
     "yes": "是",
     "no": "否",
     "copyTitle": "复制",
-    "deleteConfirm": "确定删除「{{name}}」？此操作不可撤销。"
+    "deleteConfirm": "确定删除「{{name}}」？此操作不可撤销。",
+    "add": "添加"
   },
   "error": {
     "title": "界面出错了",
@@ -294,7 +295,22 @@
     "strategyCooldownViews": "限流地板（发布日中位播放）",
     "strategyCooldownDays": "连续地板天数 → 停发",
     "strategySameTidGap": "同分区间隔下限（小时）",
-    "groupCollect": "采集与入库"
+    "groupCollect": "采集与入库",
+    "glossary": "翻译术语表",
+    "glossaryHint": "术语统一是字幕质量的地基：人名/品牌/专有名词强制固定译名，翻译时自动注入。开关可临时停用某条。",
+    "glossarySuggest": "AI 辅助提取候选术语",
+    "glossarySamplePlaceholder": "粘贴一段视频原文/转写文本，AI 抽取值得统一译法的专有名词…",
+    "glossaryExtract": "提取候选",
+    "glossarySource": "原文术语",
+    "glossaryTarget": "中文译名",
+    "glossaryEmpty": "还没有术语——手动添加或用 AI 从样例文本提取",
+    "glossarySearch": "搜索术语…",
+    "glossaryToggle": "启用/停用",
+    "glossaryDomain": {
+      "person": "人名",
+      "brand": "品牌",
+      "term": "专有名词"
+    }
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -987,7 +1003,9 @@
     "groupContent": "内容",
     "groupDistribute": "分发",
     "publishMenu": "发布方式",
-    "publishTimedHint": "按排期发布（到点自动上传）"
+    "publishTimedHint": "按排期发布（到点自动上传）",
+    "titlePrevAlt": "上一个标题候选",
+    "titleNextAlt": "下一个标题候选"
   },
   "canvas": {
     "tool": {
@@ -1289,7 +1307,14 @@
       "packaging": "B 站包装",
       "orchestrator": "编排工作流",
       "chat": "对话",
-      "other": "其他"
-    }
+      "other": "其他",
+      "glossary": "术语抽取"
+    },
+    "byItem": "条目成本 ROI",
+    "colPublished": "发布日",
+    "colViews": "播放",
+    "colCalls": "调用",
+    "aiCostOfItem": "AI 成本",
+    "costPerK": "千次成本"
   }
 }

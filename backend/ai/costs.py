@@ -149,13 +149,15 @@ async def aggregate_costs(
     total = len(in_domain_rows)
 
     # 溯源（v0.14.1）：task_id="item:<uuid>" → 条目标题 + 产物目录绝对路径。
-    # 批量解析一次（明细页 ≤ limit 行）；条目已删除/清洗 → 关联降级为 None
+    # v0.15 条目 ROI：全窗口行收集 item 关联，聚合出每条视频的 AI 总成本，
+    # JOIN items 取标题/发布时间/播放量（publish_stats 回捞 best-effort）。
+    # 批量解析一次；条目已删除/清洗 → 关联降级为 None
     item_ids = {
         m.group(1)
-        for r in in_domain_rows[offset : offset + limit]
+        for r in in_domain_rows
         if r.task_id and (m := _ITEM_REF.fullmatch(r.task_id))
     }
-    items_by_id: dict[str, tuple[str, str]] = {}
+    items_by_id: dict[str, dict] = {}
     if item_ids:
         from uuid import UUID
 
@@ -174,7 +176,15 @@ async def aggregate_costs(
                 asset_path = str(
                     (Path(app_settings.data_dir) / it.output_dir).resolve()
                 )
-            items_by_id[str(it.id)] = (it.title or "", asset_path)
+            stats = (it.publish_json or {}).get("stats") or {}
+            items_by_id[str(it.id)] = {
+                "title": it.title or "",
+                "asset_path": asset_path,
+                "published_at": (
+                    it.published_at.isoformat() if it.published_at else None
+                ),
+                "views": stats.get("view"),
+            }
 
     def _item_ref(r: AICall) -> dict | None:
         if not r.task_id or not (m := _ITEM_REF.fullmatch(r.task_id)):
@@ -182,12 +192,43 @@ async def aggregate_costs(
         hit = items_by_id.get(m.group(1))
         if hit is None:
             return None  # 条目已删除/清洗——无效关联降级
-        title, asset_path = hit
         return {
             "id": m.group(1),
-            "title": title,
-            "asset_path": asset_path or None,
+            "title": hit["title"],
+            "asset_path": hit["asset_path"] or None,
         }
+
+    # 条目 ROI 聚合（Helicone sessions 精华借鉴）：一条视频的 AI 总成本。
+    # 孤儿关联（条目已删除）不计入 ROI 视图——成本仍计入 summary
+    by_item: dict[str, dict] = {}
+    for r in in_domain_rows:
+        if not r.task_id or not (m := _ITEM_REF.fullmatch(r.task_id)):
+            continue
+        iid = m.group(1)
+        if iid not in items_by_id:
+            continue
+        b = by_item.setdefault(iid, {"calls": 0, "cost": 0.0, "_unpriced": False})
+        b["calls"] += 1
+        cost = _row_cost(r)
+        if cost is None:
+            b["cost"] = None
+            b["_unpriced"] = True
+        elif b["cost"] is not None:
+            b["cost"] = round(b["cost"] + cost, 6)
+
+    items_view = [
+        {
+            "item_id": iid,
+            "title": (items_by_id.get(iid) or {}).get("title", ""),
+            "published_at": (items_by_id.get(iid) or {}).get("published_at"),
+            "views": (items_by_id.get(iid) or {}).get("views"),
+            "calls": b["calls"],
+            "ai_cost": _to_currency(b["cost"]),
+            "asset_path": (items_by_id.get(iid) or {}).get("asset_path") or None,
+        }
+        for iid, b in by_item.items()
+    ]
+    items_view.sort(key=lambda x: -(x["ai_cost"] or 0))
 
     calls_view = [
         {
@@ -236,4 +277,6 @@ async def aggregate_costs(
         ],
         "missing_prices": sorted(missing),
         "calls": calls_view,
+        # 条目 ROI（v0.15）：每条视频的 AI 总成本 × 播放表现
+        "items": items_view,
     }
