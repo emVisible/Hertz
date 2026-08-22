@@ -107,10 +107,11 @@ async def score_item(item_id: uuid.UUID):
 
 
 @router.post("/items/{item_id}/download")
-async def download_item(item_id: uuid.UUID):
-    """单条下载（v0.8.6 评分先行，预处理手动下载按钮）：仅已评分未下载条目。"""
+async def download_item(item_id: uuid.UUID, skip_score: int = 0):
+    """单条下载（v0.8.6 评分先行，预处理手动下载按钮）：仅已评分未下载条目。
+    v0.11.10：skip_score=1 放行未评分条目——绕过评分直接下载（省 API 用量）。"""
     try:
-        return await _pipe().download_one(item_id)
+        return await _pipe().download_one(item_id, skip_score=bool(skip_score))
     except HertzError:
         raise
     except RuntimeError as exc:

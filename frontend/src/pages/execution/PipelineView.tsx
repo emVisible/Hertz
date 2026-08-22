@@ -82,7 +82,11 @@ interface PipelineViewProps {
   produceBatch: () => Promise<void>
   scoreOne: (item: PipelineItem) => Promise<void>
   scoreBatch: () => Promise<void>
+  /** 批量直下（v0.11.10）：未评分条目绕过评分直接下载 */
+  downloadBatchUnscored: () => Promise<void>
   downloadOne: (item: PipelineItem) => Promise<void>
+  /** 单条直下（v0.11.10）：discovered 行的宽松下载入口 */
+  downloadOneDirect: (item: PipelineItem) => Promise<void>
   runStep: (stepName: string, channel?: string) => Promise<void>
   /** 单条操作进行中（v0.11.4）：itemId → {action, title}——按钮转圈数据源；
    *  全局展示已移交底部「运行状态」折叠条（ActivityPanel） */
@@ -565,16 +569,28 @@ export function PipelineView(p: PipelineViewProps) {
                       options={[5, 10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))}
                       className="w-20"
                     />
-                    {/* 当前阶段的批量操作（v0.8.8）：未评分→评分 / 已评分→下载 / 已下载→制作 */}
+                    {/* 当前阶段的批量操作（v0.8.8）：未评分→评分/直下 / 已评分→下载 / 已下载→制作 */}
                     {preStage === 'discovered' && (
-                      <Button
-                        size="sm"
-                        onClick={() => void p.scoreBatch()}
-                        title={t('console.scoreBatchHint')}
-                      >
-                        <Icon name="whisper" size={12} />
-                        {t('console.scoreBatch')}
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => void p.scoreBatch()}
+                          title={t('console.scoreBatchHint')}
+                        >
+                          <Icon name="whisper" size={12} />
+                          {t('console.scoreBatch')}
+                        </Button>
+                        {/* 直接下载（v0.11.10）：跳过评分省 API 用量——样式对应 scored 批量下载 */}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void p.downloadBatchUnscored()}
+                          title={t('console.downloadUnscoredHint')}
+                        >
+                          <Icon name="downloads" size={12} />
+                          {t('console.downloadUnscored')}
+                        </Button>
+                      </>
                     )}
                     {preStage === 'scored' && (
                       <Button
@@ -679,6 +695,7 @@ export function PipelineView(p: PipelineViewProps) {
                       stage={preStage}
                       onScore={(i) => void p.scoreOne(i)}
                       onDownload={(i) => void p.downloadOne(i)}
+                      onDownloadDirect={(i) => void p.downloadOneDirect(i)}
                       onReject={(i) => void p.act(i, 'reject')}
                     />
                   )

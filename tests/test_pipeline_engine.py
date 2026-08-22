@@ -227,7 +227,9 @@ async def test_chain_to_review_gate(client, pipeline_env) -> None:
     assert resp.json()["status"] == "queued"
     assert resp.json()["job"] == "chain"
 
-    queued = await _wait_items(client, "queued", 1, timeout_s=40)
+    # v0.11.10：collect 同事务插入的条目 created_at 相同，_pending 排序不稳——
+    # 等 good-1/low-1 都进 queued 再断言，消除「首条命中谁」的时序脆弱性
+    queued = await _wait_items(client, "queued", 2, timeout_s=120)
     good = next(q for q in queued if q["source_id"] == "good-1")
     assert good["status"] == "queued"
     assert good["title"].startswith("一个很棒")

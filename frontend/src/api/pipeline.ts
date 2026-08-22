@@ -262,7 +262,8 @@ export const pipelineApi = {
   /** 单条评分（v0.3.5，预处理手动评分按钮）。 */
   score: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/score`),
   /** 单条下载（v0.8.6 评分先行，预处理手动下载按钮）。 */
-  download: (id: string) => api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/download`),
+  download: (id: string, skipScore = false) =>
+    api.post<{ id: string; status: string; outcome: string }>(`/api/pipeline/items/${id}/download${skipScore ? '?skip_score=1' : ''}`),
   /** 过期排期自动重排（v0.2.7）：进入审核时调用。 */
   rescheduleExpired: () => api.post<{ updated: number }>('/api/pipeline/reschedule-expired'),
   /** 发布数据补录（v0.4 C1）：自动回捞失败时手动填播放/互动 */
@@ -309,9 +310,9 @@ export const pipelineApi = {
     }
     return resp.json() as Promise<{ id: string; cover_path: string }>
   },
-  run: (step: string, limit = 10, channel = '') =>
+  run: (step: string, limit = 10, channel = '', unscored = false) =>
     api.post<PipelineJob>(
-      `/api/pipeline/run?step=${step}&limit=${limit}${channel ? `&channel=${encodeURIComponent(channel)}` : ''}`,
+      `/api/pipeline/run?step=${step}&limit=${limit}${channel ? `&channel=${encodeURIComponent(channel)}` : ''}${unscored ? '&unscored=1' : ''}`,
     ),
   chain: (limit = 10) => api.post<Record<string, PipelineJob>>(`/api/pipeline/chain?limit=${limit}`),
   cancel: () => api.post<{ ok: boolean; cancelling: boolean }>('/api/pipeline/cancel'),

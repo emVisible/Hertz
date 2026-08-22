@@ -11,6 +11,7 @@
 - **Wave 6.5**：Axiom 全局审计——SSRF/路径穿越/密钥配置加固、media_url 落库、i18n 全量、SSE 重连、ChatPage 单源、persist 节流（详见 HERTZ_RECONSTRUCTION.md §9）
 - **v0.11.2-0.11.6**：字幕标点清洗强化 → 句首逗号根因修复（ASS Format 缺 Name）→ 发布流程重构（立即发布/原文简介/当天高峰排期/随机封面）→ 情感垂直频道（源池勾选 UI + emotion 加权评分 + 情感标题/分区）→ 健康看板 UI（设置页，v0.11.6 清偿本表「健康检查 UI」项）→ 版本单一真相源（backend.config.APP_VERSION）
 - **v0.11.7**：文字故事产线主体（text_only 采集存储 + 下载跳过 + LLM 中文故事旁白 + 固定中文 TTS + 渐变背景/标题卡图文合成 + 敏感词 SAFETY/MARKETING 分层 + 故事源入池）——已端到端验证（真实条目 29s 成片，OCR 确认字幕无前导逗号）；**待数据通道修复后全量启用**（Reddit 匿名 JSON/RSS 403 Blocked，cookie 失效，需 OAuth 凭证）
+- **v0.11.8-0.11.10**：批量操作分片（全选超 200 上限 422 消除）→ 取消制作（协作式检查点 + ffmpeg 轮询终止，回滚 downloaded）+ 发布目标 NOOP 根因修复（runtime allowlist 缺失致保存静默失败）+ 默认直发 + 审核卡发布标题/随机封面入口/header 分组重排 → 绕过评分直接下载（引擎 input_statuses 宽松路径 + 未评分徽章降级）
 
 ## 已知缺口
 

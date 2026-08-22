@@ -80,7 +80,7 @@ async def _run_cmd(cmd: list[str], *, timeout_s: int = 300) -> bytes:
             try:
                 await asyncio.wait_for(proc.wait(), timeout=min(0.25, remaining))
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:  # asyncio.TimeoutError 是内建 TimeoutError 别名（ruff UP041）
                 continue
         out, err = await proc.communicate()
     except TimeoutError:

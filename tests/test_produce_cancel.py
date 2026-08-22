@@ -4,6 +4,7 @@
 （清理半成品 → downloaded，不标 failed）、陈旧标志清理、幂等端点。
 """
 
+import asyncio
 import uuid
 
 import pytest
@@ -29,6 +30,8 @@ async def test_cancel_registry_roundtrip() -> None:
 @pytest.mark.asyncio
 async def test_run_cmd_cancel_terminates_process() -> None:
     """_run_cmd 轮询命中取消标志 → terminate 子进程 + 抛 ItemCancelledError。"""
+    import time
+
     from backend.pipeline.cancel import (
         ItemCancelledError,
         request_cancel,
@@ -36,8 +39,6 @@ async def test_run_cmd_cancel_terminates_process() -> None:
         set_active_item,
     )
     from backend.pipeline.producers.media import _run_cmd
-
-    import time
 
     item_id = uuid.uuid4()
     token = set_active_item(item_id)
@@ -73,7 +74,7 @@ async def test_produce_one_cancelled_rolls_back(client, monkeypatch) -> None:
 
     item_id = uuid.uuid4()
     fake_video = Path(f"/tmp/hertz-cancel-test-{item_id}.mp4")
-    fake_video.write_bytes(b"partial")
+    await asyncio.to_thread(fake_video.write_bytes, b"partial")
 
     async with session_factory() as session:
         session.add(
@@ -104,7 +105,7 @@ async def test_produce_one_cancelled_rolls_back(client, monkeypatch) -> None:
         assert row.status == "downloaded"  # 不标 failed
         assert row.error is None
         assert row.video_path is None  # 半成品已清理
-    assert not fake_video.exists()
+    assert not await asyncio.to_thread(fake_video.exists)
 
 
 @pytest.mark.asyncio

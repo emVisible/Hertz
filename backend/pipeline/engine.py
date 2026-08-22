@@ -40,8 +40,14 @@ class StepEngine:
 
     # ---------- public ----------
 
-    async def run_batch(self, job_name: str, *, limit: int = 10, channel: str = "") -> dict:
-        """Run one step (or the full chain) over ready items. Records a JobRun."""
+    async def run_batch(
+        self, job_name: str, *, limit: int = 10, channel: str = "",
+        input_statuses: tuple[str, ...] | None = None,
+    ) -> dict:
+        """Run one step (or the full chain) over ready items. Records a JobRun.
+
+        v0.11.10：input_statuses 覆盖——绕过评分直接下载（unscored 批量）
+        等特殊路径用；默认仍按 step.input_statuses 拉取。"""
         run_id = uuid.uuid4()
         job = JobRun(job_name=job_name, status=JobStatus.RUNNING)
         async with session_factory() as session:
@@ -60,7 +66,10 @@ class StepEngine:
         before = await self._counts()
 
         try:
-            summary = await self._run_step(ctx, job_name, limit=limit, channel=channel)
+            summary = await self._run_step(
+                ctx, job_name, limit=limit, channel=channel,
+                input_statuses=input_statuses,
+            )
             job.status = JobStatus.COMPLETED
             job.summary = summary
         except asyncio.CancelledError:
@@ -115,10 +124,14 @@ class StepEngine:
             results[step] = await self.run_batch(step, limit=limit, channel=channel)
         return results
 
-    async def process_one(self, step_name: str, item_id: uuid.UUID) -> str:
+    async def process_one(
+        self, step_name: str, item_id: uuid.UUID,
+        input_statuses: tuple[str, ...] | None = None,
+    ) -> str:
         """单条处理（v0.3.4，预处理「制作」按钮）：指定步骤处理单个条目。
 
         复用 _process_item（状态落库 + 事件），返回 outcome（ok/rejected/failed）。
+        v0.11.10：input_statuses 覆盖——绕过评分直接下载等宽松路径用。
         """
         step_cls = get_step(step_name)
         step = step_cls()
@@ -126,7 +139,7 @@ class StepEngine:
             item = await session.get(Item, item_id)
         if item is None:
             raise ItemNotFoundError(item_id)
-        if item.status not in step.input_statuses:
+        if item.status not in (input_statuses or step.input_statuses):
             raise InvalidItemStateError(
                 f"step {step_name} cannot process item in state {item.status}"
             )
@@ -376,7 +389,12 @@ class StepEngine:
             )
             return {str(status): count for status, count in rows.all()}
 
-    async def _run_step(self, ctx: StepContext, job_name: str, *, limit: int, channel: str) -> dict:
+    async def _run_step(
+        self, ctx: StepContext, job_name: str, *, limit: int, channel: str,
+        input_statuses: tuple[str, ...] | None = None,
+    ) -> dict:
+        """执行单步骤。v0.11.10：input_statuses 覆盖透传给 _pending
+        （绕过评分直接下载等宽松路径）；None = 按 step.input_statuses。"""
         if job_name == "collect":
             if self.collector is None:
                 raise RuntimeError("no collector configured")
@@ -436,7 +454,7 @@ class StepEngine:
 
         step_cls = get_step(job_name)
         step = step_cls()
-        items = await self._pending(job_name, step, limit)
+        items = await self._pending(job_name, step, limit, statuses=input_statuses)
         ctx.log(f"[{job_name}] processing {len(items)} item(s)")
         self._emit(ctx.run_id, {"type": "job_step", "step": job_name, "count": len(items)})
 
@@ -446,13 +464,17 @@ class StepEngine:
             results[outcome] += 1
         return results
 
-    async def _pending(self, job_name: str, step: Pipe, limit: int) -> list[Item]:
-        if not step.input_statuses:
+    async def _pending(
+        self, job_name: str, step: Pipe, limit: int,
+        statuses: tuple[str, ...] | None = None,
+    ) -> list[Item]:
+        effective = statuses or step.input_statuses
+        if not effective:
             return []
         async with session_factory() as session:
             result = await session.execute(
                 select(Item)
-                .where(Item.status.in_(step.input_statuses))
+                .where(Item.status.in_(effective))
                 .order_by(Item.created_at.asc())
                 .limit(limit)
             )

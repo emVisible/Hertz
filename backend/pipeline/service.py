@@ -48,19 +48,24 @@ class PipelineService:
 
     # ---------- batch runs ----------
 
-    async def run_batch(self, job_name: str, *, limit: int = 10, channel: str = "") -> dict:
+    async def run_batch(
+        self, job_name: str, *, limit: int = 10, channel: str = "",
+        input_statuses: tuple[str, ...] | None = None,
+    ) -> dict:
         """批量运行（v0.10.1 异步队列化）：create_task 后台执行，立即返回入队。
 
         此前 `return await self._task` 让 HTTP 请求挂住直到全部条目处理完——
         前端"加入队列"后条目瞬间全部完成，看不到排队与进度。现后台跑，
         进度经 SSE（job_step / item / job_done）实时推送，任务状态经
         /pipeline/jobs 轮询。运行中并发提交仍 409（single-flight）。
-        """
+        v0.11.10：input_statuses 覆盖透传（绕过评分直接下载）。"""
         if self.running:
             raise RuntimeError(f"pipeline busy with job '{self._current_job}'")
         self._current_job = job_name
         task = asyncio.create_task(
-            self.engine.run_batch(job_name, limit=limit, channel=channel),
+            self.engine.run_batch(
+                job_name, limit=limit, channel=channel, input_statuses=input_statuses,
+            ),
             name=f"pipeline-{job_name}",
         )
         task.add_done_callback(self._on_batch_done)
@@ -676,25 +681,41 @@ class PipelineService:
             raise RuntimeError(error)
         return {"id": str(item_id), "status": "scored", "outcome": outcome}
 
-    async def download_one(self, item_id: uuid.UUID) -> dict:
-        """单条下载（v0.8.6 评分先行，预处理手动下载按钮）：仅已评分未下载条目。"""
+    async def download_one(self, item_id: uuid.UUID, skip_score: bool = False) -> dict:
+        """单条下载（v0.8.6 评分先行，预处理手动下载按钮）：默认仅已评分未下载
+        条目。v0.11.10：skip_score=True 放行 discovered——省 API 余额场景绕过评分
+        直接下载（审核以人工判断为主，评分为辅助信号）。"""
         from backend.pipeline.errors import InvalidItemStateError
 
         async with session_factory() as session:
             item = await session.get(Item, item_id)
             if item is None:
                 raise ItemNotFoundError(item_id)
-            if item.status != ItemStatus.SCORED:
+            # 双道校验同步放宽：service 层 + engine.process_one（status 为
+            # String 列读回 str，engine 层按字符串元组比较）
+            allowed = ("discovered", "scored") if skip_score else ("scored",)
+            if item.status not in allowed:
                 raise InvalidItemStateError(
                     f"cannot download item in state {item.status}"
                 )
-        outcome = await self.engine.process_one("download", item_id)
+        outcome = await self.engine.process_one(
+            "download", item_id,
+            input_statuses=allowed if skip_score else None,
+        )
         if outcome == "failed":
             async with session_factory() as session:
                 row = await session.get(Item, item_id)
                 error = row.error if row is not None else "download failed"
             raise RuntimeError(error)
         return {"id": str(item_id), "status": "downloaded", "outcome": outcome}
+
+    async def download_unscored(self, limit: int = 10) -> dict:
+        """批量直下（v0.11.10，预处理「直接下载」按钮）：对全部未评分
+        （discovered）条目执行下载，跳过评分环节——API 余额不足时省着用。
+        复用 single-flight 队列（运行中 409）。"""
+        return await self.run_batch(
+            "download", limit=limit, input_statuses=("discovered",)
+        )
 
     async def produce_one(self, item_id: uuid.UUID) -> dict:
         """单条制作（v0.3.4，预处理「制作」按钮）：v0.8.6 评分先行语义——

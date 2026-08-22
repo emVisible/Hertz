@@ -15,12 +15,15 @@ export function PreReviewRow({
   stage,
   onScore,
   onDownload,
+  onDownloadDirect,
   onReject,
 }: {
   item: PipelineItem
   stage: 'discovered' | 'scored'
   onScore: (item: PipelineItem) => void
   onDownload: (item: PipelineItem) => void
+  /** 直下（v0.11.10）：未评分条目绕过评分直接下载——省 API 余额场景 */
+  onDownloadDirect?: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
 }) {
   const { t } = useTranslation()
@@ -82,17 +85,32 @@ export function PreReviewRow({
           <Icon name="close" size={12} />
         </Button>
         {stage === 'discovered' && (
-          <Button
-            size="sm"
-            variant="secondary"
-            loading={!!busy}
-            disabled={!!busy}
-            onClick={() => onScore(item)}
-            title={t('console.scoreHint')}
-          >
-            <Icon name="whisper" size={12} />
-            {busy ? t('console.busy.score') : t('console.score')}
-          </Button>
+          <>
+            {onDownloadDirect && (
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={!!busy}
+                disabled={!!busy}
+                onClick={() => onDownloadDirect(item)}
+                title={t('console.downloadUnscoredHint')}
+              >
+                <Icon name="downloads" size={12} />
+                {busy ? t('console.busy.download') : t('console.downloadUnscored')}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={!!busy}
+              disabled={!!busy}
+              onClick={() => onScore(item)}
+              title={t('console.scoreHint')}
+            >
+              <Icon name="whisper" size={12} />
+              {busy ? t('console.busy.score') : t('console.score')}
+            </Button>
+          </>
         )}
         {stage === 'scored' && (
           <Button

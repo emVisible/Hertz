@@ -170,6 +170,11 @@ export function AuditCard({
           <Badge tone="neutral">u/{item.author}</Badge>
           <Badge tone="neutral">r{item.reddit_score}</Badge>
           {item.score_total != null && <Badge tone="primary">AI {item.score_total.toFixed(1)}</Badge>}
+          {/* 未评分（v0.11.10）：直下条目无 AI 参考——显式标注而非留空。
+              is_lowscore 与 score_total 同源于 ScoreStep，无需叠加判断 */}
+          {item.score_total == null && (
+            <Badge tone="neutral">{t('console.unscored')}</Badge>
+          )}
           {item.is_lowscore && (
             <span className="border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning">
               {t('console.lowScore')}

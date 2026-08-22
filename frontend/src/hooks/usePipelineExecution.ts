@@ -225,9 +225,26 @@ export function usePipelineExecution() {
     }
   }
 
+  /** 单条直下（v0.11.10）：未评分条目绕过评分直接下载——省 API 余额场景。 */
+  async function downloadOneDirect(item: PipelineItem) {
+    try {
+      await withBusy(item, 'download', () => pipelineApi.download(item.id, true))
+      refresh()
+      toast(t('console.downloaded'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   /** 批量评分（v0.3.5，预处理批量操作条）。 */
   async function scoreBatch() {
     await runStepOnly('score')
+  }
+
+  /** 批量直下（v0.11.10，预处理「直接下载」按钮）：全部未评分条目
+   *  绕过评分直接下载（异步队列，进度经 SSE/job 轮询）。 */
+  async function downloadBatchUnscored() {
+    await runStepOnly('download', '', true)
   }
 
   /** 单条制作（v0.3.4，预处理「制作」按钮）。 */
@@ -261,13 +278,14 @@ export function usePipelineExecution() {
     await runStepOnly('produce')
   }
 
-  async function runStepOnly(stepName: string, channel = '') {
+  async function runStepOnly(stepName: string, channel = '', unscored = false) {
     if (runningRef.current) return
     runningRef.current = true
     try {
       // v0.10.1 异步队列：run 端点立即返回 queued，任务后台执行——进度经
-      // SSE（job_step/item/job_done）实时刷新，不再等待整个批次完成
-      await pipelineApi.run(stepName, limit, channel)
+      // SSE（job_step/item/job_done）实时刷新，不再等待整个批次完成。
+      // v0.11.10：unscored 仅对 download 生效（绕过评分直接下载）。
+      await pipelineApi.run(stepName, limit, channel, unscored)
       toast(t('console.jobQueued', { step: stepName }), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
@@ -603,7 +621,9 @@ export function usePipelineExecution() {
     produceBatch,
     scoreOne,
     scoreBatch,
+    downloadBatchUnscored,
     downloadOne,
+    downloadOneDirect,
     runStep,
     refresh,
   }

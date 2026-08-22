@@ -35,8 +35,13 @@ async def run_step(
     step: str,
     limit: int = Query(10, ge=1, le=50),
     channel: str = "",
+    unscored: int = Query(0),
 ):
+    """批量运行。v0.11.10：unscored=1 且 step=download 时拉取未评分条目
+    直接下载（绕过评分，省 API 用量）；对其他步骤无效果。"""
     try:
+        if step == "download" and unscored:
+            return await _pipe().download_unscored(limit=limit)
         return await _pipe().run_batch(step, limit=limit, channel=channel)
     except KeyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -5,6 +5,49 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.11.10] - 2026-08-22
+
+绕过评分直接下载（省 API 用量）+ 审核卡未评分降级。
+
+### 新增
+
+- **预处理「直接下载」**：discovered 阶段 header 新增批量直下按钮（`POST /pipeline/run?step=download&unscored=1`，异步队列），未评分行新增单条「直下」按钮（`POST /items/{id}/download?skip_score=1`）——API 余额不足时跳过评分环节，审核以人工判断为主
+- **引擎宽松路径**：`run_batch`/`process_one` 支持 `input_statuses` 覆盖（默认仍按 `step.input_statuses`，评分先行语义不变）
+- **审核卡「未评分」徽章**：无评分条目显式标注中性 Badge（AI 分/评分维度/低分标记本就条件渲染，排序 `?? -1` 兜底）——评分为辅助信号而非必经环节
+
+### 测试
+
+- `tests/test_download_skip_score.py`：4 个契约测试（默认拒绝/skip_score 放行/批量只拉 discovered/unscored 对其他步骤无效果）；修复 `test_chain_to_review_gate` 对同事务 created_at 排序的时序脆弱依赖
+
+## [v0.11.9] - 2026-08-21
+
+取消制作 + 六项体验修复。
+
+### 新增
+
+- **取消制作（wave11）**：制作中按钮切换为「取消」——协作式取消（模块级标志注册表 + ContextVar 活动条目 + 产线检查点 + ffmpeg 轮询终止）；取消后条目回滚 downloaded（保留原片，清半成品），不标失败；幂等端点 `POST /items/{id}/produce-cancel`
+- **随机抽帧封面入口扩展**：审核卡新增（与换封面并排）；发布卡按钮由 hover 浮现改为常驻可见
+- **审核卡标题显示发布标题**：`bili_title` 优先，原版英文标题降级为 meta 行 `[EN]` 小字——审核所见即发布所得
+
+### 修复
+
+- **发布目标误报 NOOP**：runtime allowlist 缺 `pipeline_reddit_cookies_browser` 导致设置保存整体 400、`pipeline_publish_target` 从未落盘
+- **已下载默认生产方式改为直发**：produce_options 为空时默认 passthrough（部分显式设置保持翻译+字幕兜底，不被直发劫持）
+- **发布卡操作区拆分**：「打回审核」独立按钮，发布 select 菜单移除打回项
+- **审核页 header 分组重排**：批量｜筛选（搜索+低分池）｜排序（要素+方向+视频优先+随机）
+
+## [v0.11.8] - 2026-08-20
+
+批量操作分片——消除全选超限 422。
+
+### 修复
+
+- **批量请求按 200 分片**：后端 `BatchBody.ids`/`ArchiveBody.ids` 上限 200（AXIOM 8.1 防大查询），全选可产生 500 条 → FastAPI 422 validation error。前端 `chunkIds` 按 200 切片串行执行并聚合 ok/failed（batchAction + archive/unarchive/purge 全覆盖）
+
+### 变更
+
+- **ActivityPanel 三栏改两栏**：移除「实时事件」页签（SSE 同源事件已落盘系统日志），默认展示最近任务；清理 store/hook 中 logs/logSeq/appendLog 死代码与 5 个死 i18n key
+
 ## [v0.11.7] - 2026-08-14
 
 情感垂直频道第二阶段——文字故事产线（text_only 帖 → 中文故事旁白 → 配音 → 图文合成）。
