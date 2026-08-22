@@ -129,7 +129,8 @@ async def generate_packaging(ai, item, script: dict) -> dict:
     narration = str(script.get("narration") or "")[:800]
     try:
         result = await ai.title_and_tags(
-            script=narration, content=f"{item.title}\n\n来源: r/{item.subreddit}"
+            script=narration, content=f"{item.title}\n\n来源: r/{item.subreddit}",
+            task_id=f"item:{item.id}",
         )
         title = (result.title or "").strip()
         tags = normalize_tags(result.tags)

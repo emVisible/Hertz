@@ -44,8 +44,21 @@ RUNTIME_ALLOWLIST = {
     "pipeline_auto_publish_daily_limit",
     "pipeline_auto_promote_daily",
     "pipeline_auto_publish_tick_minutes",
+    # 发布策略引擎（v0.13）：健康度动态配额/内容分层/槽位约束
+    "pipeline_strategy_enabled",
+    "pipeline_strategy_base_daily",
+    "pipeline_strategy_warmup_floor",
+    "pipeline_strategy_warmup_step",
+    "pipeline_strategy_drop_ratio",
+    "pipeline_strategy_cooldown_floor_views",
+    "pipeline_strategy_cooldown_streak_days",
+    "pipeline_strategy_min_same_tid_gap_h",
+    "pipeline_strategy_premier_score",
     # 模型单价（v0.5 E 成本估算）：model_key → {prompt, completion}（美元/百万 tokens）
     "ai_model_prices",
+    # 成本报表币种（v0.14.1）：CNY|USD + USD→目标币汇率
+    "cost_currency",
+    "cost_usd_rate",
     # 角色分配经 PUT /api/ai/roles 写入（唯一写入口，见 routers/ai.py）
     # Single-user desktop: API keys live in the local runtime.yaml.
     # They are never returned by GET — only set via PATCH.

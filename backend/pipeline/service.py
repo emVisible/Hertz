@@ -7,7 +7,7 @@ review API and event wiring. The heavy lifting is delegated to StepEngine.
 import asyncio
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, or_, select
 
@@ -378,12 +378,69 @@ class PipelineService:
                 failed.append({"id": str(item_id), "error": str(exc)})
         return {"ok": ok, "failed": failed}
 
+    def _strategy_cfg(self):
+        """发布策略参数（v0.13）：settings → StrategyConfig。全部阈值
+        runtime 可调（设置页/PUT config），规则骨架见 strategy.py 模块注释。"""
+        from backend.pipeline.strategy import StrategyConfig
+
+        s = self.engine.settings
+        return StrategyConfig(
+            enabled=bool(getattr(s, "pipeline_strategy_enabled", False)),
+            base_daily=int(getattr(s, "pipeline_strategy_base_daily", 2) or 2),
+            warmup_floor=int(getattr(s, "pipeline_strategy_warmup_floor", 30) or 30),
+            warmup_step=int(getattr(s, "pipeline_strategy_warmup_step", 10) or 10),
+            drop_ratio=float(getattr(s, "pipeline_strategy_drop_ratio", 0.5)),
+            cooldown_floor_views=int(
+                getattr(s, "pipeline_strategy_cooldown_floor_views", 10) or 10
+            ),
+            cooldown_streak_days=int(
+                getattr(s, "pipeline_strategy_cooldown_streak_days", 2) or 2
+            ),
+            min_same_tid_gap_h=int(getattr(s, "pipeline_strategy_min_same_tid_gap_h", 6) or 6),
+            premier_score=float(getattr(s, "pipeline_strategy_premier_score", 8.0)),
+        )
+
+    async def _current_account_state(self, now: datetime):
+        """账号画像（v0.13）：全量计数定 warmup + 近 45 日明细定健康度。
+
+        账号状态是 items 的派生数据（AXIOM 单一真相源）——tick 每 5 分钟
+        重算一次，查询量级为几十行，无需缓存/落库。
+        """
+        from backend.pipeline.strategy import account_state
+
+        cfg = self._strategy_cfg()
+        cutoff = now - timedelta(days=45)
+        async with session_factory() as session:
+            total = await session.scalar(
+                select(func.count(Item.id)).where(
+                    Item.status == ItemStatus.PUBLISHED, Item.archived.is_(False),
+                )
+            )
+            recent = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.PUBLISHED,
+                        Item.published_at.isnot(None),
+                        Item.published_at >= cutoff,
+                        Item.archived.is_(False),
+                    )
+                )
+            ).scalars().all()
+        return account_state(recent, now=now, cfg=cfg, total_published=int(total or 0))
+
     async def _auto_promote_now(self, now: datetime) -> int:
-        """每日转正：holding → ready（自动分配当天窗口槽位，窗口排满保持 holding）。"""
+        """每日转正：holding → ready（自动分配当天窗口槽位，窗口排满保持 holding）。
+
+        v0.13：策略开启时由发布策略引擎接管——账号健康度定配额、内容分层选
+        条目、同分区间隔 + 相邻分区去重；关闭时保持静态转正数行为。"""
         from backend.pipeline.publish_queue import PHASE_HOLDING, PHASE_READY
         from backend.pipeline.schedule import next_slot
 
-        daily_n = int(getattr(self.engine.settings, "pipeline_auto_promote_daily", 3) or 0)
+        settings = self.engine.settings
+        if self._strategy_cfg().enabled:
+            return await self._strategy_promote(now)
+
+        daily_n = int(getattr(settings, "pipeline_auto_promote_daily", 3) or 0)
         if daily_n <= 0:
             return 0
         async with session_factory() as session:
@@ -431,6 +488,86 @@ class PipelineService:
             await session.commit()
         return promoted
 
+    async def _strategy_promote(self, now: datetime) -> int:
+        """策略转正（v0.13）：健康度配额 × 内容分层选条目 × 槽位规划。
+
+        cooldown 日 quota=0 → 不转正任何条目（全自动停发）；窗口排满时
+        剩余保持 holding（与静态路径语义一致）。
+        """
+        from backend.pipeline.publish_queue import PHASE_HOLDING, PHASE_READY
+        from backend.pipeline.strategy import daily_quota, plan_promotions
+
+        cfg = self._strategy_cfg()
+        state = await self._current_account_state(now)
+        quota = daily_quota(state, cfg=cfg)
+        if quota <= 0:
+            logger.info(
+                "strategy promote: phase=%s quota=0 — skip (%s)",
+                state.phase, "; ".join(state.reasons)[:200],
+            )
+            return 0
+
+        async with session_factory() as session:
+            holding = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.APPROVED,
+                        Item.queue_phase == PHASE_HOLDING,
+                        Item.archived.is_(False),
+                    ).order_by(Item.seq.asc()).limit(200)
+                )
+            ).scalars().all()
+            if not holding:
+                return 0
+            # 有效分区（v0.13）：手动 script_json.bili_tid 优先，否则按来源推荐。
+            # Item 无 tid 列——挂在实例属性上供策略层纯函数读取（不落库）
+            for it in holding:
+                manual = (it.script_json or {}).get("bili_tid")
+                suggested = _auto_tid(it)
+                it.auto_tid = int(manual or suggested or 0)
+            ready_items = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.APPROVED,
+                        Item.queue_phase == PHASE_READY,
+                        Item.scheduled_at.isnot(None),
+                        Item.archived.is_(False),
+                    )
+                )
+            ).scalars().all()
+        existing_ready = []
+        for it in ready_items:
+            if it.scheduled_at is None:
+                continue
+            manual = (it.script_json or {}).get("bili_tid")
+            existing_ready.append(
+                (it.scheduled_at, int(manual or _auto_tid(it) or 0))
+            )
+        plan = plan_promotions(
+            holding, quota=quota, existing_ready=existing_ready, now=now,
+            windows_raw=getattr(self.engine.settings, "pipeline_publish_windows", ""),
+            min_interval_min=int(
+                getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
+            ),
+            cfg=cfg,
+        )
+        if not plan:
+            return 0
+        slots = {item.id: slot for item, slot in plan}
+        async with session_factory() as session:
+            rows = (
+                await session.execute(select(Item).where(Item.id.in_(slots.keys())))
+            ).scalars().all()
+            for row in rows:
+                row.queue_phase = PHASE_READY
+                row.scheduled_at = slots[row.id]
+            await session.commit()
+        logger.info(
+            "strategy promote: phase=%s quota=%d promoted=%d",
+            state.phase, quota, len(plan),
+        )
+        return len(plan)
+
     async def _auto_published_today_count(self, now: datetime) -> int:
         """今日产能已用：本地日 + publish_json.auto 标记（手动发布不计）。"""
         from backend.pipeline.publish_queue import local_day_bounds
@@ -461,6 +598,7 @@ class PipelineService:
         from backend.pipeline.errors import InvalidItemStateError
         from backend.pipeline.publish_queue import PHASE_READY
         from backend.pipeline.schedule import next_slot
+        from backend.pipeline.strategy import daily_quota
 
         settings = self.engine.settings
         if not bool(getattr(settings, "pipeline_auto_publish", False)):
@@ -476,6 +614,11 @@ class PipelineService:
             self._last_promote_day = local_day
 
         daily_limit = int(getattr(settings, "pipeline_auto_publish_daily_limit", 5) or 5)
+        # v0.13：策略开启 → 产能由账号健康度决定（cooldown=0 自动停发）
+        strategy_state = None
+        if self._strategy_cfg().enabled:
+            strategy_state = await self._current_account_state(now)
+            daily_limit = daily_quota(strategy_state, cfg=self._strategy_cfg())
         used = await self._auto_published_today_count(now)
         published = failed = 0
         while used < daily_limit:
@@ -541,15 +684,19 @@ class PipelineService:
             "enabled": True, "promoted": promoted,
             "published": published, "failed": failed,
             "used_today": used, "daily_limit": daily_limit,
+            # v0.13：策略相位与证据（前端状态卡直显；关闭时为 None）
+            "strategy_phase": strategy_state.phase if strategy_state else None,
         }
 
     async def queue_view(self) -> dict:
-        """发布队列看板：ready（按排期）+ holding（按入库序）+ 今日产能。"""
+        """发布队列看板：ready（按排期）+ holding（按入库序）+ 今日产能 +
+        账号画像（v0.13 策略开启时）。"""
         from backend.pipeline.publish_queue import (
             PHASE_HOLDING,
             PHASE_READY,
             local_day_bounds,
         )
+        from backend.pipeline.strategy import daily_quota
 
         now = datetime.now(UTC)
         day_start, _day_end = local_day_bounds(now)
@@ -587,15 +734,43 @@ class PipelineService:
         used = sum(
             1 for i in published_today if (i.publish_json or {}).get("auto")
         )
+        # v0.13：策略开启 → 看板带账号画像（相位/配额/证据/近 7 日趋势）
+        account = None
+        cfg = self._strategy_cfg()
+        if cfg.enabled:
+            state = await self._current_account_state(now)
+            quota = daily_quota(state, cfg=cfg)
+            account = {
+                "phase": state.phase,
+                "quota": quota,
+                "used": used,
+                "reasons": list(state.reasons),
+                "days": [
+                    {"date": d.date, "uploads": d.uploads, "views_median": d.views_median}
+                    for d in state.days[-7:]
+                ],
+            }
         return {
-            "ready": [self._serialize(i) for i in ready],
-            "holding": [self._serialize(i) for i in holding],
+            # v0.13：条目带内容分层标记（premier/regular/filler）——队列行徽章，
+            # 让「策略已接管选条目」在 UI 上可见
+            "ready": [self._serialize_with_tier(i) for i in ready],
+            "holding": [self._serialize_with_tier(i) for i in holding],
             "today": {
                 "auto_published": used,
                 "daily_limit": daily_limit,
                 "auto_enabled": bool(getattr(self.engine.settings, "pipeline_auto_publish", False)),
             },
+            # 关闭时为 None——前端据此隐藏状态卡
+            "account": account,
         }
+
+    def _serialize_with_tier(self, item) -> dict:
+        """序列化 + 内容分层标记（v0.13）。"""
+        from backend.pipeline.strategy import content_tier
+
+        data = self._serialize(item)
+        data["tier"] = content_tier(item)
+        return data
 
     # ---------- 发布数据（v0.4 C1：回捞 + 手动补录） ----------
 

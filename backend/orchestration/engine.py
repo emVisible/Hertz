@@ -380,7 +380,8 @@ class PhaseEngine:
             try:
                 async with asyncio.timeout(timeout_s):
                     text = await self.ai.chat_messages(
-                        messages, model_key=configured_model or None
+                        messages, model_key=configured_model or None,
+                        caller="orchestrator",
                     )
                 break
             except Exception as exc:  # noqa: BLE001 — retryable transient failure
@@ -452,7 +453,11 @@ class PhaseEngine:
                 async with asyncio.timeout(120):
                     # 策略分析走 fast 角色（便宜快速模型）：它只是"读懂输入产出分析"，
                     # 不需要 main 的强推理——避免 V3.2 长上下文 40s+ 卡住第一个阶段
-                    candidate = (await self.ai.chat_messages(messages, role="fast")).strip()
+                    candidate = (
+                        await self.ai.chat_messages(
+                            messages, role="fast", caller="orchestrator"
+                        )
+                    ).strip()
                 if len(candidate) > 50:
                     text = candidate
             except Exception:  # noqa: BLE001 — fall back to template
@@ -566,7 +571,9 @@ class PhaseEngine:
             )
             try:
                 async with asyncio.timeout(120):
-                    candidate = (await self.ai.chat_messages(messages)).strip()
+                    candidate = (
+                        await self.ai.chat_messages(messages, caller="orchestrator")
+                    ).strip()
                 if len(candidate) > 100:
                     final_text = candidate
             except Exception:  # noqa: BLE001 — fall back to concatenation

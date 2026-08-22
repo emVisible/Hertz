@@ -12,7 +12,8 @@
     "docs": "Docs",
     "execution": "Execute",
     "dashboard": "Dashboard",
-    "queue": "Queue"
+    "queue": "Queue",
+    "cost": "Costs"
   },
   "common": {
     "loading": "Loading…",
@@ -223,6 +224,10 @@
     "ttsPreviewText": "This is a voice preview. Welcome.",
     "prices": "Model prices",
     "pricesHint": "One per line: `model: input/output` (USD per million tokens), used for dashboard cost estimates. e.g. deepseek-chat: 0.27/1.10",
+    "costCurrency": "Report currency",
+    "costCurrencyCny": "CNY (¥)",
+    "costCurrencyUsd": "USD ($)",
+    "costUsdRate": "Exchange rate (1 USD = ?)",
     "redditCookie": "Reddit Cookie (login unlock)",
     "redditCookieHint": "OAuth apps are hard for individuals — use browser login cookies instead: download/collect requests carry the Cookie header and CDN 403s stop. Paste raw cookies or auto-export from browser (yt-dlp).",
     "redditCookieRaw": "Cookie string (optional)",
@@ -262,7 +267,19 @@
     "autoPublishDailyLimit": "Daily capacity (items)",
     "autoPromoteDaily": "Daily auto-promote (items)",
     "autoPublishTickMinutes": "Check interval (min)",
-    "autoPublishHint": "When on, holding items auto-promote N per day and publish when due (queue only stores when off). Capacity counts auto publishes only; manual publishes are free."
+    "autoPublishHint": "When on, holding items auto-promote N per day and publish when due (queue only stores when off). Capacity counts auto publishes only; manual publishes are free.",
+    "strategy": "Publish strategy engine",
+    "strategyEnabled": "Enable strategy (health-based quota)",
+    "strategyBaseDaily": "Base daily quota (when strategy takes over)",
+    "strategyHint": "When on, promotion/capacity follow account health: new accounts ramp up slowly; view drops halve the quota; suspected throttling (consecutive floor views) pauses publishing automatically. When off, static capacity above applies. See the Account Health card under Publish → Queue.",
+    "strategyAdvanced": "Advanced thresholds",
+    "strategyWarmupFloor": "Warm-up floor (total uploads)",
+    "strategyWarmupStep": "Ramp step (+1 quota per N uploads)",
+    "strategyDropRatio": "Drop ratio (this week ÷ last week avg views)",
+    "strategyCooldownViews": "Throttle floor (median views per publish day)",
+    "strategyCooldownDays": "Floor-streak days → pause",
+    "strategySameTidGap": "Same-category min gap (hours)",
+    "groupCollect": "Collect & ingest"
   },
   "execution": {
     "modeStudio": "Studio",
@@ -1211,6 +1228,21 @@
     "autoOn": "Auto-publish on",
     "autoOff": "Auto-publish off",
     "capacityHint": "Daily auto-publish cap counts auto publishes only; manual publishes are free. Holding items auto-promote N per day.",
+    "accountTitle": "Account health",
+    "quotaUsed": "{{used}} / {{quota}} today",
+    "uploadsN": "{{n}} uploads",
+    "phase": {
+      "warmup": "Warm-up",
+      "normal": "Healthy",
+      "caution": "Caution",
+      "cooldown": "Cooldown"
+    },
+    "tier": {
+      "premier": "Premier",
+      "regular": "Regular",
+      "filler": "Filler"
+    },
+    "tierHint": "Content tier: premier (high AI score) takes prime slots first; filler (low score) promotes only when quota is spare",
     "ready": "Publish queue",
     "holding": "Holding queue",
     "emptyReadyTitle": "Publish queue is empty",
@@ -1222,5 +1254,42 @@
     "scheduledAt": "Scheduled",
     "noSchedule": "No schedule",
     "promoteDaily": "Daily auto-promote"
+  },
+  "cost": {
+    "title": "Cost Control",
+    "range": "Range",
+    "days": "Last {{n}} days",
+    "managePrices": "Manage prices",
+    "missingPrices": "These models have no price configured — their spend is not counted: {{models}} (set them under Settings → AI → Model prices)",
+    "totalSpend": "Spend",
+    "totalCalls": "Calls",
+    "promptTokens": "Prompt tokens",
+    "completionTokens": "Completion tokens",
+    "byDomain": "By pipeline stage",
+    "dailyTrend": "Daily spend trend",
+    "history": "Call history",
+    "empty": "No AI calls in this range",
+    "unpriced": "Unpriced",
+    "callsN": "{{n}} calls",
+    "colTime": "Time",
+    "colDomain": "Stage",
+    "colModel": "Model",
+    "colDuration": "Duration",
+    "colCost": "Cost",
+    "colStatus": "Status",
+    "byModel": "By model",
+    "viewAsset": "View assets",
+    "avgDaily": "{{v}} / day avg",
+    "scopeNote": "Scope: LLM API calls only (scoring / script / title & packaging / translate / orchestration / chat). ASR and TTS run locally or on free channels and are not billed. Amounts are computed at query time with current prices — price edits restate history.",
+    "domain": {
+      "score": "Scoring",
+      "script": "Narration script",
+      "title": "Title & packaging",
+      "translate": "Translation",
+      "packaging": "Bilibili packaging",
+      "orchestrator": "Orchestration",
+      "chat": "Chat",
+      "other": "Other"
+    }
   }
 }

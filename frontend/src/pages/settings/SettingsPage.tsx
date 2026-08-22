@@ -52,6 +52,14 @@ interface ConfigData {
   /** 自动发布队列（v0.12）：总开关 / 每日产能上限 / 预发布每日转正数 / tick 间隔 */
   pipeline_auto_publish?: boolean
   pipeline_auto_publish_daily_limit?: number
+  pipeline_strategy_enabled?: boolean
+  pipeline_strategy_base_daily?: number
+  pipeline_strategy_warmup_floor?: number
+  pipeline_strategy_warmup_step?: number
+  pipeline_strategy_drop_ratio?: number
+  pipeline_strategy_cooldown_floor_views?: number
+  pipeline_strategy_cooldown_streak_days?: number
+  pipeline_strategy_min_same_tid_gap_h?: number
   pipeline_auto_promote_daily?: number
   pipeline_auto_publish_tick_minutes?: number
   pipeline_sources?: string[]
@@ -70,6 +78,8 @@ interface ConfigData {
   pipeline_reddit_cookies_browser?: string
   pipeline_reddit_client_secret_set?: boolean
   ai_model_prices?: Record<string, { prompt?: number; completion?: number }>
+  cost_currency?: string
+  cost_usd_rate?: number
   llm_api_key_masked?: string | null
   llm_api_key_set?: boolean
 }
@@ -354,7 +364,8 @@ function PublishStatusCard({ onChanged }: { onChanged: () => void }) {
   )
 }
 
-/** 模型单价配置（v0.5 E 成本估算）：每行 `model_key: prompt价/completion价`（美元/百万 tokens）。 */
+/** 模型单价配置（v0.5 E 成本估算）：每行 `model_key: prompt价/completion价`（美元/百万 tokens）。
+ *  v0.14.1：报表币种 + 汇率随单价一并维护。 */
 function ModelPrices() {
   const { t } = useTranslation()
   const toast = useToast()
@@ -363,6 +374,8 @@ function ModelPrices() {
     queryFn: () => api.get<ConfigData>('/api/config'),
   })
   const [raw, setRaw] = useState('')
+  const [currency, setCurrency] = useState('CNY')
+  const [rate, setRate] = useState('7.2')
 
   useEffect(() => {
     if (!cfg) return
@@ -372,6 +385,8 @@ function ModelPrices() {
         .map(([k, v]) => `${k}: ${v?.prompt ?? 0}/${v?.completion ?? 0}`)
         .join('\n'),
     )
+    setCurrency(cfg.cost_currency ?? 'CNY')
+    setRate(String(cfg.cost_usd_rate ?? 7.2))
   }, [cfg])
 
   async function save() {
@@ -382,7 +397,13 @@ function ModelPrices() {
       prices[m[1]] = { prompt: Number(m[2]), completion: Number(m[3]) }
     }
     try {
-      await api.patch('/api/config', { overrides: { ai_model_prices: prices } })
+      await api.patch('/api/config', {
+        overrides: {
+          ai_model_prices: prices,
+          cost_currency: currency,
+          cost_usd_rate: Number(rate) || 1,
+        },
+      })
       await refetch()
       toast(t('settings.saved'), 'success')
     } catch (err) {
@@ -393,6 +414,25 @@ function ModelPrices() {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-text-secondary">{t('settings.pricesHint')}</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Select
+          label={t('settings.costCurrency')}
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value)}
+          options={[
+            { value: 'CNY', label: t('settings.costCurrencyCny') },
+            { value: 'USD', label: t('settings.costCurrencyUsd') },
+          ]}
+        />
+        <Input
+          label={t('settings.costUsdRate')}
+          type="number"
+          step="0.01"
+          min={0}
+          value={rate}
+          onChange={(e) => setRate(e.target.value)}
+        />
+      </div>
       <textarea
         value={raw}
         onChange={(e) => setRaw(e.target.value)}
@@ -452,6 +492,14 @@ export function SettingsPage() {
       pipeline_auto_publish_daily_limit: String(cfg.pipeline_auto_publish_daily_limit ?? 5),
       pipeline_auto_promote_daily: String(cfg.pipeline_auto_promote_daily ?? 3),
       pipeline_auto_publish_tick_minutes: String(cfg.pipeline_auto_publish_tick_minutes ?? 5),
+      pipeline_strategy_enabled: String(cfg.pipeline_strategy_enabled ?? false),
+      pipeline_strategy_base_daily: String(cfg.pipeline_strategy_base_daily ?? 2),
+      pipeline_strategy_warmup_floor: String(cfg.pipeline_strategy_warmup_floor ?? 30),
+      pipeline_strategy_warmup_step: String(cfg.pipeline_strategy_warmup_step ?? 10),
+      pipeline_strategy_drop_ratio: String(cfg.pipeline_strategy_drop_ratio ?? 0.5),
+      pipeline_strategy_cooldown_floor_views: String(cfg.pipeline_strategy_cooldown_floor_views ?? 10),
+      pipeline_strategy_cooldown_streak_days: String(cfg.pipeline_strategy_cooldown_streak_days ?? 2),
+      pipeline_strategy_min_same_tid_gap_h: String(cfg.pipeline_strategy_min_same_tid_gap_h ?? 6),
       pipeline_sources: (cfg.pipeline_sources ?? ['hot']).join(', '),
       pipeline_subtitle_font_size: String(cfg.pipeline_subtitle_font_size ?? 24),
       pipeline_subtitle_outline: String(cfg.pipeline_subtitle_outline ?? 1),
@@ -518,6 +566,21 @@ export function SettingsPage() {
       pipeline_auto_publish_daily_limit: Number(form.pipeline_auto_publish_daily_limit) || 5,
       pipeline_auto_promote_daily: Number(form.pipeline_auto_promote_daily) || 3,
       pipeline_auto_publish_tick_minutes: Number(form.pipeline_auto_publish_tick_minutes) || 5,
+      pipeline_strategy_enabled: form.pipeline_strategy_enabled === 'true',
+      pipeline_strategy_base_daily: Number(form.pipeline_strategy_base_daily) || 2,
+      pipeline_strategy_warmup_floor: Number(form.pipeline_strategy_warmup_floor) || 30,
+      pipeline_strategy_warmup_step: Number(form.pipeline_strategy_warmup_step) || 10,
+      pipeline_strategy_drop_ratio: Number(form.pipeline_strategy_drop_ratio) || 0.5,
+      pipeline_strategy_cooldown_floor_views:
+        form.pipeline_strategy_cooldown_floor_views != null
+          ? Number(form.pipeline_strategy_cooldown_floor_views)
+          : 10,
+      pipeline_strategy_cooldown_streak_days:
+        Number(form.pipeline_strategy_cooldown_streak_days) || 2,
+      pipeline_strategy_min_same_tid_gap_h:
+        form.pipeline_strategy_min_same_tid_gap_h != null
+          ? Number(form.pipeline_strategy_min_same_tid_gap_h)
+          : 6,
       pipeline_sources: form.pipeline_sources
         ?.split(',')
         .map((s) => s.trim())
@@ -724,31 +787,36 @@ export function SettingsPage() {
                     <Icon name="config" size={15} />
                     {t('settings.pipeline')}
                   </h2>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-3">
-                    <Input
-                      label={t('settings.minScore')}
-                      type="number"
-                      step="0.1"
-                      value={form.pipeline_min_score ?? '6'}
-                      onChange={(e) => set('pipeline_min_score', e.target.value)}
-                    />
-                    <Input
-                      label={t('settings.collectLimit')}
-                      type="number"
-                      value={form.pipeline_collect_limit ?? '25'}
-                      onChange={(e) => set('pipeline_collect_limit', e.target.value)}
-                    />
-                    <Select
-                      label={t('settings.publishTarget')}
-                      value={form.pipeline_publish_target ?? 'noop'}
-                      onChange={(e) => set('pipeline_publish_target', e.target.value)}
-                      options={[
-                        { value: 'noop', label: 'noop' },
-                        { value: 'bilibili', label: 'Bilibili' },
-                      ]}
-                    />
-                  </div>
+                  {/* v0.13.1 分组重排：采集与入库｜自动发布队列｜发布策略——
+                      每组统一 border-t + 组标题，替代此前平铺混排 */}
                   <div className="mt-3">
+                    <p className="text-xs font-medium text-text-primary">{t('settings.groupCollect')}</p>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                      <Input
+                        label={t('settings.minScore')}
+                        type="number"
+                        step="0.1"
+                        value={form.pipeline_min_score ?? '6'}
+                        onChange={(e) => set('pipeline_min_score', e.target.value)}
+                      />
+                      <Input
+                        label={t('settings.collectLimit')}
+                        type="number"
+                        value={form.pipeline_collect_limit ?? '25'}
+                        onChange={(e) => set('pipeline_collect_limit', e.target.value)}
+                      />
+                      <Input
+                        label={t('settings.autoCollect')}
+                        type="number"
+                        value={form.pipeline_auto_collect_minutes ?? '30'}
+                        onChange={(e) => set('pipeline_auto_collect_minutes', e.target.value)}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-text-disabled">
+                      {t('settings.autoCollectHint')}
+                    </p>
+                  </div>
+                  <div className="mt-4 border-t border-border/60 pt-3">
                     <span className="text-xs font-medium text-text-primary">{t('settings.sources')}</span>
                     {/* 源池勾选（v0.11.6 情感频道）：目录常量 + 勾选 → pipeline_sources */}
                     {SOURCE_GROUPS.map((g) => {
@@ -792,18 +860,7 @@ export function SettingsPage() {
                       {t('settings.sourcesHint')}
                     </p>
                   </div>
-                  <div className="mt-3">
-                    <Input
-                      label={t('settings.autoCollect')}
-                      type="number"
-                      value={form.pipeline_auto_collect_minutes ?? '30'}
-                      onChange={(e) => set('pipeline_auto_collect_minutes', e.target.value)}
-                    />
-                    <p className="mt-1 text-xs leading-relaxed text-text-disabled">
-                      {t('settings.autoCollectHint')}
-                    </p>
-                  </div>
-                  {/* 自动发布队列（v0.12）：总开关 + 每日产能 + 预发布转正 + tick 间隔 */}
+                  {/* 自动发布队列（v0.12）：总开关 + 每日产能 + 预发布转正 + tick 间隔 + 发布目标 */}
                   <div className="mt-4 border-t border-border/60 pt-3">
                     <p className="text-xs font-medium text-text-primary">{t('settings.autoPublish')}</p>
                     <div className="mt-2 grid gap-3 sm:grid-cols-2">
@@ -814,6 +871,15 @@ export function SettingsPage() {
                         options={[
                           { value: 'true', label: t('common.yes') },
                           { value: 'false', label: t('common.no') },
+                        ]}
+                      />
+                      <Select
+                        label={t('settings.publishTarget')}
+                        value={form.pipeline_publish_target ?? 'noop'}
+                        onChange={(e) => set('pipeline_publish_target', e.target.value)}
+                        options={[
+                          { value: 'noop', label: 'noop' },
+                          { value: 'bilibili', label: 'Bilibili' },
                         ]}
                       />
                       <Input
@@ -841,6 +907,84 @@ export function SettingsPage() {
                     <p className="mt-2 text-xs leading-relaxed text-text-disabled">
                       {t('settings.autoPublishHint')}
                     </p>
+                  </div>
+                  {/* 发布策略引擎（v0.13）：健康度动态配额 + 内容分层 + 槽位约束。
+                      v0.13.1：全部阈值开放可调（AXIOM 可维护性）——基础 2 项平铺，
+                      高级 6 项折叠渐进披露 */}
+                  <div className="mt-4 border-t border-border/60 pt-3">
+                    <p className="text-xs font-medium text-text-primary">{t('settings.strategy')}</p>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                      <Select
+                        label={t('settings.strategyEnabled')}
+                        value={form.pipeline_strategy_enabled ?? 'false'}
+                        onChange={(e) => set('pipeline_strategy_enabled', e.target.value)}
+                        options={[
+                          { value: 'true', label: t('common.yes') },
+                          { value: 'false', label: t('common.no') },
+                        ]}
+                      />
+                      <Input
+                        label={t('settings.strategyBaseDaily')}
+                        type="number"
+                        min={1}
+                        value={form.pipeline_strategy_base_daily ?? '2'}
+                        onChange={(e) => set('pipeline_strategy_base_daily', e.target.value)}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-text-disabled">
+                      {t('settings.strategyHint')}
+                    </p>
+                    <details className="mt-2">
+                      <summary className="cursor-pointer select-none text-[11px] text-text-secondary hover:text-text-primary">
+                        {t('settings.strategyAdvanced')}
+                      </summary>
+                      <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                        <Input
+                          label={t('settings.strategyWarmupFloor')}
+                          type="number"
+                          min={1}
+                          value={form.pipeline_strategy_warmup_floor ?? '30'}
+                          onChange={(e) => set('pipeline_strategy_warmup_floor', e.target.value)}
+                        />
+                        <Input
+                          label={t('settings.strategyWarmupStep')}
+                          type="number"
+                          min={1}
+                          value={form.pipeline_strategy_warmup_step ?? '10'}
+                          onChange={(e) => set('pipeline_strategy_warmup_step', e.target.value)}
+                        />
+                        <Input
+                          label={t('settings.strategyDropRatio')}
+                          type="number"
+                          step="0.05"
+                          min={0}
+                          max={1}
+                          value={form.pipeline_strategy_drop_ratio ?? '0.5'}
+                          onChange={(e) => set('pipeline_strategy_drop_ratio', e.target.value)}
+                        />
+                        <Input
+                          label={t('settings.strategyCooldownViews')}
+                          type="number"
+                          min={0}
+                          value={form.pipeline_strategy_cooldown_floor_views ?? '10'}
+                          onChange={(e) => set('pipeline_strategy_cooldown_floor_views', e.target.value)}
+                        />
+                        <Input
+                          label={t('settings.strategyCooldownDays')}
+                          type="number"
+                          min={1}
+                          value={form.pipeline_strategy_cooldown_streak_days ?? '2'}
+                          onChange={(e) => set('pipeline_strategy_cooldown_streak_days', e.target.value)}
+                        />
+                        <Input
+                          label={t('settings.strategySameTidGap')}
+                          type="number"
+                          min={0}
+                          value={form.pipeline_strategy_min_same_tid_gap_h ?? '6'}
+                          onChange={(e) => set('pipeline_strategy_min_same_tid_gap_h', e.target.value)}
+                        />
+                      </div>
+                    </details>
                   </div>
                 </section>
 

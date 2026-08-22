@@ -19,7 +19,7 @@
 
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -262,6 +262,28 @@ async def trace(task_id: str | None = None, limit: int = 50) -> list[dict]:
     from backend.ai.tracing import list_calls
 
     return await list_calls(task_id, limit)
+
+
+@router.get("/costs")
+async def costs(
+    days: int = Query(30, ge=1, le=365),
+    domain: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """成本报表（v0.14）：概览/按环节/按模型/日趋势/执行历史。
+
+    金额查询时按当前 ai_model_prices 动态计算（D-176：改价追溯历史），
+    并按 cost_currency/cost_usd_rate 换算报表币种（v0.14.1 默认 CNY）。"""
+    from backend.ai.costs import aggregate_costs
+    from backend.config import settings
+
+    currency = str(getattr(settings, "cost_currency", "CNY") or "CNY")
+    rate = float(getattr(settings, "cost_usd_rate", 7.2) or 1.0)
+    return await aggregate_costs(
+        days=days, domain=domain, limit=limit, offset=offset,
+        currency=currency, rate=rate,
+    )
 
 
 # ---------- v2.4 提示词模板库 ----------

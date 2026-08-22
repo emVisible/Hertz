@@ -184,7 +184,10 @@ async def generate_script(
         script_source = "metadata"
     text = ""
     try:
-        text = await ai.script(content=body, title=item.title, max_words=max_words)
+        text = await ai.script(
+            content=body, title=item.title, max_words=max_words,
+            task_id=f"item:{item.id}",
+        )
     except Exception:  # noqa: BLE001 — heuristic fallback
         logger.exception("script generation failed, using heuristic")
     if not text or len(text.strip()) < 20:
@@ -281,7 +284,8 @@ def _clean_translation_text(text: str) -> str:
 
 
 async def _localize_text(
-    ai: AIRouter, text: str, target_lang: str, source_lang: str | None = None
+    ai: AIRouter, text: str, target_lang: str, source_lang: str | None = None,
+    task_id: str | None = None,
 ) -> str:
     """旁白/字幕本地化（v0.2.7，参考原项目 locales）：LLM 翻译，失败回退原文。
 
@@ -313,7 +317,10 @@ async def _localize_text(
         ChatMessage(role="user", content=text),
     ]
     try:
-        translated = await ai.chat_messages(messages, role="fast", max_tokens=1600)
+        translated = await ai.chat_messages(
+            messages, role="fast", max_tokens=1600,
+            operation="translate", caller="pipeline", task_id=task_id,
+        )
         translated = _clean_translation_text(translated or "")
         return translated if len(translated.strip()) >= 4 else _clean_translation_text(text)
     except Exception:  # noqa: BLE001 — 翻译失败回退原文，不阻塞生产
@@ -766,6 +773,7 @@ async def _translate_srt_cues(
     cues: list[tuple[float, float, str]],
     target_lang: str = "zh-CN",
     batch_size: int = 20,
+    task_id: str | None = None,
 ) -> list[tuple[float, float, str]]:
     """逐段 LLM 翻译字幕为 target_lang，保留时间戳（v0.8.9，对齐原项目
     _translate_srt_cues：batch 20、段数 1:1、失败回退原文不阻塞）。
@@ -798,6 +806,7 @@ async def _translate_srt_cues(
                 # v0.2.1：动态 token 预算——长段字幕 1600 固定值会被截断，
                 # 截断 → segments 数量不符 → 整批回退英文（长视频中间混合字幕）
                 max_tokens=max(1600, len(batch) * 200),
+                operation="translate", caller="pipeline", task_id=task_id,
             )
             import json as _json
 
@@ -860,6 +869,7 @@ async def _asr_subtitles(
     *,
     translate: bool = True,
     asr_srt: Path | None = None,
+    task_id: str | None = None,
 ) -> tuple[Path, str] | None:
     """ASR 原声字幕（v0.8.9 起，v0.10 语义修正：字幕/翻译数据源 = 视频原声）：
 
@@ -885,7 +895,9 @@ async def _asr_subtitles(
     if not cues:
         return None
     if translate and not await _cues_already_target(cues, target_lang):
-        zh_cues = await _translate_srt_cues(ai, cues, target_lang=target_lang)
+        zh_cues = await _translate_srt_cues(
+            ai, cues, target_lang=target_lang, task_id=task_id,
+        )
         # v0.8.9 标点清洗（对齐原项目 _rewrite_srt_strip_zh_punct）：
         # ASR 译文可能残留标点，统一清洗（保留时间戳）
         zh_cues = [
@@ -1445,7 +1457,8 @@ async def _produce_item(
     # 正确语义：源语言与目标字幕语言不同才需要翻译
     subtitle_text = (
         await _localize_text(
-            ai, narration_text, subtitle_lang, source_lang=translate_source
+            ai, narration_text, subtitle_lang, source_lang=translate_source,
+            task_id=f"item:{item.id}",
         )
         if want_translate and translate_source != subtitle_lang
         else narration_text
@@ -1471,6 +1484,7 @@ async def _produce_item(
                 ai, raw_path, directory,
                 target_lang=subtitle_lang, translate=want_translate,
                 asr_srt=(transcript or {}).get("srt"),
+                task_id=f"item:{item.id}",
             )
         except Exception:  # noqa: BLE001 — ASR 失败回退旁白字幕
             logger.warning("ASR subtitles failed, falling back to narration subs")
@@ -1491,7 +1505,9 @@ async def _produce_item(
             tts_text = subtitle_zh
         else:
             tts_text = (
-                await _localize_text(ai, narration_text, narration_lang)
+                await _localize_text(
+                    ai, narration_text, narration_lang, task_id=f"item:{item.id}"
+                )
                 if narration_lang != "zh-CN"
                 else narration_text
             )

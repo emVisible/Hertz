@@ -461,6 +461,7 @@ async def test_generate_script_content_source() -> None:
     import backend.pipeline.producers.media as m
 
     class _Item:
+        id = "0b5f8d1e-0000-4000-8000-000000000001"
         title = "TITLE STRING"
         subreddit = "space"
 
@@ -498,6 +499,7 @@ async def test_produce_item_transcript_first(monkeypatch, tmp_path) -> None:
     raw.write_bytes(b"fake-raw-bytes")
 
     class Item:
+        id = "0b5f8d1e-0000-4000-8000-000000000002"
         raw_path = str(raw)
         output_dir = "v011-transcript"
         produce_options = {

@@ -2,9 +2,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import { pipelineApi } from '../../api'
-import type { PipelineItem } from '../../api/pipeline'
+import type { ContentTier, PipelineItem, PublishQueueView } from '../../api/pipeline'
 import { Badge, Card, EmptyState, Icon } from '../ui'
 import { QueryErrorState } from '../ui/QueryErrorState'
+
+const TIER_BADGE: Record<ContentTier, { tone: 'primary' | 'neutral' | 'warning'; key: string }> = {
+  premier: { tone: 'primary', key: 'queue.tier.premier' },
+  regular: { tone: 'neutral', key: 'queue.tier.regular' },
+  filler: { tone: 'warning', key: 'queue.tier.filler' },
+}
+
+function TierBadge({ tier }: { tier: string | undefined }) {
+  const { t } = useTranslation()
+  if (!tier || !(tier in TIER_BADGE)) return null
+  const spec = TIER_BADGE[tier as ContentTier]
+  return (
+    <span title={t('queue.tierHint')} className="shrink-0">
+      <Badge tone={spec.tone}>{t(spec.key)}</Badge>
+    </span>
+  )
+}
 
 function QueueRow({
   item,
@@ -23,7 +40,11 @@ function QueueRow({
   return (
     <li className="flex items-center gap-3 border-b border-border/50 py-2 last:border-0">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] text-text-primary">{item.title}</p>
+        <p className="flex items-center gap-1.5 truncate text-[13px] text-text-primary">
+          <span className="min-w-0 flex-1 truncate">{item.title}</span>
+          {/* 内容分层（v0.13）：策略选条目的可见痕迹 */}
+          <TierBadge tier={item.tier} />
+        </p>
         <p className="mt-0.5 flex items-center gap-2 text-[11px] text-text-disabled">
           <span>#{item.seq ?? '—'}</span>
           <span className="truncate">
@@ -46,7 +67,61 @@ function QueueRow({
   )
 }
 
-/** 发布队列视图（v0.12 融合）：ready/holding + 今日产能，嵌入流水线「发布」tab。 */
+/** 发布队列视图（v0.12 融合）：ready/holding + 今日产能 + 账号状态卡（v0.13 策略），嵌入流水线「发布」tab。 */
+
+const PHASE_TONE: Record<string, { tone: 'primary' | 'success' | 'warning' | 'error'; key: string }> = {
+  warmup: { tone: 'primary', key: 'queue.phase.warmup' },
+  normal: { tone: 'success', key: 'queue.phase.normal' },
+  caution: { tone: 'warning', key: 'queue.phase.caution' },
+  cooldown: { tone: 'error', key: 'queue.phase.cooldown' },
+}
+
+function AccountCard({ account }: { account: NonNullable<PublishQueueView['account']> }) {
+  const { t } = useTranslation()
+  const phase = PHASE_TONE[account.phase] ?? PHASE_TONE.normal
+  const maxViews = Math.max(1, ...account.days.map((d) => d.views_median ?? 0))
+  return (
+    <Card>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
+          <Icon name="eye" size={16} className="text-primary" />
+          {t('queue.accountTitle')}
+          <Badge tone={phase.tone}>{t(phase.key)}</Badge>
+        </div>
+        <span className="font-mono text-[13px] text-text-secondary">
+          {t('queue.quotaUsed', { used: account.used, quota: account.quota })}
+        </span>
+      </div>
+      {/* 近 7 日发布/播放迷你趋势 */}
+      {account.days.length > 0 && (
+        <div className="mt-3 flex items-end gap-1">
+          {account.days.map((d) => (
+            <div
+              key={d.date}
+              title={`${d.date} · ${t('queue.uploadsN', { n: d.uploads })} · ${d.views_median ?? '—'}`}
+              className="flex min-w-5 flex-1 flex-col items-center gap-0.5"
+            >
+              <span className="text-[9px] text-text-disabled">{d.uploads}</span>
+              <div
+                className={`w-full rounded-t-sm ${d.views_median != null && d.views_median < 10 ? 'bg-error/60' : 'bg-primary/50'}`}
+                style={{ height: `${Math.max(3, Math.round(((d.views_median ?? 0) / maxViews) * 28))}px` }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+      {/* 判定证据（策略解释——全自动但可读） */}
+      {account.reasons.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {account.reasons.map((r) => (
+            <li key={r} className="text-[11px] leading-relaxed text-text-secondary">· {r}</li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
 export function QueueView() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -100,6 +175,9 @@ export function QueueView() {
         </div>
         <p className="mt-2 text-[11px] text-text-disabled">{t('queue.capacityHint')}</p>
       </Card>
+
+      {/* 账号状态（v0.13 策略开启时展示；关闭为 null 隐藏） */}
+      {data?.account && <AccountCard account={data.account} />}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 发布队列 */}

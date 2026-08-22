@@ -19,6 +19,7 @@ import { PlansPage } from '../pages/plans/PlansPage'
 import { ExecutionPage } from '../pages/execution/ExecutionPage'
 import { CanvasPage } from '../pages/canvas/CanvasPage'
 import { SettingsPage } from '../pages/settings/SettingsPage'
+import { CostPage } from '../pages/cost/CostPage'
 
 export function AppShell() {
   const { t } = useTranslation()
@@ -64,6 +65,7 @@ export function AppShell() {
     // 画布（v0.8.8：低频工具——移至素材下方，与素材/资源同域）
     { to: '/canvas', icon: 'canvas', label: t('nav.canvas'), group: 'assets' },
     // 系统（v0.8.8：设置保持在最下方——低频配置域）
+    { to: '/cost', icon: 'tag', label: t('nav.cost'), group: 'system' },
     { to: '/config', icon: 'config', label: t('nav.config'), group: 'system' },
   ]
   const currentLabel = navItems.find((item) => item.to === location.pathname)?.label ?? ''
@@ -120,6 +122,7 @@ export function AppShell() {
               <Route path="/assets" element={<AssetsPage />} />
               <Route path="/canvas" element={<CanvasPage />} />
               <Route path="/config" element={<SettingsPage />} />
+              <Route path="/cost" element={<CostPage />} />
               {/* v0.12：默认首页 = 看板（系统评估第一屏） */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

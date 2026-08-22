@@ -12,7 +12,8 @@
     "docs": "文档",
     "execution": "执行",
     "dashboard": "看板",
-    "queue": "发布队列"
+    "queue": "发布队列",
+    "cost": "成本控制"
   },
   "common": {
     "loading": "加载中…",
@@ -238,6 +239,10 @@
     "ttsPreviewText": "这是一段语音试听。欢迎使用。",
     "prices": "模型单价",
     "pricesHint": "每行 `模型: 输入价/输出价`（美元/百万 tokens），用于看板成本估算。如 deepseek-chat: 0.27/1.10",
+    "costCurrency": "成本报表币种",
+    "costCurrencyCny": "人民币 (¥)",
+    "costCurrencyUsd": "美元 ($)",
+    "costUsdRate": "汇率（1 美元 = ?）",
     "redditCookie": "Reddit Cookie（登录解锁）",
     "redditCookieHint": "Reddit OAuth 个人应用申请困难——改用浏览器登录 Cookie：下载/采集请求带 Cookie，CDN 403 消失。可字符串直填，或一键从浏览器自动导出（yt-dlp）。",
     "redditCookieRaw": "Cookie 字符串（可选）",
@@ -277,7 +282,19 @@
     "autoPublishDailyLimit": "每日产能上限（条）",
     "autoPromoteDaily": "每日自动转正（条）",
     "autoPublishTickMinutes": "检查间隔（分钟）",
-    "autoPublishHint": "开启后，预发布队列每天自动转正 N 条进发布队列，到点自动发布（总开关关闭时队列只存不发）。产能只计自动发布，手动发布不占额度。"
+    "autoPublishHint": "开启后，预发布队列每天自动转正 N 条进发布队列，到点自动发布（总开关关闭时队列只存不发）。产能只计自动发布，手动发布不占额度。",
+    "strategy": "发布策略引擎",
+    "strategyEnabled": "启用策略（健康度动态配额）",
+    "strategyBaseDaily": "常态日配额（策略接管后的基础值）",
+    "strategyHint": "开启后转正/产能由账号状态决定：新号爬坡期低频起步；播放骤降自动减半；疑似限流（连续地板播放）自动停发冷却。关闭时走上方静态产能。状态与原因见 发布 → 队列 的「账号状态」卡。",
+    "strategyAdvanced": "高级参数（判定阈值）",
+    "strategyWarmupFloor": "新号门槛（累计发布条数）",
+    "strategyWarmupStep": "爬坡步长（每 N 条 +1 配额）",
+    "strategyDropRatio": "骤降阈值（本周均播 ÷ 上周均播）",
+    "strategyCooldownViews": "限流地板（发布日中位播放）",
+    "strategyCooldownDays": "连续地板天数 → 停发",
+    "strategySameTidGap": "同分区间隔下限（小时）",
+    "groupCollect": "采集与入库"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -1211,6 +1228,21 @@
     "autoOn": "自动发布已开启",
     "autoOff": "自动发布未开启",
     "capacityHint": "每日自动发布上限只计入自动发布；手动发布不占产能。预发布条目每天自动转正 N 条进发布队列。",
+    "accountTitle": "账号状态",
+    "quotaUsed": "今日 {{used}} / {{quota}}",
+    "uploadsN": "发布 {{n}} 条",
+    "phase": {
+      "warmup": "新号爬坡",
+      "normal": "状态正常",
+      "caution": "观察降速",
+      "cooldown": "限流冷却"
+    },
+    "tier": {
+      "premier": "优选",
+      "regular": "常规",
+      "filler": "填充"
+    },
+    "tierHint": "内容分层：优选（AI 分高）优先占黄金时段，填充（低分）仅在配额富余时转正",
     "ready": "发布队列",
     "holding": "预发布队列",
     "emptyReadyTitle": "发布队列为空",
@@ -1222,5 +1254,42 @@
     "scheduledAt": "排期",
     "noSchedule": "无排期",
     "promoteDaily": "每日自动转正"
+  },
+  "cost": {
+    "title": "成本控制",
+    "range": "统计区间",
+    "days": "近 {{n}} 天",
+    "managePrices": "配置单价",
+    "missingPrices": "以下模型尚未配置单价，其花费未计入：{{models}}（到 设置 → AI → 模型单价 补充）",
+    "totalSpend": "区间花费",
+    "totalCalls": "调用次数",
+    "promptTokens": "输入 tokens",
+    "completionTokens": "输出 tokens",
+    "byDomain": "按环节分布",
+    "dailyTrend": "每日花费趋势",
+    "history": "执行历史",
+    "empty": "该区间暂无 AI 调用记录",
+    "unpriced": "未配价",
+    "callsN": "{{n}} 次",
+    "colTime": "时间",
+    "colDomain": "环节",
+    "colModel": "模型",
+    "colDuration": "耗时",
+    "colCost": "金额",
+    "colStatus": "状态",
+    "byModel": "按模型分布",
+    "viewAsset": "查看产物",
+    "avgDaily": "日均 {{v}}",
+    "scopeNote": "口径说明：仅统计 LLM API 调用（评分/脚本/标题包装/翻译/编排/对话）；ASR 与 TTS 为本地或免费通道不计费。金额查询时按当前单价动态计算——调整单价会追溯历史报表。",
+    "domain": {
+      "score": "评分",
+      "script": "旁白脚本",
+      "title": "标题·包装",
+      "translate": "翻译",
+      "packaging": "B 站包装",
+      "orchestrator": "编排工作流",
+      "chat": "对话",
+      "other": "其他"
+    }
   }
 }

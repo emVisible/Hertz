@@ -44,6 +44,8 @@ export interface PipelineItem {
   publish_json: Record<string, unknown> | null
   error: string | null
   error_class: string
+  /** 内容分层（v0.13 策略）：仅发布队列视图（queueView）序列化携带 */
+  tier?: ContentTier
   /** 审核相似提示（v0.5 A）：phash 汉明 ≤5 的相似内容标题（排除同源同帖） */
   similar?: { published: string[]; queued: string[] }
   retry_count: number
@@ -64,7 +66,7 @@ export interface PipelineItem {
 /** 发布队列相位（v0.12）：与后端 publish_queue 常量一致 */
 export type QueuePhase = '' | 'holding' | 'ready'
 
-/** 发布队列看板（v0.12） */
+/** 发布队列看板（v0.12；v0.13 增账号画像） */
 export interface PublishQueueView {
   ready: PipelineItem[]
   holding: PipelineItem[]
@@ -73,7 +75,18 @@ export interface PublishQueueView {
     daily_limit: number
     auto_enabled: boolean
   }
+  /** 发布策略引擎（v0.13）：strategy_enabled=false 时为 null——前端隐藏状态卡 */
+  account: {
+    phase: 'warmup' | 'normal' | 'caution' | 'cooldown'
+    quota: number
+    used: number
+    reasons: string[]
+    days: Array<{ date: string; uploads: number; views_median: number | null }>
+  } | null
 }
+
+/** 内容分层（v0.13 策略）：队列条目由后端标注 */
+export type ContentTier = 'premier' | 'regular' | 'filler'
 
 export interface JobSummary {
   processed?: number

@@ -120,6 +120,8 @@ class ScoreStep(Pipe):
             title=item.title,
             content=f"subreddit: {item.subreddit}\nscore: {item.reddit_score}",
             source=item.source_url,
+            # v0.14.1 溯源：ai_calls.task_id = item:<uuid>——成本页可跳转产物
+            task_id=f"item:{item.id}",
         )
         ctx.scores_used += 1
 

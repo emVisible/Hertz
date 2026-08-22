@@ -257,11 +257,13 @@ class TaskRouter:
         operation: str = "chat",
         task_id: str | None = None,
         model_key: str | None = None,  # v2.4：工序/团队显式指定模型
+        caller: str = "ai",  # v0.14：环节归因（pipeline/orchestrator…）——成本页按此分组
     ) -> str:
         """Chat over pre-built message lists (used by the phase engine)."""
         return await self._collect(
             messages, temperature=temperature, max_tokens=max_tokens,
             role=role, operation=operation, task_id=task_id, model_key=model_key,
+            caller=caller,
         )
 
     async def stream_chat(

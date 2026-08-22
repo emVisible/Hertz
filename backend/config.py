@@ -17,7 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 应用版本单一真相源（v0.11.6 Axiom §1.2 修复）：后端 main.py 引用此处；
 # pyproject.toml / frontend·electron package.json 在发版时对齐本值。
-APP_VERSION = "0.11.10"
+APP_VERSION = "0.14.1"
 
 
 class Settings(BaseSettings):
@@ -101,6 +101,19 @@ class Settings(BaseSettings):
     pipeline_auto_publish_daily_limit: int = 5  # 每日自动发布上限（产能）
     pipeline_auto_promote_daily: int = 3  # 每日从预发布自动转正条数（≤ 上限）
     pipeline_auto_publish_tick_minutes: int = 5  # 调度扫描间隔
+    # 发布策略引擎（v0.13「逆向算法」）：账号健康度 → 动态配额 → 内容分层选
+    # 条目 → 槽位规划（同分区间隔 + 相邻分区去重）。总开关默认关闭——关闭时
+    # 转正/产能走上方静态参数（行为与 v0.12 完全一致）；开启后由策略接管，
+    # cooldown 日自动停发、caution 减半、新号爬坡。详见 pipeline/strategy.py。
+    pipeline_strategy_enabled: bool = False
+    pipeline_strategy_base_daily: int = 2  # 策略常态日配额（新号保守起步）
+    pipeline_strategy_warmup_floor: int = 30  # 累计发布低于此 = 新号爬坡期
+    pipeline_strategy_warmup_step: int = 10  # 每 N 条累计发布 +1 配额（爬坡粒度）
+    pipeline_strategy_drop_ratio: float = 0.5  # 本周均播/上周均播低于此 → 配额减半
+    pipeline_strategy_cooldown_floor_views: int = 10  # 发布日中位播放地板线
+    pipeline_strategy_cooldown_streak_days: int = 2  # 连续地板天数 → 停发冷却
+    pipeline_strategy_min_same_tid_gap_h: int = 6  # 同分区间隔下限（防堆量痕迹）
+    pipeline_strategy_premier_score: float = 8.0  # AI 分 ≥ 此值优先占黄金槽
     # 自动过审（v0.2.1，参考原项目 auto_approve）：默认关闭；
     # 开启后停留审核队列超过 N 小时的条目自动 approve（人工审核仍是默认路径）
     pipeline_auto_approve: bool = False
@@ -169,6 +182,9 @@ class Settings(BaseSettings):
     ai_roles: dict[str, str] = {}
     # 模型单价（v0.5 E 成本估算）：model_key → {prompt, completion}（美元/百万 tokens）
     ai_model_prices: dict[str, dict[str, float]] = {}
+    # 成本报表币种（v0.14.1）：单价表以 USD 计，报表按汇率换算显示
+    cost_currency: str = "CNY"  # CNY | USD
+    cost_usd_rate: float = 7.2  # USD → cost_currency 汇率
 
     @property
     def runtime_config_path(self) -> Path:

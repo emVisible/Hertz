@@ -2009,6 +2009,7 @@ async def test_generate_packaging_llm_and_fallback() -> None:
     from backend.pipeline.package import generate_packaging
 
     class Item:
+        id = "0b5f8d1e-0000-4000-8000-000000000003"
         title = "Man hand-feeds a giant crocodile"
         subreddit = "interestingasfuck"
         author = "wildlife_dan"
@@ -2664,6 +2665,7 @@ async def test_produce_raw_degraded_fallback(monkeypatch) -> None:
     raw.write_bytes(b"fake-raw-bytes")
 
     class Item:
+        id = "0b5f8d1e-0000-4000-8000-000000000004"
         raw_path = str(raw)
         output_dir = "test-slug"
         produce_options = {"mute": False, "voice": False, "subtitle": True, "translate": True, "passthrough": False}  # noqa: E501
@@ -2759,6 +2761,7 @@ async def test_translate_condition(monkeypatch) -> None:
     calls: dict[str, int] = {"localize": 0}
 
     class Item:
+        id = "0b5f8d1e-0000-4000-8000-000000000005"
         raw_path = str(raw)
         output_dir = "t-slug"
         produce_options = {"mute": False, "voice": False, "subtitle": True, "translate": True, "passthrough": False}  # noqa: E501
