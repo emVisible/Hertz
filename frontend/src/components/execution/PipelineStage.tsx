@@ -429,6 +429,16 @@ export function StageItemRow({
             {item.error}
           </p>
         )}
+        {/* 修复建议（v0.15.1 蚁小二 CLI 精华）：error_class → 人话操作指引；未知分类不显示 */}
+        {item.error_class && (() => {
+          const tip = t(`errors.suggestion.${item.error_class}`, { defaultValue: '' })
+          return tip ? (
+            <p className="mt-0.5 flex items-start gap-1 truncate text-[11px] text-text-secondary">
+              <Icon name="info" size={11} className="mt-0.5 shrink-0" />
+              <span className="truncate">{tip}</span>
+            </p>
+          ) : null
+        })()}
       </div>
       {badge && <div className="shrink-0">{badge}</div>}
       {right && <div className="flex shrink-0 items-center gap-1.5">{right}</div>}

@@ -1316,5 +1316,19 @@
     "colCalls": "Calls",
     "aiCostOfItem": "AI cost",
     "costPerK": "Cost / 1k views"
+  },
+  "errors": {
+    "suggestion": {
+      "blocked": "Source rejected or unreachable (403/404) — if it keeps failing the source is dead: reject & archive",
+      "rate_limit": "Rate-limited and cooling down — just retry later, nothing else needed",
+      "timeout": "Timed out — retry directly; cancel produce to reduce length pressure if it keeps happening",
+      "llm": "AI service error — check provider config & balance under Settings → AI, then retry",
+      "tts": "TTS failed — usually network; retry. If persistent check edge-tts connectivity",
+      "ffmpeg": "Media processing failed — missing libass? Run brew reinstall homebrew-ffmpeg/ffmpeg/ffmpeg",
+      "download": "Download failed — retry once; repeated failures mean the source is gone, consider rejecting",
+      "publish": "Upload failed — check Bilibili login state and whether cookies.json expired",
+      "internal": "Internal crash — check System Logs for the stack; a retry often recovers",
+      "other": "Unclassified error — click the row to read the full message"
+    }
   }
 }

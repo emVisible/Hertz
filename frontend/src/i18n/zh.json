@@ -1316,5 +1316,19 @@
     "colCalls": "调用",
     "aiCostOfItem": "AI 成本",
     "costPerK": "千次成本"
+  },
+  "errors": {
+    "suggestion": {
+      "blocked": "源被拒或不可访问（403/404）——持续失败说明源已失效，建议拒绝并归档",
+      "rate_limit": "接口限流冷却中——稍后点重试即可，无需其他处理",
+      "timeout": "执行超时——直接重试；反复超时可取消制作降低时长压力",
+      "llm": "AI 服务异常——检查 设置 → AI 供应商配置与账户余额后重试",
+      "tts": "语音合成失败——多为网络波动，直接重试；持续失败检查 edge-tts 网络",
+      "ffmpeg": "视频处理失败——若提示缺 libass，终端执行 brew reinstall homebrew-ffmpeg/ffmpeg/ffmpeg",
+      "download": "源视频下载失败——重试一次；反复失败多为源已死，建议拒绝该条目",
+      "publish": "上传失败——检查 B 站登录状态与 cookies.json 是否过期",
+      "internal": "程序内部异常——查看 系统日志 定位堆栈；重试一次常可恢复",
+      "other": "未分类错误——点击行查看完整错误信息判断"
+    }
   }
 }

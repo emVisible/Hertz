@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.15.1] - 2026-08-22
+
+失败→修复建议映射（蚁小二 CLI 精华借鉴，同赛道调研落地第四项）。
+
+### 新增
+
+- **异常区修复建议**：失败条目按 `error_class` 显示人话操作指引
+  （限流→稍后重试 / LLM→查供应商余额 / ffmpeg→重装命令 / 源失效→建议拒绝…）；
+  失败分类看板的重试按钮 hover 同样带出该类建议。未知分类静默不显示。
+
 ## [v0.15.0] - 2026-08-22
 
 质量与 ROI 三件套（同赛道产品调研落地，见调研报告：VideoLingo / Helicone / MoneyPrinterTurbo 精华借鉴）。

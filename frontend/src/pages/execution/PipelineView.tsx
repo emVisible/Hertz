@@ -942,7 +942,7 @@ export function PipelineView(p: PipelineViewProps) {
                             <button
                               type="button"
                               onClick={() => void p.retryClass(cls, n)}
-                              title={t('console.retryClassHint', { cls })}
+                              title={`${t('console.retryClassHint', { cls })}\n${t(`errors.suggestion.${cls}`, { defaultValue: '' })}`}
                               className=" p-0.5 text-text-disabled transition-colors hover:text-primary"
                             >
                               <Icon name="refresh" size={11} />
