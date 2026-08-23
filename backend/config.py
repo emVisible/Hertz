@@ -197,6 +197,9 @@ class Settings(BaseSettings):
     ai_roles: dict[str, str] = {}
     # 模型单价（v0.5 E 成本估算）：model_key → {prompt, completion}（美元/百万 tokens）
     ai_model_prices: dict[str, dict[str, float]] = {}
+    # 频道人设记忆（v0.18）：账号定位/语言调性/红线——注入脚本与标题生成 prompt，
+    # 保证跨视频的内容一致性（「我是谁、什么调性、绝不做什么」）
+    channel_persona: str = ""
     # 成本报表币种（v0.14.1）：单价表以 USD 计，报表按汇率换算显示
     cost_currency: str = "CNY"  # CNY | USD
     cost_usd_rate: float = 7.2  # USD → cost_currency 汇率

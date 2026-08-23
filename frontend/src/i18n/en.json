@@ -305,7 +305,10 @@
     "watchExclude": "Exclude (drop if hit)",
     "watchMinScore": "Min Reddit score",
     "watchHint": "When on, these subreddits are pulled at their own interval with the chosen sort; only posts matching the keywords are ingested — spending scoring budget where content is more likely to pop. Watched items still go through normal scoring & review.",
-    "monthlyBudget": "Monthly budget (0 = off; alerts at 50%/80%/95%)"
+    "monthlyBudget": "Monthly budget (0 = off; alerts at 50%/80%/95%)",
+    "persona": "Channel persona memory",
+    "personaPlaceholder": "e.g. Channel focuses on hardcore machinery + unexpected moments; restrained tone, no exclamation stacking; never touch politics or borderline content…",
+    "personaHint": "Injected into script & title prompts — keeps tone consistent across videos. Leave empty to disable."
   },
   "execution": {
     "modeStudio": "Studio",

@@ -67,6 +67,8 @@ RUNTIME_ALLOWLIST = {
     "pipeline_strategy_premier_score",
     # 模型单价（v0.5 E 成本估算）：model_key → {prompt, completion}（美元/百万 tokens）
     "ai_model_prices",
+    # 频道人设记忆（v0.18）：注入脚本与标题 prompt
+    "channel_persona",
     # 成本报表币种（v0.14.1）：CNY|USD + USD→目标币汇率
     "cost_currency",
     "cost_usd_rate",

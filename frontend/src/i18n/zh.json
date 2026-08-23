@@ -320,7 +320,10 @@
     "watchExclude": "排除词（含即丢弃）",
     "watchMinScore": "Reddit 分数门槛",
     "watchHint": "开启后按独立间隔对这些 subreddit 高频拉取指定排序，命中词法的条目才入库——把评分额度花在源头更可能爆的内容上。命中的条目仍走正常评分与审核流程。",
-    "monthlyBudget": "月度预算（0=不启用；达 50%/80%/95% 提示）"
+    "monthlyBudget": "月度预算（0=不启用；达 50%/80%/95% 提示）",
+    "persona": "频道人设记忆",
+    "personaPlaceholder": "例：账号专注「硬核机械 + 意外瞬间」类搬运；语气克制不夸张，标题不用感叹号堆砌；绝不碰政治与擦边内容…",
+    "personaHint": "注入脚本与标题生成 prompt——保证跨视频的内容调性一致。留空则不生效。"
   },
   "execution": {
     "modeStudio": "Studio 编排",

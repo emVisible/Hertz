@@ -90,6 +90,7 @@ interface ConfigData {
   cost_currency?: string
   cost_usd_rate?: number
   cost_monthly_budget?: number
+  channel_persona?: string
   llm_api_key_masked?: string | null
   llm_api_key_set?: boolean
 }
@@ -516,6 +517,7 @@ export function SettingsPage() {
       pipeline_watch_keywords_all: cfg.pipeline_watch_keywords_all ?? '',
       pipeline_watch_exclude: cfg.pipeline_watch_exclude ?? '',
       pipeline_watch_min_score: String(cfg.pipeline_watch_min_score ?? 0),
+      channel_persona: cfg.channel_persona ?? '',
       pipeline_publish_target: cfg.pipeline_publish_target ?? 'noop',
       pipeline_auto_publish: String(cfg.pipeline_auto_publish ?? false),
       pipeline_auto_publish_daily_limit: String(cfg.pipeline_auto_publish_daily_limit ?? 5),
@@ -599,6 +601,7 @@ export function SettingsPage() {
       pipeline_watch_exclude: form.pipeline_watch_exclude ?? '',
       pipeline_watch_min_score:
         form.pipeline_watch_min_score != null ? Number(form.pipeline_watch_min_score) : 0,
+      channel_persona: form.channel_persona ?? '',
       pipeline_publish_target: form.pipeline_publish_target,
       pipeline_auto_publish: form.pipeline_auto_publish === 'true',
       pipeline_auto_publish_daily_limit: Number(form.pipeline_auto_publish_daily_limit) || 5,
@@ -790,6 +793,22 @@ export function SettingsPage() {
                     <h2 className="text-sm font-semibold text-text-primary">{t('settings.prices')}</h2>
                   </div>
                   <ModelPrices />
+                </section>
+
+                {/* 频道人设记忆（v0.18）：注入脚本与标题 prompt */}
+                <section className={section}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Icon name="briefs" size={15} />
+                    <h2 className="text-sm font-semibold text-text-primary">{t('settings.persona')}</h2>
+                  </div>
+                  <textarea
+                    value={form.channel_persona ?? ''}
+                    onChange={(e) => set('channel_persona', e.target.value)}
+                    rows={4}
+                    placeholder={t('settings.personaPlaceholder')}
+                    className="w-full resize-y border border-border bg-surface-2/60 px-3 py-2 text-xs leading-relaxed text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
+                  />
+                  <p className="mt-2 text-xs leading-relaxed text-text-disabled">{t('settings.personaHint')}</p>
                 </section>
 
                 {/* 翻译术语表（v0.15）：术语统一——字幕质量地基 */}

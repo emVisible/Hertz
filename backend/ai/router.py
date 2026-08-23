@@ -337,6 +337,15 @@ class TaskRouter:
         except Exception:  # noqa: BLE001 — LLM 挂了也要能出分
             return self._heuristic_score(title=title, content=content)
 
+    @staticmethod
+    def _persona_suffix() -> str:
+        """频道人设记忆（v0.18）：配置非空时拼到创作类 system prompt 尾部。
+        只影响脚本与标题生成——翻译保持忠实不掺调性。"""
+        from backend.config import settings
+
+        persona = str(getattr(settings, "channel_persona", "") or "").strip()
+        return f"\n\n频道人设（务必遵守）：\n{persona}" if persona else ""
+
     async def script(
         self, *, content: str, title: str = "", max_words: int = 90,
         task_id: str | None = None, story: bool = False,
@@ -350,6 +359,9 @@ class TaskRouter:
             msgs = script_prompts.build_script_messages(
                 content=content, title=title, max_words=max_words
             )
+        persona = self._persona_suffix()
+        if persona:
+            msgs[0]["content"] += persona
         return (
             await self._collect(
                 [ChatMessage(**m) for m in msgs], temperature=0.8,
@@ -361,6 +373,9 @@ class TaskRouter:
         self, *, script: str, content: str = "", task_id: str | None = None
     ) -> TitleResult:
         msgs = title_prompts.build_title_messages(script=script, content=content)
+        persona = self._persona_suffix()
+        if persona:
+            msgs[0]["content"] += persona
         try:
             text = await self._collect(
                 [ChatMessage(**m) for m in msgs], temperature=0.7, max_tokens=1024,
