@@ -18,6 +18,7 @@
 - **v0.16**：热点监控通道（TrendRadar 词法借鉴）——rising 高频拉取 + 三段词法预筛（any/all/exclude + 分数门槛），filter_fn 注入 run_collect；设置页热点监控区
 - **v0.17**：月度预算阶梯提醒（Helicone 借鉴，50%/80%/95% 只警示不阻断）+ service.py 四域 Mixin 拆分（D-168 架构债清偿，1805 行 → 196 核心四域文件）
 - **v0.18**：移动化与信任建立——Telegram 审核 Bot（long-polling 零公网暴露 + inline 三键过审 + 告警通道）；策略影子模式（dry_run 演练影子计划）；发布日历热力图；频道人设记忆注入创作 prompt
+- **v0.19**：数据飞轮一期补完——频道洞察（Top/Bottom 对比 LLM 分析落库 + 注入评分 rubric 与脚本 prompt，冷启动保护）+ Telegram 周报推送；审核推送改最新优先修积压饿死缺陷
 
 ## 已知缺口
 

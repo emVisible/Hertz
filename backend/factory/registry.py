@@ -225,6 +225,8 @@ class ServiceRegistry:
             ) * 60:
                 self._last_tg_push = now
                 await tg.review_push_tick(self.pipeline)
+            # 周报（v0.19）：7 天节流在函数内部
+            await tg.weekly_report_tick(self.pipeline)
         except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
             self.log.get().exception("telegram tick failed (best effort)")
 

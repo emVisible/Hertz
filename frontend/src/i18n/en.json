@@ -1207,7 +1207,11 @@
     "queueHolding": "Holding",
     "queueTotal": "Total",
     "failures": "Failure distribution",
-    "failuresEmpty": "No failures recorded"
+    "failuresEmpty": "No failures recorded",
+    "insightTitle": "Channel insights",
+    "insightRegenerate": "Re-analyze",
+    "insightPref": "Prefers",
+    "insightAvoid": "Avoid"
   },
   "onboarding": {
     "title": "Welcome to Hertz",

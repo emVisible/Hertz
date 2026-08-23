@@ -5,6 +5,28 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.19.0] - 2026-08-22
+
+数据飞轮一期补完（VidPal feedback loop 精华借鉴）+ Telegram 周报 + bot 测试网。
+
+### 新增
+
+- **频道洞察**（`pipeline/insights.py`）：近 30 天已发布表现 → Top5/Bottom5 对比
+  喂给 LLM → 结构化洞察（受众偏好/有效钩子/应避开题材/建议）落 `channel_insights`
+  表（历史保留）；**注入评分 rubric 与脚本 prompt**——评分向本账号受众校准；
+  冷启动保护（<5 条拒绝生成）；Dashboard「频道洞察」卡 + 手动重新分析按钮
+  （成本可控不做自动周期）
+- **Telegram 周报**：每周一次产能/AI 成本/最高播放/队列存量摘要推送
+  （7 天节流，bot 启用时默认开，可关）
+
+### 变更
+
+- **审核推送排序改最新优先**（seq desc）：修复历史积压条目占满每轮推送窗口、
+  「饿死」新条目的真实缺陷（FIFO 待办语义在积压场景失效——审核员关心新内容）；
+  已通知排除下沉 SQL NOT IN 子查询
+- **测试**：telegram bot 5 项契约（回调解析/推送去重/轮询分发/chat 隔离）
+  + 洞察生成与注入集成；全文件清理 fixture 模式推广
+
 ## [v0.18.0] - 2026-08-22
 
 移动化 · 数据飞轮 · 信任建立——第三轮同赛道调研落地四件套。

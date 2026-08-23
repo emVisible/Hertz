@@ -98,6 +98,16 @@ function TrendChart({ data }: { data: Array<{ date: string; collected: number; i
  * 看板页（v0.4 C2）：漏斗水位 + 发布统计 + AI 用量聚合。
  * 数据全部来自既有端点（counts/items/trace），前端聚合展示，无新后端。
  */
+
+interface ChannelInsight {
+  audience_preferences?: string[]
+  hook_styles?: string[]
+  avoid_topics?: string[]
+  notes?: string
+  generated_at?: string
+  source_count?: number
+}
+
 export function DashboardPage() {
   const { t } = useTranslation()
 
@@ -125,6 +135,12 @@ export function DashboardPage() {
     queryKey: ['publish-queue'],
     queryFn: pipelineApi.queueView,
     refetchInterval: 30_000,
+  })
+  // 频道洞察（v0.19 数据飞轮）：最新分析快照——Dashboard 数据复盘语境
+  const { data: insight, refetch: refetchInsight } = useQuery({
+    queryKey: ['channel-insight'],
+    queryFn: () => api.get<ChannelInsight | null>('/api/ai/insights'),
+    refetchInterval: 300_000,
   })
   const { data: failures = {} } = useQuery({
     queryKey: ['pipeline-failures'],
@@ -211,6 +227,40 @@ export function DashboardPage() {
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-6">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         <h1 className="text-base font-semibold text-text-primary">{t('dashboard.title')}</h1>
+
+        {/* 频道洞察（v0.19 数据飞轮）：AI 基于发布表现总结受众偏好 */}
+        {insight && (
+          <Card className="p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
+                <Icon name="wand" size={13} className="text-primary" />
+                {t('dashboard.insightTitle')}
+                {insight.generated_at && (
+                  <span className="text-[10px] text-text-disabled">{insight.generated_at}</span>
+                )}
+              </h3>
+              <button
+                type="button"
+                onClick={async () => {
+                  await api.post('/api/ai/insights/generate')
+                  void refetchInsight()
+                }}
+                className="text-[11px] text-text-secondary transition-colors hover:text-primary"
+              >
+                ↻ {t('dashboard.insightRegenerate')}
+              </button>
+            </div>
+            <ul className="space-y-1 text-[11px] leading-relaxed text-text-secondary">
+              {(insight.audience_preferences ?? []).slice(0, 3).map((v) => (
+                <li key={v}>· {t('dashboard.insightPref')}: {v}</li>
+              ))}
+              {(insight.avoid_topics ?? []).slice(0, 2).map((v) => (
+                <li key={v} className="text-warning/90">· {t('dashboard.insightAvoid')}: {v}</li>
+              ))}
+              {insight.notes && <li className="text-text-primary">· {insight.notes}</li>}
+            </ul>
+          </Card>
+        )}
 
         {/* 系统评估（v0.12 置顶）：发布通道 / 自动产能 / 队列深度——第一屏总览 */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

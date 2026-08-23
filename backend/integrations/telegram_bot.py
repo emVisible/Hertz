@@ -16,32 +16,21 @@ PipelineService（与桌面端同源）。
 import html
 import logging
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
-from sqlalchemy import String, select
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import select
 
 from backend.config import settings
-from backend.models.base import BaseModel
 from backend.models.session import session_factory
+from backend.models.system import TelegramNotification
 
 logger = logging.getLogger(__name__)
 
 _API = "https://api.telegram.org/bot{token}/{method}"
 _ACTIONS = ("approve", "reject", "back_to_prep")
 _POLL_TIMEOUT_S = 25  # long-polling 挂起时长
-
-
-class TelegramNotification(BaseModel):
-    """已推送的 bot 通知（去重：同一条目同一动作只推一次）。"""
-
-    __tablename__ = "tg_notifications"
-
-    item_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
-    kind: Mapped[str] = mapped_column(String(32), default="review")
-    message_id: Mapped[int] = mapped_column()
 
 
 def enabled() -> bool:
@@ -79,16 +68,16 @@ async def _call(client: httpx.AsyncClient, method: str, payload: dict) -> dict |
 
 
 async def _queued_unnotified(limit: int = 10) -> list:
-    """待审核且未推送过卡片的条目（按 seq 升序）。"""
+    """待审核且未推送过卡片的条目（按 seq 升序，FIFO 待办提醒语义）。
+
+    v0.19：已通知排除下沉到 SQL（NOT IN 子查询）；排序取**最新优先**
+    （seq desc）——审核员关心新内容，历史积压不应饿死新条目（全量测试
+    暴露的真实缺陷）。极老积压仍在队列页可见，bot 只是提醒通道之一。
+    """
     from backend.models.item import Item, ItemStatus
     from backend.pipeline.publish_queue import PHASE_NONE
 
     async with session_factory() as session:
-        notified = set(
-            (
-                await session.execute(select(TelegramNotification.item_id))
-            ).scalars()
-        )
         rows = (
             await session.execute(
                 select(Item)
@@ -96,12 +85,13 @@ async def _queued_unnotified(limit: int = 10) -> list:
                     Item.status == ItemStatus.QUEUED,
                     Item.archived.is_(False),
                     Item.queue_phase == PHASE_NONE,
+                    Item.id.not_in(select(TelegramNotification.item_id)),
                 )
-                .order_by(Item.seq.asc())
-                .limit(limit * 3)
+                .order_by(Item.seq.desc())
+                .limit(limit)
             )
         ).scalars().all()
-    return [r for r in rows if r.id not in notified][:limit]
+    return list(rows)
 
 
 async def _mark_notified(item_id: uuid.UUID, kind: str, message_id: int) -> None:
@@ -236,6 +226,98 @@ async def poll_tick(service) -> None:
 def _plain_caption_from_message(msg: dict) -> str:
     text = str(msg.get("text") or "").split("\n")[0]
     return html.escape(text[:60])
+
+
+# ---------- 周报（v0.19） ----------
+
+
+async def weekly_report_tick(service) -> None:
+    """每周一次产能/花费/爆款摘要（7 天节流，重启重置最多延后不发重）。"""
+    import time as _time
+
+    if not enabled() or not bool(getattr(settings, "telegram_weekly", True)):
+        return
+    now_ts = _time.time()
+    last = getattr(weekly_report_tick, "_last", 0.0)
+    if now_ts - last < 7 * 86400:
+        return
+
+    from datetime import timedelta as _td
+
+    from sqlalchemy import func
+
+    from backend.models.item import Item, ItemStatus
+
+    rate = float(getattr(settings, "cost_usd_rate", 7.2) or 1.0)
+    currency = str(getattr(settings, "cost_currency", "CNY") or "CNY")
+    symbol = {"CNY": "¥", "USD": "$"}.get(currency.upper(), "$")
+    since = datetime.now(UTC) - _td(days=7)
+
+    async with session_factory() as session:
+        pub_rows = (
+            await session.execute(
+                select(Item).where(
+                    Item.status == ItemStatus.PUBLISHED,
+                    Item.published_at >= since,
+                    Item.archived.is_(False),
+                )
+            )
+        ).scalars().all()
+        queued_n = await session.scalar(
+            select(func.count(Item.id)).where(
+                Item.status == ItemStatus.QUEUED, Item.archived.is_(False),
+            )
+        )
+        holding_n = await session.scalar(
+            select(func.count(Item.id)).where(
+                Item.queue_phase == "holding", Item.archived.is_(False))
+        )
+
+    from backend.ai.costs import estimate_cost
+
+    # 近 7 天 AI 花费：从 ai_calls 取（与成本页同口径）
+    week_cost = 0.0
+    from backend.models.ai_registry import AICall
+
+    async with session_factory() as session:
+        call_rows = (
+            await session.execute(
+                select(AICall.prompt_tokens, AICall.completion_tokens,
+                       AICall.model_key).where(AICall.created_at >= since)
+            )
+        ).all()
+    prices_map = dict(getattr(settings, "ai_model_prices", {}) or {})
+    for pt, ct, mk in call_rows:
+        c = estimate_cost(mk, pt, ct, prices_map)
+        if c is not None:
+            week_cost += c
+    week_cost = round(week_cost * rate, 2)
+
+    def _views(it):
+        return ((it.publish_json or {}).get("stats") or {}).get("view") or 0
+
+    top = max(pub_rows, key=_views) if pub_rows else None
+    top_views = _views(top) if top else 0
+
+    lines = [
+        f"📊 Hertz 周报（{since.strftime('%m-%d')} 起）",
+        f"· 本周发布 {len(pub_rows)} 条 · AI 成本 {symbol}{week_cost}",
+    ]
+    if top is not None and top_views:
+        stats = (top.publish_json or {}).get("stats") or {}
+        lines.append(f"· 最高播放：《{(top.title or '')[:40]}》{stats.get('view')}次")
+    lines.append(f"· 待审 {queued_n} · 囤货 {holding_n}")
+    budget = float(getattr(settings, "cost_monthly_budget", 0.0) or 0.0)
+    if budget > 0:
+        lines.append(f"· 月预算 {symbol}{budget}（详见成本页阶梯提示）")
+    report = "\n".join(lines)
+
+    async with httpx.AsyncClient() as client:
+        result = await _call(client, "sendMessage",
+                             {"json": {"chat_id": _chat_id(), "text": report}})
+    if result:
+        weekly_report_tick._last = now_ts
+        logger.info("tg weekly report sent (%d published)", len(pub_rows))
 
 
 # ---------- 告警通道（预算/制作失败复用） ----------

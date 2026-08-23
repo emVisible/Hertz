@@ -7,6 +7,7 @@ import json
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import BaseModel
@@ -88,3 +89,12 @@ class ProduceTemplate(BaseModel):
     options_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     builtin: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ChannelInsight(BaseModel):
+    """频道洞察快照（v0.19 数据飞轮一期）：历史保留，注入取最新。"""
+
+    __tablename__ = "channel_insights"
+
+    insights_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    source_count: Mapped[int] = mapped_column(default=0)

@@ -1207,7 +1207,11 @@
     "queueHolding": "预发布（holding）",
     "queueTotal": "合计",
     "failures": "失败分布",
-    "failuresEmpty": "暂无失败记录"
+    "failuresEmpty": "暂无失败记录",
+    "insightTitle": "频道洞察",
+    "insightRegenerate": "重新分析",
+    "insightPref": "偏好",
+    "insightAvoid": "避开"
   },
   "onboarding": {
     "title": "欢迎使用 Hertz",

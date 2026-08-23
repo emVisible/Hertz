@@ -16,7 +16,7 @@ from backend.models.download import DownloadStatus, DownloadTask, Project
 from backend.models.glossary import GlossaryTerm
 from backend.models.item import Item, ItemStatus, ItemType
 from backend.models.phase import PhaseStore
-from backend.models.pipeline import SourceState
+from backend.models.pipeline import ChannelInsight, SourceState
 from backend.models.plan import (
     PhaseRun,
     PhaseRunStatus,
@@ -43,6 +43,7 @@ __all__ = [
     "GlossaryTerm",
     "Item",
     "ItemStatus",
+    "ChannelInsight",
     "ItemType",
     "JobRun",
     "JobStatus",

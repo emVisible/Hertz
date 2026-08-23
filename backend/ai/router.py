@@ -316,8 +316,14 @@ class TaskRouter:
     async def score(
         self, *, title: str, content: str, source: str = "", task_id: str | None = None
     ) -> ScoreResult:
-        """Rubric scoring: fast 模型 + JSON 结构化输出；失败回退启发式。"""
+        """Rubric scoring: fast 模型 + JSON 结构化输出；失败回退启发式。
+
+        v0.19：有频道洞察时注入 rubric 参考——评分向本账号受众偏好校准
+        （数据飞轮一期；洞察生成失败静默跳过，不阻塞评分）。"""
         msgs = score_prompts.build_score_messages(title=title, content=content, source=source)
+        insight_suffix = await self._insight_suffix()
+        if insight_suffix:
+            msgs[0]["content"] += insight_suffix
         try:
             text = await self._collect(
                 [ChatMessage(**m) for m in msgs], temperature=0.3, max_tokens=1024,
@@ -346,6 +352,17 @@ class TaskRouter:
         persona = str(getattr(settings, "channel_persona", "") or "").strip()
         return f"\n\n频道人设（务必遵守）：\n{persona}" if persona else ""
 
+    @staticmethod
+    async def _insight_suffix() -> str:
+        """频道洞察注入（v0.19 数据飞轮）：评分 rubric 参考本账号历史表现。
+        读取最新洞察；任何异常静默跳过（洞察是增强不是依赖）。"""
+        try:
+            from backend.pipeline.insights import latest, prompt_suffix
+
+            return prompt_suffix(await latest())
+        except Exception:  # noqa: BLE001 — 洞察失败不阻塞评分
+            return ""
+
     async def script(
         self, *, content: str, title: str = "", max_words: int = 90,
         task_id: str | None = None, story: bool = False,
@@ -360,8 +377,9 @@ class TaskRouter:
                 content=content, title=title, max_words=max_words
             )
         persona = self._persona_suffix()
-        if persona:
-            msgs[0]["content"] += persona
+        insight = await self._insight_suffix()
+        if persona or insight:
+            msgs[0]["content"] += persona + insight
         return (
             await self._collect(
                 [ChatMessage(**m) for m in msgs], temperature=0.8,

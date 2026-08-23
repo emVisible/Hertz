@@ -306,3 +306,73 @@ async def test_budget_levels(client, monkeypatch) -> None:
     monkeypatch.setattr(settings, "cost_monthly_budget", 0.0)
     r = await aggregate_costs(days=30, prices=PRICES, now=NOW)
     assert r["budget"] is None
+
+
+# ---------- 频道洞察（v0.19 数据飞轮一期） ----------
+
+
+@pytest.mark.asyncio
+async def test_insights_generate_and_inject(client, monkeypatch) -> None:
+    """样本充足 → LLM 分析落库；latest() 返回最新；score prompt 注入洞察。"""
+
+    from backend.models.item import Item
+    from backend.models.session import session_factory
+
+    # 5 条已发布（满足 MIN_SAMPLE）
+    async with session_factory() as session:
+        for i in range(5):
+            session.add(Item(
+                status="published", source="reddit", source_id=f"ins-{i}",
+                title=f"视频{i}", subreddit="aww", author="u",
+                score_total=7.0,
+                published_at=NOW - timedelta(days=i + 1),
+                publish_json={"stats": {"view": 5000 if i < 2 else 50}},
+            ))
+        await session.commit()
+
+    class FakeInsightAI:
+        async def chat_messages(self, messages, **kw):
+            return ('{"audience_preferences": ["动物高能瞬间"], '
+                    '"hook_styles": ["开门见山"], "avoid_topics": [], "notes": "多发动物"}')
+
+    from backend.factory.registry import ServiceRegistry
+
+    registry = ServiceRegistry.get()
+    old_ai = registry.ai
+    registry.ai = FakeInsightAI()
+    try:
+        resp = await client.post("/api/ai/insights/generate")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "动物" in body["notes"]
+        assert body["source_count"] >= 5  # 窗口内可能含其他测试的 published 残留
+    finally:
+        registry.ai = old_ai
+
+    # 注入：走真 TaskRouter.score（llm=fake 捕获 system messages 含洞察）
+    seen: list[list] = []
+
+    class StreamFake:
+        async def chat_stream(self, messages, **kw):
+            seen.append([getattr(m, "content", str(m)) for m in messages])
+            yield '{"total": 7.0, "dimensions": {}, "reasons": []}'
+
+    from backend.ai.router import TaskRouter
+
+    old_engine_ai = registry.pipeline.engine.ai
+    registry.pipeline.engine.ai = TaskRouter(llm=StreamFake())
+    try:
+
+        async with session_factory() as session:
+            row = Item(status="discovered", source="reddit",
+                       source_id="ins-target", title="新条目", reddit_score=200)
+            session.add(row)
+            await session.commit()
+            new_id = row.id
+        await registry.pipeline.engine.process_one("score", new_id)
+    finally:
+        registry.pipeline.engine.ai = old_engine_ai
+
+    assert seen, "score 未调用 LLM"
+    system_text = " ".join(seen[0])
+    assert "受众偏好" in system_text and "动物" in system_text

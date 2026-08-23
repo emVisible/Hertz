@@ -264,6 +264,28 @@ async def trace(task_id: str | None = None, limit: int = 50) -> list[dict]:
     return await list_calls(task_id, limit)
 
 
+@router.get("/insights")
+async def latest_insight() -> dict | None:
+    """最近一次频道洞察（v0.19 数据飞轮）；无则 null。"""
+    from backend.pipeline.insights import latest
+
+    return await latest()
+
+
+@router.post("/insights/generate")
+async def generate_insights_endpoint() -> dict:
+    """频道洞察（v0.19 数据飞轮）：近 30 天发布表现 → LLM 分析 → 落库。
+    样本不足（<5 条已发布）返回 422。手动触发（成本可控）。"""
+    from backend.factory.registry import ServiceRegistry
+    from backend.pipeline.insights import generate_insights
+
+    ai = ServiceRegistry.get().ai
+    try:
+        return await generate_insights(ai)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/costs")
 async def costs(
     days: int = Query(30, ge=1, le=365),
