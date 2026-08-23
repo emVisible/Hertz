@@ -57,6 +57,7 @@ RUNTIME_ALLOWLIST = {
     "pipeline_auto_publish_tick_minutes",
     # 发布策略引擎（v0.13）：健康度动态配额/内容分层/槽位约束
     "pipeline_strategy_enabled",
+    "pipeline_strategy_dry_run",
     "pipeline_strategy_base_daily",
     "pipeline_strategy_warmup_floor",
     "pipeline_strategy_warmup_step",

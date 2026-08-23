@@ -54,6 +54,7 @@ interface ConfigData {
   pipeline_auto_publish?: boolean
   pipeline_auto_publish_daily_limit?: number
   pipeline_strategy_enabled?: boolean
+  pipeline_strategy_dry_run?: boolean
   pipeline_strategy_base_daily?: number
   pipeline_strategy_warmup_floor?: number
   pipeline_strategy_warmup_step?: number
@@ -524,6 +525,7 @@ export function SettingsPage() {
       pipeline_auto_promote_daily: String(cfg.pipeline_auto_promote_daily ?? 3),
       pipeline_auto_publish_tick_minutes: String(cfg.pipeline_auto_publish_tick_minutes ?? 5),
       pipeline_strategy_enabled: String(cfg.pipeline_strategy_enabled ?? false),
+      pipeline_strategy_dry_run: String(cfg.pipeline_strategy_dry_run ?? false),
       pipeline_strategy_base_daily: String(cfg.pipeline_strategy_base_daily ?? 2),
       pipeline_strategy_warmup_floor: String(cfg.pipeline_strategy_warmup_floor ?? 30),
       pipeline_strategy_warmup_step: String(cfg.pipeline_strategy_warmup_step ?? 10),
@@ -608,6 +610,7 @@ export function SettingsPage() {
       pipeline_auto_promote_daily: Number(form.pipeline_auto_promote_daily) || 3,
       pipeline_auto_publish_tick_minutes: Number(form.pipeline_auto_publish_tick_minutes) || 5,
       pipeline_strategy_enabled: form.pipeline_strategy_enabled === 'true',
+      pipeline_strategy_dry_run: form.pipeline_strategy_dry_run === 'true',
       pipeline_strategy_base_daily: Number(form.pipeline_strategy_base_daily) || 2,
       pipeline_strategy_warmup_floor: Number(form.pipeline_strategy_warmup_floor) || 30,
       pipeline_strategy_warmup_step: Number(form.pipeline_strategy_warmup_step) || 10,
@@ -1040,6 +1043,15 @@ export function SettingsPage() {
                   <div className="mt-4 border-t border-border/60 pt-3">
                     <p className="text-xs font-medium text-text-primary">{t('settings.strategy')}</p>
                     <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                      <Select
+                        label={t('settings.strategyDryRun')}
+                        value={form.pipeline_strategy_dry_run ?? 'false'}
+                        onChange={(e) => set('pipeline_strategy_dry_run', e.target.value)}
+                        options={[
+                          { value: 'true', label: t('common.yes') },
+                          { value: 'false', label: t('common.no') },
+                        ]}
+                      />
                       <Select
                         label={t('settings.strategyEnabled')}
                         value={form.pipeline_strategy_enabled ?? 'false'}

@@ -431,6 +431,22 @@ class PublishMixin:
         if not plan:
             return 0
         slots = {item.id: slot for item, slot in plan}
+        # 影子模式（v0.18）：照常计算不落库——记录「影子计划」供 queue_view
+        # 展示，建立信任后关闭 dry_run 即无缝切真实执行
+        if bool(getattr(self.engine.settings, "pipeline_strategy_dry_run", False)):
+            self._shadow_plan = [
+                {
+                    "title": (it.script_json or {}).get("bili_title") or it.title,
+                    "subreddit": it.subreddit,
+                    "scheduled_at": slot.isoformat(),
+                }
+                for it, slot in plan
+            ][:20]
+            logger.info(
+                "strategy DRY-RUN: phase=%s quota=%d would promote=%d",
+                state.phase, quota, len(plan),
+            )
+            return 0
         async with session_factory() as session:
             rows = (
                 await session.execute(select(Item).where(Item.id.in_(slots.keys())))
@@ -639,6 +655,8 @@ class PublishMixin:
             },
             # 关闭时为 None——前端据此隐藏状态卡
             "account": account,
+            # 影子计划（v0.18）：dry_run 下策略的「将会做什么」（最近一次）
+            "shadow_plan": list(getattr(self, "_shadow_plan", []) or []),
         }
 
     def _serialize_with_tier(self, item) -> dict:

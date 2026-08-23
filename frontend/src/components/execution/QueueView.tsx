@@ -2,7 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import { pipelineApi } from '../../api'
-import type { ContentTier, PipelineItem, PublishQueueView } from '../../api/pipeline'
+import type {
+  ContentTier,
+  PipelineItem,
+  PublishQueueView,
+} from '../../api/pipeline'
 import { Badge, Card, EmptyState, Icon } from '../ui'
 import { QueryErrorState } from '../ui/QueryErrorState'
 
@@ -67,8 +71,6 @@ function QueueRow({
   )
 }
 
-/** 发布队列视图（v0.12 融合）：ready/holding + 今日产能 + 账号状态卡（v0.13 策略），嵌入流水线「发布」tab。 */
-
 const PHASE_TONE: Record<string, { tone: 'primary' | 'success' | 'warning' | 'error'; key: string }> = {
   warmup: { tone: 'primary', key: 'queue.phase.warmup' },
   normal: { tone: 'success', key: 'queue.phase.normal' },
@@ -76,6 +78,7 @@ const PHASE_TONE: Record<string, { tone: 'primary' | 'success' | 'warning' | 'er
   cooldown: { tone: 'error', key: 'queue.phase.cooldown' },
 }
 
+/** 账号状态卡（v0.13）：相位 + 今日配额 + 判定原因 + 近 7 日趋势。 */
 function AccountCard({ account }: { account: NonNullable<PublishQueueView['account']> }) {
   const { t } = useTranslation()
   const phase = PHASE_TONE[account.phase] ?? PHASE_TONE.normal
@@ -122,6 +125,8 @@ function AccountCard({ account }: { account: NonNullable<PublishQueueView['accou
   )
 }
 
+/** 发布队列视图（v0.12 融合）：ready/holding + 今日产能 + 账号状态卡（v0.13 策略）
+ *  + 影子计划（v0.18 dry_run 演练），嵌入流水线「发布」tab。 */
 export function QueueView() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -178,6 +183,28 @@ export function QueueView() {
 
       {/* 账号状态（v0.13 策略开启时展示；关闭为 null 隐藏） */}
       {data?.account && <AccountCard account={data.account} />}
+
+      {/* 影子计划（v0.18）：dry_run 下策略演练结果——信任建立后关闭即真实执行 */}
+      {data && data.shadow_plan.length > 0 && (
+        <Card>
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-text-primary">
+            <Icon name="eye" size={14} className="text-warning" />
+            {t('queue.shadowPlan')}
+            <Badge tone="warning">{t('queue.shadowBadge')}</Badge>
+          </h3>
+          <ul className="space-y-1">
+            {data.shadow_plan.map((sp, i) => (
+              <li key={i} className="flex items-center gap-2 text-xs text-text-secondary">
+                <span className="font-mono text-[11px] text-text-disabled">
+                  {new Date(sp.scheduled_at).toLocaleTimeString()}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-text-primary">{sp.title}</span>
+                <span className="text-[10px] text-text-disabled">r/{sp.subreddit}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 发布队列 */}

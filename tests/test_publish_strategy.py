@@ -349,3 +349,42 @@ async def test_strategy_disabled_keeps_legacy_behavior(client) -> None:
         phases = [(await session.get(Item, iid)).queue_phase for iid in pair]
     assert phases.count(PHASE_READY) == 1
     assert phases.count(PHASE_HOLDING) == 1
+
+
+@pytest.mark.asyncio
+async def test_strategy_dry_run_records_shadow_plan(client) -> None:
+    """影子模式：照常计算计划但不落库——holding 保持、shadow_plan 有记录。"""
+    from backend.config import runtime_config
+    from backend.models.item import Item, ItemStatus
+    from backend.models.session import session_factory as sf
+
+    runtime_config.save({
+        "pipeline_auto_publish": True,
+        "pipeline_strategy_enabled": True,
+        "pipeline_strategy_base_daily": 2,
+        "pipeline_strategy_dry_run": True,
+    })
+    svc = _svc()
+    now = datetime.now(UTC)
+    for i in range(10):
+        await _mk(
+            ItemStatus.PUBLISHED, sid=f"sh-{i}",
+            published_at=now - timedelta(days=i % 14 + 1),
+            publish_json={"stats": {"view": 1200 + i}},
+        )
+    hold_id = await _mk(ItemStatus.APPROVED, sid="sh-hold", score_total=9.0)
+    async with sf() as session:
+        row = await session.get(Item, hold_id)
+        row.queue_phase = "holding"
+        await session.commit()
+
+    from backend.pipeline.publish_queue import PHASE_HOLDING
+
+    promoted = await svc._strategy_promote(now)
+    assert promoted == 0  # 影子：不落库
+    async with sf() as session:
+        row = await session.get(Item, hold_id)
+        assert row.queue_phase == PHASE_HOLDING  # 保持囤货
+    shadow = getattr(svc, "_shadow_plan", [])
+    assert len(shadow) >= 1
+    assert "scheduled_at" in shadow[0] and "title" in shadow[0]

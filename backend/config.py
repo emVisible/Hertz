@@ -118,6 +118,9 @@ class Settings(BaseSettings):
     # 转正/产能走上方静态参数（行为与 v0.12 完全一致）；开启后由策略接管，
     # cooldown 日自动停发、caution 减半、新号爬坡。详见 pipeline/strategy.py。
     pipeline_strategy_enabled: bool = False
+    # 影子模式（v0.18）：策略照常计算转正计划但不落库——queue_view 展示
+    # 「影子计划」建立信任，观察满意后关闭即无缝切真实执行
+    pipeline_strategy_dry_run: bool = False
     pipeline_strategy_base_daily: int = 2  # 策略常态日配额（新号保守起步）
     pipeline_strategy_warmup_floor: int = 30  # 累计发布低于此 = 新号爬坡期
     pipeline_strategy_warmup_step: int = 10  # 每 N 条累计发布 +1 配额（爬坡粒度）

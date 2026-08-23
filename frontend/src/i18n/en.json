@@ -308,7 +308,8 @@
     "monthlyBudget": "Monthly budget (0 = off; alerts at 50%/80%/95%)",
     "persona": "Channel persona memory",
     "personaPlaceholder": "e.g. Channel focuses on hardcore machinery + unexpected moments; restrained tone, no exclamation stacking; never touch politics or borderline content…",
-    "personaHint": "Injected into script & title prompts — keeps tone consistent across videos. Leave empty to disable."
+    "personaHint": "Injected into script & title prompts — keeps tone consistent across videos. Leave empty to disable.",
+    "strategyDryRun": "Shadow mode (compute only)"
   },
   "execution": {
     "modeStudio": "Studio",
@@ -1284,7 +1285,9 @@
     "toReady": "Promote to publish queue",
     "scheduledAt": "Scheduled",
     "noSchedule": "No schedule",
-    "promoteDaily": "Daily auto-promote"
+    "promoteDaily": "Daily auto-promote",
+    "shadowPlan": "Shadow plan",
+    "shadowBadge": "dry-run · not applied"
   },
   "cost": {
     "title": "Cost Control",

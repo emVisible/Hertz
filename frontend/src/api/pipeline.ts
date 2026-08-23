@@ -83,6 +83,8 @@ export interface PublishQueueView {
     reasons: string[]
     days: Array<{ date: string; uploads: number; views_median: number | null }>
   } | null
+  /** 影子计划（v0.18）：dry_run 下策略「将会做什么」 */
+  shadow_plan: Array<{ title: string; subreddit: string; scheduled_at: string }>
 }
 
 /** 内容分层（v0.13 策略）：队列条目由后端标注 */
