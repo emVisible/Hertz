@@ -1,0 +1,51 @@
+# Hertz 发布流水线（v0.21 P0 安装即用）：tag v* 触发 → mac arm64 产物 → GitHub Releases。
+# 前置：PyInstaller 固化后端（scripts/build-backend.sh）→ frontend dist → electron-builder。
+# 签名边界：无 Developer ID，macOS 跳过签名（dmg 手动下载安装；electron-updater
+# 待签名后开启——见 ROADMAP 已知缺口）。
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  mac-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: |
+          uv sync
+          pnpm install --frozen-lockfile
+
+      - name: Frontend build
+        run: pnpm --filter hertz-frontend build
+
+      - name: Freeze backend (PyInstaller)
+        run: ./scripts/build-backend.sh
+
+      - name: Electron typecheck
+        run: pnpm --filter hertz-electron typecheck
+
+      - name: Package & publish to GitHub Releases
+        run: pnpm --filter hertz-electron exec electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

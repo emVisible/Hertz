@@ -3,6 +3,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 
+import { ensureEmbeddedPg, shouldEmbedPg, stopEmbeddedPg } from './embeddedPg'
+
 const DEV_SERVER_URL = process.env.HERTZ_FRONTEND_URL ?? 'http://localhost:3000'
 const BACKEND_URL = process.env.HERTZ_BACKEND_URL
 const BACKEND_PORT = process.env.HERTZ_BACKEND_PORT ?? '8787'
@@ -11,6 +13,10 @@ const BACKEND_PORT = process.env.HERTZ_BACKEND_PORT ?? '8787'
 // macOS 菜单栏标题、强制退出面板、关于窗口都读 app.name——
 // package.json name 是内部包名（hertz-electron），不设会显示包名而非产品名。
 app.setName('Hertz')
+// 测试/多实例隔离：HERTZ_USER_DATA 重定向 userData（新机模拟验收、并行开发）
+if (process.env.HERTZ_USER_DATA) {
+  app.setPath('userData', process.env.HERTZ_USER_DATA)
+}
 app.setAboutPanelOptions({
   applicationName: 'Hertz',
   applicationVersion: app.getVersion(),
@@ -134,27 +140,63 @@ function startBackend(): void {
   const backendDir = app.isPackaged
     ? path.join(process.resourcesPath, 'backend')
     : path.join(app.getAppPath(), '..', 'backend')
-  const python = process.env.HERTZ_PYTHON ?? 'python3'
-  backendProcess = spawn(
-    python,
-    ['-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', BACKEND_PORT],
-    {
-      cwd: backendDir,
-      stdio: 'ignore',
-      env: { ...process.env },
-      // detached: 独立进程组——退出时按组杀，uv run/venv 包装进程与其
-      // uvicorn 子进程一起终止，避免"后台服务残留"（v0.8.3 修复）
-      detached: true,
-    },
-  )
-  backendProcess.on('error', (err) => {
-    void showCustomDialog({
-      title: 'Hertz 后端启动失败',
-      message: `无法启动后端服务（${err.message}）。\n\n请确认已安装 Python 与依赖（见 USER_GUIDE），\n或设置 HERTZ_BACKEND_URL 指向外部后端后重启。`,
-      buttons: [{ id: 'ok', label: '知道了', primary: true }],
+  // 固化二进制优先（v0.21 安装即用）：打包态 resources/backend/hertz-backend；
+  // 缺失时回退系统 python3 -m uvicorn（源码目录），兼容 HERTZ_PYTHON 覆盖
+  const bundledExe = path.join(backendDir, 'hertz-backend')
+  const useBundled = app.isPackaged && fs.existsSync(bundledExe)
+  // 内嵌 PG（v0.21 安装即用）：打包态先起库再拉后端；失败弹窗但继续——
+  // 后端仍会启动，等待期结束后由统一的「后端未就绪」兜底提示
+  const boot = shouldEmbedPg()
+    ? ensureEmbeddedPg()
+        .then((env) => ({ env, error: null as string | null }))
+        .catch((e) => ({ env: {} as Record<string, string>, error: String(e?.message ?? e) }))
+    : Promise.resolve({ env: {} as Record<string, string>, error: null as string | null })
+  void boot.then(({ env, error }) => {
+    if (error) {
+      void showCustomDialog({
+        title: '内嵌数据库启动失败',
+        message: `${error}\n\n可设置 HERTZ_DATABASE_URL 指向外部 PostgreSQL 后重试。`,
+        buttons: [{ id: 'ok', label: '知道了', primary: true }],
+      })
+    }
+    const childEnv = { ...process.env, ...env, HERTZ_BACKEND_PORT: BACKEND_PORT }
+    backendProcess =
+      useBundled === true
+        ? spawn(bundledExe, [], {
+            cwd: backendDir,
+            stdio: 'ignore',
+            env: childEnv,
+            detached: true,
+          })
+        : spawn(
+            process.env.HERTZ_PYTHON ?? 'python3',
+            [
+              '-m',
+              'uvicorn',
+              'backend.main:app',
+              '--host',
+              '127.0.0.1',
+              '--port',
+              BACKEND_PORT,
+            ],
+            {
+              cwd: backendDir,
+              stdio: 'ignore',
+              env: childEnv,
+              // detached: 独立进程组——退出时按组杀，uv run/venv 包装进程与其
+              // uvicorn 子进程一起终止，避免"后台服务残留"（v0.8.3 修复）
+              detached: true,
+            },
+          )
+    backendProcess.on('error', (err) => {
+      void showCustomDialog({
+        title: 'Hertz 后端启动失败',
+        message: `无法启动后端服务（${err.message}）。\n\n请确认已安装 Python 与依赖（见 USER_GUIDE），\n或设置 HERTZ_BACKEND_URL 指向外部后端后重启。`,
+        buttons: [{ id: 'ok', label: '知道了', primary: true }],
+      })
     })
+    backendProcess.unref()
   })
-  backendProcess.unref()
 }
 
 async function waitForBackend(timeoutMs = 15_000): Promise<boolean> {
@@ -343,7 +385,8 @@ app.whenReady().then(async () => {
 
   if (app.isPackaged) {
     startBackend()
-    const ok = await waitForBackend()
+    // 内嵌 PG 首启含发行包下载(~32MB)+initdb：放宽等待窗口（后续启动秒级）
+    const ok = await waitForBackend(shouldEmbedPg() ? 180_000 : 15_000)
     if (!ok) {
       void showCustomDialog({
         title: '后端未就绪',
@@ -374,4 +417,5 @@ app.on('will-quit', () => {
     }
   }
   backendProcess = null
+  stopEmbeddedPg()
 })

@@ -32,7 +32,7 @@
     ],
     "extraResources": [
       {
-        "from": "../backend",
+        "from": "../electron/backend-dist/hertz-backend",
         "to": "backend",
         "filter": [
           "**/*"
@@ -66,8 +66,9 @@
     },
     "publish": [
       {
-        "provider": "generic",
-        "url": "https://example.com/hertz/updates"
+        "provider": "github",
+        "owner": "emVisible",
+        "repo": "Hertz"
       }
     ]
   }

@@ -25,23 +25,33 @@ Hertz 是 AI 驱动的内容创作与自动化桌面应用，五个功能区：
 ## 安装即用（打包分发版）
 
 ```bash
+./scripts/build-backend.sh                        # PyInstaller 固化后端（CI 自动执行）
 cd electron && pnpm install && pnpm build        # 产出 release/ 下安装包
 ```
 
-打包版（macOS `.dmg` / Linux `.AppImage` / Windows `.exe`）自带前端与后端源码，
-首次启动要求系统满足：
+打包版（macOS arm64 `.dmg`，v0.21 起）**零配置**：
 
-- Python 3.12+ 且已安装项目后端依赖：`uv sync --frozen`
-- PostgreSQL 正在运行，且 `backend/data` 可写（含数据库迁移所需权限）
+- 后端已固化为自带二进制（PyInstaller onedir）——无需安装 Python 与依赖
+- 内嵌 PostgreSQL：首次启动自动下载（约 32MB，需联网一次）到用户数据目录并托管，
+  建库/迁移全自动；退出随应用一并停止
+- `ffmpeg` / `biliup` 仍为系统依赖（发布 B 站需要）：缺失时设置页依赖检测给出
+  brew 安装指引，不阻塞采集→审核主链路
 
-启动时应用会尝试自动拉起后端并等待健康检查通过；失败时给出对话框提示。
-可通过环境变量绕过：
+首次启动等待窗口较长（下载 + 初始化 + 迁移，实测约 40s-1.5min），之后启动秒级。
+
+可通过环境变量绕过内置行为：
 
 | 环境变量 | 作用 |
 |---|---|
-| `HERTZ_BACKEND_URL` | 指向外部后端（设置后不再本地拉起） |
-| `HERTZ_PYTHON` | 指定 Python 解释器路径（默认 `python3`） |
+| `HERTZ_BACKEND_URL` | 指向外部后端（设置后不再本地拉起，内嵌 PG 跳过） |
+| `HERTZ_DATABASE_URL` | 指向外部 PostgreSQL（内嵌 PG 跳过） |
+| `HERTZ_PYTHON` | 指定 Python 解释器路径（无固化二进制时的回退） |
+| `HERTZ_USER_DATA` | 重定向用户数据目录（测试/多实例隔离） |
 | `HERTZ_UPDATE_URL` | 通用更新源（electron-updater），未设置则不做自动更新检查 |
+
+> 发布产物经 GitHub Actions 自动构建上传 GitHub Releases：推 `v*` tag 即触发
+> （`.github/workflows/release.yml`）。macOS 未签名——electron-updater 自动更新
+> 待 Developer ID 签名后开启（ROADMAP 已知缺口）。
 
 ## 日常使用
 
