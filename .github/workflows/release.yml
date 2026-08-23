@@ -46,6 +46,8 @@ jobs:
         run: pnpm --filter hertz-electron typecheck
 
       - name: Package & publish to GitHub Releases
-        run: pnpm --filter hertz-electron exec electron-builder --publish always
+        # 走 build 脚本链（esbuild 产 dist/main.cjs && electron-builder）——
+        # 直接调 electron-builder 会因 dist 缺失打出空 app.asar（CI 首跑踩坑）
+        run: pnpm --filter hertz-electron run build -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

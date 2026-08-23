@@ -2,6 +2,10 @@
   "name": "hertz-electron",
   "private": true,
   "version": "0.21.0",
+  "description": "Hertz 桌面壳——AI 驱动的内容创作与自动化平台",
+  "author": {
+    "name": "emVisible"
+  },
   "main": "dist/main.cjs",
   "scripts": {
     "dev": "esbuild src/main.ts src/preload.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:electron-updater --out-extension:.js=.cjs && ./scripts/set-dock-name.sh && electron .",
