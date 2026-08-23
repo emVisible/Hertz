@@ -131,3 +131,14 @@ async def clear_item_disk(item: Item) -> None:
         except OSError:
             pass
         item.output_dir = None
+
+
+def _auto_tid(item) -> int | None:
+    """分区自动建议：subreddit/关键词 → tid（参考原项目 assign_bili_tid）。"""
+    try:
+        from backend.pipeline.category import assign_bili_tid
+
+        return assign_bili_tid(item.subreddit or "", item.item_type or "video_raw")
+    except Exception:  # noqa: BLE001 — 建议失败不影响序列化
+        return None
+

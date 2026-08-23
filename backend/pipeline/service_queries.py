@@ -1,0 +1,431 @@
+"""PipelineService 查询与看板域（v0.16 架构拆分，D-168 清偿）。
+
+纯结构移动：方法自 service.py 原样搬入 Mixin，零行为变化；
+PipelineService 组合全部 Mixin，外部 import 路径不变。
+"""
+
+import logging
+import uuid
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import func, select
+
+from backend.models.item import Item, ItemStatus
+from backend.models.pipeline import SourceState
+from backend.models.session import session_factory
+from backend.models.system import JobRun
+
+logger = logging.getLogger(__name__)
+
+
+
+class QueriesMixin:
+    # ---------- queries ----------
+
+    async def list_items(
+        self, status: str | None = None, limit: int = 50, source: str | None = None,
+        include_archived: bool = False,
+    ) -> list[dict]:
+        """条目列表；status 支持逗号分隔多状态（wave13：前端单查询聚合阶段队列）。
+        排序：入库序号 seq desc（v0.3.1——同批 created_at 相同，seq 才是真实先后）。
+        v0.5 A：QUEUED 条目标注相似内容（phash 汉明 ≤5，排除同 source_id 同源）。
+        wave10：默认排除 archived（备用库用独立 archived_items 查询）。"""
+        statuses = [s.strip() for s in (status or "").split(",") if s.strip()] or None
+        async with session_factory() as session:
+            order = Item.seq.desc().nulls_last()
+            stmt = select(Item).order_by(order).limit(limit)
+            conditions = []
+            if statuses:
+                conditions.append(Item.status.in_(statuses))
+            if source:
+                conditions.append(Item.source == source)
+            if not include_archived:
+                conditions.append(Item.archived.is_(False))
+            if conditions:
+                stmt = select(Item).where(*conditions).order_by(order).limit(limit)
+            result = await session.execute(stmt)
+            items = result.scalars().all()
+            serialized = [self._serialize(i) for i in items]
+            similar = await self._similar_map(items, session)
+            for entry in serialized:
+                if entry["id"] in similar:
+                    entry["similar"] = similar[entry["id"]]
+            return serialized
+
+    async def _similar_map(self, items: list[Item], session) -> dict[str, dict]:
+        """审核相似提示（v0.5 A）：对 QUEUED 条目批量 phash 比对。
+
+        参考集 = 队列内 + 已发布 + 已拒绝 的 phash（一次查询），汉明距离 ≤5；
+        排除同 source_id（同源同帖由采集去重处理，不算相似重复）。
+        返回 {item_id: {"published": [标题], "queued": [标题]}}（各最多 3 个）。
+        """
+        from backend.pipeline.dedupe import PHASH_MAX_DISTANCE, hamming_distance
+
+        queued = [
+            i for i in items
+            if i.status == ItemStatus.QUEUED and i.phash and len(i.phash) >= 16
+        ]
+        if not queued:
+            return {}
+        ref_statuses = (
+            ItemStatus.QUEUED, ItemStatus.APPROVED,
+            ItemStatus.PUBLISHED, ItemStatus.REJECTED,
+        )
+        refs = (
+            await session.execute(
+                select(Item.id, Item.phash, Item.source_id, Item.title, Item.status)
+                .where(
+                    Item.phash.isnot(None),
+                    Item.phash != "",
+                    Item.status.in_(ref_statuses),
+                )
+            )
+        ).all()
+        out: dict[str, dict] = {}
+        for item in queued:
+            published: list[str] = []
+            queued_titles: list[str] = []
+            for rid, rphash, rsource, rtitle, rstatus in refs:
+                if rid == item.id:
+                    continue
+                if rsource and item.source_id and rsource == item.source_id:
+                    continue  # 同源同帖：采集去重已覆盖
+                if not rphash or len(rphash) < 16:
+                    continue
+                if hamming_distance(item.phash, rphash) <= PHASH_MAX_DISTANCE:
+                    bucket = published if rstatus == ItemStatus.PUBLISHED else queued_titles
+                    if len(bucket) < 3:
+                        bucket.append(rtitle or "")
+            if published or queued_titles:
+                out[str(item.id)] = {
+                    "published": published,
+                    "queued": queued_titles,
+                }
+        return out
+
+    async def counts(self) -> dict[str, int]:
+        from sqlalchemy import func
+
+        async with session_factory() as session:
+            rows = await session.execute(
+                select(Item.status, func.count())
+                .where(Item.archived.is_(False))
+                .group_by(Item.status)
+            )
+            return {str(status): count for status, count in rows.all()}
+
+    async def collect_status(self) -> dict:
+        """采集运维状态（v0.8.2）：运行中/上次结果/下次自动/间隔（监视 + 操作依据）。"""
+        from backend.models.system import JobRun
+
+        async with session_factory() as session:
+            last_run = (
+                await session.execute(
+                    select(JobRun)
+                    .where(JobRun.job_name == "collect")
+                    .order_by(JobRun.started_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+
+        interval_min = int(
+            getattr(self.engine.settings, "pipeline_auto_collect_minutes", 30) or 0
+        )
+        # 下次自动采集 = 上次成功采集 + 间隔（registry tick 节流同语义）
+        next_in_s = None
+        if interval_min > 0 and last_run is not None and last_run.started_at is not None:
+            from datetime import UTC, datetime
+
+            elapsed = (datetime.now(UTC) - last_run.started_at).total_seconds()
+            next_in_s = max(0, int(interval_min * 60 - elapsed))
+        return {
+            "running": self.running,
+            "job": self.current_job(),
+            "interval_min": interval_min,
+            "auto_enabled": interval_min > 0,
+            "next_in_s": next_in_s,
+            "last": {
+                "status": last_run.status if last_run else None,
+                "started_at": (
+                    last_run.started_at.isoformat() if last_run and last_run.started_at else None
+                ),
+                "summary": (last_run.summary if last_run else None) or {},
+                "error": last_run.error if last_run else None,
+            },
+        }
+
+    async def trends(self, days: int = 30) -> list[dict]:
+        """看板趋势（v0.5 B）：按天聚合 采集/入库（job_runs.summary）+ 发布（published_at）。
+
+        summary 为 JSONB：collect 任务含 collected/inserted；跨天任务记在 started_at 当天。
+        v0.12 修正：日分组用**本地日**（与排期/日历同一时钟语义，AXIOM 单一真相源）
+        ——UTC 日会把本地 0-8 点的数据错记到前一天。
+        """
+
+        local_tz = datetime.now().astimezone().tzinfo
+
+        def _local_day(ts: datetime) -> str:
+            return ts.astimezone(local_tz).strftime("%Y-%m-%d")
+
+        now_local = datetime.now(local_tz)
+        start_local = (now_local - timedelta(days=days - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        start = start_local.astimezone(UTC)
+
+        async with session_factory() as session:
+            # 采集/入库趋势：job_runs 中 collect 成功任务的 summary
+            runs = (
+                await session.execute(
+                    select(JobRun)
+                    .where(
+                        JobRun.job_name == "collect",
+                        JobRun.started_at >= start,
+                    )
+                )
+            ).scalars().all()
+            collect_by_day: dict[str, dict[str, int]] = {}
+            for run in runs:
+                summary = run.summary or {}
+                day = _local_day(run.started_at)
+                bucket = collect_by_day.setdefault(day, {"collected": 0, "inserted": 0})
+                bucket["collected"] += int(summary.get("collected") or 0)
+                bucket["inserted"] += int(summary.get("inserted") or 0)
+
+            # 发布趋势：published_at 按天计数
+            published_rows = (
+                await session.execute(
+                    select(Item.published_at)
+                    .where(
+                        Item.status == ItemStatus.PUBLISHED,
+                        Item.published_at.isnot(None),
+                        Item.published_at >= start,
+                    )
+                )
+            ).scalars().all()
+            published_by_day: dict[str, int] = {}
+            for ts in published_rows:
+                day = _local_day(ts)
+                published_by_day[day] = published_by_day.get(day, 0) + 1
+
+        out: list[dict] = []
+        for offset in range(days):
+            day = (start_local + timedelta(days=offset)).strftime("%Y-%m-%d")
+            cb = collect_by_day.get(day, {})
+            out.append({
+                "date": day,
+                "collected": cb.get("collected", 0),
+                "inserted": cb.get("inserted", 0),
+                "published": published_by_day.get(day, 0),
+            })
+        return out
+
+    async def recent_jobs(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        job_name: str = "",
+        status: str = "",
+    ) -> dict:
+        """任务历史（v0.8.7 企业级对齐）：DB job_runs 全量历史——分页 + 类型/状态筛选。
+
+        v0.8.8 查漏补缺：列表返回轻量摘要（§2.3 接口存在理由 / §7.2 交互预算）——
+        逐源明细等大字段仅在展开详情时经 /jobs/{id} 懒加载。
+        """
+        async with session_factory() as session:
+            stmt = select(JobRun)
+            if job_name:
+                stmt = stmt.where(JobRun.job_name == job_name)
+            if status:
+                stmt = stmt.where(JobRun.status == status)
+            total = (
+                await session.execute(
+                    select(func.count()).select_from(stmt.subquery())
+                )
+            ).scalar_one()
+            rows = (
+                await session.execute(
+                    stmt.order_by(JobRun.started_at.desc())
+                    .offset(max(offset, 0))
+                    .limit(max(1, min(limit, 200)))
+                )
+            ).scalars().all()
+            return {
+                "total": total,
+                "jobs": [self._job_dict(j, light=True) for j in rows],
+            }
+
+    async def job_detail(self, job_id: uuid.UUID) -> dict:
+        """单任务详情（v0.8.7）：完整 summary（逐源明细/delta）+ 耗时 + 错误。"""
+        from backend.errors import HertzError
+
+        async with session_factory() as session:
+            job = await session.get(JobRun, job_id)
+            if job is None:
+                raise HertzError("not_found", "job not found")
+            return self._job_dict(job)
+
+    async def collect_history(self, limit: int = 10) -> list[dict]:
+        """采集历史轮次（v0.8.7）：最近 N 轮 collect 任务——逐源明细时间线。
+
+        采集卡/活动面板共用：每轮含 sources 数组（channel/collected/inserted/
+        skipped/cooldown_s/error/empty）——「采集最近历史」的单一真相源。
+        """
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(JobRun)
+                    .where(JobRun.job_name == "collect")
+                    .order_by(JobRun.started_at.desc())
+                    .limit(max(1, min(limit, 50)))
+                )
+            ).scalars().all()
+            return [self._job_dict(j) for j in rows]
+
+    @staticmethod
+    def _job_dict(j: JobRun, *, light: bool = False) -> dict:
+        started = j.started_at
+        finished = j.finished_at
+        duration_s = None
+        if started is not None and finished is not None:
+            duration_s = round((finished - started).total_seconds(), 1)
+        summary = j.summary or {}
+        base = {
+            "id": str(j.id),
+            "job": j.job_name,
+            "status": j.status,
+            "error": j.error,
+            "started_at": started.isoformat() if started else None,
+            "finished_at": finished.isoformat() if finished else None,
+            "duration_s": duration_s,
+        }
+        if light:
+            # 轻量摘要：列表行渲染所需计数（不含逐源明细/delta——展开时懒加载）
+            sources = summary.get("sources") or []
+            sources_ok = sum(
+                1
+                for s in sources
+                if isinstance(s, dict) and not s.get("error") and not s.get("empty")
+            )
+            sources_err = sum(
+                1
+                for s in sources
+                if isinstance(s, dict) and s.get("error")
+            )
+            base["summary"] = {
+                "collected": summary.get("collected"),
+                "inserted": summary.get("inserted"),
+                "skipped": summary.get("skipped"),
+                "processed": summary.get("processed"),
+                "ok": summary.get("ok"),
+                "failed": summary.get("failed"),
+                "sources_ok": sources_ok,
+                "sources_err": sources_err,
+                "empty": summary.get("empty"),
+            }
+        else:
+            base["summary"] = summary
+        return base
+
+    async def sources(self) -> list[dict]:
+        """采集源健康度（v0.2.1，参考原项目三态）：dead / degraded / healthy。"""
+        async with session_factory() as session:
+            result = await session.execute(
+                select(SourceState).order_by(SourceState.channel)
+            )
+            rows = result.scalars().all()
+            out = []
+            for s in rows:
+                total = s.ok_count + s.fail_count
+                if s.ok_count == 0 and s.fail_count > 0:
+                    health = "dead"
+                elif s.consecutive_fails >= 3 or (total > 0 and s.fail_count / total > 0.6):
+                    health = "degraded"
+                else:
+                    health = "healthy"
+                out.append({
+                    "source": s.source,
+                    "channel": s.channel,
+                    "cursor": s.get_cursor(),
+                    "ok_count": s.ok_count,
+                    "fail_count": s.fail_count,
+                    "consecutive_fails": s.consecutive_fails,
+                    "last_error": s.last_error,
+                    "last_error_at": s.last_error_at.isoformat() if s.last_error_at else None,
+                    "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+                    "last_strategy": s.last_strategy,  # v0.8.9 通道可观测（oauth/json/rss）
+                    "health": health,
+                })
+            return out
+
+    async def supply_warnings(self) -> list[str]:
+        """供给告警（参考原项目漏斗水位）：空漏斗 / 供给偏紧 / 采集源失联。"""
+        warnings: list[str] = []
+        async with session_factory() as session:
+            total_items = (
+                await session.execute(select(func.count(Item.id)))
+            ).scalar_one()
+            if total_items == 0:
+                warnings.append("funnel_empty")
+                return warnings
+            pre = (
+                await session.execute(
+                    select(func.count(Item.id)).where(
+                        Item.status.in_(
+                            (ItemStatus.DISCOVERED, ItemStatus.DOWNLOADED, ItemStatus.SCORED)
+                        )
+                    )
+                )
+            ).scalar_one()
+            if pre < 5:
+                warnings.append("supply_tight")
+            sources = (
+                await session.execute(
+                    select(SourceState).where(SourceState.fail_count > 0)
+                )
+            ).scalars().all()
+            if any(s.consecutive_fails >= 3 for s in sources):
+                warnings.append("source_unreachable")
+        return warnings
+
+    # ---------- 失败分类看板（v0.2.1，参考原项目 Autarkeia） ----------
+
+    async def failure_classes(self) -> dict[str, int]:
+        """failed 条目按 error_class 聚合统计（空类 = 旧数据/未分类）。"""
+        async with session_factory() as session:
+            result = await session.execute(
+                select(Item.error_class, Item.id).where(
+                    Item.status == ItemStatus.FAILED,
+                    Item.archived.is_(False),
+                )
+            )
+            counts: dict[str, int] = {}
+            for cls, _ in result:
+                counts[cls or "other"] = counts.get(cls or "other", 0) + 1
+            return counts
+
+    async def retry_class(self, cls: str) -> int:
+        """同类批量重试：把该失败分类的所有 failed 条目复位回可继续的状态。"""
+        from backend.pipeline.errors import FAILURE_CLASSES
+
+        if cls not in FAILURE_CLASSES:
+            raise ValueError(f"unknown failure class '{cls}'")
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(Item).where(
+                        Item.status == ItemStatus.FAILED,
+                        Item.error_class == cls,
+                        Item.archived.is_(False),
+                    )
+                )
+            ).scalars().all()
+            from backend.pipeline.helpers import back_status_for
+
+            for item in rows:
+                item.status = back_status_for(item)
+                item.error = None
+                item.error_class = ""
+                item.retry_count += 1
+            await session.commit()
+            return len(rows)
