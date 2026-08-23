@@ -5,6 +5,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.20.0] - 2026-08-22
+
+工程健康轮：SettingsPage 拆分 + 成本聚合性能防线。
+
+### 变更
+
+- **SettingsPage 拆分**（1332 行 → 265 行主壳 + 分区文件）：
+  `sections/shared.tsx`（SectionProps 契约 + PathField）/ `GeneralSection`（健康看板/
+  语言主题/路径）/ `AiSection`（功能映射/供应商/角色/单价·币种·预算/人设/术语表）/
+  `PipelineSection`（采集·热点监控·源池·自动发布·策略·TG·字幕语言·Reddit·B 站状态·依赖）/
+  `settingsCards`（PublishStatusCard/DepsCard 随迁）。form 草稿与 save 留主壳统一持有，
+  外部 import 路径不变
+- **ai_calls 聚合防线**：内存聚合行数硬上限 2 万行（取最近），summary 如实标注 truncated
+- **PipelineView（1355 行）拆分列入下一轮**——本轮聚焦 SettingsPage 保证质量
+
 ## [v0.19.0] - 2026-08-22
 
 数据飞轮一期补完（VidPal feedback loop 精华借鉴）+ Telegram 周报 + bot 测试网。

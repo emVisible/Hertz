@@ -23,6 +23,9 @@ _ITEM_REF = re.compile(r"^item:([0-9a-f-]{36})$")
 # 已知费用环节（operation 直用）；chat 按 caller 消歧（编排工作流 vs 对话）
 _KNOWN_OPERATIONS = ("score", "script", "title", "translate", "packaging")
 
+# 内存聚合行数硬上限（v0.20 性能防线）
+_MAX_AGGREGATE_ROWS = 20_000
+
 
 def estimate_cost(
     model_key: str,
@@ -81,11 +84,15 @@ async def aggregate_costs(
     async with session_factory() as session:
         rows = (
             await session.execute(
-                select(AICall).where(AICall.created_at >= cutoff).order_by(
-                    AICall.created_at.desc()
-                )
+                select(AICall)
+                .where(AICall.created_at >= cutoff)
+                .order_by(AICall.created_at.desc())
+                # v0.20 性能防线：内存聚合行数硬上限（桌面量级数千行，
+                # 极端积累时取最近 2 万行并如实标注截断）
+                .limit(_MAX_AGGREGATE_ROWS)
             )
         ).scalars().all()
+        truncated = len(rows) >= _MAX_AGGREGATE_ROWS
 
     def _row_cost(r: AICall) -> float | None:
         return estimate_cost(r.model_key, r.prompt_tokens, r.completion_tokens, prices)
@@ -262,6 +269,8 @@ async def aggregate_costs(
             "prompt_tokens": prompt_total,
             "completion_tokens": completion_total,
             "days": days,
+            # v0.20：达到聚合行数上限时如实标注（数据被截断到最近 2 万行）
+            "truncated": truncated,
         },
         "by_domain": [
             {**v, "cost": _to_currency(v["cost"])}
