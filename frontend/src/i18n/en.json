@@ -309,7 +309,12 @@
     "persona": "Channel persona memory",
     "personaPlaceholder": "e.g. Channel focuses on hardcore machinery + unexpected moments; restrained tone, no exclamation stacking; never touch politics or borderline content…",
     "personaHint": "Injected into script & title prompts — keeps tone consistent across videos. Leave empty to disable.",
-    "strategyDryRun": "Shadow mode (compute only)"
+    "strategyDryRun": "Shadow mode (compute only)",
+    "tgEnabled": "Enable Telegram review bot",
+    "tgToken": "Bot Token (via @BotFather)",
+    "tgChatId": "Admin chat ID",
+    "tgMinutes": "Poll interval (minutes)",
+    "tgHint": "Zero public exposure: local long-polling. Queued items are pushed as cards with inline Approve / Back / Reject buttons; budget alerts share the channel."
   },
   "execution": {
     "modeStudio": "Studio",

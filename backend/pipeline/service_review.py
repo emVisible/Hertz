@@ -106,6 +106,17 @@ class ReviewMixin:
     # 审核只负责 通过/拒绝/打回预处理；预处理负责 制作/评分/拒绝/打回采集；
     # 发布负责 发布/打回审核。
 
+    async def act_by_id(self, item_id: uuid.UUID, action: str) -> dict:
+        """按 id 执行审核动作（v0.18 Telegram bot 回调入口）——与桌面端
+        审核完全同源（同一闸门，不同入口）。action 白名单三选一。"""
+        if action == "approve":
+            return await self.approve(item_id)
+        if action == "reject":
+            return await self.reject(item_id)
+        if action == "back_to_prep":
+            return await self.back_to_prep(item_id)
+        raise ValueError(f"unknown review action: {action}")
+
     async def back_to_prep(self, item_id: uuid.UUID) -> dict:
         """审核打回预处理（v0.3.9）：queued → downloaded（v0.8.6 评分先行语义）。
 

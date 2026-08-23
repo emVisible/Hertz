@@ -73,6 +73,10 @@ interface ConfigData {
   pipeline_watch_keywords_all?: string
   pipeline_watch_exclude?: string
   pipeline_watch_min_score?: number
+  telegram_enabled?: boolean
+  telegram_bot_token?: string
+  telegram_chat_id?: string
+  telegram_minutes?: number
   pipeline_subtitle_font_size?: number
   pipeline_subtitle_outline?: number
   pipeline_subtitle_bold?: boolean
@@ -519,6 +523,10 @@ export function SettingsPage() {
       pipeline_watch_exclude: cfg.pipeline_watch_exclude ?? '',
       pipeline_watch_min_score: String(cfg.pipeline_watch_min_score ?? 0),
       channel_persona: cfg.channel_persona ?? '',
+      telegram_enabled: String(cfg.telegram_enabled ?? false),
+      telegram_bot_token: cfg.telegram_bot_token ?? '',
+      telegram_chat_id: cfg.telegram_chat_id ?? '',
+      telegram_minutes: String(cfg.telegram_minutes ?? 1),
       pipeline_publish_target: cfg.pipeline_publish_target ?? 'noop',
       pipeline_auto_publish: String(cfg.pipeline_auto_publish ?? false),
       pipeline_auto_publish_daily_limit: String(cfg.pipeline_auto_publish_daily_limit ?? 5),
@@ -604,6 +612,10 @@ export function SettingsPage() {
       pipeline_watch_min_score:
         form.pipeline_watch_min_score != null ? Number(form.pipeline_watch_min_score) : 0,
       channel_persona: form.channel_persona ?? '',
+      telegram_enabled: form.telegram_enabled === 'true',
+      telegram_bot_token: form.telegram_bot_token ?? '',
+      telegram_chat_id: form.telegram_chat_id ?? '',
+      telegram_minutes: Number(form.telegram_minutes) || 1,
       pipeline_publish_target: form.pipeline_publish_target,
       pipeline_auto_publish: form.pipeline_auto_publish === 'true',
       pipeline_auto_publish_daily_limit: Number(form.pipeline_auto_publish_daily_limit) || 5,
@@ -1123,6 +1135,39 @@ export function SettingsPage() {
                         />
                       </div>
                     </details>
+                  </div>
+                  {/* Telegram 审核 Bot（v0.18）：移动端过审 + 告警通道 */}
+                  <div className="mt-4 border-t border-border/60 pt-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Select
+                        label={t('settings.tgEnabled')}
+                        value={form.telegram_enabled ?? 'false'}
+                        onChange={(e) => set('telegram_enabled', e.target.value)}
+                        options={[
+                          { value: 'true', label: t('common.yes') },
+                          { value: 'false', label: t('common.no') },
+                        ]}
+                      />
+                      <Input
+                        label={t('settings.tgMinutes')}
+                        type="number"
+                        min={1}
+                        value={form.telegram_minutes ?? '1'}
+                        onChange={(e) => set('telegram_minutes', e.target.value)}
+                      />
+                      <Input
+                        label={t('settings.tgToken')}
+                        type="password"
+                        value={form.telegram_bot_token ?? ''}
+                        onChange={(e) => set('telegram_bot_token', e.target.value)}
+                      />
+                      <Input
+                        label={t('settings.tgChatId')}
+                        value={form.telegram_chat_id ?? ''}
+                        onChange={(e) => set('telegram_chat_id', e.target.value)}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-text-disabled">{t('settings.tgHint')}</p>
                   </div>
                 </section>
 

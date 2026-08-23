@@ -324,7 +324,12 @@
     "persona": "频道人设记忆",
     "personaPlaceholder": "例：账号专注「硬核机械 + 意外瞬间」类搬运；语气克制不夸张，标题不用感叹号堆砌；绝不碰政治与擦边内容…",
     "personaHint": "注入脚本与标题生成 prompt——保证跨视频的内容调性一致。留空则不生效。",
-    "strategyDryRun": "影子模式（只算不执行）"
+    "strategyDryRun": "影子模式（只算不执行）",
+    "tgEnabled": "启用 Telegram 审核 Bot",
+    "tgToken": "Bot Token（@BotFather）",
+    "tgChatId": "管理员 Chat ID",
+    "tgMinutes": "轮询间隔（分钟）",
+    "tgHint": "零公网暴露：本机 long-polling。待审条目推送封面卡片，手机 inline 按钮直接 通过/打回/拒绝；预算告警同通道。"
   },
   "execution": {
     "modeStudio": "Studio 编排",

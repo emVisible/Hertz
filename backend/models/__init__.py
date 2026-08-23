@@ -46,6 +46,7 @@ __all__ = [
     "ItemType",
     "JobRun",
     "JobStatus",
+    "TelegramNotification",
     "ModelCapability",
     "ModelRole",
     "PhaseStore",

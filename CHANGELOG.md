@@ -5,6 +5,22 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.18.0] - 2026-08-22
+
+移动化 · 数据飞轮 · 信任建立——第三轮同赛道调研落地四件套。
+
+### 新增
+
+- **Telegram 审核 Bot**：待审条目推送封面卡片（multipart 直传）+ inline 键盘
+  ✅通过 / ↩️打回预处理 / ❌拒绝；**手写 long-polling 客户端零公网暴露**
+  （本地桌面安全模型契合）；只响应配置的 chat_id（最小信任面）；
+  `tg_notifications` 表去重重启不重推；预算告警复用同通道
+- **策略影子模式**：`pipeline_strategy_dry_run` 照常计算转正计划但不落库，
+  QueueView 展示「影子计划」（标题/排期）——观察满意后关闭即无缝切真实执行
+- **发布日历热力图**：日历格按当日已发布数着色（GitHub contribution 风格）+ 角标计数
+- **频道人设记忆**：`channel_persona` 注入脚本与标题生成 prompt 尾部
+  （翻译不掺调性保持忠实）；设置 → AI 人设 textarea
+
 ## [v0.17.0] - 2026-08-22
 
 预算阶梯提醒（Helicone 精华借鉴，第二轮调研落地）+ service.py 架构拆分（D-168 清偿）。

@@ -37,6 +37,11 @@ RUNTIME_ALLOWLIST = {
     "pipeline_watch_keywords_all",
     "pipeline_watch_exclude",
     "pipeline_watch_min_score",
+    # Telegram 审核 Bot（v0.18）
+    "telegram_enabled",
+    "telegram_bot_token",
+    "telegram_chat_id",
+    "telegram_minutes",
     # 字幕样式（v0.4 B1）：字号/描边/加粗/对齐；v0.11.2 增淡入淡出/底部留白
     "pipeline_subtitle_font_size",
     "pipeline_subtitle_outline",

@@ -17,7 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 应用版本单一真相源（v0.11.6 Axiom §1.2 修复）：后端 main.py 引用此处；
 # pyproject.toml / frontend·electron package.json 在发版时对齐本值。
-APP_VERSION = "0.17.0"
+APP_VERSION = "0.18.0"
 
 
 class Settings(BaseSettings):
@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     pipeline_watch_keywords_all: str = ""  # 必须全部包含
     pipeline_watch_exclude: str = ""  # 含任一则排除
     pipeline_watch_min_score: int = 0  # reddit_score 门槛（0=不限）
+    # Telegram 审核 Bot（v0.18）：long-polling 零公网暴露——待审条目推送卡片，
+    # 手机 inline 按钮过审/打回/拒绝；预算与失败告警复用同通道。默认关闭。
+    telegram_enabled: bool = False
+    telegram_bot_token: str = ""  # @BotFather 创建
+    telegram_chat_id: str = ""  # 管理员 chat id（仅响应此 chat）
+    telegram_minutes: int = 1  # 轮询/推送 tick 间隔（分钟粒度调度，poll 内部 long-poll 25s）
     # 评分成本闸门（v0.2.1，参考原项目 Autarkeia）：单次运行 / 单日 LLM 评分硬限额，
     # 超限跳过评分（条目保持 downloaded，下轮或次日再评）——防 API 费用失控
     pipeline_score_max_per_run: int = 50

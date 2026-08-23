@@ -135,6 +135,14 @@ class ServiceRegistry:
             trigger="interval",
             minutes=1,
         )
+        # Telegram 审核 Bot（v0.18）：固定每分钟 tick（poll 内部 long-poll 25s）；
+        # telegram_enabled=false 时 tick 直接跳过。推送与轮询同一 tick 串行。
+        self.scheduler.add_job(
+            "telegram_bot",
+            self._telegram_tick,
+            trigger="interval",
+            minutes=1,
+        )
         self.log.get().info("ServiceRegistry initialized (AI via ProviderRegistry)")
 
     async def _collect_tick(self) -> None:
@@ -197,6 +205,28 @@ class ServiceRegistry:
                 )
         except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
             self.log.get().exception("auto publish tick failed (best effort)")
+
+    async def _telegram_tick(self) -> None:
+        """Telegram 审核 Bot（v0.18）：回调轮询 + 待审推送，均 best-effort。"""
+        import time as _time
+
+        from backend.config import settings  # 不依赖实例 initialize（单例直取）
+        from backend.integrations import telegram_bot as tg
+
+        if not tg.enabled():
+            return
+        now = _time.time()
+        # 推送节流：telegram_minutes（默认 1 分钟）——轮询每 tick 都跑（long-poll 挂起）
+        last_push = getattr(self, "_last_tg_push", 0.0)
+        try:
+            await tg.poll_tick(self.pipeline)
+            if now - last_push >= int(
+                getattr(settings, "telegram_minutes", 1) or 1
+            ) * 60:
+                self._last_tg_push = now
+                await tg.review_push_tick(self.pipeline)
+        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+            self.log.get().exception("telegram tick failed (best effort)")
 
     async def _publish_stats_tick(self) -> None:
         try:
