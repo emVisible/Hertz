@@ -21,7 +21,33 @@ _LUMA_OK = (0.2, 0.85)
 
 @lru_cache(maxsize=1)
 def find_ffmpeg() -> str | None:
-    return shutil.which("ffmpeg")
+    """系统 ffmpeg 优先（尊重用户自装的新版/定制构建，D-171）；
+    缺失时回退 imageio-ffmpeg 自带二进制（固化包内置，v0.21 安装即用，
+    7.1 构建实测含 libass——字幕烧录开箱可用）。"""
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+
+        return str(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:  # noqa: BLE001 — 未安装/二进制缺失时按无 ffmpeg 处理
+        return None
+
+
+@lru_cache(maxsize=1)
+def find_ffprobe() -> str | None:
+    """ffprobe 独立解析（imageio 发行不含 ffprobe，不可跟随 ffmpeg 兜底）：
+    系统 PATH → 系统 ffmpeg 同目录派生（brew 同时装两者的布局）→ 无。"""
+    found = shutil.which("ffprobe")
+    if found:
+        return found
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        candidate = Path(f"{Path(sys_ffmpeg).parent}/ffprobe")
+        if candidate.exists():
+            return str(candidate)
+    return None
 
 
 def thumb_path_for(media_path: Path, thumb_dir: Path | None = None) -> Path:

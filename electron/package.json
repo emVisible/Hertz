@@ -1,7 +1,7 @@
 {
   "name": "hertz-electron",
   "private": true,
-  "version": "0.11.6",
+  "version": "0.21.0",
   "main": "dist/main.cjs",
   "scripts": {
     "dev": "esbuild src/main.ts src/preload.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:electron-updater --out-extension:.js=.cjs && ./scripts/set-dock-name.sh && electron .",

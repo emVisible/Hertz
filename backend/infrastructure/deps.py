@@ -69,10 +69,22 @@ async def _ffmpeg_has_filter(path: str, name: str) -> bool:
 
 async def _check_ffmpeg() -> dict:
     path = shutil.which("ffmpeg")
+    source = "system"
+    if not path:
+        # v0.21 安装即用：系统缺失时回退 imageio-ffmpeg 自带二进制
+        #（固化包内置；7.1 构建实测含 libass，字幕烧录可用）
+        try:
+            import imageio_ffmpeg
+
+            path = str(imageio_ffmpeg.get_ffmpeg_exe())
+            source = "bundled"
+        except Exception:  # noqa: BLE001 — 未安装/二进制缺失按 missing 处理
+            path = None
     if not path:
         return {
             "status": "missing",
             "path": None,
+            "source": None,
             "version": None,
             "libass": False,
             # v0.8.9：官方 brew ffmpeg 8.x 已移除 libass——安装指引指向社区完整版 tap
@@ -82,11 +94,15 @@ async def _check_ffmpeg() -> dict:
     result: dict = {
         "status": "ok",
         "path": path,
+        "source": source,
         "version": await _ffmpeg_version(path),
         "libass": libass,
     }
     if not libass:
-        result["install_hint"] = "brew install homebrew-ffmpeg/ffmpeg/ffmpeg（官方 brew 版无 libass，字幕烧录需此完整版）"  # noqa: E501
+        result["install_hint"] = (
+            "brew install homebrew-ffmpeg/ffmpeg/ffmpeg"
+            "（官方 brew 8.x 版无 libass，字幕烧录需此完整版）"
+        )
     return result
 
 

@@ -88,16 +88,32 @@ async def _heal_legacy_crews() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    import time
+
+    _t0 = time.perf_counter()
     log_manager.get().info(f"Hertz backend starting (v{APP_VERSION})")
     registry = ServiceRegistry.get()
     registry.initialize(settings)
+    _t1 = time.perf_counter()
     # v0.8.8：基础依赖初次运行检测一次（结果持久化；后续仅设置页手动重测）
     from backend.infrastructure.deps import refresh_dependencies
 
     await refresh_dependencies()
+    _t2 = time.perf_counter()
     await _heal_legacy_plans()
     await _heal_legacy_crews()
+    _t3 = time.perf_counter()
     registry.scheduler.start()
+    _t4 = time.perf_counter()
+    # v0.21：固化包冷启动归因打点（>30s 环节定位用）
+    log_manager.get().info(
+        "[startup-timing] registry %.2fs / deps %.2fs / heal %.2fs / scheduler %.2fs / total %.2fs",
+        _t1 - _t0,
+        _t2 - _t1,
+        _t3 - _t2,
+        _t4 - _t3,
+        _t4 - _t0,
+    )
     yield
     await registry.shutdown()
     log_manager.get().info("Hertz backend stopped")

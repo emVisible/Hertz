@@ -65,10 +65,17 @@ def _migrate() -> None:
 
 
 def main() -> None:
+    import time
+
     from backend.config import settings
 
+    t0 = time.perf_counter()
     _ensure_database()
+    t1 = time.perf_counter()
+    print(f"[startup-timing] ensure_database {t1 - t0:.2f}s")
     _migrate()
+    t2 = time.perf_counter()
+    print(f"[startup-timing] migrations {t2 - t1:.2f}s")
 
     import uvicorn
 

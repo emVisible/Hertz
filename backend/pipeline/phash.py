@@ -10,19 +10,17 @@ a publish gate (block_publish_duplicates) on top of the existing
 import asyncio
 import json
 import logging
-from pathlib import Path
 
-from backend.library.thumbnails import find_ffmpeg
+from backend.library.thumbnails import find_ffmpeg, find_ffprobe
 
 logger = logging.getLogger(__name__)
 
 
 async def _probe_duration(video_path: str) -> float:
     """ffprobe 时长（秒）；失败返回 0（此时不 seek 直接取首帧）。"""
-    ffmpeg = find_ffmpeg()
-    if ffmpeg is None:
+    ffprobe = find_ffprobe()
+    if ffprobe is None:
         return 0.0
-    ffprobe = str(Path(ffmpeg).with_name("ffprobe"))
     try:
         proc = await asyncio.create_subprocess_exec(
             ffprobe, "-v", "quiet", "-print_format", "json", "-show_format",

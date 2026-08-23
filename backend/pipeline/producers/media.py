@@ -14,7 +14,7 @@ from pathlib import Path
 from backend.ai.router import AIRouter
 from backend.config import settings
 from backend.infrastructure.storage import FileStore
-from backend.library.thumbnails import find_ffmpeg
+from backend.library.thumbnails import find_ffmpeg, find_ffprobe
 from backend.pipeline.cancel import (
     ItemCancelledError,
     active_item,
@@ -94,10 +94,9 @@ async def _run_cmd(cmd: list[str], *, timeout_s: int = 300) -> bytes:
 
 async def probe_duration(path: Path) -> float:
     """Media duration in seconds via ffprobe."""
-    ffmpeg = find_ffmpeg()
-    if ffmpeg is None:
+    ffprobe = find_ffprobe()
+    if ffprobe is None:
         return 0.0
-    ffprobe = str(Path(ffmpeg).with_name("ffprobe"))
     proc = await asyncio.create_subprocess_exec(
         ffprobe, "-v", "quiet", "-print_format", "json", "-show_format", str(path),
         stdout=asyncio.subprocess.PIPE,
@@ -117,10 +116,9 @@ async def probe_audio_duration(path: Path) -> float:
     以「视频原声实际说话时长」为准（而非视频总时长，说话结束后画面还在
     继续时字幕不应继续铺）。无音轨/失败回退容器时长。
     """
-    ffmpeg = find_ffmpeg()
-    if ffmpeg is None:
+    ffprobe = find_ffprobe()
+    if ffprobe is None:
         return 0.0
-    ffprobe = str(Path(ffmpeg).with_name("ffprobe"))
     proc = await asyncio.create_subprocess_exec(
         ffprobe, "-v", "error", "-select_streams", "a:0",
         "-show_entries", "stream=duration", "-of", "json", str(path),
@@ -901,10 +899,9 @@ async def _translate_srt_cues(
 
 async def probe_has_audio(path: Path) -> bool:
     """媒体是否含音轨（v0.8.9，对齐原项目 probe_has_audio）——ASR 前提。"""
-    ffmpeg = find_ffmpeg()
-    if ffmpeg is None:
+    ffprobe = find_ffprobe()
+    if ffprobe is None:
         return True
-    ffprobe = str(Path(ffmpeg).with_name("ffprobe"))
     proc = await asyncio.create_subprocess_exec(
         ffprobe, "-v", "error", "-select_streams", "a", "-show_entries",
         "stream=index", "-of", "csv=p=0", str(path),
