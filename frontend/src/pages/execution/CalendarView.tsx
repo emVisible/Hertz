@@ -182,10 +182,28 @@ export function CalendarView({
                 if (multiItems.length > 0) void batchSchedule(cell.iso)
               }}
               className={`min-h-24 cursor-default bg-surface-1 p-1 ${cell.inMonth ? '' : 'opacity-40'}`}
+              style={
+                // 发布热力图（v0.18）：当日已发布数 → 背景绿色深浅
+                (() => {
+                  const pub = dayItems.filter((i) => i.status === 'published').length
+                  return pub > 0
+                    ? { backgroundColor: `color-mix(in srgb, rgb(52 211 153 / ${Math.min(0.35, 0.12 + pub * 0.08)}), var(--color-surface-1, #141414))` }
+                    : undefined
+                })()
+              }
             >
               <div className={`flex items-center justify-between px-0.5 text-[10px] ${today ? 'font-bold text-primary' : 'text-text-disabled'}`}>
                 {cell.day}
-                {today && <span className="h-1 w-1 rounded-full bg-primary" />}
+                {(() => {
+                  const pub = dayItems.filter((i) => i.status === 'published').length
+                  return pub > 0 ? (
+                    <span className="rounded-full bg-emerald-400/20 px-1 font-mono text-[9px] text-emerald-300">
+                      {pub}
+                    </span>
+                  ) : today ? (
+                    <span className="h-1 w-1 rounded-full bg-primary" />
+                  ) : null
+                })()}
               </div>
               <div className="mt-0.5 flex flex-col gap-0.5">
                 {dayItems.map((item) => (
