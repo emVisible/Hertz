@@ -403,6 +403,23 @@ class StepEngine:
             sources = [channel] if channel else list(
                 getattr(self.settings, "pipeline_sources", []) or ["hot"]
             )
+            # 热点监控通道（v0.16）：开关开启时按独立间隔追加——rising 时效性
+            # 高于普通采集节奏；节流状态存 engine 属性，与 auto_collect 解耦
+            from backend.pipeline import watch as watch_mod
+
+            watch_set: set[str] = set()
+            if not channel:
+                now_ts = datetime.now(UTC).timestamp()
+                interval_s = int(
+                    getattr(self.settings, "pipeline_watch_minutes", 15) or 15
+                ) * 60
+                last_w = getattr(self, "_last_watch_collect", 0.0)
+                if watch_mod.watch_channels(self.settings) and now_ts - last_w >= interval_s:
+                    self._last_watch_collect = now_ts
+                    watch_channels = watch_mod.watch_channels(self.settings)
+                    sources += [c for c in watch_channels if c not in sources]
+                    watch_set = set(watch_channels)
+                    ctx.log(f"[collect] watch channels={sorted(watch_set)}")
             ctx.log(f"[collect] sources={sources} limit={limit}")
             summaries: list[dict] = []
             for src in sources:
@@ -414,7 +431,14 @@ class StepEngine:
                     summaries.append({"channel": src, "cooldown_s": cooldown_s})
                     continue
                 try:
-                    summary = await run_collect(ctx, src, limit, self.collector)
+                    summary = await run_collect(
+                        ctx, src, limit, self.collector,
+                        # watch 通道：三段词法预筛（v0.16）
+                        filter_fn=(
+                            watch_mod.predicate(self.settings)
+                            if src in watch_set else None
+                        ),
+                    )
                 except Exception as exc:  # noqa: BLE001 — 单源失败不中断其他源
                     logger.warning("collect %s failed: %s", src, exc)
                     await self._record_collect_failure(

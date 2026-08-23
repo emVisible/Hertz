@@ -310,7 +310,16 @@
       "person": "人名",
       "brand": "品牌",
       "term": "专有名词"
-    }
+    },
+    "watchEnabled": "启用热点监控",
+    "watchSubreddits": "监控 subreddit（逗号分隔）",
+    "watchSort": "排序（rising=飙升推荐）",
+    "watchMinutes": "监控间隔（分钟，≥5 更安全）",
+    "watchAny": "任一关键词（空格分词）",
+    "watchAll": "必须包含全部",
+    "watchExclude": "排除词（含即丢弃）",
+    "watchMinScore": "Reddit 分数门槛",
+    "watchHint": "开启后按独立间隔对这些 subreddit 高频拉取指定排序，命中词法的条目才入库——把评分额度花在源头更可能爆的内容上。命中的条目仍走正常评分与审核流程。"
   },
   "execution": {
     "modeStudio": "Studio 编排",

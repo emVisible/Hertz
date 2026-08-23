@@ -5,6 +5,24 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.16.0] - 2026-08-22
+
+热点监控通道（第二轮同赛道调研落地，TrendRadar 词法精华借鉴）。
+
+### 新增
+
+- **采集源第二形态「主动雷达」**：对指定 subreddit 以独立高频间隔拉取
+  rising/hot 排序，三段词法预筛后才入库——普通词任一命中 / `+必须词` 全含 /
+  `!排除词` 一票否决，另支持 Reddit 分数门槛。把评分额度花在源头更可能爆的
+  内容上；命中条目仍走正常评分与审核流程（不绕过闸门）
+- 设置 → 流水线「热点监控」子区：开关/订阅列表/排序/间隔/三组关键词/分数门槛
+
+### 设计决策
+
+- 词法预筛以 `filter_fn` 注入 `run_collect`（collect 步骤不知道 watch 语义——职责单一）
+- 监控节流并入 collect tick 由 engine 属性判断，与 auto_collect_minutes 解耦；
+  依赖自动采集 tick 存在（关闭自动采集时手动运行链也会触发）
+
 ## [v0.15.1] - 2026-08-22
 
 失败→修复建议映射（蚁小二 CLI 精华借鉴，同赛道调研落地第四项）。

@@ -28,6 +28,15 @@ RUNTIME_ALLOWLIST = {
     "pipeline_publish_target",
     # 采集源列表（v0.4 A4）：设置页增删 subreddit 源
     "pipeline_sources",
+    # 热点监控通道（v0.16）：rising 高频 + 三段词法预筛
+    "pipeline_watch_enabled",
+    "pipeline_watch_subreddits",
+    "pipeline_watch_sort",
+    "pipeline_watch_minutes",
+    "pipeline_watch_keywords_any",
+    "pipeline_watch_keywords_all",
+    "pipeline_watch_exclude",
+    "pipeline_watch_min_score",
     # 字幕样式（v0.4 B1）：字号/描边/加粗/对齐；v0.11.2 增淡入淡出/底部留白
     "pipeline_subtitle_font_size",
     "pipeline_subtitle_outline",

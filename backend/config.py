@@ -17,7 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 应用版本单一真相源（v0.11.6 Axiom §1.2 修复）：后端 main.py 引用此处；
 # pyproject.toml / frontend·electron package.json 在发版时对齐本值。
-APP_VERSION = "0.15.1"
+APP_VERSION = "0.16.0"
 
 
 class Settings(BaseSettings):
@@ -80,6 +80,18 @@ class Settings(BaseSettings):
         "HumansBeingBros",
         "oddlysatisfying",
     ]
+    # 热点监控通道（v0.16，TrendRadar 词法精华借鉴）：对指定 subreddit 以
+    # 高频+rising 排序拉取，三段词法预筛（any 命中/all 全含/exclude 否决）后才
+    # 入库——把评分额度花在源头更可能爆的内容上。命中的条目仍走正常评分/审核
+    # 流水线（不绕过闸门）。默认关闭。
+    pipeline_watch_enabled: bool = False
+    pipeline_watch_subreddits: str = ""  # 逗号分隔 subreddit 名
+    pipeline_watch_sort: str = "rising"  # hot/new/rising/top
+    pipeline_watch_minutes: int = 15  # 监控采集间隔（分钟）
+    pipeline_watch_keywords_any: str = ""  # 任一命中（空格分词）
+    pipeline_watch_keywords_all: str = ""  # 必须全部包含
+    pipeline_watch_exclude: str = ""  # 含任一则排除
+    pipeline_watch_min_score: int = 0  # reddit_score 门槛（0=不限）
     # 评分成本闸门（v0.2.1，参考原项目 Autarkeia）：单次运行 / 单日 LLM 评分硬限额，
     # 超限跳过评分（条目保持 downloaded，下轮或次日再评）——防 API 费用失控
     pipeline_score_max_per_run: int = 50

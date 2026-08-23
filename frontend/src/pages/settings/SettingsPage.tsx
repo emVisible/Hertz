@@ -64,6 +64,14 @@ interface ConfigData {
   pipeline_auto_promote_daily?: number
   pipeline_auto_publish_tick_minutes?: number
   pipeline_sources?: string[]
+  pipeline_watch_enabled?: boolean
+  pipeline_watch_subreddits?: string
+  pipeline_watch_sort?: string
+  pipeline_watch_minutes?: number
+  pipeline_watch_keywords_any?: string
+  pipeline_watch_keywords_all?: string
+  pipeline_watch_exclude?: string
+  pipeline_watch_min_score?: number
   pipeline_subtitle_font_size?: number
   pipeline_subtitle_outline?: number
   pipeline_subtitle_bold?: boolean
@@ -488,6 +496,14 @@ export function SettingsPage() {
       pipeline_min_score: String(cfg.pipeline_min_score ?? 6),
       pipeline_collect_limit: String(cfg.pipeline_collect_limit ?? 25),
       pipeline_auto_collect_minutes: String(cfg.pipeline_auto_collect_minutes ?? 30),
+      pipeline_watch_enabled: String(cfg.pipeline_watch_enabled ?? false),
+      pipeline_watch_subreddits: cfg.pipeline_watch_subreddits ?? '',
+      pipeline_watch_sort: cfg.pipeline_watch_sort ?? 'rising',
+      pipeline_watch_minutes: String(cfg.pipeline_watch_minutes ?? 15),
+      pipeline_watch_keywords_any: cfg.pipeline_watch_keywords_any ?? '',
+      pipeline_watch_keywords_all: cfg.pipeline_watch_keywords_all ?? '',
+      pipeline_watch_exclude: cfg.pipeline_watch_exclude ?? '',
+      pipeline_watch_min_score: String(cfg.pipeline_watch_min_score ?? 0),
       pipeline_publish_target: cfg.pipeline_publish_target ?? 'noop',
       pipeline_auto_publish: String(cfg.pipeline_auto_publish ?? false),
       pipeline_auto_publish_daily_limit: String(cfg.pipeline_auto_publish_daily_limit ?? 5),
@@ -562,6 +578,15 @@ export function SettingsPage() {
       pipeline_min_score: Number(form.pipeline_min_score),
       pipeline_collect_limit: Number(form.pipeline_collect_limit),
       pipeline_auto_collect_minutes: Number(form.pipeline_auto_collect_minutes) || 0,
+      pipeline_watch_enabled: form.pipeline_watch_enabled === 'true',
+      pipeline_watch_subreddits: form.pipeline_watch_subreddits ?? '',
+      pipeline_watch_sort: form.pipeline_watch_sort || 'rising',
+      pipeline_watch_minutes: Number(form.pipeline_watch_minutes) || 15,
+      pipeline_watch_keywords_any: form.pipeline_watch_keywords_any ?? '',
+      pipeline_watch_keywords_all: form.pipeline_watch_keywords_all ?? '',
+      pipeline_watch_exclude: form.pipeline_watch_exclude ?? '',
+      pipeline_watch_min_score:
+        form.pipeline_watch_min_score != null ? Number(form.pipeline_watch_min_score) : 0,
       pipeline_publish_target: form.pipeline_publish_target,
       pipeline_auto_publish: form.pipeline_auto_publish === 'true',
       pipeline_auto_publish_daily_limit: Number(form.pipeline_auto_publish_daily_limit) || 5,
@@ -799,7 +824,7 @@ export function SettingsPage() {
                   </h2>
                   {/* v0.13.1 分组重排：采集与入库｜自动发布队列｜发布策略——
                       每组统一 border-t + 组标题，替代此前平铺混排 */}
-                  <div className="mt-3">
+                  <div className="mt-4 border-t border-border/60 pt-3">
                     <p className="text-xs font-medium text-text-primary">{t('settings.groupCollect')}</p>
                     <div className="mt-2 grid gap-3 sm:grid-cols-3">
                       <Input
@@ -825,6 +850,66 @@ export function SettingsPage() {
                     <p className="mt-1 text-xs leading-relaxed text-text-disabled">
                       {t('settings.autoCollectHint')}
                     </p>
+                    {/* 热点监控（v0.16 TrendRadar 精华）：rising 高频 + 三段词法预筛 */}
+                    <div className="mt-4 rounded-md border border-border/60 p-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Select
+                          label={t('settings.watchEnabled')}
+                          value={form.pipeline_watch_enabled ?? 'false'}
+                          onChange={(e) => set('pipeline_watch_enabled', e.target.value)}
+                          options={[
+                            { value: 'true', label: t('common.yes') },
+                            { value: 'false', label: t('common.no') },
+                          ]}
+                        />
+                        <Input
+                          label={t('settings.watchSubreddits')}
+                          value={form.pipeline_watch_subreddits ?? ''}
+                          onChange={(e) => set('pipeline_watch_subreddits', e.target.value)}
+                          placeholder="aww, Damnthatsinteresting"
+                        />
+                        <Select
+                          label={t('settings.watchSort')}
+                          value={form.pipeline_watch_sort ?? 'rising'}
+                          onChange={(e) => set('pipeline_watch_sort', e.target.value)}
+                          options={['rising', 'hot', 'new', 'top'].map((s) => ({ value: s, label: s }))}
+                        />
+                        <Input
+                          label={t('settings.watchMinutes')}
+                          type="number"
+                          min={5}
+                          value={form.pipeline_watch_minutes ?? '15'}
+                          onChange={(e) => set('pipeline_watch_minutes', e.target.value)}
+                        />
+                        <Input
+                          label={t('settings.watchAny')}
+                          value={form.pipeline_watch_keywords_any ?? ''}
+                          onChange={(e) => set('pipeline_watch_keywords_any', e.target.value)}
+                          placeholder="cat dog amazing"
+                        />
+                        <Input
+                          label={t('settings.watchAll')}
+                          value={form.pipeline_watch_keywords_all ?? ''}
+                          onChange={(e) => set('pipeline_watch_keywords_all', e.target.value)}
+                        />
+                        <Input
+                          label={t('settings.watchExclude')}
+                          value={form.pipeline_watch_exclude ?? ''}
+                          onChange={(e) => set('pipeline_watch_exclude', e.target.value)}
+                          placeholder="politics nsfw"
+                        />
+                        <Input
+                          label={t('settings.watchMinScore')}
+                          type="number"
+                          min={0}
+                          value={form.pipeline_watch_min_score ?? '0'}
+                          onChange={(e) => set('pipeline_watch_min_score', e.target.value)}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs leading-relaxed text-text-disabled">
+                        {t('settings.watchHint')}
+                      </p>
+                    </div>
                   </div>
                   <div className="mt-4 border-t border-border/60 pt-3">
                     <span className="text-xs font-medium text-text-primary">{t('settings.sources')}</span>
