@@ -98,15 +98,15 @@ async def test_review_push_caption_contains_metadata(client) -> None:
     finally:
         monkey.undo()
 
-    from backend.models.item import Item as _I
+    from backend.models.item import Item
     from backend.pipeline.publish_queue import PHASE_NONE as _PN
 
     async def _dump():
         async with session_factory() as s:
             rows = (await s.execute(
-                __import__("sqlalchemy").select(_I.title, _I.status)
-                .where(_I.status == "queued", _I.queue_phase == _PN)
-                .order_by(_I.seq.asc()).limit(12)
+                __import__("sqlalchemy").select(Item.title, Item.status)
+                .where(Item.status == "queued", Item.queue_phase == _PN)
+                .order_by(Item.seq.asc()).limit(12)
             )).all()
         print("QUEUED DUMP:", [(t[:24], st) for t, st in rows])
 

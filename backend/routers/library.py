@@ -141,7 +141,7 @@ async def set_tags(body: dict):
 
     if merge:
         meta_path = Path(f"{target}{META_SUFFIX}")
-        existing = _read_tags(meta_path) if meta_path.exists() else []
+        existing = _read_tags(meta_path) if await APath(meta_path).exists() else []
         merged = existing + [str(t) for t in raw_tags]
         seen: set[str] = set()
         raw_tags = [x for x in merged if not (x in seen or seen.add(x))]
@@ -151,7 +151,11 @@ async def set_tags(body: dict):
 
 
 @router.get("/scan")
-async def scan(path: str = Query(...), limit: int = Query(500, ge=1, le=2000), recursive: bool = Query(False)):
+async def scan(
+    path: str = Query(...),
+    limit: int = Query(500, ge=1, le=2000),
+    recursive: bool = Query(False),
+):
     target = await _ensure_allowed(path)
     if not target.is_dir():
         raise HTTPException(status_code=404, detail="directory not found")
