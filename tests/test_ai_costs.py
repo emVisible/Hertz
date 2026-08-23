@@ -278,3 +278,31 @@ async def test_aggregate_converts_currency(client) -> None:
     assert cny["currency"]["code"] == "CNY"
     assert cny["currency"]["symbol"] == "¥"
     assert usd["currency"]["code"] == "USD"
+
+
+# ---------- 月度预算阶梯（v0.17） ----------
+
+
+@pytest.mark.asyncio
+async def test_budget_levels(client, monkeypatch) -> None:
+    """三档阶梯：50%→warning / 80%→critical / 95%+→exceeded；0 预算 → None。"""
+    from backend.config import settings
+
+    await _mk_call(prompt_tokens=1_000_000)  # $0.27 @ PRICES
+
+    monkeypatch.setattr(settings, "cost_monthly_budget", 0.5)
+    r = await aggregate_costs(days=30, prices=PRICES, now=NOW)
+    assert r["budget"]["level"] == "warning"  # 54%
+    assert r["budget"]["monthly"] == 0.5
+
+    monkeypatch.setattr(settings, "cost_monthly_budget", 0.32)
+    r = await aggregate_costs(days=30, prices=PRICES, now=NOW)
+    assert r["budget"]["level"] == "critical"  # ~84%
+
+    monkeypatch.setattr(settings, "cost_monthly_budget", 0.28)
+    r = await aggregate_costs(days=30, prices=PRICES, now=NOW)
+    assert r["budget"]["level"] == "exceeded"  # ~96%
+
+    monkeypatch.setattr(settings, "cost_monthly_budget", 0.0)
+    r = await aggregate_costs(days=30, prices=PRICES, now=NOW)
+    assert r["budget"] is None

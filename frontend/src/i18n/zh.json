@@ -319,7 +319,8 @@
     "watchAll": "必须包含全部",
     "watchExclude": "排除词（含即丢弃）",
     "watchMinScore": "Reddit 分数门槛",
-    "watchHint": "开启后按独立间隔对这些 subreddit 高频拉取指定排序，命中词法的条目才入库——把评分额度花在源头更可能爆的内容上。命中的条目仍走正常评分与审核流程。"
+    "watchHint": "开启后按独立间隔对这些 subreddit 高频拉取指定排序，命中词法的条目才入库——把评分额度花在源头更可能爆的内容上。命中的条目仍走正常评分与审核流程。",
+    "monthlyBudget": "月度预算（0=不启用；达 50%/80%/95% 提示）"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -1324,7 +1325,12 @@
     "colViews": "播放",
     "colCalls": "调用",
     "aiCostOfItem": "AI 成本",
-    "costPerK": "千次成本"
+    "costPerK": "千次成本",
+    "budget": {
+      "warning": "本月 AI 花费已达预算 {used} / {budget}（超过 50%）",
+      "critical": "本月 AI 花费 {used} / {budget}——已超 80%，建议放缓制作节奏",
+      "exceeded": "本月 AI 花费 {used} 已超预算 {budget}（≥95%）——发布策略引擎将照常运行，请评估是否调整预算或降量"
+    }
   },
   "errors": {
     "suggestion": {

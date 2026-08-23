@@ -252,7 +252,7 @@ async def aggregate_costs(
     ]
 
     symbol = {"CNY": "¥", "USD": "$"}.get(currency.upper(), currency.upper() + " ")
-    return {
+    report = {
         "currency": {"code": currency.upper(), "symbol": symbol, "rate": rate},
         "summary": {
             "total_calls": total,
@@ -280,3 +280,44 @@ async def aggregate_costs(
         # 条目 ROI（v0.15）：每条视频的 AI 总成本 × 播放表现
         "items": items_view,
     }
+
+    # 月度预算阶梯（v0.17，Helicone 精华借鉴）：自然月累计 vs 预算，
+    # 三档提示（50%/80%/95%）——只警示不阻断。budget=0 → budget=None
+    from backend.config import settings as app_settings
+
+    budget = float(getattr(app_settings, "cost_monthly_budget", 0.0) or 0.0)
+    if budget > 0:
+
+        month_start = now.astimezone().replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        m_start_utc = month_start.astimezone(UTC)
+        async with session_factory() as session:
+            month_rows = (
+                await session.execute(
+                    select(AICall).where(AICall.created_at >= m_start_utc)
+                )
+            ).scalars().all()
+        month_cost = 0.0
+        for r in month_rows:
+            c = estimate_cost(r.model_key, r.prompt_tokens, r.completion_tokens, prices)
+            if c is not None:
+                month_cost += c
+        used = round(month_cost * rate, 6)
+        ratio = used / budget
+        report["budget"] = {
+            "monthly": budget,
+            "used": used,
+            "ratio": round(min(ratio, 9.99), 4),
+            "level": (
+                "exceeded" if ratio >= 0.95
+                else "critical" if ratio >= 0.8
+                else "warning" if ratio >= 0.5
+                else "ok"
+            ),
+            "month_start": local_day_str(m_start_utc),
+        }
+    else:
+        report["budget"] = None
+
+    return report

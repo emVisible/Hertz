@@ -89,6 +89,7 @@ interface ConfigData {
   ai_model_prices?: Record<string, { prompt?: number; completion?: number }>
   cost_currency?: string
   cost_usd_rate?: number
+  cost_monthly_budget?: number
   llm_api_key_masked?: string | null
   llm_api_key_set?: boolean
 }
@@ -385,6 +386,7 @@ function ModelPrices() {
   const [raw, setRaw] = useState('')
   const [currency, setCurrency] = useState('CNY')
   const [rate, setRate] = useState('7.2')
+  const [budget, setBudget] = useState('0')
 
   useEffect(() => {
     if (!cfg) return
@@ -396,6 +398,7 @@ function ModelPrices() {
     )
     setCurrency(cfg.cost_currency ?? 'CNY')
     setRate(String(cfg.cost_usd_rate ?? 7.2))
+    setBudget(String(cfg.cost_monthly_budget ?? 0))
   }, [cfg])
 
   async function save() {
@@ -411,6 +414,7 @@ function ModelPrices() {
           ai_model_prices: prices,
           cost_currency: currency,
           cost_usd_rate: Number(rate) || 1,
+          cost_monthly_budget: Number(budget) || 0,
         },
       })
       await refetch()
@@ -442,6 +446,14 @@ function ModelPrices() {
           onChange={(e) => setRate(e.target.value)}
         />
       </div>
+      <Input
+        label={t('settings.monthlyBudget')}
+        type="number"
+        step="1"
+        min={0}
+        value={budget}
+        onChange={(e) => setBudget(e.target.value)}
+      />
       <textarea
         value={raw}
         onChange={(e) => setRaw(e.target.value)}

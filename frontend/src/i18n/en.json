@@ -304,7 +304,8 @@
     "watchAll": "Must contain all",
     "watchExclude": "Exclude (drop if hit)",
     "watchMinScore": "Min Reddit score",
-    "watchHint": "When on, these subreddits are pulled at their own interval with the chosen sort; only posts matching the keywords are ingested — spending scoring budget where content is more likely to pop. Watched items still go through normal scoring & review."
+    "watchHint": "When on, these subreddits are pulled at their own interval with the chosen sort; only posts matching the keywords are ingested — spending scoring budget where content is more likely to pop. Watched items still go through normal scoring & review.",
+    "monthlyBudget": "Monthly budget (0 = off; alerts at 50%/80%/95%)"
   },
   "execution": {
     "modeStudio": "Studio",
@@ -1324,7 +1325,12 @@
     "colViews": "Views",
     "colCalls": "Calls",
     "aiCostOfItem": "AI cost",
-    "costPerK": "Cost / 1k views"
+    "costPerK": "Cost / 1k views",
+    "budget": {
+      "warning": "Month-to-date AI spend hit {used} / {budget} (over 50%)",
+      "critical": "Month-to-date AI spend {used} / {budget} — past 80%, consider slowing production",
+      "exceeded": "Month-to-date AI spend {used} exceeds budget {budget} (≥95%) — the publish strategy engine keeps running; adjust budget or pace"
+    }
   },
   "errors": {
     "suggestion": {

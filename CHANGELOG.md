@@ -5,6 +5,23 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.17.0] - 2026-08-22
+
+预算阶梯提醒（Helicone 精华借鉴，第二轮调研落地）+ service.py 架构拆分（D-168 清偿）。
+
+### 新增
+
+- **月度预算阶梯**：`cost_monthly_budget`（报表币种计，0=不启用）——自然月累计
+  AI 花费达 50%/80%/95% 三档时成本页顶部横幅提示（warning/critical/exceeded，
+  只警示不阻断）；设置 → AI 单价卡内配置
+
+### 变更
+
+- **service.py 拆分为四域 Mixin**（D-168 架构债清偿）：1805 行单文件 →
+  196 行运行控制核心 + review(审核预处理)/publish(发布·队列·策略·排期)/
+  archive(归档备用库)/queries(查询看板) 四域文件；
+  外部 import 路径不变、295 测试安全网全绿验证零行为变化
+
 ## [v0.16.0] - 2026-08-22
 
 热点监控通道（第二轮同赛道调研落地，TrendRadar 词法精华借鉴）。

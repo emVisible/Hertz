@@ -44,6 +44,14 @@ interface CostReport {
   }>
   daily: Array<{ date: string; cost: number }>
   missing_prices: string[]
+  /** 月度预算阶梯（v0.17）：budget=0（未配置）时为 null */
+  budget: {
+    monthly: number
+    used: number
+    ratio: number
+    level: 'ok' | 'warning' | 'critical' | 'exceeded'
+    month_start: string
+  } | null
   /** 条目 ROI（v0.15）：每条视频的 AI 总成本 × 播放表现 */
   items: Array<{
     item_id: string
@@ -163,6 +171,30 @@ export function CostPage() {
         <p className="py-10 text-center text-sm text-text-disabled">{t('common.loading')}</p>
       ) : (
         <>
+          {/* 月度预算阶梯（v0.17）：warning/critical/exceeded 三档提示，不阻断 */}
+          {data.budget && data.budget.level !== 'ok' && (
+            <Card
+              className={
+                data.budget.level === 'exceeded'
+                  ? 'border-error/50 bg-error/5'
+                  : data.budget.level === 'critical'
+                    ? 'border-warning/60 bg-warning/10'
+                    : 'border-warning/40 bg-warning/5'
+              }
+            >
+              <p
+                className={`text-xs leading-relaxed ${
+                  data.budget.level === 'exceeded' ? 'text-error' : 'text-warning'
+                }`}
+              >
+                {t(`cost.budget.${data.budget.level}`, {
+                  used: fmtCost(symbol, data.budget.used),
+                  budget: fmtCost(symbol, data.budget.monthly),
+                })}
+              </p>
+            </Card>
+          )}
+
           {/* 未配价警告 */}
           {data.missing_prices.length > 0 && (
             <Card className="border-warning/40 bg-warning/5">

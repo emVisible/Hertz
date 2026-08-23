@@ -70,6 +70,8 @@ RUNTIME_ALLOWLIST = {
     # 成本报表币种（v0.14.1）：CNY|USD + USD→目标币汇率
     "cost_currency",
     "cost_usd_rate",
+    # 月度预算（v0.17）：阶梯提示 50%/80%/95%（不阻断）
+    "cost_monthly_budget",
     # 角色分配经 PUT /api/ai/roles 写入（唯一写入口，见 routers/ai.py）
     # Single-user desktop: API keys live in the local runtime.yaml.
     # They are never returned by GET — only set via PATCH.

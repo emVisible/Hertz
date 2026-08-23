@@ -17,7 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 应用版本单一真相源（v0.11.6 Axiom §1.2 修复）：后端 main.py 引用此处；
 # pyproject.toml / frontend·electron package.json 在发版时对齐本值。
-APP_VERSION = "0.16.0"
+APP_VERSION = "0.17.0"
 
 
 class Settings(BaseSettings):
@@ -200,6 +200,9 @@ class Settings(BaseSettings):
     # 成本报表币种（v0.14.1）：单价表以 USD 计，报表按汇率换算显示
     cost_currency: str = "CNY"  # CNY | USD
     cost_usd_rate: float = 7.2  # USD → cost_currency 汇率
+    # 月度预算（v0.17，Helicone 阶梯告警借鉴）：0=不启用；按自然月累计
+    # ai_calls 花费（当前单价动态计价），达阈值在 Dashboard/成本页提示（不阻断）
+    cost_monthly_budget: float = 0.0  # 报表币种计
 
     @property
     def runtime_config_path(self) -> Path:
