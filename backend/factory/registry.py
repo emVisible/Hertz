@@ -102,6 +102,15 @@ class ServiceRegistry:
 
         self.pipeline.engine.ai = self.ai
         self.pipeline.engine.collector = RedditCollector()
+        # 多源路由注册表（v0.22 非破坏性扩展）：前缀通道 → collector；
+        # 裸名/未列前缀外的存量行为不变，新源仅在 pipeline_sources 显式添加后生效
+        from backend.pipeline.collectors.ai_story import AIStoryCollector
+        from backend.pipeline.collectors.rss import RssFeedCollector
+
+        self.pipeline.engine.collectors = {
+            "ai-story": AIStoryCollector(ai=self.ai),
+            "rss": RssFeedCollector(),
+        }
         # 周期性任务（v0.2.1，参考原项目 scheduler）：自动过审默认关闭，
         # 开启后每 5 分钟扫描超时未审条目（auto_approve 内部自查开关）
         self.scheduler.add_job(

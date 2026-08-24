@@ -131,6 +131,8 @@ class PipelineService(
             "error": item.error,
             "error_class": item.error_class,
             "retry_count": item.retry_count,
+            # 归属栏目（v0.22 栏目化）：审核/发布卡据此展示栏目上下文
+            "channel_key": item.channel_key,
             "created_at": item.created_at.isoformat() if item.created_at else None,
             # 最近操作（v0.3.12）：状态迁移自动刷新（onupdate）——「最新在前」排序要素
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,
@@ -178,6 +180,8 @@ class PipelineService(
             "error": item.error,
             "error_class": item.error_class,
             "retry_count": item.retry_count,
+            # 归属栏目（v0.22 栏目化）：审核/发布卡据此展示栏目上下文
+            "channel_key": item.channel_key,
             "created_at": item.created_at.isoformat() if item.created_at else None,
             # 最近操作（v0.3.12）：状态迁移自动刷新（onupdate）——「最新在前」排序要素
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,

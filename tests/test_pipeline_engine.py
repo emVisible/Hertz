@@ -17,9 +17,11 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from sqlalchemy import delete
 
 from backend.ai.router import AIRouter
 from backend.factory.registry import ServiceRegistry
+from backend.models.item import Item
 from backend.models.session import session_factory
 from backend.pipeline.collectors.base import RawPost
 from backend.pipeline.collectors.reddit import FakeRedditCollector
@@ -530,3 +532,136 @@ async def test_chain_text_story_to_queued(client, pipeline_env) -> None:
     finally:
         engine.ai = original_ai
         engine.collector = original_collector
+
+
+@pytest.mark.asyncio
+async def test_collect_mixed_sources_parallel(client, pipeline_env) -> None:
+    """v0.22 多源路由：Reddit 裸名 + ai-story 前缀两线并行互不干扰。"""
+    from sqlalchemy import func, select
+
+    from backend.config import settings
+    from backend.factory.registry import ServiceRegistry
+    from backend.pipeline.collectors.ai_story import AIStoryCollector
+
+    class _FakeStoryAI:
+        llm_available = True
+
+        async def chat_messages(self, messages, **kwargs):
+            return json.dumps(
+                {"title": "楼下面馆的深夜灯光", "story": "那家面馆" * 200}
+            )
+
+    registry = ServiceRegistry.get()
+    engine = registry.pipeline.engine
+    original_sources = settings.pipeline_sources
+    original_collectors = engine.collectors
+    try:
+        settings.pipeline_sources = ["mixed-reddit-src", "ai-story/情感夜话"]
+        engine.collectors = {"ai-story": AIStoryCollector(ai=_FakeStoryAI())}
+        result = await engine.run_batch("collect", limit=10)
+        assert result["summary"]["collected"] >= 2  # Reddit 线（fixture 4 帖）+ AI 线 ≥1
+
+        async with session_factory() as session:
+            rows = (await session.execute(
+                select(Item.source, func.count(Item.id)).group_by(Item.source)
+            )).all()
+        by_source = dict(rows)
+        assert by_source.get("reddit", 0) >= 1, "裸名通道仍归 Reddit"
+        assert by_source.get("ai-story", 0) >= 1, "前缀通道走 ai-story"
+    finally:
+        settings.pipeline_sources = original_sources
+        engine.collectors = original_collectors
+        # per-test 清理（D-181 惯例）：残留的 collect JobRun 会污染
+        # test_run_batch_delta_snapshot 的「任意 collect job」轮询；
+        # ai-story 残留条目会挤占后续测试的全局 discovered 计数
+        from backend.models.system import JobRun
+
+        async with session_factory() as session:
+            await session.execute(delete(Item).where(Item.source == "ai-story"))
+            await session.execute(delete(JobRun).where(JobRun.job_name == "collect"))
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_channel_e2e_ai_story_to_queued(client, pipeline_env) -> None:
+    """v0.22 E2E：栏目绑定 → ai-story 采集（channel_key 打标）→ 全链到 queued，
+    包装应用栏目模板（desc/tags/bili_tid）。非破坏性：仅该通道条目受影响。"""
+    from sqlalchemy import delete
+
+    from backend.config import settings
+    from backend.factory.registry import ServiceRegistry
+    from backend.models.channel import Channel
+    from backend.models.system import JobRun
+    from backend.pipeline.collectors.ai_story import AIStoryCollector
+
+    class _FakeStoryAI:
+        llm_available = True
+
+        def __init__(self) -> None:
+            self.system_seen = None
+
+        async def chat_messages(self, messages, **kwargs):
+            self.system_seen = messages[0].content
+            return json.dumps(
+                {"title": "深夜面馆的一碗清汤", "story": "那家面馆的灯总是亮到很晚。" * 30}
+            )
+
+    registry = ServiceRegistry.get()
+    engine = registry.pipeline.engine
+    original_ai = engine.ai
+    original_collector = engine.collector
+    original_collectors = engine.collectors
+    original_sources = settings.pipeline_sources
+
+    try:
+        async with session_factory() as session:
+            session.add(
+                Channel(
+                    public_id="test-e2e",
+                    name="情感夜话",
+                    enabled=True,
+                    source_pool=["ai-story/情感夜话"],
+                    tags=["情感", "故事"],
+                    desc_template="{channel}｜{title}",
+                    bili_tid=122,
+                    persona_prompt="以「阿蓝」第一人称叙述。",
+                )
+            )
+            await session.commit()
+
+        fake_ai = _FakeStoryAI()
+        engine.ai = AIRouter(llm=ScoringLLM(), image=None, tts=_FakeTTS())
+        engine.collector = FakeRedditCollector([])
+        engine.collectors = {"ai-story": AIStoryCollector(ai=fake_ai)}
+        settings.pipeline_sources = ["ai-story/情感夜话"]
+
+        resp = await client.post("/api/pipeline/chain", params={"limit": 5})
+        assert resp.status_code == 200
+        deadline = asyncio.get_running_loop().time() + 90
+        item = None
+        while asyncio.get_running_loop().time() < deadline:
+            resp = await client.get("/api/pipeline/items", params={"status": "queued"})
+            found = [q for q in resp.json() if q["source"] == "ai-story"]
+            if found:
+                item = found[0]
+                break
+            await asyncio.sleep(0.3)
+        assert item is not None, "ai-story 条目未在超时内进入审核队列"
+        assert item["channel_key"] == "test-e2e"
+        assert item["raw_path"] is None, "text_only 无 raw（下载跳过）"
+        assert (item["script_json"] or {}).get("bili_tid") == 122
+        assert (item["script_json"] or {}).get("bili_desc") == "情感夜话｜深夜面馆的一碗清汤"
+        tags = str((item["script_json"] or {}).get("bili_tags") or "").split(",")
+        assert tags[0] == "情感" and tags[1] == "故事", "栏目标签置顶"
+        assert "阿蓝" in (fake_ai.system_seen or ""), "人设 prompt 注入生成调用"
+    finally:
+        # per-test 清理：栏目/条目/collect job 不污染其他用例（D-181 惯例）
+        engine.ai = original_ai
+        engine.collector = original_collector
+        engine.collectors = original_collectors
+        settings.pipeline_sources = original_sources
+        async with session_factory() as session:
+            await session.execute(delete(Channel).where(Channel.public_id == "test-e2e"))
+            await session.execute(delete(Item).where(Item.source == "ai-story"))
+            await session.execute(delete(JobRun).where(JobRun.job_name == "collect"))
+            await session.commit()

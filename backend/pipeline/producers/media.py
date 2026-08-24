@@ -1380,7 +1380,28 @@ async def produce_item(
     """
     token = set_active_item(getattr(item, "id", None))
     try:
-        return await _produce_item(ai, files, item, existing_script)
+        artifacts = await _produce_item(ai, files, item, existing_script)
+        # v0.22 栏目片头（非破坏性）：未绑定栏目/未启用/任一失败 → 原成片不变。
+        # 单点汇聚挂钩——video_raw 与 story 两条产线的产物统一前置标题卡
+        video = artifacts.get("video")
+        if video and video.get("path"):
+            try:
+                from backend.pipeline.helpers import get_channel
+
+                channel = await get_channel(getattr(item, "channel_key", None))
+                if channel is not None and channel.intro_enabled():
+                    video["path"] = await _prepend_channel_intro(
+                        channel, Path(video["path"])
+                    )
+                    video["intro"] = True
+            except ItemCancelledError:
+                raise
+            except Exception:  # noqa: BLE001 — 片头失败不阻塞生产（降级原成片）
+                logger.warning(
+                    "channel intro prepend failed — keep original video",
+                    exc_info=True,
+                )
+        return artifacts
     finally:
         reset_active_item(token)
 
@@ -1580,27 +1601,35 @@ async def _produce_item(
             )
         # 音色（v0.8.9，对齐原项目 pick_voice）：注册表 tts 角色手动配置优先，
         # auto/未配置 → 内容自适应（tech→男声 / 暖心→女声 / 奇观男偏 + 随机）
+        # v0.22 栏目固定音色：最高优先级——未绑定栏目时为 None，走原链（非破坏性）
         try:
+            from backend.pipeline.helpers import get_channel
+
+            _channel = await get_channel(getattr(item, "channel_key", None))
+            channel_voice = (_channel.voice or "").strip() if _channel else ""
             from backend.ai.registry import ProviderRegistry
             from backend.pipeline.producers.tts_voice import pick_voice
 
-            resolved = await ProviderRegistry().resolve_role("tts")
-            configured = resolved["model_key"] if resolved else ""
-            if not configured or configured.lower() in ("auto", "random", "smart"):
-                # v0.9 修复对齐走样：此前表达式恒 None（tags 从未传入内容匹配）
-                voice, _reason = pick_voice(
-                    title=item.title,
-                    script=tts_text,
-                    subreddit=item.subreddit or "",
-                    tags=[
-                        t.strip()
-                        for t in str(script.get("bili_tags") or "").split(",")
-                        if t.strip()
-                    ],
-                    configured="auto",
-                )
+            if channel_voice:
+                voice = channel_voice
             else:
-                voice = configured
+                resolved = await ProviderRegistry().resolve_role("tts")
+                configured = resolved["model_key"] if resolved else ""
+                if not configured or configured.lower() in ("auto", "random", "smart"):
+                    # v0.9 修复对齐走样：此前表达式恒 None（tags 从未传入内容匹配）
+                    voice, _reason = pick_voice(
+                        title=item.title,
+                        script=tts_text,
+                        subreddit=item.subreddit or "",
+                        tags=[
+                            t.strip()
+                            for t in str(script.get("bili_tags") or "").split(",")
+                            if t.strip()
+                        ],
+                        configured="auto",
+                    )
+                else:
+                    voice = configured
         except Exception:  # noqa: BLE001 — 音色解析失败用默认（角色配置）
             voice = ""
         audio_path = directory / "narration.mp3"
@@ -1995,3 +2024,118 @@ async def produce_story_item(
     # 6. B 站包装（标题/标签；简介 = 原帖标题，v0.11.5 语义）
     artifacts["script"] = await generate_packaging(ai, item, artifacts["script"])
     return artifacts
+
+
+# ---- 栏目片头（v0.22 动态标题卡，非破坏性降级设计） ----
+
+
+async def _probe_video_params(ffprobe: str, path: Path) -> tuple[int, int, float, bool] | None:
+    """主片 (宽, 高, fps, 是否含音轨)；无法解析返回 None（调用方跳过片头）。"""
+    proc = await asyncio.create_subprocess_exec(
+        ffprobe, "-v", "quiet", "-print_format", "json", "-show_streams",
+        str(path),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+    )
+    out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    try:
+        data = json.loads(out.decode() or "{}")
+    except ValueError:
+        return None
+    streams = data.get("streams") or []
+    v = next((s for s in streams if s.get("codec_type") == "video"), {})
+    if not v.get("width"):
+        return None
+    has_audio = any(s.get("codec_type") == "audio" for s in streams)
+    rate = str(v.get("r_frame_rate") or "30/1")
+    num, _, den = rate.partition("/")
+    try:
+        fps = float(num) / float(den or 1)
+    except (ValueError, ZeroDivisionError):
+        fps = 30.0
+    return (
+        int(v.get("width") or 1280),
+        int(v.get("height") or 720),
+        fps if fps > 0 else 30.0,
+        has_audio,
+    )
+
+
+async def _prepend_channel_intro(channel, main: Path) -> Path:
+    """栏目动态标题卡前置：渲染栏目名底卡 → 按主片参数编码 → concat。
+
+    非破坏性：ffprobe 缺失 / 编码失败 / 产物校验不过 → 返回原成片路径。
+    intro_config: {"enabled": true, "duration_s": 3, "subtitle": "..."}
+    """
+    ffmpeg = find_ffmpeg()
+    ffprobe = find_ffprobe()
+    if not ffmpeg or not ffprobe:
+        logger.warning("intro skipped: ffmpeg/ffprobe unavailable")
+        return main
+    cfg = channel.intro_config or {}
+    if not cfg.get("enabled"):
+        return main  # 双保险：调用方已查 intro_enabled，此处兜底
+    duration = max(1.0, min(float(cfg.get("duration_s") or 3), 10.0))
+    subtitle = str(cfg.get("subtitle") or "").strip()
+
+    params = await _probe_video_params(ffprobe, main)
+    if params is None:
+        # 主片不可解析（损坏/占位）→ 不做任何替换（非破坏性）
+        logger.warning("intro skipped: main video unprobeable")
+        return main
+    width, height, fps, has_audio = params
+
+    # 标题底卡：复用故事产线 PIL 渐变渲染器（栏目名大字 + 副题署名）
+    card = main.parent / "intro_card.png"
+    await asyncio.to_thread(_render_story_bg, channel.name, card, credit=subtitle)
+
+    intro = main.parent / "intro_clip.mp4"
+    vf = f"scale={width}:{height}"
+    if has_audio:
+        cmd = [
+            str(ffmpeg), "-y",
+            "-loop", "1", "-i", str(card),
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-t", f"{duration:.3f}",
+            "-vf", vf, "-r", f"{fps:.3f}",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
+            "-c:a", "aac", "-b:a", "160k",
+            "-shortest",
+            str(intro),
+        ]
+    else:
+        cmd = [
+            str(ffmpeg), "-y",
+            "-loop", "1", "-i", str(card),
+            "-t", f"{duration:.3f}",
+            "-vf", vf, "-r", f"{fps:.3f}",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
+            "-an",
+            str(intro),
+        ]
+    await _run_cmd(cmd)
+
+    merged = main.parent / "final_with_intro.mp4"
+    concat_list = main.parent / "concat_intro.txt"
+    await asyncio.to_thread(
+        concat_list.write_text,
+        f"file '{intro.as_posix()}'\nfile '{main.as_posix()}'\n",
+    )
+    try:
+        await _run_cmd([
+            str(ffmpeg), "-y",
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-c", "copy",
+            str(merged),
+        ])
+        ok = await asyncio.to_thread(merged.exists) and (
+            await asyncio.to_thread(merged.stat)
+        ).st_size >= 1024
+        if not ok:
+            logger.warning("intro concat produced no output — keep original")
+            return main
+        await asyncio.to_thread(main.unlink)
+        await asyncio.to_thread(merged.rename, main)
+        return main
+    finally:
+        for p in (concat_list,):
+            await asyncio.to_thread(p.unlink, missing_ok=True)

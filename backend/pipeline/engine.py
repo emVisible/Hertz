@@ -36,6 +36,9 @@ class StepEngine:
         self.settings = settings
         self.ai = ai
         self.collector = collector
+        # 多源路由（v0.22 非破坏性）：前缀通道（ai-story/xxx、rss/xxx）→ collector；
+        # 裸名仍走 self.collector（Reddit 兼容），空表 = 行为与单源完全一致
+        self.collectors: dict = {}
         self.publishers = publishers or {}
 
     # ---------- public ----------
@@ -421,10 +424,27 @@ class StepEngine:
                     watch_set = set(watch_channels)
                     ctx.log(f"[collect] watch channels={sorted(watch_set)}")
             ctx.log(f"[collect] sources={sources} limit={limit}")
+            # 栏目绑定（v0.22 非破坏性）：启用栏目的源池 → public_id 映射；
+            # 空表 = 空映射，全部条目 channel_key=None（与 v0.21 行为等价）
+            from backend.pipeline.helpers import active_channel_bindings
+
+            column_bindings = await active_channel_bindings()
             summaries: list[dict] = []
             for src in sources:
+                # 多源路由（v0.22）：裸名=Reddit 兼容；前缀通道查注册表，
+                # 未知前缀记该类型失败（不中断其他源）
+                from backend.pipeline.collectors.router import resolve_collector
+
+                try:
+                    collector = resolve_collector(src, self.collector, self.collectors)
+                except Exception as exc:  # noqa: BLE001 — 单源配置错误不中断
+                    logger.warning("collect %s failed: %s", src, exc)
+                    source_type = src.split("/", 1)[0] if "/" in src else "reddit"
+                    await self._record_collect_failure(source_type, src, str(exc), exc)
+                    summaries.append({"channel": src, "error": str(exc)[:200]})
+                    continue
                 cooldown_s = await self._collect_cooldown_left(
-                    self.collector.name, src
+                    collector.name, src
                 )
                 if cooldown_s > 0:
                     ctx.log(f"[collect] {src} cooling down ({cooldown_s}s left)")
@@ -432,29 +452,30 @@ class StepEngine:
                     continue
                 try:
                     summary = await run_collect(
-                        ctx, src, limit, self.collector,
+                        ctx, src, limit, collector,
                         # watch 通道：三段词法预筛（v0.16）
                         filter_fn=(
                             watch_mod.predicate(self.settings)
                             if src in watch_set else None
                         ),
+                        channel_key=column_bindings.get(src),
                     )
                 except Exception as exc:  # noqa: BLE001 — 单源失败不中断其他源
                     logger.warning("collect %s failed: %s", src, exc)
                     await self._record_collect_failure(
-                        self.collector.name, src, str(exc), exc
+                        collector.name, src, str(exc), exc
                     )
                     summaries.append({"channel": src, "error": str(exc)[:200]})
                     continue
                 if summary.get("collected", 0) == 0:
                     # 接口正常但 0 条（v0.2.8）：源挂/被 block 返回空——健康度+冷却
                     await self._record_collect_empty(
-                        self.collector.name, src, summary
+                        collector.name, src, summary
                     )
                     summary["empty"] = True
                 else:
                     await self._clear_collect_cooldown(
-                        self.collector.name, src
+                        collector.name, src
                     )
                 summaries.append(summary)
             total: dict = {

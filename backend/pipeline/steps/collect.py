@@ -29,11 +29,14 @@ class CollectStep(Pipe):
 async def run_collect(
     ctx: StepContext, channel: str, limit: int, collector,
     filter_fn=None,
+    channel_key: str | None = None,
 ) -> dict:
     """Batch collection for one channel. Returns a summary dict.
 
     v0.16：filter_fn（RawPost → bool）可选预筛——热点监控通道用三段词法
     在入库前过滤；普通通道不传即全量入库。被过滤条目计入 filtered 计数。
+    v0.22：channel_key（栏目 public_id）可选——engine 按栏目源池匹配后传入，
+    新入库条目打上归属；None = 未绑定（原行为，非破坏性默认）。
     """
     from backend.pipeline.collectors.base import SourceCollector
     from backend.pipeline.download import is_dead_reddit_media
@@ -95,6 +98,7 @@ async def run_collect(
                 upvote_ratio=post.upvote_ratio,
                 num_comments=post.num_comments,
                 selftext=post.selftext or None,
+                channel_key=channel_key,
                 error=None,
             )
             session.add(item)

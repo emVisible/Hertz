@@ -121,16 +121,26 @@ async def generate_packaging(ai, item, script: dict) -> dict:
     已存在的手动值不覆盖（发布卡可随时改）；LLM 失败走 heuristic。
     v0.11.5：bili_desc = 原文标题（不翻译成中文，用户明确要求）；
     标题/标签仍走 LLM 中文生成。
+    v0.22 栏目化（非破坏性）：未绑定栏目 → 全部原逻辑；绑定后——
+    title_style_prompt 注入标题生成、tags 前置合并、desc_template 渲染
+    （{title}/{author}/{channel} 变量，渲染失败回落原简介）、bili_tid 覆盖分区。
     """
     script = dict(script or {})
     if script.get("bili_title") and script.get("bili_tags"):
         return script
 
+    from backend.pipeline.helpers import get_channel
+
+    channel = await get_channel(getattr(item, "channel_key", None))
+
     narration = str(script.get("narration") or "")[:800]
     alternatives: list[str] = []
     try:
+        content = f"{item.title}\n\n来源: r/{item.subreddit}"
+        if channel is not None and (channel.title_style_prompt or "").strip():
+            content += f"\n\n标题风格要求：{channel.title_style_prompt.strip()}"
         result = await ai.title_and_tags(
-            script=narration, content=f"{item.title}\n\n来源: r/{item.subreddit}",
+            script=narration, content=content,
             task_id=f"item:{item.id}",
         )
         title = (result.title or "").strip()
@@ -147,12 +157,30 @@ async def generate_packaging(ai, item, script: dict) -> dict:
         title = _heuristic_bili_title(item.title or "")
     if not tags:
         tags = list(_FALLBACK_TAGS)
+    if channel is not None and channel.tags:
+        # 栏目标签前置合并（保序去重）
+        merged = [str(t).strip() for t in channel.tags if str(t).strip()]
+        seen = set(merged)
+        tags = merged + [t for t in tags if t not in seen]
 
     script["bili_title"] = title[:40]
     # v0.15 标题 N 选 1：备选候选随 script 落库——审核/发布卡可切换选用
     if alternatives:
         script["bili_title_alternatives"] = [a[:40] for a in alternatives][:3]
     # v0.11.5：简介不换中文——直接用原帖标题（转载发布语义，来源链随 --source 挂载）
-    script["bili_desc"] = (item.title or "").strip()[:200]
+    desc = (item.title or "").strip()[:200]
+    if channel is not None and (channel.desc_template or "").strip():
+        try:
+            desc = channel.desc_template.format(
+                title=(item.title or "").strip(),
+                author=item.author or "",
+                channel=channel.name,
+            ).strip()[:500]
+        except (KeyError, IndexError, ValueError):
+            logger.warning("desc_template render failed — falling back to default")
+    script["bili_desc"] = desc
     script["bili_tags"] = ",".join(tags)
+    # v0.22 栏目分区：发布侧已读 script_json.bili_tid（D-175 语义）
+    if channel is not None and channel.bili_tid:
+        script["bili_tid"] = int(channel.bili_tid)
     return script

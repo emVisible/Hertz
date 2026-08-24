@@ -28,6 +28,9 @@ RUNTIME_ALLOWLIST = {
     "pipeline_publish_target",
     # 采集源列表（v0.4 A4）：设置页增删 subreddit 源
     "pipeline_sources",
+    # 多源扩展（v0.22）：AI 原创故事成本闸 + RSS 订阅表
+    "pipeline_ai_story_per_tick",
+    "pipeline_rss_feeds",
     # 热点监控通道（v0.16）：rising 高频 + 三段词法预筛
     "pipeline_watch_enabled",
     "pipeline_watch_subreddits",

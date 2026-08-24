@@ -8,6 +8,7 @@ from backend.routers import (
     briefs,
     buffs,
     canvas,
+    channels,
     config,
     crews,
     deps,
@@ -45,5 +46,6 @@ api_router.include_router(pipeline.router)
 api_router.include_router(logs.router)
 api_router.include_router(docs.router)
 api_router.include_router(canvas.router)
+api_router.include_router(channels.router)
 api_router.include_router(phases.router)
 api_router.include_router(glossary.router)

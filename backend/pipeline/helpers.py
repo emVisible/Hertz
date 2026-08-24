@@ -142,3 +142,56 @@ def _auto_tid(item) -> int | None:
     except Exception:  # noqa: BLE001 — 建议失败不影响序列化
         return None
 
+
+
+async def get_channel(public_id: str | None):
+    """栏目查询（v0.22 栏目化，非破坏性）：key 空/栏目不存在/未启用 → None，
+    调用方全部回落原逻辑。"""
+    if not public_id:
+        return None
+    from sqlalchemy import select
+
+    from backend.models.channel import Channel
+
+    async with session_factory() as session:
+        return (
+            await session.execute(
+                select(Channel).where(
+                    Channel.public_id == public_id, Channel.enabled.is_(True)
+                )
+            )
+        ).scalar_one_or_none()
+
+
+async def find_channel_for_source(raw_channel: str):
+    """按采集通道反查启用栏目（v0.22：source_pool 包含该通道的第一个栏目）。"""
+    from sqlalchemy import select
+
+    from backend.models.channel import Channel
+
+    async with session_factory() as session:
+        channels = (
+            await session.execute(select(Channel).where(Channel.enabled.is_(True)))
+        ).scalars().all()
+    for channel in channels:
+        if raw_channel in (channel.source_pool or []):
+            return channel
+    return None
+
+
+async def active_channel_bindings() -> dict[str, str]:
+    """启用栏目 source_pool → public_id 映射（v0.22 栏目化，非破坏性：
+    空表返回空 dict——collect 不打标，全部条目走原逻辑）。"""
+    from sqlalchemy import select
+
+    from backend.models.channel import Channel
+
+    async with session_factory() as session:
+        channels = (
+            await session.execute(select(Channel).where(Channel.enabled.is_(True)))
+        ).scalars().all()
+    binding: dict[str, str] = {}
+    for channel in channels:
+        for src in channel.source_pool or []:
+            binding[src] = channel.public_id
+    return binding

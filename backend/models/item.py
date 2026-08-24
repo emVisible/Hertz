@@ -67,6 +67,9 @@ class Item(BaseModel):
     num_comments: Mapped[int] = mapped_column(Integer, default=0)
     # 文字帖正文（v0.11.7 情感故事产线）：text_only 帖的 selftext，null = 非文字帖
     selftext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 归属栏目（v0.22 栏目化）：channels.public_id，collect 时按栏目源池匹配写入；
+    # null = 未绑定（走原逻辑）——非破坏性：存量条目恒为 null
+    channel_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Scoring
     score_total: Mapped[float | None] = mapped_column(Float, nullable=True)

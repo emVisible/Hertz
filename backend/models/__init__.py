@@ -11,6 +11,7 @@ from backend.models.ai_registry import (
 from backend.models.base import Base, BaseModel
 from backend.models.brief import Brief
 from backend.models.buff import Buff
+from backend.models.channel import Channel
 from backend.models.crew import Crew
 from backend.models.download import DownloadStatus, DownloadTask, Project
 from backend.models.glossary import GlossaryTerm
@@ -43,6 +44,7 @@ __all__ = [
     "GlossaryTerm",
     "Item",
     "ItemStatus",
+    "Channel",
     "ChannelInsight",
     "ItemType",
     "JobRun",

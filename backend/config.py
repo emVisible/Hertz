@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     pipeline_publish_target: str = "noop"  # noop | bilibili | export
     pipeline_min_score: float = 6.0
     pipeline_collect_limit: int = 25
+    # AI 原创故事源（v0.22 非破坏性扩展）：单次采集最多生成条数——
+    # LLM 成本闸，防 auto_collect tick 放大费用；通道 ai-story/<主题>
+    pipeline_ai_story_per_tick: int = 2
+    # RSS 订阅源（v0.22）：每行 `名称|URL`；通道 rss/<名称>，仅文本型 feed
+    pipeline_rss_feeds: str = ""
     # 自动采集间隔（v0.8.1）：scheduler 周期自动入库（0=关闭，仅手动）
     pipeline_auto_collect_minutes: int = 30
     # 采集源列表（v0.8.6）：真实活跃 subreddit（参考原项目冰川采集列表筛选，

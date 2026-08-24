@@ -12,6 +12,7 @@ import { Badge, Button, Icon, Input, Select, useToast } from '../../../component
 import { SOURCE_CATALOG_NAMES, SOURCE_GROUPS } from '../../../constants/sources'
 import { heading, sub, type SectionProps } from './shared'
 import { PublishStatusCard } from './settingsCards'
+import { ChannelsCard } from './ChannelsCard'
 
 /** Reddit Cookie 状态卡（v0.8.1）：存在性/年龄 + 一键浏览器导出（v0.11.7 可选浏览器 + 通道验证）。 */
 const COOKIE_BROWSERS = [
@@ -626,6 +627,9 @@ export function PipelineSection({
           <RedditCookieCard />
         </div>
       </section>
+
+      {/* 栏目管理（v0.22 栏目化内容工厂）：源池×音色×片头×包装 绑定单元 */}
+      <ChannelsCard />
 
       <section className="border border-border bg-surface-1/60 p-4">
         <h2 className={heading}>
