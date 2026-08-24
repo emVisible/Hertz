@@ -11,6 +11,7 @@
 - 字幕缓存复用：重制作时脚本未变直接复用已翻字幕，不再重复消耗翻译 API（此前一次翻译实际为三步法 ×3 次调用）
 - 制作前能力预检（D-190）：翻译开而本地引擎未就绪→明确报错阻断；配音开而 TTS 未配置→阻断；ASR/LLM 缺失→警告放行并记录 produce_warnings；依赖矩阵新增 local_mt/whisper_model/llm/telegram 四条目（DepsCard 琥珀态三色）
 - 环境退化即知：deps 快照 diff → Telegram 告警（签名去重，启动首跑仅建基线）；sentencepiece 升主依赖（修复 uv run 无 extras 时本地翻译静默失效）
+- service_publish 按域拆分第一批：StatsMixin（统计回捞）/ PrepOpsMixin（预处理单条操作）/ ScheduleMixin（排期过审日历）独立文件，发布核心与队列策略留驻
 - 翻译彻底去 API 化：LLM 三步法与字幕逐段 LLM 批量翻译移除，Opus-MT 为唯一引擎（失败回退原文）；术语表功能整体下架（本地引擎无注入点，表结构经 wave21 迁移删除）
 - 降级可观测性：模型下载多端点重试+单次告警；ASR/本地 MT 失败带原因日志；旁白回退字幕在审核卡显式 ⚠️ 标注（不再静默冒充正常字幕）；设置页一键下载本地模型
 
