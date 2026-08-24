@@ -566,16 +566,6 @@ export function PipelineSection({
               ] as Array<{ value: string; label: string }>
             }
           />
-          <Select
-            label={t('settings.translateEngine')}
-            value={form.pipeline_translate_engine ?? 'api'}
-            onChange={(e) => set('pipeline_translate_engine', e.target.value)}
-            options={[
-              { value: 'local', label: t('settings.translateEngineLocal') },
-              { value: 'api', label: t('settings.translateEngineApi') },
-            ] as Array<{ value: string; label: string }>
-            }
-          />
           <div>
             <label className="mb-0.5 block text-[11px] font-medium text-text-secondary">
               {t('settings.translateHfEndpoint')}

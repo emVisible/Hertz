@@ -1,4 +1,7 @@
-"""v0.22.x 翻译引擎与缓存测试：local 分支 / api 回落 / 缓存命中与失效。"""
+"""v0.22.x 翻译引擎与缓存测试：本地单引擎 / 失败回原文 / 缓存命中与失效。
+
+翻译去 API 化（D-189）后语义：Opus-MT 为唯一引擎，任何失败回退原文。
+"""
 
 import pytest
 
@@ -6,24 +9,6 @@ from backend.pipeline.producers.media import (
     _localize_text,
     _subtitle_cache_hit,
 )
-
-
-class _Ctx:
-    settings = object()
-
-    def log(self, message: str, level: str = "info") -> None:
-        pass
-
-
-class _RecordingAI:
-    """记录 chat 调用次数——api 路径才会触发。"""
-
-    def __init__(self) -> None:
-        self.calls = 0
-
-    async def chat_messages(self, messages, **kwargs):
-        self.calls += 1
-        return "这是API翻译的译文"
 
 
 def _set_engine(value: str, monkeypatch) -> None:
@@ -36,28 +21,25 @@ def _set_engine(value: str, monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_local_engine_uses_mt_and_skips_llm(monkeypatch) -> None:
+async def test_local_translate_success(monkeypatch) -> None:
     _set_engine("local", monkeypatch)
-    ai = _RecordingAI()
 
     async def fake_translate(text: str) -> str:
-        return "The lamp downstairs stays on late."
+        return "楼下的灯还亮着。"
 
     monkeypatch.setattr(
         "backend.pipeline.producers.translate_engine.translate_local", fake_translate
     )
     out = await _localize_text(
-        ai, "Hello world, this is a test.", "zh-CN", source_lang="en-US",
+        "The lamp downstairs stays on late.", "zh-CN", source_lang="en-US",
     )
-    assert isinstance(out, str) and out  # 经清洗链返回非空
-    assert ai.calls == 0, "local 引擎不应产生 LLM 调用"
-    _set_engine("api", monkeypatch)
+    assert isinstance(out, str) and out.strip()
 
 
 @pytest.mark.asyncio
-async def test_local_engine_failure_falls_back_to_api(monkeypatch) -> None:
+async def test_local_failure_falls_back_to_original(monkeypatch) -> None:
+    """D-189 新语义：本地引擎失败 → 回原文（不再有 api 三步法回落）。"""
     _set_engine("local", monkeypatch)
-    ai = _RecordingAI()
 
     async def boom(text: str) -> str:
         raise RuntimeError("model missing")
@@ -65,24 +47,28 @@ async def test_local_engine_failure_falls_back_to_api(monkeypatch) -> None:
     monkeypatch.setattr(
         "backend.pipeline.producers.translate_engine.translate_local", boom
     )
-    out = await _localize_text(
-        ai, "Hello world, this is a test.", "zh-CN", source_lang="en-US",
-    )
-    assert ai.calls >= 1, "本地失败应回落 api 三步法"
-    assert out == "这是API翻译的译文"
-    _set_engine("api", monkeypatch)
+    original = "Hello world, this is a test."
+    out = await _localize_text(original, "zh-CN", source_lang="en-US")
+    assert "Hello world" in out
 
 
 @pytest.mark.asyncio
-async def test_local_engine_language_guard(monkeypatch) -> None:
-    """目标语言非 zh-CN → local 分支不介入，直接走 api。"""
+async def test_language_guard_non_en_zh_pair_returns_original(monkeypatch) -> None:
+    """语言对守卫：非 en→zh 组合 local 不介入，直接返回原文。"""
     _set_engine("local", monkeypatch)
-    ai = _RecordingAI()
-    await _localize_text(
-        ai, "Hola mundo.", "ja", source_lang="es",
+    called = {"n": 0}
+
+    async def fake_translate(text: str) -> str:
+        called["n"] += 1
+        return "不应被调用"
+
+    monkeypatch.setattr(
+        "backend.pipeline.producers.translate_engine.translate_local", fake_translate
     )
-    assert ai.calls >= 1
-    _set_engine("api", monkeypatch)
+    original = "Hola mundo."
+    out = await _localize_text(original, "ja", source_lang="es")
+    assert out == original
+    assert called["n"] == 0
 
 
 # ---------- 缓存 ----------

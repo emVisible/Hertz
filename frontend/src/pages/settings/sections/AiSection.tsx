@@ -11,7 +11,6 @@ import { Badge, Button, Icon, Input, Select, useToast } from '../../../component
 import { ProviderManager } from '../ProviderManager'
 import { RolesManager } from '../RolesManager'
 import { FeaturesMap } from '../FeaturesMap'
-import { GlossaryManager } from '../GlossaryManager'
 import { heading, sub, type SectionProps } from './shared'
 
 interface PricesConfig {
@@ -190,14 +189,6 @@ export function AiSection({ form, set }: Pick<SectionProps, 'form' | 'set'>) {
         </p>
       </section>
 
-      {/* 翻译术语表（v0.15）：术语统一——字幕质量地基 */}
-      <section className="border border-border bg-surface-1/60 p-4">
-        <div className="mb-2 flex items-center gap-2">
-          <Icon name="pen" size={15} />
-          <h2 className="text-sm font-semibold text-text-primary">{t('settings.glossary')}</h2>
-        </div>
-        <GlossaryManager />
-      </section>
     </>
   )
 }

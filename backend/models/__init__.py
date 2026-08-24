@@ -14,7 +14,6 @@ from backend.models.buff import Buff
 from backend.models.channel import Channel
 from backend.models.crew import Crew
 from backend.models.download import DownloadStatus, DownloadTask, Project
-from backend.models.glossary import GlossaryTerm
 from backend.models.item import Item, ItemStatus, ItemType
 from backend.models.phase import PhaseStore
 from backend.models.pipeline import ChannelInsight, SourceState
@@ -41,7 +40,6 @@ __all__ = [
     "Crew",
     "DownloadStatus",
     "DownloadTask",
-    "GlossaryTerm",
     "Item",
     "ItemStatus",
     "Channel",

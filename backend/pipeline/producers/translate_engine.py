@@ -107,14 +107,14 @@ def _load():
     )
 
 
-async def translate_local(text: str) -> str:
-    """单步本地翻译（en→zh）。依赖缺失/模型未就绪 → RuntimeError（调用方回落）。
+async def translate_batch_local(texts: list[str]) -> list[str]:
+    """批量本地翻译（en→zh，单次 ct2 调用）。依赖缺失/模型未就绪 → RuntimeError。
 
-    输出为原始机翻文本（含标点）；字幕场景由调用方的既有清洗链处理。
+    输出为原始机翻文本；字幕场景由调用方的既有清洗链处理。
     """
-    text = (text or "").strip()
-    if not text:
-        return ""
+    texts = [t or "" for t in texts]
+    if not any(t.strip() for t in texts):
+        return [""] * len(texts)
     if not deps_available():
         raise RuntimeError(
             "本地翻译依赖未安装：uv sync --extra translate（sentencepiece）"
@@ -123,9 +123,15 @@ async def translate_local(text: str) -> str:
         raise RuntimeError("本地翻译模型未就绪且下载失败")
     translator, src_spm, tgt_spm = _load()
 
-    def _run() -> str:
-        tokens = src_spm.encode(text[:2000], out_type=str)
-        results = translator.translate_batch([tokens], max_batch_size=32)
-        return tgt_spm.decode(results[0].hypotheses[0])
+    def _run() -> list[str]:
+        token_lists = [src_spm.encode(t[:2000], out_type=str) for t in texts]
+        results = translator.translate_batch(token_lists, max_batch_size=32)
+        return [tgt_spm.decode(r.hypotheses[0]).strip() for r in results]
 
-    return (await asyncio.to_thread(_run)).strip()
+    return await asyncio.to_thread(_run)
+
+
+async def translate_local(text: str) -> str:
+    """单条便捷封装。"""
+    out = await translate_batch_local([text])
+    return out[0] if out else ""

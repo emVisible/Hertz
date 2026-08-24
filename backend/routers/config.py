@@ -58,9 +58,7 @@ RUNTIME_ALLOWLIST = {
     "pipeline_translate_source_lang",
     "pipeline_tts_text_source",
     # 三步翻译法（v0.15）：旁白直译→反思→意译
-    "pipeline_translate_three_pass",
-    # 翻译引擎与本地模型下载端点（v0.22.x）
-    "pipeline_translate_engine",
+    # 本地翻译模型下载端点（v0.22.x）
     "pipeline_translate_hf_endpoint",
     # 发布队列（v0.12）：自动发布产能/开关/转正数/轮询间隔
     "pipeline_auto_publish",

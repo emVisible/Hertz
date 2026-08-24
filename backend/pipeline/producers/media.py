@@ -284,140 +284,31 @@ def _clean_translation_text(text: str) -> str:
 _GLOSSARY_LIMIT = 100  # prompt 注入上限（updated_at 新者优先）
 
 
-async def _glossary_block() -> str:
-    """启用中的翻译术语表 → prompt 注入块（v0.15，VideoLingo 精华借鉴）。
-
-    空表/加载失败返回空串——术语表是增强不是依赖（§4.6 尽力交付：
-    DB 不可用时翻译照常进行，只是失去术语统一）。"""
-    try:
-        from sqlalchemy import select
-
-        from backend.models.glossary import GlossaryTerm
-        from backend.models.session import session_factory
-
-        async with session_factory() as session:
-            rows = (
-                await session.execute(
-                    select(GlossaryTerm)
-                    .where(GlossaryTerm.enabled.is_(True))
-                    .order_by(GlossaryTerm.updated_at.desc())
-                    .limit(_GLOSSARY_LIMIT)
-                )
-            ).scalars().all()
-    except Exception as exc:  # noqa: BLE001 — 加载失败不阻塞翻译
-        logger.warning("glossary load failed, translating without terms: %s", exc)
-        return ""
-    if not rows:
-        return ""
-    lines = "\n".join(f"- {r.source_term} = {r.target_term}" for r in rows)
-    return f"术语表（以下译名必须严格统一使用，不得改译）：\n{lines}\n"
-
-
-_TRANSLATE_SYSTEM = (
-    "你是短视频旁白翻译。把{src}文本翻译成{target}，保持口语化、可直接朗读的节奏，"
-    "不要解释、不要加引号，只输出译文。\n"
-    "烧录字幕要求：与原文句数一一对应（1 句原文 → 1 段译文），"
-    "段间用单个空格分隔；译文内不要任何标点（。！？，、.!?）"
-    "；禁止排比句、三段式口号、翻译腔长定语。"
-)
-
 
 async def _localize_text(
-    ai: AIRouter, text: str, target_lang: str, source_lang: str | None = None,
-    task_id: str | None = None,
+    text: str, target_lang: str, source_lang: str | None = None,
 ) -> str:
-    """旁白/字幕本地化（v0.2.7，参考原项目 locales）：LLM 翻译，失败回退原文。
+    """旁白/字幕本地化——本地 Opus-MT en→zh 单步直翻（v0.22.x 去 API 化，D-189）。
 
-    v0.8.9 翻译方向扩展：source_lang → target_lang 显式声明（默认源 =
-    narration_lang，即 en→zh 保持现状）；目标语言任意可配（settings 页面下拉）。
-
-    v0.11.2：译文后置清洗 _clean_translation_text——LLM 常在每句开头补
-    “，”且 prompt 约束失效，字幕不允许标点（用户诉求：翻译不带标点）。
-
-    走 fast 角色（翻译是低成本任务，不占用 main 强推理）。
-
-    v0.15 三步翻译法（VideoLingo 精华借鉴）：直译 → 反思审校 → 意译定稿。
-    开关 pipeline_translate_three_pass（默认开）；任一步失败降级上一步结果，
-    不阻塞产线。术语表注入所有步骤。
+    旧 LLM 三步法随翻译去 API 化整体移除；机翻质量对字幕场景够用
+    （调研横评记 D-188）。语言对守卫：仅 en→zh 介入，其他对返回原文。
+    失败语义不变：回退原文，不阻塞产线。
     """
-    from backend.ai.types import ChatMessage
-
     if not text.strip():
         return text
-
-    # v0.22.x 翻译引擎分支：local = 本地 Opus-MT en→zh（ctranslate2 单步直翻，
-    # 免 API 成本）。语言对守卫：首发仅 en→zh；其他对/依赖缺失/模型未就绪/
-    # 任何失败 → 穿透到下方 api 三步法（既有降级语义）。
-    engine = str(getattr(settings, "pipeline_translate_engine", "api") or "api")
-    if (
-        engine == "local"
-        and (source_lang or "").startswith("en")
-        and target_lang == "zh-CN"
-    ):
-        try:
-            from backend.pipeline.producers.translate_engine import translate_local
-
-            local_out = await translate_local(text)
-            if local_out.strip():
-                return _clean_translation_text(local_out)
-            logger.warning("local translate empty output — falling back to api")
-        except Exception:  # noqa: BLE001 — 本地引擎失败回落 api 三步法
-            logger.warning(
-                "local translate failed (%s→%s) — falling back to api",
-                source_lang, target_lang, exc_info=True,
-            )
-
-    src = _LANG_NAMES.get(source_lang or "", "") or _LANG_NAMES.get(
-        "en-US", "English"
-    )
-    target = _LANG_NAMES.get(target_lang, target_lang)
-    glossary = await _glossary_block()
-    glossary_suffix = f"\n\n{glossary}" if glossary else ""
-
-    async def _pass(system: str, user: str) -> str:
-        return await ai.chat_messages(
-            [
-                ChatMessage(role="system", content=system + glossary_suffix),
-                ChatMessage(role="user", content=user),
-            ],
-            role="fast", max_tokens=1600,
-            operation="translate", caller="pipeline", task_id=task_id,
-        )
-
+    if not ((source_lang or "").startswith("en") and target_lang == "zh-CN"):
+        return text
     try:
-        draft = await _pass(_TRANSLATE_SYSTEM.format(src=src, target=target), text)
-        draft_clean = _clean_translation_text(draft or "")
-        if len(draft_clean.strip()) < 4:
-            return _clean_translation_text(text)
+        from backend.pipeline.producers.translate_engine import translate_local
 
-        three_pass = bool(
-            getattr(settings, "pipeline_translate_three_pass", True)
-        )
-        if not three_pass:
-            return draft_clean
-
-        # 反思审校：找问题而非重写（输出短，成本可控）
-        review = await _pass(
-            "你是字幕组审校。对比原文与直译初稿，指出问题：生硬直译、漏译、"
-            "口播不顺、长定语、排比堆砌、术语不一致。逐条简短列出；没有问题就写「无」。"
-            "不要输出译文。",
-            f"原文:\n{text}\n\n直译初稿:\n{draft_clean}",
-        )
-
-        final = await _pass(
-            _TRANSLATE_SYSTEM.format(src=src, target=target)
-            + "\n参考审校意见修订直译初稿，输出最终译文（只输出译文）。",
-            f"原文:\n{text}\n\n直译初稿:\n{draft_clean}\n\n审校意见:\n{review or '无'}",
-        )
-        final_clean = _clean_translation_text(final or "")
-        return final_clean if len(final_clean.strip()) >= 4 else draft_clean
+        out = await translate_local(text)
+        return _clean_translation_text(out) if out.strip() else _clean_translation_text(text)
     except Exception:  # noqa: BLE001 — 翻译失败回退原文，不阻塞生产
         logger.warning(
-            "localize %s→%s failed, falling back to original",
+            "localize %s→%s failed — keeping original",
             source_lang or "?", target_lang,
         )
         return _clean_translation_text(text)
-
 
 # 中文字幕清洗（v0.8.9，参考原项目 subtitle.py clean_zh_subtitle_text）：
 # 烧录字幕去标点、句间单空格——避免标点符号挤占画面
@@ -846,78 +737,29 @@ def _write_srt_cues(out_path: Path, cues: list[tuple[float, float, str]]) -> Pat
     return out_path
 
 
-_TRANSLATE_SUBS_SYSTEM = (
-    """你是视频字幕翻译。把每段原文翻译成自然、简洁的{target}。段数必须完全一致。
-
-Rules:
-- 口语化、简洁——观众要快速读完
-- 每段译文与对应原文段落一一对应（1:1），不增删内容
-- 段内不要任何标点（。！？，、.!?），句首尤其不要逗号；段间用空格拼接
-- 只输出 JSON：{{"segments": ["翻译1", "翻译2", ...]}}"""
-)
-
 async def _translate_srt_cues(
-    ai: AIRouter,
     cues: list[tuple[float, float, str]],
     target_lang: str = "zh-CN",
-    batch_size: int = 20,
-    task_id: str | None = None,
 ) -> list[tuple[float, float, str]]:
-    """逐段 LLM 翻译字幕为 target_lang，保留时间戳（v0.8.9，对齐原项目
-    _translate_srt_cues：batch 20、段数 1:1、失败回退原文不阻塞）。
+    """逐条本地翻译字幕为 target_lang，保留时间戳（v0.22.x 去 API 化，D-189）。
 
-    v0.8.9 翻译方向扩展：目标语言参数化（默认中文）；源语言由 ASR 检测
-    /转写获得，prompt 不写死「英文→中文」。
+    Opus-MT 批量推理（ctranslate2 单调用）；失败整批回退原 cue 文本，
+    不阻塞产线（与旧 LLM 版降级语义一致）。语言守卫由调用方
+    （_asr_subtitles 的 _cues_already_target）承担。
     """
-    from backend.ai.types import ChatMessage
+    from backend.pipeline.producers.translate_engine import translate_batch_local
 
-    target = _LANG_NAMES.get(target_lang, target_lang)
-    texts = [t for _, _, t in cues]
-    result: list[str] = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
-        numbered = "\n".join(f"{j + 1}. {t}" for j, t in enumerate(batch))
-        # v0.15：字幕批量单步 + 术语注入（三步法仅旁白——20 条/批 ×3 成本不可接受）
-        glossary = await _glossary_block()
-        try:
-            resp_text = await ai.chat_messages(
-                [
-                    ChatMessage(
-                        role="system",
-                        content=_TRANSLATE_SUBS_SYSTEM.format(target=target)
-                        + (f"\n\n{glossary}" if glossary else ""),
-                    ),
-                    ChatMessage(
-                        role="user",
-                        content=f"Translate these {len(batch)} subtitle segments:\n{numbered}",
-                    ),
-                ],
-                role="fast",
-                temperature=0.15,
-                # v0.2.1：动态 token 预算——长段字幕 1600 固定值会被截断，
-                # 截断 → segments 数量不符 → 整批回退英文（长视频中间混合字幕）
-                max_tokens=max(1600, len(batch) * 200),
-                operation="translate", caller="pipeline", task_id=task_id,
-            )
-            import json as _json
-
-            try:
-                resp = _json.loads((resp_text or "").strip() or "{}")
-            except _json.JSONDecodeError:
-                resp = {}
-            trans = resp.get("segments") or []
-            # v0.2.1 修复：逐段对齐——LLM 截断/漏段时只对缺失段回退原文，
-            # 绝不整批回退（否则长视频中间出现一整段英文，前后却是中文）。
-            # 每段独立判定：有译文用译文，缺译文才保留原文。
-            for j, orig in enumerate(batch):
-                if j < len(trans) and str(trans[j] or "").strip():
-                    result.append(_LOCALIZE_LEAD_PUNCT.sub("", str(trans[j])))
-                else:
-                    result.append(orig)
-        except Exception:  # noqa: BLE001 — 翻译服务异常整批回退原文（保底，
-            # 拿不到译文时无法逐段翻译；正常路径绝不整批英文）
-            result.extend(batch)
-    return [(s, e, zh) for (s, e, _), zh in zip(cues, result, strict=True)]
+    texts = [t.strip() or " " for _, _, t in cues]
+    try:
+        translated = await translate_batch_local(texts)
+    except Exception as exc:  # noqa: BLE001 — 拿不到译文时回退原文
+        logger.warning("subtitle local MT failed — keeping original cues: %s", exc)
+        translated = list(texts)
+    out: list[tuple[float, float, str]] = []
+    for (s, e, orig), zh in zip(cues, translated, strict=True):
+        body = clean_zh_subtitle_text(zh) or clean_zh_subtitle_text(orig) or " "
+        out.append((s, e, body))
+    return out
 
 
 async def probe_has_audio(path: Path) -> bool:
@@ -985,9 +827,7 @@ async def _asr_subtitles(
     if not cues:
         return None
     if translate and not await _cues_already_target(cues, target_lang):
-        zh_cues = await _translate_srt_cues(
-            ai, cues, target_lang=target_lang, task_id=task_id,
-        )
+        zh_cues = await _translate_srt_cues(cues, target_lang=target_lang)
         # v0.8.9 标点清洗（对齐原项目 _rewrite_srt_strip_zh_punct）：
         # ASR 译文可能残留标点，统一清洗（保留时间戳）
         zh_cues = [
@@ -1592,11 +1432,8 @@ async def _produce_item(
     if want_translate and cached_sub is not None:
         subtitle_text = cached_sub
     elif want_translate and translate_source != subtitle_lang:
-        subtitle_text = (
-            await _localize_text(
-                ai, narration_text, subtitle_lang, source_lang=translate_source,
-                task_id=f"item:{item.id}",
-            )
+        subtitle_text = await _localize_text(
+            narration_text, subtitle_lang, source_lang=translate_source,
         )
         if isinstance(script, dict):
             script["_sub_src"] = translate_source
@@ -1644,13 +1481,9 @@ async def _produce_item(
         if (tts_src == "subtitle" and want_translate and subtitle_zh):
             tts_text = subtitle_zh
         else:
-            tts_text = (
-                await _localize_text(
-                    ai, narration_text, narration_lang, task_id=f"item:{item.id}"
-                )
-                if narration_lang != "zh-CN"
-                else narration_text
-            )
+            # v0.22.x：脚本按 narration_lang 生成，旁白本就是目标语言——
+            # 旧版此处对 en→en 的「本地化」为恒等调用，随去 API 化直接取旁白
+            tts_text = narration_text
         # 音色（v0.8.9，对齐原项目 pick_voice）：注册表 tts 角色手动配置优先，
         # auto/未配置 → 内容自适应（tech→男声 / 暖心→女声 / 奇观男偏 + 随机）
         # v0.22 栏目固定音色：最高优先级——未绑定栏目时为 None，走原链（非破坏性）

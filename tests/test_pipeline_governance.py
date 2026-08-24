@@ -667,20 +667,28 @@ class _TranslateLLM:
 
 
 @pytest.mark.asyncio
-async def test_localize_text_falls_back_on_failure() -> None:
-    """翻译失败回退原文（不阻塞生产）；成功时返回译文。"""
-    from backend.ai.router import AIRouter
-    from backend.factory.registry import ServiceRegistry
+@pytest.mark.asyncio
+async def test_localize_text_engine_paths(monkeypatch) -> None:
+    """D-189 单引擎语义：本地 MT 成功返回译文；失败回退原文。"""
+    from backend.pipeline.producers import translate_engine
     from backend.pipeline.producers.media import _localize_text
 
-    registry = ServiceRegistry.get()
-    original = registry.ai
-    try:
-        registry.ai = AIRouter(llm=_TranslateLLM(), image=None, tts=None)
-        translated = await _localize_text(registry.ai, "这是中文旁白", "en-US")
-        assert "translated" in translated
-    finally:
-        registry.ai = original
+    async def ok_mt(text: str) -> str:
+        return "翻译后的旁白内容"
+
+    monkeypatch.setattr(translate_engine, "translate_local", ok_mt)
+    out = await _localize_text(
+        "English narration text.", "zh-CN", source_lang="en-US",
+    )
+    assert "翻译后的旁白" in out
+
+    async def boom_mt(text: str) -> str:
+        raise RuntimeError("model missing")
+
+    monkeypatch.setattr(translate_engine, "translate_local", boom_mt)
+    original = "He kneels down and the kid stops crying."
+    out = await _localize_text(original, "zh-CN", source_lang="en-US")
+    assert "He kneels down" in out
 
 
 @pytest.mark.asyncio
@@ -2789,9 +2797,15 @@ async def test_translate_condition(monkeypatch) -> None:
         async def title_and_tags(self, **kw):
             from backend.ai.types import TitleResult
             return TitleResult(title="x", tags=[], description="")
-        async def chat_messages(self, messages, **kw):
-            calls["localize"] += 1
-            return "他蹲下来 孩子就不哭了"
+
+    # v0.22.x：翻译走本地 Opus-MT——monkeypatch 引擎单条入口
+    async def fake_mt(text: str) -> str:
+        calls["localize"] += 1
+        return "他蹲下来 孩子就不哭了"
+
+    monkeypatch.setattr(
+        "backend.pipeline.producers.translate_engine.translate_local", fake_mt
+    )
 
     async def fake_compose(*a, **kw):
         return {"path": str(tmp / "final.mp4")}
@@ -3074,20 +3088,21 @@ async def test_tts_overflow_drops_to_subs_only(client, tmp_path, monkeypatch) ->
 
 
 @pytest.mark.asyncio
-async def test_localize_target_language_prompt(client, monkeypatch) -> None:
-    """v0.8.9 翻译方向扩展：_localize_text 显式源→目标语言对。"""
+async def test_localize_language_guard_unsupported_pair(monkeypatch) -> None:
+    """v0.22.x：local 引擎仅 en→zh；其他语言对不介入，直接返回原文。"""
     import backend.pipeline.producers.media as media_mod
+    from backend.pipeline.producers import translate_engine
 
-    captured: list[str] = []
+    calls = {"n": 0}
 
-    class _FakeAI:
-        async def chat_messages(self, messages, role="fast", **kw):
-            captured.append(messages[0].content)
-            return "これはテストです"
+    async def fake_mt(text: str) -> str:
+        calls["n"] += 1
+        return "不应被调用"
 
-    out = await media_mod._localize_text(_FakeAI(), "hello", "ja", source_lang="en-US")
-    assert out == "これはテストです"
-    assert "English" in captured[0] and "日本語" in captured[0]
+    monkeypatch.setattr(translate_engine, "translate_local", fake_mt)
+    out = await media_mod._localize_text("hello", "ja", source_lang="en-US")
+    assert out == "hello"
+    assert calls["n"] == 0
 
 
 @pytest.mark.asyncio
@@ -3110,11 +3125,14 @@ async def test_asr_subtitles_strip_punct(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(media_mod, "probe_has_audio", fake_has_audio)
     monkeypatch.setattr("backend.pipeline.producers.asr.transcribe", fake_transcribe)
 
-    class _FakeAI:
-        async def chat_messages(self, messages, role="fast", **kw):
-            return '{"segments": ["你好，世界！", "你好吗？"]}'
+    from backend.pipeline.producers import translate_engine
 
-    got = await media_mod._asr_subtitles(_FakeAI(), Path("x.mp4"), tmp_path)
+    async def fake_batch(texts: list[str]) -> list[str]:
+        return ["你好，世界！", "你好吗？"]
+
+    monkeypatch.setattr(translate_engine, "translate_batch_local", fake_batch)
+
+    got = await media_mod._asr_subtitles(object(), Path("x.mp4"), tmp_path)
     assert got is not None
     srt, full = got
     assert "，" not in full and "！" not in full and "？" not in full

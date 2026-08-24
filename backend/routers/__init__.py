@@ -15,7 +15,6 @@ from backend.routers import (
     depths,
     docs,
     downloads,
-    glossary,
     health,
     library,
     logs,
@@ -50,4 +49,3 @@ api_router.include_router(docs.router)
 api_router.include_router(canvas.router)
 api_router.include_router(channels.router)
 api_router.include_router(phases.router)
-api_router.include_router(glossary.router)
