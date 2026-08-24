@@ -765,6 +765,28 @@ async def generate_cover(raw: Path, out: Path) -> dict:
     return {"path": str(out)}
 
 
+async def extract_random_cover(
+    video_path: Path | str, out_path: Path,
+) -> Path:
+    """随机抽帧封面（v0.11.5）：避开首尾（黑场/片尾），5%-95% 均匀随机
+    取一帧 → 1280x720 裁切。抽帧失败抛 ProducerError（调用方转 HTTP 语义）。
+    """
+    import random
+
+    ffmpeg = find_ffmpeg()
+    if ffmpeg is None:
+        raise ProducerError("ffmpeg not found")
+    duration = await probe_duration(video_path)
+    pos = max(0.0, min(duration * (0.05 + 0.9 * random.random()), max(duration - 0.1, 0.0)))
+    await _run_cmd([
+        str(ffmpeg), "-y", "-ss", f"{pos:.3f}",
+        "-i", str(video_path), "-frames:v", "1",
+        "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+        str(out_path),
+    ])
+    return out_path
+
+
 async def produce_item(
     ai: AIRouter, files: FileStore, item, existing_script: dict | None = None
 ) -> dict:
