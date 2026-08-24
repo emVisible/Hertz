@@ -14,6 +14,53 @@ import { heading, sub, type SectionProps } from './shared'
 import { PublishStatusCard } from './settingsCards'
 import { ChannelsCard } from './ChannelsCard'
 
+/** 本地翻译模型状态卡（v0.22.x）：依赖/模型就绪态 + 一键下载（后台任务轮询）。 */
+export function TranslateModelStatus() {
+  const { t } = useTranslation()
+  const [downloading, setDownloading] = useState(false)
+  const { data, refetch } = useQuery({
+    queryKey: ['translate-model-status'],
+    queryFn: () =>
+      api.get<{ deps: boolean; model_ready: boolean }>(
+        '/api/pipeline/translate-model/status',
+      ),
+  })
+  const ready = data?.model_ready === true
+
+  async function startDownload() {
+    setDownloading(true)
+    await api.post('/api/pipeline/translate-model/download')
+    const deadline = Date.now() + 600_000
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 3000))
+      const st = await api.get<{ model_ready: boolean }>(
+        '/api/pipeline/translate-model/status',
+      )
+      if (st.model_ready) break
+    }
+    setDownloading(false)
+    await refetch()
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-2 text-xs">
+      <Badge tone={data == null ? 'neutral' : data.model_ready ? 'success' : 'warning'}>
+        {!data?.deps
+          ? t('settings.translateModelNoDeps')
+          : ready
+            ? t('settings.translateModelReady')
+            : t('settings.translateModelMissing')}
+      </Badge>
+      {!ready && data?.deps && (
+        <Button size="sm" variant="secondary" disabled={downloading} onClick={() => void startDownload()}>
+          <Icon name="downloads" size={12} />
+          {downloading ? t('settings.translateModelDownloading') : t('settings.translateModelDownload')}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 /** Reddit Cookie 状态卡（v0.8.1）：存在性/年龄 + 一键浏览器导出（v0.11.7 可选浏览器 + 通道验证）。 */
 const COOKIE_BROWSERS = [
   { value: '', label: 'auto' },
@@ -579,6 +626,7 @@ export function PipelineSection({
               {t('settings.translateHfEndpointHint')}
             </p>
           </div>
+          <TranslateModelStatus />
           <Select
             label={t('settings.ttsTextSource')}
             value={form.pipeline_tts_text_source ?? 'script'}

@@ -32,13 +32,36 @@ def model_dir() -> Path:
     return Path(settings.data_dir) / "models" / "opus-mt-en-zh"
 
 
-def _endpoint() -> str:
+_MIRROR_ENDPOINT = "https://hf-mirror.com"
+_download_alerted = False
+
+
+def _candidate_endpoints(configured: str | None = None) -> list[str]:
+    """下载端点候选序：用户配置优先 → 官方 → 镜像（去重）。
+
+    抽为纯函数便于单测。
+    """
     from backend.config import settings
 
-    endpoint = str(
-        getattr(settings, "pipeline_translate_hf_endpoint", "") or ""
+    cfg = (
+        configured
+        if configured is not None
+        else str(getattr(settings, "pipeline_translate_hf_endpoint", "") or "")
     ).strip().rstrip("/")
-    return endpoint or "https://huggingface.co"
+    out: list[str] = []
+    for ep in (cfg, "https://huggingface.co", _MIRROR_ENDPOINT):
+        if ep and ep not in out:
+            out.append(ep)
+    return out
+
+
+def _alert(text: str) -> None:
+    """告警（best-effort，进程内单次去重由调用方控制）。"""
+    import asyncio
+
+    from backend.integrations.telegram_bot import push_alert
+
+    asyncio.ensure_future(push_alert(text))
 
 
 def deps_available() -> bool:
@@ -53,36 +76,63 @@ def deps_available() -> bool:
 
 
 async def ensure_model(force: bool = False) -> Path | None:
-    """确保 ct2 模型就绪；成功返回目录，失败返回 None（调用方回落 api）。"""
-    import httpx
+    """确保 ct2 模型就绪；多端点依序尝试（配置端点→官方→镜像）。
 
+    全部失败：记录各端点错误原因 + Telegram 单次告警（进程生命周期去重，
+    成功后复位），返回 None 由调用方回落 api/原文。
+    """
+    global _download_alerted
     d = model_dir()
     core_missing = [f for f, required in _FILES if required and not (d / f).exists()]
     if not core_missing and not force:
         return d
     try:
         d.mkdir(parents=True, exist_ok=True)
-        base = f"{_endpoint()}/{_MODEL_REPO}/resolve/main"
-        async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-            for fname, required in _FILES:
-                out = d / fname
-                if out.exists():
-                    continue
-                resp = await client.get(f"{base}/{fname}")
-                if resp.status_code == 404 and not required:
-                    continue
-                resp.raise_for_status()
-                await asyncio.to_thread(out.write_bytes, resp.content)
-                logger.info("downloaded %s (%d bytes)", fname, len(resp.content))
-        still_missing = [f for f, req in _FILES if req and not (d / f).exists()]
-        if still_missing:
-            raise RuntimeError(f"download incomplete: {still_missing}")
-        _translator_cache.clear()  # 目录内容变化 → 重建加载器
-        logger.info("local MT model ready at %s", d)
-        return d
-    except Exception as exc:  # noqa: BLE001 — 下载失败由调用方回落 api
-        logger.warning("local MT model download failed: %s", exc)
+    except OSError as exc:
+        logger.warning("local MT model dir create failed: %s", exc)
         return None
+
+    errors: list[str] = []
+    import httpx
+
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        for endpoint in _candidate_endpoints():
+            try:
+                base = f"{endpoint}/{_MODEL_REPO}/resolve/main"
+                for fname, required in _FILES:
+                    out = d / fname
+                    if out.exists():
+                        continue
+                    resp = await client.get(f"{base}/{fname}")
+                    if resp.status_code == 404 and not required:
+                        continue
+                    resp.raise_for_status()
+                    await asyncio.to_thread(out.write_bytes, resp.content)
+                    logger.info("downloaded %s from %s (%d bytes)",
+                                fname, endpoint, len(resp.content))
+                still_missing = [
+                    f for f, req in _FILES if req and not (d / f).exists()
+                ]
+                if still_missing:
+                    raise RuntimeError(f"incomplete: {still_missing}")
+                _translator_cache.clear()
+                _download_alerted = False  # 成功后复位告警去重
+                logger.info("local MT model ready at %s (via %s)", d, endpoint)
+                return d
+            except Exception as exc:  # noqa: BLE001 — 换下一端点
+                errors.append(f"{endpoint}: {exc}")
+                logger.warning("endpoint failed (%s): %s", endpoint, exc)
+
+    reason = "; ".join(errors) or "unknown"
+    logger.warning("local MT model download failed on all endpoints: %s", reason)
+    if not _download_alerted:
+        _download_alerted = True
+        _alert(
+            "🔴 本地翻译模型下载失败\n"
+            f"{reason[:300]}\n\n"
+            "可在设置切换下载端点后重试，或将引擎切回 API 三步法。"
+        )
+    return None
 
 
 def _load():

@@ -240,10 +240,10 @@ async def _localize_text(
 
         out = await translate_local(text)
         return _clean_translation_text(out) if out.strip() else _clean_translation_text(text)
-    except Exception:  # noqa: BLE001 — 翻译失败回退原文，不阻塞生产
+    except Exception as exc:  # noqa: BLE001 — 翻译失败回退原文，不阻塞生产
         logger.warning(
-            "localize %s→%s failed — keeping original",
-            source_lang or "?", target_lang,
+            "localize %s→%s failed (%s) — keeping original",
+            source_lang or "?", target_lang, exc,
         )
         return _clean_translation_text(text)
 
@@ -1003,11 +1003,21 @@ async def _produce_item(
                 task_id=f"item:{item.id}",
             )
         except Exception:  # noqa: BLE001 — ASR 失败回退旁白字幕
-            logger.warning("ASR subtitles failed, falling back to narration subs")
+            logger.warning(
+                "ASR subtitles failed, falling back to narration subs",
+                exc_info=True,
+            )
         if asr_subtitle:
             srt_path, asr_text = asr_subtitle
             script["subtitle_zh"] = asr_text.strip()
+            # 字幕来源标记（v0.22.x）：审核卡 ⚠️ 徽章数据源
+            script["subtitle_source"] = "asr"
             artifacts["subtitle"] = {"path": str(srt_path), "source": "asr"}
+        else:
+            logger.warning(
+                "[produce] 原声字幕不可用（无音轨/转写失败/依赖缺失）"
+                "——字幕回退旁白文案，条目将打 narration_fallback 标记"
+            )
 
     # 配音模块：旁白文本按 narration_lang 本地化（v0.2.7 语义）后 TTS 裁词重试；
     # 非配音模块 → 无旁白。v0.8.9：音色内容自适应（pick_voice）+ 语速（rate）
@@ -1154,6 +1164,11 @@ async def _produce_item(
                 "path": str(srt_path),
                 "source": "asr" if asr_subtitle else "script",
             }
+            # 降级标记（v0.22.x）：来源非原声时打标——翻译失败场景下
+            # 兜底字幕可能是外语原文，前端 ⚠️ 徽章提示不再静默
+            script["subtitle_source"] = (
+                "asr" if asr_subtitle else "narration_fallback"
+            )
         except Exception:  # noqa: BLE001 — subtitles are best-effort
             srt_path = None
 

@@ -180,6 +180,16 @@ export function AuditCard({
               {t('console.lowScore')}
             </span>
           )}
+          {/* 旁白回退字幕（v0.22.x）：原声字幕不可用时的静默降级显性化 */}
+          {(item.script_json as Record<string, unknown> | null)?.subtitle_source ===
+            'narration_fallback' && (
+            <span
+              title={t('console.narrationFallbackHint')}
+              className="border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning"
+            >
+              ⚠️ {t('console.narrationFallback')}
+            </span>
+          )}
           {/* 相似内容提示（v0.5 A）：phash 判重防重复投稿 */}
           {item.similar && (item.similar.published.length > 0 || item.similar.queued.length > 0) && (
             <span

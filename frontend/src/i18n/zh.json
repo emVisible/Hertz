@@ -351,7 +351,12 @@
     "tgToken": "Bot Token（@BotFather）",
     "tgChatId": "管理员 Chat ID",
     "tgMinutes": "轮询间隔（分钟）",
-    "tgHint": "零公网暴露：本机 long-polling。待审条目推送封面卡片，手机 inline 按钮直接 通过/打回/拒绝；预算告警同通道。"
+    "tgHint": "零公网暴露：本机 long-polling。待审条目推送封面卡片，手机 inline 按钮直接 通过/打回/拒绝；预算告警同通道。",
+    "translateModelReady": "模型已就绪",
+    "translateModelMissing": "模型未下载",
+    "translateModelNoDeps": "依赖未安装（uv sync --extra translate）",
+    "translateModelDownload": "下载本地翻译模型",
+    "translateModelDownloading": "下载中…"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -1046,7 +1051,9 @@
     "publishMenu": "发布方式",
     "publishTimedHint": "按排期发布（到点自动上传）",
     "titlePrevAlt": "上一个标题候选",
-    "titleNextAlt": "下一个标题候选"
+    "titleNextAlt": "下一个标题候选",
+    "narrationFallback": "旁白字幕",
+    "narrationFallbackHint": "原声字幕不可用（无音轨/转写失败），当前字幕由旁白文案生成——可能为外语原文"
   },
   "canvas": {
     "tool": {

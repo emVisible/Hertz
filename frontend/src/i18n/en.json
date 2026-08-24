@@ -336,7 +336,12 @@
     "tgToken": "Bot Token (via @BotFather)",
     "tgChatId": "Admin chat ID",
     "tgMinutes": "Poll interval (minutes)",
-    "tgHint": "Zero public exposure: local long-polling. Queued items are pushed as cards with inline Approve / Back / Reject buttons; budget alerts share the channel."
+    "tgHint": "Zero public exposure: local long-polling. Queued items are pushed as cards with inline Approve / Back / Reject buttons; budget alerts share the channel.",
+    "translateModelReady": "Model ready",
+    "translateModelMissing": "Model not downloaded",
+    "translateModelNoDeps": "Deps missing (uv sync --extra translate)",
+    "translateModelDownload": "Download local MT model",
+    "translateModelDownloading": "Downloading…"
   },
   "execution": {
     "modeStudio": "Studio",
@@ -1031,7 +1036,9 @@
     "publishMenu": "Publish options",
     "publishTimedHint": "Publish on schedule (auto-upload at time)",
     "titlePrevAlt": "Previous title candidate",
-    "titleNextAlt": "Next title candidate"
+    "titleNextAlt": "Next title candidate",
+    "narrationFallback": "fallback subs",
+    "narrationFallbackHint": "Original-audio subtitles unavailable (no audio/transcribe failed); current subs are generated from narration text and may remain in the source language"
   },
   "canvas": {
     "tool": {

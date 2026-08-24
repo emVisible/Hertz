@@ -211,3 +211,46 @@ async def auto_approve():
     return await _pipe().auto_approve()
 
 
+
+
+@router.get("/translate-model/status")
+async def translate_model_status() -> dict:
+    """本地翻译引擎就绪状态（依赖 + 模型文件）。"""
+    from backend.pipeline.producers import translate_engine
+
+    model_dir = translate_engine.model_dir()
+    core_ok = all(
+        (model_dir / f).exists()
+        for f, required in translate_engine._FILES
+        if required
+    )
+    return {
+        "deps": translate_engine.deps_available(),
+        "model_ready": core_ok,
+    }
+
+
+@router.post("/translate-model/download")
+async def translate_model_download() -> dict:
+    """后台触发本地翻译模型下载（幂等：已就绪直接返回）。
+
+    300MB 级下载——fire-and-forget，前端轮询 status 直到 model_ready。
+    结果经 telemetry tick 记录（成败均可见）。
+    """
+    import asyncio
+
+    from backend.infrastructure.telemetry import record_tick
+    from backend.pipeline.producers import translate_engine
+
+    async def _job() -> None:
+        t0 = asyncio.get_running_loop().time()
+        result = await translate_engine.ensure_model(force=False)
+        ok = result is not None
+        record_tick(
+            "translate_model_download", ok,
+            int((asyncio.get_running_loop().time() - t0) * 1000),
+            "" if ok else "download failed",
+        )
+
+    asyncio.create_task(_job())
+    return {"started": True}
