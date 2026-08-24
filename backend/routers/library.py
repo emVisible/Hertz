@@ -216,7 +216,10 @@ async def ai_organize(body: dict):
 
 @router.post("/rename")
 async def rename_file(body: dict):
-    """重命名素材（AI 整理确认后执行）：sidecar 同步迁移 + 失败回滚（§33 原子性）。"""
+    """重命名素材（AI 整理确认后执行）：sidecar 同步迁移 + 失败回滚（§33 原子性）。
+
+    文件系统事务在 library.rename（v0.22.x B 系下沉）；路由只留校验与 HTTP 转译。
+    """
     path = str(body.get("path") or "")
     new_name = str(body.get("new_name") or "").strip()
     if not path or not new_name:
@@ -227,31 +230,16 @@ async def rename_file(body: dict):
     if not target.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    dest = target.with_name(new_name)
-    if await asyncio.to_thread(dest.exists):
-        raise HTTPException(status_code=409, detail=f"目标已存在：{new_name}")
+    from backend.library.rename import rename_with_sidecars
 
-    moved: list[tuple[Path, Path]] = []
     try:
-        await asyncio.to_thread(target.rename, dest)
-        moved.append((target, dest))
-        # sidecar 同步迁移（meta/thumb 丢失会破坏标签与缩略图）
-        for suffix in (".meta.json", ".thumb.jpg"):
-            src_side = Path(f"{target}{suffix}")
-            if await asyncio.to_thread(src_side.exists):
-                dest_side = Path(f"{dest}{suffix}")
-                await asyncio.to_thread(src_side.rename, dest_side)
-                moved.append((src_side, dest_side))
+        dest = await rename_with_sidecars(target, new_name)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OSError as exc:
-        # 回滚：主文件或 sidecar 已动 → 全部还原，保证幂等重试（§4.2 就近失败）
-        for src, dst in reversed(moved):
-            try:
-                if await asyncio.to_thread(dst.exists):
-                    await asyncio.to_thread(dst.rename, src)
-            except OSError:
-                logger.error("rename rollback failed for %s", dst)
-        raise HTTPException(status_code=500, detail="重命名失败，已回滚") from exc
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"path": str(dest)}
+
 
 
 @router.get("/duplicates")
