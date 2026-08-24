@@ -5,6 +5,23 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.22.0] - 2026-08-24
+### 栏目化内容工厂（非破坏性）
+- 多源采集路由：裸通道名兼容存量 Reddit 源；新增 `ai-story/<主题>`（LLM 直产文字故事种子，成本闸 per_tick=2）与 `rss/<名称>`（通用 RSS/Atom 文本源）两类零凭证采集器
+- 栏目实体（channels 表）：源池 × 固定音色 × B 站分区 × 简介模板 × 标签 × 标题风格 × 人设提示词 × 片头配置 绑定单元；条目经 `items.channel_key` 自动归属
+- 固定音色优先级链：栏目 > 注册表 tts 角色 > 内容自适应
+- 动态标题卡片头：按主片参数编码前置 concat，三重降级，成片时长自动计入排期
+- 包装注入：标题风格提示词 / 栏目标签置顶 / 简介模板渲染 / 分区覆盖
+- 设置页栏目管理卡 + `/api/channels` CRUD
+
+## [v0.21.0] - 2026-08-23
+### P0 安装即用闭环
+- PyInstaller 后端固化：单入口（建库 → 迁移 → uvicorn），onedir 产物随应用分发
+- 内嵌 PostgreSQL：首启自动下载发行包、initdb/pg_ctl 托管、动态端口、退出随停；外部库可经环境变量接管
+- Electron 打包态运行固化二进制；`HERTZ_USER_DATA` 隔离钩子
+- CI：tag 触发 mac arm64 构建并发布 GitHub Releases
+- ffmpeg 内置兜底（imageio 构建，含 libass）；冷启动归因打点
+
 ## [v0.20.0] - 2026-08-22
 
 工程健康轮：SettingsPage 拆分 + 成本聚合性能防线。

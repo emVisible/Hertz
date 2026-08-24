@@ -1,6 +1,6 @@
 # Hertz AI 底座（v3.0）— 架构与使用说明
 
-> 对应 HERTZ_RECONSTRUCTION.md Wave 8。应用层（编排/流水线/Studio）只调用
+> 对应 HERTZ_RECONSTRUCTION.md（docs/）Wave 8。应用层（编排/流水线/Studio）只调用
 > TaskRouter 的稳定接口，配置一律走 Provider 注册表——图像/TTS 与 LLM 同一套机制。
 
 ## 一、架构总览

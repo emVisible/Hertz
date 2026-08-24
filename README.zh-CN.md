@@ -6,6 +6,8 @@
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
+[![Release](https://github.com/emVisible/Hertz/actions/workflows/release.yml/badge.svg)](https://github.com/emVisible/Hertz/actions/workflows/release.yml)
+
 </div>
 
 ---
@@ -122,4 +124,4 @@ tests/              pytest 套件（独立测试库，每会话重建）
 
 ## 许可证
 
-保留所有权利。私有项目，暂未授予许可。
+以 [MIT License](./LICENSE) 发布——欢迎参考、学习与二次构建。

@@ -71,7 +71,7 @@ export function PublishCard({
     setTitleDraft(null)
   }
   const biliTid = script?.bili_tid != null ? String(script.bili_tid) : ''
-  // 版权（v0.3.2）：1=自制 / 2=搬运，默认搬运；发布 selfmade 由开关驱动
+  // 版权（v0.3.2）：1=自制 / 2=转载，默认转载；发布 selfmade 由开关驱动
   const copyright = script?.bili_copyright != null ? Number(script.bili_copyright) : 2
   const selfmade = copyright === 1
   const scheduled = item.scheduled_at ? item.scheduled_at.slice(0, 16) : null
@@ -364,7 +364,7 @@ export function PublishCard({
                   />
                 </div>
 
-                {/* 版权（v0.3.2）：自制 / 搬运 显式切换——发布 selfmade 由开关驱动 */}
+                {/* 版权（v0.3.2）：自制 / 转载 显式切换——发布 selfmade 由开关驱动 */}
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="w-14 shrink-0 text-[10px] uppercase tracking-wide text-text-disabled">{t('console.copyright')}</span>
                   <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">

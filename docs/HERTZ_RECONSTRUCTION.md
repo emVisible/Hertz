@@ -1,5 +1,8 @@
 # Hertz 重构计划
 
+> **历史设计文档**：记录 v0.1 的整体蓝图与五项目合并脉络，随实现推进有所演进；
+> 现行架构以 [README](../README.md) 与 docs/ 其余文档为准。
+>
 > 从 Autarkeia、Mojito、HeartStone、Revel、Ametrine 五项目合一  
 > 版本：v0.1 · 2026-07-31  
 > 基于 AXIOM v1.9 体系构建

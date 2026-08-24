@@ -6,6 +6,8 @@
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
+[![Release](https://github.com/emVisible/Hertz/actions/workflows/release.yml/badge.svg)](https://github.com/emVisible/Hertz/actions/workflows/release.yml)
+
 </div>
 
 ---
@@ -122,4 +124,4 @@ tests/              pytest suite (shared test DB, rebuilt per session)
 
 ## License
 
-All rights reserved. Private project — no license granted yet.
+Released under the [MIT License](./LICENSE). Welcome to explore, learn from, and build upon it.
