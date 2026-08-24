@@ -221,6 +221,12 @@
     "ttsTextSourceScript": "Follow narration (localized voice)",
     "ttsTextSourceSubtitle": "Follow Chinese subtitles (translated voice)",
     "ttsTextSourceHint": "Following subtitles requires translate mode; following narration uses the narration language.",
+    "translateEngine": "Translation engine",
+    "translateEngineLocal": "Local Opus-MT (free offline)",
+    "translateEngineApi": "API three-pass (high quality)",
+    "translateEngineHint": "Local engine covers EN→ZH only and downloads a ~300MB model on first use; falls back to API on failure.",
+    "translateHfEndpoint": "Model download endpoint",
+    "translateHfEndpointHint": "Use https://hf-mirror.com if huggingface.co is unreachable",
     "channels": {
       "title": "Columns",
       "hint": "A column binds source pool × voice × packaging. Items collected via its channels automatically apply the column's voice / intro / description / tags / category; unbound items are unaffected.",

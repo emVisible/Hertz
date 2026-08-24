@@ -236,6 +236,12 @@
     "ttsTextSourceScript": "跟旁白原文（本地化配音）",
     "ttsTextSourceSubtitle": "跟中文字幕（译文配音）",
     "ttsTextSourceHint": "配音跟字幕译文时需同时启用翻译；原文配音按旁白语言合成。",
+    "translateEngine": "翻译引擎",
+    "translateEngineLocal": "本地 Opus-MT（免费离线）",
+    "translateEngineApi": "API 三步法（高质量）",
+    "translateEngineHint": "本地引擎仅支持英→中，首次使用自动下载约 300MB 模型；失败自动回落 API。",
+    "translateHfEndpoint": "模型下载端点",
+    "translateHfEndpointHint": "国内网络可切换 https://hf-mirror.com",
     "channels": {
       "title": "栏目",
       "hint": "栏目 = 源池 × 音色 × 包装的绑定单元。采集通道归属栏目后，新入库条目自动应用栏目的音色/片头/简介/标签/分区；未绑定条目不受影响。",

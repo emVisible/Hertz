@@ -344,6 +344,29 @@ async def _localize_text(
 
     if not text.strip():
         return text
+
+    # v0.22.x 翻译引擎分支：local = 本地 Opus-MT en→zh（ctranslate2 单步直翻，
+    # 免 API 成本）。语言对守卫：首发仅 en→zh；其他对/依赖缺失/模型未就绪/
+    # 任何失败 → 穿透到下方 api 三步法（既有降级语义）。
+    engine = str(getattr(settings, "pipeline_translate_engine", "api") or "api")
+    if (
+        engine == "local"
+        and (source_lang or "").startswith("en")
+        and target_lang == "zh-CN"
+    ):
+        try:
+            from backend.pipeline.producers.translate_engine import translate_local
+
+            local_out = await translate_local(text)
+            if local_out.strip():
+                return _clean_translation_text(local_out)
+            logger.warning("local translate empty output — falling back to api")
+        except Exception:  # noqa: BLE001 — 本地引擎失败回落 api 三步法
+            logger.warning(
+                "local translate failed (%s→%s) — falling back to api",
+                source_lang, target_lang, exc_info=True,
+            )
+
     src = _LANG_NAMES.get(source_lang or "", "") or _LANG_NAMES.get(
         "en-US", "English"
     )
@@ -1406,6 +1429,25 @@ async def produce_item(
         reset_active_item(token)
 
 
+def _subtitle_cache_hit(
+    existing_script, narration_text: str, src_lang: str, tgt_lang: str
+) -> str | None:
+    """字幕翻译缓存判定（v0.22.x）：narration 未变 + 译文已持久化 + 语言方向
+    匹配 → 返回缓存译文；否则 None（走原翻译逻辑）。
+
+    非破坏性：existing_script 为 None（打回重制）或键缺失 → None；
+    「重新翻译」动作走 engine.retranslate 独立路径，不受此缓存影响。
+    """
+    if not isinstance(existing_script, dict):
+        return None
+    if str(existing_script.get("narration") or "").strip() != narration_text.strip():
+        return None
+    if existing_script.get("_sub_src") != src_lang or existing_script.get("_sub_tgt") != tgt_lang:
+        return None
+    cached = str(existing_script.get("subtitle_zh") or "").strip()
+    return cached or None
+
+
 async def _produce_item(
     ai: AIRouter, files: FileStore, item, existing_script: dict | None = None
 ) -> dict:
@@ -1543,14 +1585,24 @@ async def _produce_item(
     # 此前条件 `not want_translate or subtitle_lang == "zh-CN"` 把「目标语言是中文」
     # 误当「无需翻译」——默认配置下翻译永远不生效（英文旁白原样入字幕）。
     # 正确语义：源语言与目标字幕语言不同才需要翻译
-    subtitle_text = (
-        await _localize_text(
-            ai, narration_text, subtitle_lang, source_lang=translate_source,
-            task_id=f"item:{item.id}",
-        )
-        if want_translate and translate_source != subtitle_lang
-        else narration_text
+    # v0.22.x 缓存复用：脚本未变且已有译文 → 跳过 LLM 翻译（省 3×token 三步法）
+    cached_sub = _subtitle_cache_hit(
+        existing_script, narration_text, translate_source, subtitle_lang
     )
+    if want_translate and cached_sub is not None:
+        subtitle_text = cached_sub
+    elif want_translate and translate_source != subtitle_lang:
+        subtitle_text = (
+            await _localize_text(
+                ai, narration_text, subtitle_lang, source_lang=translate_source,
+                task_id=f"item:{item.id}",
+            )
+        )
+        if isinstance(script, dict):
+            script["_sub_src"] = translate_source
+            script["_sub_tgt"] = subtitle_lang
+    else:
+        subtitle_text = narration_text
     # 中文字幕持久化（v0.8.5）：B 站简介构建复用（subtitle_zh 首句 + 署名）
     script["subtitle_zh"] = subtitle_text.strip()
 

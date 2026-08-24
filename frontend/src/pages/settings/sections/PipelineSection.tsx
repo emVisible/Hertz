@@ -567,6 +567,29 @@ export function PipelineSection({
             }
           />
           <Select
+            label={t('settings.translateEngine')}
+            value={form.pipeline_translate_engine ?? 'api'}
+            onChange={(e) => set('pipeline_translate_engine', e.target.value)}
+            options={[
+              { value: 'local', label: t('settings.translateEngineLocal') },
+              { value: 'api', label: t('settings.translateEngineApi') },
+            ] as Array<{ value: string; label: string }>
+            }
+          />
+          <div>
+            <label className="mb-0.5 block text-[11px] font-medium text-text-secondary">
+              {t('settings.translateHfEndpoint')}
+            </label>
+            <Input
+              value={form.pipeline_translate_hf_endpoint ?? ''}
+              onChange={(e) => set('pipeline_translate_hf_endpoint', e.target.value)}
+              placeholder="https://huggingface.co"
+            />
+            <p className="mt-0.5 text-[10px] text-text-disabled">
+              {t('settings.translateHfEndpointHint')}
+            </p>
+          </div>
+          <Select
             label={t('settings.ttsTextSource')}
             value={form.pipeline_tts_text_source ?? 'script'}
             onChange={(e) => set('pipeline_tts_text_source', e.target.value)}

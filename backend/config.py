@@ -158,6 +158,12 @@ class Settings(BaseSettings):
     # 三步翻译法（v0.15，VideoLingo 精华）：旁白文本 直译→反思→意译（3× token）；
     # 字幕批量保持单步 + 术语表注入。成本敏感可关。
     pipeline_translate_three_pass: bool = True
+    # 翻译引擎（v0.22.x）：api=LLM 三步法（高质量）；local=本地 Opus-MT en→zh
+    # （ctranslate2 单步直翻，免费离线；模型约 300MB 首用自动下载）
+    pipeline_translate_engine: str = "api"
+    # 本地翻译模型 HF 下载端点（国内网络可切换 https://hf-mirror.com 镜像）
+    pipeline_translate_hf_endpoint: str = "https://huggingface.co"
+
     # ASR 原声转写（v0.8.9 起，v0.10 语义：字幕/翻译的数据源 = 视频原声）：
     # 字幕生产方式 = 原声转写字幕（原声语言）；翻译生产方式 = 原声转写 →
     # 中文字幕（原声保留、无配音）。无原声（图片帖）自动回退旁白文案字幕。
