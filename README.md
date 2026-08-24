@@ -1,64 +1,125 @@
+<div align="center">
+
 # Hertz
 
-AI 驱动的内容创作与自动化桌面平台 —— 从灵感到成片的一站式工作台。
+**AI-driven content creation & automation desktop platform — from inspiration to published video.**
 
-整合**灵感构思（画布）**、**AI 编排（Studio）**、**自动化流水线（Pipeline）**、
-**素材与下载管理（素材库）**于一个 Electron 桌面应用中。
+[English](./README.md) · [简体中文](./README.zh-CN.md)
 
-## 功能特性
+</div>
 
-| 模块 | 说明 |
+---
+
+## Overview
+
+Hertz is a local-first content factory that runs the full lifecycle of short-form
+video production: **collect → score → produce → review → publish**, with a human
+review gate where it matters and full automation everywhere else.
+
+It ships as an Electron desktop app (FastAPI backend + React frontend) with a
+plugin-style AI base layer, a strategy-driven publishing engine for Bilibili,
+and an installer that requires zero configuration on a fresh machine.
+
+## Features
+
+**Content pipeline**
+- Multi-source collection: Reddit, AI-original stories (LLM-generated), generic RSS — routed per channel
+- AI scoring with cost gates, duplicate detection (phash + title fingerprint), and safety redlines
+- Production line: script → TTS narration → subtitles (ASS burn-in) → composition, with graceful degradation at every stage
+
+**Columns (brand-level operations)**
+- Bind source pools, pinned TTS voice, Bilibili category, description/tag templates, title style, persona prompt, and a dynamic title-card intro to one unit
+- Items collected through a column automatically inherit its packaging; unbound items are untouched
+
+**Review & publishing**
+- Desktop review queue plus Telegram bot approval from your phone
+- Publishing strategy engine: account warm-up curve, content tiers, daily quotas and slot spacing
+- Publish queue with holding/ready phases, calendar scheduling, and stats back-fill
+
+**AI base layer**
+- Provider registry (OpenAI-compatible endpoints, SiliconFlow, Ollama…), role→model routing (`main` / `fast`), editable prompt template library, per-call usage tracking and monthly budget ladders
+
+**Workspace**
+- Studio multi-phase orchestration, inspiration canvas, download manager & asset library with tagging
+
+**Platform**
+- Zero-config packaging: backend frozen via PyInstaller, embedded PostgreSQL auto-provisioned on first launch, auto-update channel via GitHub Releases
+- Optional system dependencies only for advanced paths (ffmpeg falls back to a bundled build; `biliup` needed solely for Bilibili uploading)
+
+## Architecture
+
+```
+Electron shell (auto-update, embedded PostgreSQL supervisor)
+├── Frontend   React 19 · Vite · TanStack Query · Tailwind        :3000
+└── Backend    FastAPI · SQLAlchemy async · PostgreSQL            :8787
+    ├── Pipeline      collectors → steps → producers → publishers
+    │                 (multi-source router, columns, strategy engine)
+    ├── Orchestration Studio phase engine / roles / prompt buffs
+    ├── AI base       provider registry · TaskRouter (role routing)
+    │                 · usage tracing (ai_calls) · keychain secrets
+    └── Infra         logging · telemetry (/api/metrics) · backups
+                       · health/deps checks · Alembic migrations
+```
+
+## Getting started
+
+### Download
+
+Grab the latest macOS (Apple Silicon) build from
+[Releases](https://github.com/emVisible/Hertz/releases). First launch downloads
+an embedded PostgreSQL (~32 MB, one-time) and runs migrations automatically.
+
+> `ffmpeg` is optional — a bundled build covers thumbnails/production/burn-in.
+> `biliup` is required only if you publish to Bilibili.
+
+### Development
+
+Prerequisites: Python 3.12+ · [uv](https://docs.astral.sh/uv/) · Node.js 22+ · pnpm · PostgreSQL
+
+```bash
+git clone https://github.com/emVisible/Hertz.git && cd Hertz
+./scripts/dev.sh          # migrations → backend :8787 → frontend :3000 → Electron
+```
+
+Web-only mode: `./webui.sh`
+
+### Quality gate
+
+Every change must pass:
+
+```bash
+./scripts/verify.sh       # ruff → pytest → tsc → vitest → vite build
+```
+
+## Project structure
+
+```
+backend/
+  ai/               provider registry, TaskRouter, prompts, usage costs
+  pipeline/         collectors / steps / producers / publishers / strategy
+  orchestration/    studio phase engine, crews, buffs
+  infrastructure/   storage, logging, auth primitives, telemetry, backup
+  routers/          thin HTTP layer over domain services
+frontend/src/
+  pages/            execution · dashboard · assets · plans · settings · cost
+  components/       ui kit, execution views, app shell
+  hooks/stores/     usePipelineExecution, zustand stores
+electron/           main process, preload, builder config, embedded PG
+docs/               user guide · roadmap · decision records · AI base design
+scripts/            dev launcher, verify gate, backend freeze, migrations
+tests/              pytest suite (shared test DB, rebuilt per session)
+```
+
+## Documentation
+
+| Doc | Contents |
 |---|---|
-| 🎨 画布 Canvas | 灵感黑板：卡片、连线、语义低语提醒 |
-| 🎬 Studio | 多阶段 AI 工作流编排：内容研究 → 脚本 → 成片，全程阶段状态与产物可视化 |
-| 🧩 编排 | 工序库 / 策略 / 角色库（团队）/ Buff-Debuff（正反向提示词），策略级平台定位 |
-| ⚙️ 流水线 Pipeline | 内容采集 → 评分 → 脚本 → 素材合成 → 发布，自动化执行 |
-| 📦 素材库 | 下载管理（B 站 / YouTube 等）、来源标签系统、产物浏览、项目文档空间 |
-| 🤖 AI 底座 v2.0 | Provider 注册表（OpenAI 兼容 / 硅基流动等）、角色→模型路由、提示词模板库、调用用量追踪 |
+| [User Guide](./docs/USER_GUIDE.md) | install, environment variables, packaging |
+| [Roadmap](./docs/ROADMAP.md) | shipped milestones & known gaps |
+| [Decision Records](./docs/DECISIONS.md) | engineering decisions D-001 → |
+| [AI Base](./docs/AI_BASE.md) | provider registry & role routing design |
+| [Changelog](./CHANGELOG.md) | release notes |
 
-## 架构
+## License
 
-```
-Electron 桌面壳
-├── React 前端（Vite + TanStack Query + Tailwind）        :3000
-└── FastAPI 后端（SQLAlchemy + PostgreSQL + Alembic）      :8787
-    ├── AI 底座   Provider 注册表 / 角色路由 / 模板库 / 用量追踪（macOS 钥匙串）
-    ├── 引擎     Studio 阶段编排 / Pipeline 流水线
-    └── 素材库   下载任务 / 标签 / 产物 / 项目文档
-```
-
-## 快速开始
-
-**Web 模式**（后端 :8787 + 前端 :3000，浏览器访问）：
-
-```bash
-./webui.sh
-```
-
-**完整桌面模式**（另起 Electron 窗口）：
-
-```bash
-./scripts/dev.sh
-```
-
-前置依赖：Python 3.12+、uv、Node.js 22+、pnpm、PostgreSQL、ffmpeg、yt-dlp。
-
-## 打包分发
-
-```bash
-cd frontend && pnpm build          # 前端产物（frontend/dist）
-cd ../electron && pnpm build       # electron-builder 产出 release/
-```
-
-## 文档
-
-- [用户指南](./docs/USER_GUIDE.md) —— 安装、使用、打包说明
-- [架构与路线](./docs/ROADMAP.md) —— 演进规划
-- [AI 底座设计](./docs/AI_BASE.md) —— Provider 注册表与角色路由
-- [决策记录](./docs/DECISIONS.md) —— 设计决策（D-001 ~ D-111）
-- [工程规范 axiom](./axiom.md) —— 编码与架构原则
-- [变更记录](./CHANGELOG.md)
-
-## 许可证
-
-未定（私有项目，保留所有权利）。
+All rights reserved. Private project — no license granted yet.
