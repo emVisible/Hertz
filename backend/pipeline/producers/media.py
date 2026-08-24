@@ -5,7 +5,6 @@ small result dict for the produce step to persist on the item.
 """
 
 import asyncio
-import json
 import logging
 import re
 import tempfile
@@ -14,13 +13,21 @@ from pathlib import Path
 from backend.ai.router import AIRouter
 from backend.config import settings
 from backend.infrastructure.storage import FileStore
-from backend.library.thumbnails import find_ffmpeg, find_ffprobe
+from backend.library.thumbnails import find_ffmpeg
 from backend.pipeline.cancel import (
     ItemCancelledError,
     active_item,
     is_cancelled,
     reset_active_item,
     set_active_item,
+)
+from backend.pipeline.producers.probe import (
+    probe_audio_duration,
+    probe_duration,
+    probe_has_audio,
+)
+from backend.pipeline.producers.probe import (
+    video_stream_params as _probe_video_params,
 )
 from backend.pipeline.producers.subtitles import (  # noqa: F401 — 兼容旧引用面（asr/engine/tests 经 media.* 访问）
     _EN_LINE_WORDS,
@@ -114,48 +121,6 @@ async def _run_cmd(cmd: list[str], *, timeout_s: int = 300) -> bytes:
         raise ProducerError(f"{cmd[0]} failed ({proc.returncode}): {tail}")
     return out
 
-
-async def probe_duration(path: Path) -> float:
-    """Media duration in seconds via ffprobe."""
-    ffprobe = find_ffprobe()
-    if ffprobe is None:
-        return 0.0
-    proc = await asyncio.create_subprocess_exec(
-        ffprobe, "-v", "quiet", "-print_format", "json", "-show_format", str(path),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    out, _ = await proc.communicate()
-    try:
-        data = json.loads(out.decode())
-        return float(data.get("format", {}).get("duration") or 0.0)
-    except (ValueError, json.JSONDecodeError):
-        return 0.0
-
-
-async def probe_audio_duration(path: Path) -> float:
-    """音频流时长（v0.8.9，对齐原项目 edit.py _probe_audio_duration）：
-    ffprobe 首个音轨 (a:0) 的 stream duration——原声记录模式下字幕时间轴
-    以「视频原声实际说话时长」为准（而非视频总时长，说话结束后画面还在
-    继续时字幕不应继续铺）。无音轨/失败回退容器时长。
-    """
-    ffprobe = find_ffprobe()
-    if ffprobe is None:
-        return 0.0
-    proc = await asyncio.create_subprocess_exec(
-        ffprobe, "-v", "error", "-select_streams", "a:0",
-        "-show_entries", "stream=duration", "-of", "json", str(path),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    out, _ = await proc.communicate()
-    try:
-        streams = json.loads(out.decode()).get("streams") or []
-        if streams and streams[0].get("duration"):
-            return float(streams[0]["duration"])
-    except (ValueError, json.JSONDecodeError):
-        pass
-    return await probe_duration(path)
 
 
 def fit_script_to_budget(text: str, max_words: int) -> str:
@@ -413,20 +378,6 @@ async def subtitles_filter_available(ffmpeg: str) -> bool:
     except Exception:  # noqa: BLE001 — 探测失败按可用处理（沿用旧行为）
         _subtitles_available = True
     return _subtitles_available
-
-
-async def probe_has_audio(path: Path) -> bool:
-    """媒体是否含音轨（v0.8.9，对齐原项目 probe_has_audio）——ASR 前提。"""
-    ffprobe = find_ffprobe()
-    if ffprobe is None:
-        return True
-    proc = await asyncio.create_subprocess_exec(
-        ffprobe, "-v", "error", "-select_streams", "a", "-show_entries",
-        "stream=index", "-of", "csv=p=0", str(path),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-    )
-    out, _ = await proc.communicate()
-    return bool((out.decode(errors="replace") or "").strip())
 
 
 async def _cues_already_target(cues, target_lang: str) -> bool:
@@ -1551,36 +1502,6 @@ async def produce_story_item(
 # ---- 栏目片头（v0.22 动态标题卡，非破坏性降级设计） ----
 
 
-async def _probe_video_params(ffprobe: str, path: Path) -> tuple[int, int, float, bool] | None:
-    """主片 (宽, 高, fps, 是否含音轨)；无法解析返回 None（调用方跳过片头）。"""
-    proc = await asyncio.create_subprocess_exec(
-        ffprobe, "-v", "quiet", "-print_format", "json", "-show_streams",
-        str(path),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-    )
-    out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-    try:
-        data = json.loads(out.decode() or "{}")
-    except ValueError:
-        return None
-    streams = data.get("streams") or []
-    v = next((s for s in streams if s.get("codec_type") == "video"), {})
-    if not v.get("width"):
-        return None
-    has_audio = any(s.get("codec_type") == "audio" for s in streams)
-    rate = str(v.get("r_frame_rate") or "30/1")
-    num, _, den = rate.partition("/")
-    try:
-        fps = float(num) / float(den or 1)
-    except (ValueError, ZeroDivisionError):
-        fps = 30.0
-    return (
-        int(v.get("width") or 1280),
-        int(v.get("height") or 720),
-        fps if fps > 0 else 30.0,
-        has_audio,
-    )
-
 
 async def _prepend_channel_intro(channel, main: Path) -> Path:
     """栏目动态标题卡前置：渲染栏目名底卡 → 按主片参数编码 → concat。
@@ -1589,9 +1510,8 @@ async def _prepend_channel_intro(channel, main: Path) -> Path:
     intro_config: {"enabled": true, "duration_s": 3, "subtitle": "..."}
     """
     ffmpeg = find_ffmpeg()
-    ffprobe = find_ffprobe()
-    if not ffmpeg or not ffprobe:
-        logger.warning("intro skipped: ffmpeg/ffprobe unavailable")
+    if not ffmpeg:
+        logger.warning("intro skipped: ffmpeg unavailable")
         return main
     cfg = channel.intro_config or {}
     if not cfg.get("enabled"):
@@ -1599,7 +1519,7 @@ async def _prepend_channel_intro(channel, main: Path) -> Path:
     duration = max(1.0, min(float(cfg.get("duration_s") or 3), 10.0))
     subtitle = str(cfg.get("subtitle") or "").strip()
 
-    params = await _probe_video_params(ffprobe, main)
+    params = await _probe_video_params(main)
     if params is None:
         # 主片不可解析（损坏/占位）→ 不做任何替换（非破坏性）
         logger.warning("intro skipped: main video unprobeable")

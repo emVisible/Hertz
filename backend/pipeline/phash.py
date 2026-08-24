@@ -8,31 +8,12 @@ a publish gate (block_publish_duplicates) on top of the existing
 """
 
 import asyncio
-import json
 import logging
 
-from backend.library.thumbnails import find_ffmpeg, find_ffprobe
+from backend.library.thumbnails import find_ffmpeg
+from backend.pipeline.producers.probe import probe_duration as _probe_duration
 
 logger = logging.getLogger(__name__)
-
-
-async def _probe_duration(video_path: str) -> float:
-    """ffprobe 时长（秒）；失败返回 0（此时不 seek 直接取首帧）。"""
-    ffprobe = find_ffprobe()
-    if ffprobe is None:
-        return 0.0
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            ffprobe, "-v", "quiet", "-print_format", "json", "-show_format",
-            video_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-        data = json.loads(out.decode())
-        return float(data.get("format", {}).get("duration") or 0.0)
-    except (TimeoutError, OSError, ValueError, json.JSONDecodeError):
-        return 0.0
 
 
 async def compute_phash(video_path: str | None) -> str | None:
