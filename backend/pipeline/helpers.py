@@ -195,3 +195,21 @@ async def active_channel_bindings() -> dict[str, str]:
         for src in channel.source_pool or []:
             binding[src] = channel.public_id
     return binding
+
+
+def normalize_produce_flags(opts: dict | None) -> dict:
+    """生产方式标志归一（v0.22.x 单一真相源）：media._produce_item 与
+    制作前预检共用同一套默认/部分设置语义——两处漂移即预检失真。"""
+    flags = dict(opts or {})
+    if not flags:
+        return {
+            "passthrough": True, "voice": False,
+            "subtitle": False, "translate": False, "mute": False,
+        }
+    flags.setdefault("voice", False)
+    flags.setdefault("subtitle", True)
+    flags.setdefault("translate", True)
+    flags.setdefault("mute", False)
+    for key in ("passthrough", "voice", "subtitle", "translate", "mute"):
+        flags[key] = bool(flags.get(key))
+    return flags

@@ -843,17 +843,10 @@ async def _produce_item(
     # 的新入库未加工条目原片直接发布（对齐前端 DEFAULT_PRODUCE_OPTIONS）；
     # 部分显式设置（如 voice+subtitle）保持 v0.9 语义（翻译+字幕兜底），
     # 不被直发劫持（此前 setdefault 顺序曾导致 voice/subtitle 与 passthrough 并存）。
-    opts = dict(item.produce_options or {})
-    if not opts:
-        opts = {
-            "passthrough": True, "voice": False,
-            "subtitle": False, "translate": False, "mute": False,
-        }
-    else:
-        opts.setdefault("voice", False)
-        opts.setdefault("subtitle", True)
-        opts.setdefault("translate", True)
-        opts.setdefault("mute", False)
+    # v0.22.x：默认/部分设置语义抽至 helpers.normalize_produce_flags 单一真相源
+    from backend.pipeline.helpers import normalize_produce_flags
+
+    opts = normalize_produce_flags(item.produce_options)
     passthrough = bool(opts.get("passthrough"))
     want_voice = bool(opts.get("voice"))
     want_subtitle = bool(opts.get("subtitle"))

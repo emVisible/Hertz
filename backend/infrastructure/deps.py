@@ -127,6 +127,105 @@ def _check_module(name: str, install_hint: str) -> dict:
     }
 
 
+async def _check_local_mt() -> dict:
+    """本地翻译引擎（v0.22.x）：sentencepiece 依赖 + ct2 模型文件。"""
+    from backend.pipeline.producers import translate_engine
+
+    if not translate_engine.deps_available():
+        return {
+            "status": "missing",
+            "install_hint": "重新运行 uv sync（sentencepiece 已随主依赖安装）",
+        }
+    d = translate_engine.model_dir()
+    missing = [
+        f for f, required in translate_engine._FILES
+        if required and not (d / f).exists()
+    ]
+    if missing:
+        return {
+            "status": "missing",
+            "detail": f"模型未下载: {', '.join(missing)}",
+            "install_hint": "设置 → 流水线 → 「下载本地翻译模型」",
+        }
+    return {"status": "ok", "path": str(d)}
+
+
+def _whisper_cache_exists() -> bool:
+    """faster-whisper 模型缓存探测（HF 默认缓存目录，base 档）。"""
+    from pathlib import Path
+
+    cache = Path.home() / ".cache" / "huggingface" / "hub"
+    return any(cache.glob("models--Systran--faster-whisper-*"))
+
+
+def _check_whisper_model() -> dict:
+    """whisper 本地模型就绪态：xinference 服务 / 缓存已下载 / 首次待下载。"""
+    from backend.pipeline.producers.asr import xinference_configured
+
+    if not whisper_importable():
+        return {
+            "status": "missing",
+            "install_hint": "uv sync --extra asr",
+        }
+    if xinference_configured():
+        return {"status": "ok", "source": "xinference"}
+    if _whisper_cache_exists():
+        return {"status": "ok", "source": "local-cache"}
+    # 依赖已装但模型未拉取——首次转写会自动下载（~150MB），非阻断
+    return {
+        "status": "pending",
+        "detail": "首次转写自动下载 ~150MB",
+    }
+
+
+def whisper_importable() -> bool:
+    try:
+        importlib.util.find_spec("faster_whisper")
+        return True
+    except (ImportError, ValueError):
+        return False
+
+
+async def _check_llm_registry() -> dict:
+    """LLM chat 可用性（评分/脚本/标题/翻译的公共底座）。"""
+    from backend.ai.registry import ProviderRegistry
+
+    resolved = await ProviderRegistry().resolve_role("main")
+    if resolved is None:
+        return {
+            "status": "missing",
+            "install_hint": "设置 → AI → 添加对话 Provider",
+        }
+    return {"status": "ok", "model": resolved.get("model_key", "")}
+
+
+def _check_telegram_cfg() -> dict:
+    from backend.config import settings as app_settings
+
+    if not getattr(app_settings, "telegram_enabled", False):
+        return {"status": "off"}
+    token = str(getattr(app_settings, "telegram_bot_token", "") or "").strip()
+    chat_id = str(getattr(app_settings, "telegram_chat_id", "") or "").strip()
+    if token and chat_id:
+        return {"status": "ok"}
+    return {
+        "status": "error",
+        "detail": "已启用但 token/chat_id 不完整",
+        "install_hint": "设置 → Telegram 补全配置",
+    }
+
+
+
+# ── 新增可选能力四件套（D-190 约定，防静默降级复发）──────────────
+# 1. pyproject 可选依赖组或主依赖（轻量核心能力直接进主依赖）
+# 2. 本文件注册检查条目（结构 {status, detail?, install_hint?}，
+#    status ∈ ok / missing / pending / off / error）
+# 3. preflight.plan_capability_checks 映射生产方式 → 阻断/警告
+# 4. DepsCard LABELS 加显示名
+# 缺任何一件 = 下一个「制作到一半才发现」事故。
+# ──────────────────────────────────────────────────────────────
+
+
 async def check_dependencies() -> dict:
     """全量检测（仅启动/手动触发时执行——运行时不再调用）。
 
@@ -147,6 +246,11 @@ async def check_dependencies() -> dict:
             "uv pip install edge-tts",
         ),
         "font": _check_subtitle_font(),
+        # v0.22.x 能力矩阵扩展：可选能力使用前可见（D-190）
+        "local_mt": await _check_local_mt(),
+        "whisper_model": _check_whisper_model(),
+        "llm": await _check_llm_registry(),
+        "telegram": _check_telegram_cfg(),
     }
 
 
@@ -203,9 +307,52 @@ def load_dependencies() -> dict | None:
         return None
 
 
+_baseline_seen = False  # 启动预热只建基线，不告警（v0.22.x L3 变化即知）
+_last_degrade_sig: str | None = None  # 告警去重：同退化组合不重复推
+
+
+def _diff_degradation(prev: dict | None, curr: dict) -> list[str]:
+    """能力退化 diff（纯函数）：ok → 非 ok 的条目列表（供告警）。"""
+    out: list[str] = []
+    if not prev:
+        return out
+    for key, cur in curr.items():
+        if key in ("checked_at",):
+            continue
+        was_ok = isinstance(prev.get(key), dict) and prev[key].get("status") == "ok"
+        now_bad = isinstance(cur, dict) and cur.get("status") != "ok"
+        if was_ok and now_bad:
+            detail = str(cur.get("detail") or cur.get("install_hint") or "")[:80]
+            out.append(f"{key}（{cur.get('status')}{'：' + detail if detail else ''}）")
+    return out
+
+
 async def refresh_dependencies() -> dict:
-    """重新检测并持久化（启动预热 / 设置页手动触发）。"""
+    """重新检测并持久化（启动预热 / 设置页手动触发）。
+
+    v0.22.x L3 变化即知：与上次快照比对，出现能力退化（ok→missing/error）
+    时 Telegram 告警一次；启动首跑仅建基线。
+    """
+    global _baseline_seen, _last_degrade_sig, _cache
+    prev = _cache
     data = await check_dependencies()
+
+    degraded = _diff_degradation(prev, data)
+    if _baseline_seen and degraded:
+        sig = "|".join(degraded)
+        if _last_degrade_sig != sig:
+            _last_degrade_sig = sig
+            try:
+                from backend.integrations.telegram_bot import push_alert
+
+                asyncio.ensure_future(push_alert(
+                    "🟠 环境能力退化：" + "；".join(degraded)
+                ))
+            except Exception:  # noqa: BLE001 — 告警失败不影响检测
+                pass
+    elif not degraded:
+        _last_degrade_sig = None
+    _baseline_seen = True
     path = _deps_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -214,7 +361,6 @@ async def refresh_dependencies() -> dict:
         tmp.replace(path)
     except OSError:
         logger.warning("deps state persist failed (best effort): %s", path)
-    global _cache
     _cache = data
     return data
 

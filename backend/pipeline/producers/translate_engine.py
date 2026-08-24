@@ -167,7 +167,7 @@ async def translate_batch_local(texts: list[str]) -> list[str]:
         return [""] * len(texts)
     if not deps_available():
         raise RuntimeError(
-            "本地翻译依赖未安装：uv sync --extra translate（sentencepiece）"
+            "本地翻译依赖缺失（sentencepiece）——请重新 uv sync"
         )
     if await ensure_model() is None:
         raise RuntimeError("本地翻译模型未就绪且下载失败")

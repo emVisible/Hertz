@@ -729,6 +729,7 @@ dependencies = [
     { name = "pyjwt" },
     { name = "python-multipart" },
     { name = "pyyaml" },
+    { name = "sentencepiece" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
     { name = "yt-dlp" },
@@ -737,9 +738,6 @@ dependencies = [
 [package.optional-dependencies]
 asr = [
     { name = "faster-whisper" },
-]
-translate = [
-    { name = "sentencepiece" },
 ]
 
 [package.dev-dependencies]
@@ -769,12 +767,12 @@ requires-dist = [
     { name = "pyjwt", specifier = ">=2.9" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "sentencepiece", marker = "extra == 'translate'", specifier = ">=0.2" },
+    { name = "sentencepiece", specifier = ">=0.2" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
     { name = "yt-dlp", specifier = ">=2026.7.4" },
 ]
-provides-extras = ["asr", "translate"]
+provides-extras = ["asr"]
 
 [package.metadata.requires-dev]
 dev = [

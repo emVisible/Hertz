@@ -104,7 +104,17 @@ export function DepsCard() {
   }
 
   // v0.8.9：安装指引由后端检测结果提供（install_hint，单一真相源）
-  const rows = ['ffmpeg', 'ffprobe', 'biliup', 'yt-dlp', 'edge-tts']
+  // v0.22.x 能力矩阵：label 映射 + pending 琥珀态（待下载/未知，非错误）
+  const LABELS: Record<string, string> = {
+    ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', biliup: 'biliup',
+    'yt-dlp': 'yt-dlp', 'edge-tts': 'edge-tts', font: '字幕字体',
+    local_mt: '本地翻译', whisper_model: 'Whisper 模型',
+    llm: 'LLM', telegram: 'Telegram',
+  }
+  const rows = [
+    'ffmpeg', 'ffprobe', 'biliup', 'yt-dlp', 'edge-tts', 'font',
+    'local_mt', 'whisper_model', 'llm', 'telegram',
+  ]
   const ff = data?.ffmpeg as { status?: string; libass?: boolean; version?: string } | undefined
 
   return (
@@ -121,8 +131,10 @@ export function DepsCard() {
                 ok ? 'border-border text-text-secondary' : 'border-error/40 text-error'
               }`}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${ok ? 'bg-success' : 'bg-error'}`} />
-              {key}
+              <span className={`h-1.5 w-1.5 rounded-full ${
+                ok ? 'bg-success' : d.status === 'pending' || d.status === 'off' ? 'bg-warning' : 'bg-error'
+              }`} />
+              {LABELS[key] ?? key}
             </span>
           )
         })}
