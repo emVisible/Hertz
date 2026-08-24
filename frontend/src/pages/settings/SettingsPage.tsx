@@ -205,15 +205,18 @@ export function SettingsPage() {
   ]
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-6">
+    // v0.22 修复：恢复自管滚动（v0.20 拆分时丢失——main overflow-hidden 下
+    // 无滚动容器导致设置页内容被裁剪不可滚；老版结构为 nav 外置 + 内容区
+    // min-h-0 flex-1 overflow-y-auto）
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 py-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-text-primary">{t('settings.title')}</h1>
       </div>
-      <div className="flex gap-6">
+      <div className="flex min-h-0 flex-1 gap-6">
         <aside className="w-44 shrink-0">
           <SettingsNav sections={sections} active={sectionId} onChange={(id) => setSectionId(id as SectionId)} />
         </aside>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-y-auto pr-1">
           <div className={sectionWrap}>
             {sectionId === 'general' && (
               <GeneralSection form={form} set={set} save={save} dirty={dirty} pickPath={pickPath} />

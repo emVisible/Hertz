@@ -65,6 +65,10 @@ export function ProduceOptionsPicker({
       next.voice = next.subtitle = next.translate = next.mute = false
       return next
     }
+    // v0.22.1 修复：任何加工模块点击前先退出直发——此前直发态（默认）下
+    // 点配音/字幕等会产出 passthrough+voice 非法组合，被归一化打回直发，
+    // 表现为「点击无 active 反应」（v0.11.9 默认直发引入的回归）
+    next.passthrough = false
     if (module === 'translate') {
       // 翻译 = 仅字幕翻译：自动附带字幕
       next.translate = !next.translate
