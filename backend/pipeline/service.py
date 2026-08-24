@@ -14,6 +14,7 @@ from backend.pipeline.engine import StepEngine
 from backend.pipeline.helpers import _auto_tid  # noqa: F401 — _serialize 使用
 from backend.pipeline.service_archive import ArchiveMixin
 from backend.pipeline.service_prep import PrepOpsMixin
+from backend.pipeline.service_promotion import PromotionMixin
 from backend.pipeline.service_publish import PublishMixin
 from backend.pipeline.service_queries import QueriesMixin
 from backend.pipeline.service_review import ReviewMixin
@@ -27,6 +28,7 @@ PRODUCE_MODULES = ("passthrough", "voice", "subtitle", "translate", "mute")
 class PipelineService(
     ReviewMixin,
     PublishMixin,
+    PromotionMixin,
     StatsMixin,
     PrepOpsMixin,
     ScheduleMixin,
