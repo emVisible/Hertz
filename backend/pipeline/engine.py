@@ -247,138 +247,22 @@ class StepEngine:
         return {"id": str(item_id), "status": "queued"}
 
     async def retranslate(self, item_id: uuid.UUID) -> dict:
-        """重新翻译（v0.8.9，对齐原项目 retranslate_item）：
-        提取视频原声 → 中文字幕（原声保留、无 TTS、无旁白）——用户诉求的
-        「先提取视频原来的文字→转中文→打上字幕」。
-
-        ASR 双通道（xinference 优先 / faster-whisper 兜底）→ LLM 逐段翻译
-        （1:1 段数、保留原声时间戳）→ 中文 SRT → ASS → 原声合成。
-        """
-        from backend.config import settings
+        """重新翻译（编排壳，v0.22.x B 系解体）：制作域已下沉
+        producers/retranslate.run_retranslate——本方法只负责取 ai/files、
+        事件 emit 与结果返回（失败标 failed 的状态机在产线模块内）。"""
         from backend.factory.registry import ServiceRegistry
-        from backend.pipeline.helpers import (
-            bump_item_seq,
-            load_item_for_action,
-            purge_derived_media,
-        )
-        from backend.pipeline.producers.media import (
-            ProducerError,
-            _artifacts_dir,
-            _asr_subtitles,
-            compose_video,
-            find_ffmpeg,
-            generate_cover,
-            srt_to_ass,
-            subtitles_filter_available,
-        )
-
-        subtitle_lang = str(
-            getattr(settings, "pipeline_subtitle_lang", "zh-CN") or "zh-CN"
-        )
+        from backend.pipeline.producers.retranslate import run_retranslate
 
         registry = ServiceRegistry.get()
-        ai = registry.ai
-
-        async with session_factory() as session:
-            item = await load_item_for_action(
-                item_id,
-                (
-                    ItemStatus.QUEUED, ItemStatus.APPROVED, ItemStatus.REJECTED,
-                    ItemStatus.FAILED, ItemStatus.DOWNLOADED, ItemStatus.SCORED,
-                ),
-                "retranslate",
-            )
-            raw_path = item.raw_path
-            directory = _artifacts_dir(registry.files, item)
-            import os
-            from pathlib import Path
-
-            raw_ok = bool(raw_path and await asyncio.to_thread(os.path.exists, raw_path))
-            if not raw_ok:
-                raise InvalidItemStateError(
-                    "item has no raw media — run download first"
-                )
-            await purge_derived_media(item)
-            item.status = ItemStatus.DOWNLOADED
-            item.error = None
-            item.error_class = ""
-            await bump_item_seq(session, item)
-            await session.merge(item)
-            await session.commit()
-
-        try:
-            raw = Path(raw_path)
-            result = await _asr_subtitles(
-                ai, raw, directory, target_lang=subtitle_lang
-            )
-            if result is None:
-                raise ProducerError(
-                    "ASR unavailable — install with `uv sync --extra asr` "
-                    "or configure xinference STT"
-                )
-            srt_path, zh_text = result
-
-            burn = srt_path
-            ffmpeg = find_ffmpeg()
-            if await subtitles_filter_available(ffmpeg):
-                try:
-                    ass = srt_path.with_suffix(".ass")
-                    await asyncio.to_thread(srt_to_ass, srt_path, ass)
-                    burn = ass
-                except Exception:  # noqa: BLE001 — subtitles are best-effort
-                    pass
-
-            out_path = directory / "final.mp4"
-            edit = await compose_video(raw, None, burn, out_path, muted=False)
-            try:
-                cover = await generate_cover(raw, directory / "cover.jpg")
-            except ProducerError:
-                cover = None
-
-            from backend.pipeline.phash import compute_phash
-
-            phash = await compute_phash(str(out_path))
-
-            async with session_factory() as session:
-                row = await session.get(Item, item_id)
-                if row is not None:
-                    row.video_path = edit["path"]
-                    row.subtitle_path = str(burn)
-                    row.cover_path = cover["path"] if cover else None
-                    row.audio_path = None
-                    row.phash = phash
-                    script = {
-                        "mode": "retranslate",
-                        "subtitle_zh": zh_text,
-                        "source": "asr",
-                    }
-                    from backend.pipeline.package import generate_packaging
-
-                    script = await generate_packaging(ai, row, script)
-                    row.script_json = script
-                    row.status = ItemStatus.QUEUED
-                    row.error = None
-                    row.error_class = ""
-                    await bump_item_seq(session, row)
-                    await session.merge(row)
-                    await session.commit()
-        except Exception as exc:  # noqa: BLE001 — 失败标 failed，产物尽力保留
-            logger.exception("retranslate failed for item %s", item_id)
-            async with session_factory() as session:
-                row = await session.get(Item, item_id)
-                if row is not None:
-                    row.status = ItemStatus.FAILED
-                    row.error = str(exc)[:400]
-                    row.error_class = "retranslate"
-                    await session.merge(row)
-                    await session.commit()
-            raise RuntimeError(f"retranslate failed: {exc}") from exc
-
+        result = await run_retranslate(
+            registry.ai, registry.files, item_id,
+            subtitle_lang=getattr(self.settings, "pipeline_subtitle_lang", None),
+        )
         self._emit(
             "item:" + item_id.hex,
             {"type": "item", "item_id": str(item_id), "status": "queued"},
         )
-        return {"id": str(item_id), "status": "queued", "action": "retranslate"}
+        return result
 
     # ---------- internals ----------
 
