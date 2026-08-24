@@ -23,6 +23,8 @@ const JAR_URL =
 
 let pgProcess: ChildProcess | null = null
 let activePort = 0
+// 并发互斥：多窗口/快速重启时防止同时 initdb（v0.22.x 查漏补缺）
+let initPromise: Promise<Record<string, string>> | null = null
 
 export interface EmbeddedPgPaths {
   root: string
@@ -145,6 +147,13 @@ async function install(p: EmbeddedPgPaths): Promise<void> {
 
 /** 启动内嵌 PG；返回需注入后端进程的环境变量。 */
 export async function ensureEmbeddedPg(): Promise<Record<string, string>> {
+  // 并发互斥：initPromise 非空 = 已有初始化在跑，复用同一 Promise
+  if (initPromise) return initPromise
+  initPromise = _doEnsure()
+  return initPromise
+}
+
+async function _doEnsure(): Promise<Record<string, string>> {
   const p = paths()
 
   // 已在运行（同数据目录二次启动）→ 直接复用
@@ -208,6 +217,7 @@ export async function ensureEmbeddedPg(): Promise<Record<string, string>> {
   }
   activePort = port
   log(`ready on :${port}`)
+  initPromise = null
   return baseEnv(p, port)
 }
 

@@ -92,6 +92,7 @@ export function ChannelsCard() {
   const [editingKey, setEditingKey] = useState<string | null>(null) // null=列表态，''=新建
   const [draft, setDraft] = useState<Draft>(emptyDraft())
   const [busy, setBusy] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   const { data: channels = [], refetch } = useQuery({
     queryKey: ['channels'],
@@ -163,11 +164,14 @@ export function ChannelsCard() {
   }
 
   async function remove(c: ChannelItem) {
-    if (!window.confirm(t('settings.channelDeleteConfirm', { name: c.name }))) return
+    if (pendingDelete !== c.public_id) {
+      setPendingDelete(c.public_id) // 两步确认：首次点只标红
+      return
+    }
+    setPendingDelete(null)
     try {
       await api.delete(`/api/channels/${c.public_id}`)
       toast(t('settings.channelDeleted'), 'success')
-      setEditingKey(null)
       await refetch()
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')

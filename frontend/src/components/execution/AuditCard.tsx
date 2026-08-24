@@ -190,6 +190,16 @@ export function AuditCard({
               ⚠️ {t('console.narrationFallback')}
             </span>
           )}
+          {/* 预检警告（v0.22.x D-190）：ASR/LLM/TTS 缺失等非阻断降级 */}
+          {Array.isArray((item.script_json as Record<string, unknown> | null)?.produce_warnings) &&
+           ((item.script_json as Record<string, unknown>).produce_warnings as string[]).length > 0 && (
+            <span
+              title={((item.script_json as Record<string, unknown>).produce_warnings as string[]).join('\n')}
+              className="border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning"
+            >
+              ⚠️ {((item.script_json as Record<string, unknown>).produce_warnings as string[]).length} 项警告
+            </span>
+          )}
           {/* 相似内容提示（v0.5 A）：phash 判重防重复投稿 */}
           {item.similar && (item.similar.published.length > 0 || item.similar.queued.length > 0) && (
             <span

@@ -21,12 +21,14 @@ class ProduceStep(Pipe):
         registry = ServiceRegistry.get()
 
         # 制作前预检（v0.22.x D-190）：按生产方式计算所需能力集。
-        # 阻断项 → StepError 明确报错（不再中途静默降级产出不符预期内容）；
+        # 阻断项 → StepError 明确报错（含修复动作指引——不再只说「未通过」）；
         # 警告项 → 记入 script_json.produce_warnings，审核卡可见。
         preflight_warnings, preflight_blockers = await _preflight(ctx, item)
         if preflight_blockers:
+            hint = "；".join(preflight_blockers)
             raise StepError(
-                "制作前置检查未通过：" + "；".join(preflight_blockers)
+                f"制作前置检查未通过：{hint}。"
+                "请解决后重试，或在设置调整生产方式。"
             )
 
         ai = ctx.ai if ctx.ai is not None else registry.ai

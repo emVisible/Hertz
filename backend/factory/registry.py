@@ -289,9 +289,16 @@ class ServiceRegistry:
                 return_exceptions=True,
             )
         self.scheduler.shutdown()
+        # v0.22.x：多源路由——关闭默认 collector + 注册表中所有带 aclose 的实例
         collector = self.pipeline.engine.collector
         if collector is not None and hasattr(collector, "aclose"):
             await collector.aclose()
+        for extra in self.pipeline.engine.collectors.values():
+            if hasattr(extra, "aclose"):
+                try:
+                    await extra.aclose()
+                except Exception:  # noqa: BLE001 — 关闭失败不阻塞停机
+                    pass
         if self.ai is not None:
             await self.ai.aclose()
 
