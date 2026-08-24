@@ -9,6 +9,7 @@ import uuid
 
 from sqlalchemy import select
 
+from backend.models import script_keys as models_script_keys
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 
@@ -20,9 +21,7 @@ class ArchiveMixin:
     # ---------- 归档 / 备用库（wave10：删除入口收口异常区） ----------
 
     # 归档清洗保留的脚本键（发布元数据；旁白/字幕等重制缓存删除）
-    _ARCHIVE_KEEP_SCRIPT_KEYS = (
-        "bili_title", "bili_desc", "bili_tags", "bili_tid", "bili_copyright",
-    )
+    _ARCHIVE_KEEP_SCRIPT_KEYS = tuple(models_script_keys.ARCHIVE_SAFE_KEYS)
 
     async def archive(self, ids: list[uuid.UUID]) -> dict:
         """归档（批量）：磁盘清理 + 字段清洗 + 标记 archived。

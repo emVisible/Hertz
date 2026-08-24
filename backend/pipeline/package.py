@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 import re
 
+from backend.models import script_keys as sk
+
 logger = logging.getLogger(__name__)
 
 # Never ship these as Bilibili tags (platform / source noise).
@@ -126,7 +128,7 @@ async def generate_packaging(ai, item, script: dict) -> dict:
     （{title}/{author}/{channel} 变量，渲染失败回落原简介）、bili_tid 覆盖分区。
     """
     script = dict(script or {})
-    if script.get("bili_title") and script.get("bili_tags"):
+    if script.get(sk.BILI_TITLE) and script.get(sk.BILI_TAGS):
         return script
 
     from backend.pipeline.helpers import get_channel
@@ -163,10 +165,10 @@ async def generate_packaging(ai, item, script: dict) -> dict:
         seen = set(merged)
         tags = merged + [t for t in tags if t not in seen]
 
-    script["bili_title"] = title[:40]
+    script[sk.BILI_TITLE] = title[:40]
     # v0.15 标题 N 选 1：备选候选随 script 落库——审核/发布卡可切换选用
     if alternatives:
-        script["bili_title_alternatives"] = [a[:40] for a in alternatives][:3]
+        script[sk.BILI_TITLE_ALTERNATIVES] = [a[:40] for a in alternatives][:3]
     # v0.11.5：简介不换中文——直接用原帖标题（转载发布语义，来源链随 --source 挂载）
     desc = (item.title or "").strip()[:200]
     if channel is not None and (channel.desc_template or "").strip():
@@ -178,9 +180,9 @@ async def generate_packaging(ai, item, script: dict) -> dict:
             ).strip()[:500]
         except (KeyError, IndexError, ValueError):
             logger.warning("desc_template render failed — falling back to default")
-    script["bili_desc"] = desc
-    script["bili_tags"] = ",".join(tags)
+    script[sk.BILI_DESC] = desc
+    script[sk.BILI_TAGS] = ",".join(tags)
     # v0.22 栏目分区：发布侧已读 script_json.bili_tid（D-175 语义）
     if channel is not None and channel.bili_tid:
-        script["bili_tid"] = int(channel.bili_tid)
+        script[sk.BILI_TID] = int(channel.bili_tid)
     return script
