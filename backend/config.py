@@ -221,6 +221,9 @@ class Settings(BaseSettings):
     # 月度预算（v0.17，Helicone 阶梯告警借鉴）：0=不启用；按自然月累计
     # ai_calls 花费（当前单价动态计价），达阈值在 Dashboard/成本页提示（不阻断）
     cost_monthly_budget: float = 0.0  # 报表币种计
+    # DB 定时备份（v0.22 可见性补全）：每日 pg_dump → data/backups，滚动保留
+    backup_enabled: bool = True
+    backup_keep: int = 7  # 保留份数
 
     @property
     def runtime_config_path(self) -> Path:

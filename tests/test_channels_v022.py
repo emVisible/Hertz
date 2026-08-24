@@ -177,3 +177,56 @@ async def test_intro_disabled_returns_original(tmp_path) -> None:
     channel = SimpleNamespace(name="x", intro_config={"enabled": False})
     assert await _prepend_channel_intro(channel, main) is not None
     assert main.read_bytes() == b"placeholder"
+
+
+# ---------- v0.22 可见性补全：SSRF 防护 + /api/metrics ----------
+
+
+def test_ssrf_block_private_and_allow_public() -> None:
+    from backend.pipeline.collectors.rss import assert_public_http_url, is_blocked_host
+
+    # 字面量 IP 不走 DNS，确定性
+    assert is_blocked_host("127.0.0.1")
+    assert is_blocked_host("192.168.1.10")
+    assert is_blocked_host("10.0.0.2")
+    assert is_blocked_host("169.254.169.254")
+    assert not is_blocked_host("8.8.8.8")
+    with pytest.raises(RuntimeError, match="仅支持"):
+        assert_public_http_url("ftp://example.com/feed")
+    with pytest.raises(RuntimeError, match="本机"):
+        assert_public_http_url("http://localhost/feed.xml")
+    with pytest.raises(RuntimeError, match="SSRF"):
+        assert_public_http_url("http://169.254.169.254/latest/meta-data/")
+    assert_public_http_url("https://example.com/feed.xml")
+
+
+@pytest.mark.asyncio
+async def test_rss_collect_rejects_internal_feed() -> None:
+    import httpx
+
+    from backend.config import settings as app_settings
+    from backend.pipeline.collectors.rss import RssFeedCollector
+
+    class _Ctx:
+        settings = object()
+
+        def log(self, message: str, level: str = "info") -> None:
+            pass
+
+    app_settings.pipeline_rss_feeds = "intranet|http://127.0.0.1:9/feed.xml"
+    coll = RssFeedCollector(client=httpx.AsyncClient())
+    with pytest.raises(RuntimeError, match="SSRF"):
+        await coll.collect(_Ctx(), "rss/intranet", limit=5)
+    app_settings.pipeline_rss_feeds = ""
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint(client) -> None:
+    """/api/metrics：版本/运行时长/tick 环形/备份状态。"""
+    resp = await client.get("/api/metrics")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["version"]
+    assert isinstance(body["uptime_s"], int)
+    assert isinstance(body["ticks"], list)
+    assert "backup" in body

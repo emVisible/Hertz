@@ -15,9 +15,12 @@
 
 import hashlib
 import html
+import ipaddress
 import re
+import socket
 import time
 import xml.etree.ElementTree as ET
+from urllib.parse import urlparse
 
 import httpx
 
@@ -34,6 +37,47 @@ _ATOM = "{http://www.w3.org/2005/Atom}"
 _CONTENT_NS = "{http://www.w3.org/2005/Atom}"
 
 _TAG_RE = re.compile(r"<[^>]+>")
+
+
+def is_blocked_host(hostname: str) -> bool:
+    """SSRF 防护（AXIOM §8.1）：主机名解析到私网/环回/链路本地/保留段 → 拒绝。
+
+    纯函数便于单测；DNS 解析在调用方做（getaddrinfo 全部结果逐一校验，
+    防止多 A 记录部分公网部分内网的绕过）。
+    """
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except (socket.gaierror, UnicodeError):
+        return True  # 解析失败按拒绝处理
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return True
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return True
+    return False
+
+
+def assert_public_http_url(url: str) -> None:
+    """仅放行 http(s) 且解析后不含内网地址的 URL；违规 RuntimeError。"""
+    parsed = urlparse(url or "")
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise RuntimeError(f"RSS 订阅 URL 非法（仅支持 http/https）: {url[:120]}")
+    if parsed.hostname in ("localhost",) or parsed.hostname.endswith(".local"):
+        raise RuntimeError(f"RSS 订阅禁止本机地址: {url[:120]}")
+    if is_blocked_host(parsed.hostname):
+        raise RuntimeError(
+            f"RSS 订阅地址解析到内网/保留 IP，已拒绝（SSRF 防护）: {url[:120]}"
+        )
 
 
 def parse_feeds_config(raw: str) -> dict[str, str]:
@@ -138,7 +182,11 @@ class RssFeedCollector(SourceCollector):
                 f"RSS 订阅 '{feed_name}' 未配置——请在设置页 pipeline_rss_feeds "
                 f"添加 `名称|URL` 行（当前已配置: {known}）"
             )
+        assert_public_http_url(feeds[feed_name])
         resp = await self._client.get(feeds[feed_name])
+        if resp.status_code in (403, 429):
+            # 与 reddit 同语义：被拒走长冷却
+            raise RuntimeError(f"RSS 源拒绝访问 (HTTP {resp.status_code}): {feed_name}")
         resp.raise_for_status()
         posts = _parse_feed(resp.text, feed_name)
         return posts[: max(1, int(limit or 10))]

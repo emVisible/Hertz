@@ -19,6 +19,7 @@ from backend.routers import (
     health,
     library,
     logs,
+    metrics,
     phases,
     pipeline,
     plans,
@@ -44,6 +45,7 @@ api_router.include_router(plans.router)
 api_router.include_router(studio.router)
 api_router.include_router(pipeline.router)
 api_router.include_router(logs.router)
+api_router.include_router(metrics.router)
 api_router.include_router(docs.router)
 api_router.include_router(canvas.router)
 api_router.include_router(channels.router)

@@ -2,14 +2,10 @@
 
 import asyncio
 import json
-import shutil
-from functools import lru_cache
 from pathlib import Path
 
-
-@lru_cache(maxsize=1)
-def find_ffprobe() -> str | None:
-    return shutil.which("ffprobe")
+# v0.22 A4 收敛：ffprobe 探测单一出口（thumbnails 版含系统 ffmpeg 同目录派生）
+from backend.library.thumbnails import find_ffprobe
 
 
 async def probe_media(path: Path) -> dict | None:

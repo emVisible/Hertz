@@ -657,6 +657,7 @@ class StepEngine:
                     state = SourceState(source=source, channel=channel)
                     session.add(state)
                 state.fail_count += 1
+                prev_fails = state.consecutive_fails
                 state.consecutive_fails += 1
                 state.last_error = str(error)[:500]
                 state.last_error_at = datetime.now(UTC)
@@ -682,6 +683,14 @@ class StepEngine:
                     "collect %s:%s failed — cooldown %ds (consecutive %d)",
                     source, channel, cooldown_s, state.consecutive_fails,
                 )
+                # 告警（v0.22 A2）：熔断触发沿——连续失败跨过阈值这一次推送
+                # （prev<3 ≤ now≥3），episode 内只报一次
+                if cooldown_s >= 7200 and prev_fails < 3 <= state.consecutive_fails:
+                    asyncio.ensure_future(self._alert_safe(
+                        f"🔴 采集源熔断 {source}:{channel}"
+                        f"（连续失败 {state.consecutive_fails} 次，冷却 2h）\n"
+                        f"最后错误：{str(error)[:160]}"
+                    ))
         except Exception:  # noqa: BLE001 — 健康度记账失败不阻塞采集主流程
             logger.exception("failed to record collect failure for %s:%s", source, channel)
 
@@ -733,3 +742,15 @@ class StepEngine:
             self.hub.publish("pipeline", event)
             if topic:
                 self.hub.publish(f"pipeline:{topic}", event)
+
+    async def _alert_safe(self, text: str) -> None:
+        """Telegram 告警（v0.22 A2 接线）：best-effort，绝不影响主流程。
+
+        push_alert 内部自查 telegram enabled；未配置时此处静默跳过。
+        """
+        try:
+            from backend.integrations.telegram_bot import push_alert
+
+            await push_alert(text)
+        except Exception:  # noqa: BLE001 — 告警失败仅记日志
+            logger.warning("alert dispatch failed: %s", text[:80], exc_info=True)

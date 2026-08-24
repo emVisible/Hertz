@@ -115,14 +115,14 @@ class ServiceRegistry:
         # 开启后每 5 分钟扫描超时未审条目（auto_approve 内部自查开关）
         self.scheduler.add_job(
             "auto_approve",
-            self._auto_approve_tick,
+            lambda: self._timed("auto_approve", self._auto_approve_tick),
             trigger="interval",
             minutes=5,
         )
         # 发布数据回捞（v0.4 C1）：每 6 小时扫一次已发布条目拉播放/互动
         self.scheduler.add_job(
             "publish_stats",
-            self._publish_stats_tick,
+            lambda: self._timed("publish_stats", self._publish_stats_tick),
             trigger="interval",
             hours=6,
         )
@@ -131,7 +131,7 @@ class ServiceRegistry:
         # （0=关闭仅手动）
         self.scheduler.add_job(
             "collect_auto",
-            self._collect_tick,
+            lambda: self._timed("collect_auto", self._collect_tick),
             trigger="interval",
             minutes=1,
         )
@@ -140,7 +140,7 @@ class ServiceRegistry:
         # pipeline_auto_publish 关闭时 tick 直接跳过
         self.scheduler.add_job(
             "auto_publish",
-            self._auto_publish_tick,
+            lambda: self._timed("auto_publish", self._auto_publish_tick),
             trigger="interval",
             minutes=1,
         )
@@ -148,11 +148,33 @@ class ServiceRegistry:
         # telegram_enabled=false 时 tick 直接跳过。推送与轮询同一 tick 串行。
         self.scheduler.add_job(
             "telegram_bot",
-            self._telegram_tick,
+            lambda: self._timed("telegram_bot", self._telegram_tick),
             trigger="interval",
             minutes=1,
         )
+        # DB 定时备份（v0.22 可见性补全）：每 24h pg_dump 滚动保留；
+        # backup_enabled=false 或非 PG 后端时内部自查跳过
+        if getattr(settings, "backup_enabled", True):
+            self.scheduler.add_job(
+                "db_backup",
+                lambda: self._timed("db_backup", self._backup_tick),
+                trigger="interval",
+                hours=24,
+            )
         self.log.get().info("ServiceRegistry initialized (AI via ProviderRegistry)")
+
+    async def _timed(self, name: str, coro_fn) -> None:
+        """tick 包装（v0.22 可见性）：计时 + telemetry 环形记录，失败吞掉。"""
+        from backend.infrastructure.telemetry import timed_tick
+
+        await timed_tick(name, coro_fn)
+
+    async def _backup_tick(self) -> None:
+        from backend.infrastructure.backup import run_backup
+
+        result = await run_backup()
+        if not result.get("ok"):
+            raise RuntimeError(f"backup failed: {result.get('reason')}")
 
     async def _collect_tick(self) -> None:
         """自动采集：按配置间隔节流（运行中/间隔未到/关闭都跳过）。"""
@@ -180,7 +202,8 @@ class ServiceRegistry:
                     summary["collected"], summary.get("sources", []),
                 )
         except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
-            self.log.get().exception("auto collect tick failed (best effort)")
+            self.log.get().exception("auto collect tick failed")
+            raise
 
     async def _auto_approve_tick(self) -> None:
         try:
@@ -188,7 +211,8 @@ class ServiceRegistry:
             if result.get("approved", 0) > 0:
                 self.log.get().info("auto_approve approved %d item(s)", result["approved"])
         except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
-            self.log.get().exception("auto_approve tick failed (best effort)")
+            self.log.get().exception("auto_approve tick failed")
+            raise
 
     async def _auto_publish_tick(self) -> None:
         """自动发布：按配置间隔节流；失败不拖垮调度器。"""
@@ -213,7 +237,8 @@ class ServiceRegistry:
                     result.get("used_today"), result.get("daily_limit"),
                 )
         except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
-            self.log.get().exception("auto publish tick failed (best effort)")
+            self.log.get().exception("auto publish tick failed")
+            raise
 
     async def _telegram_tick(self) -> None:
         """Telegram 审核 Bot（v0.18）：回调轮询 + 待审推送，均 best-effort。"""
@@ -237,7 +262,8 @@ class ServiceRegistry:
             # 周报（v0.19）：7 天节流在函数内部
             await tg.weekly_report_tick(self.pipeline)
         except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
-            self.log.get().exception("telegram tick failed (best effort)")
+            self.log.get().exception("telegram tick failed")
+            raise
 
     async def _publish_stats_tick(self) -> None:
         try:
@@ -247,7 +273,8 @@ class ServiceRegistry:
                     "publish stats refreshed %d item(s)", result["updated"]
                 )
         except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
-            self.log.get().exception("publish stats tick failed (best effort)")
+            self.log.get().exception("publish stats tick failed")
+            raise
 
     async def shutdown(self) -> None:
         # Cancel in-flight background work before releasing resources

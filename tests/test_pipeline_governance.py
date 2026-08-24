@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
@@ -250,7 +250,13 @@ async def test_export_publisher_package(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_failure_endpoints(client) -> None:
-    """/failures 聚合 + /retry-class 批量重试 + 非法类 422（§8.1 输入校验）。"""
+    """​/failures 聚合 + /retry-class 批量重试 + 非法类 422（§8.1 输入校验）。"""
+    # 先清历史残留（共享库可能存有此前运行的 f-1/f-2）
+    async with session_factory() as session:
+        await session.execute(delete(Item).where(Item.source_id.in_(["f-1", "f-2"])))
+        await session.commit()
+    # 全局聚合计数取基线（同会话内其他用例可能留下同分类条目——相对断言才鲁棒）
+    baseline = (await client.get("/api/pipeline/failures")).json()
     async with session_factory() as session:
         session.add_all([
             Item(status=ItemStatus.FAILED, source="reddit", source_id="f-1",
@@ -263,12 +269,13 @@ async def test_failure_endpoints(client) -> None:
         await session.commit()
 
     failures = (await client.get("/api/pipeline/failures")).json()
-    assert failures.get("blocked") == 1
-    assert failures.get("llm") == 1
+    assert failures.get("blocked", 0) == baseline.get("blocked", 0) + 1
+    assert failures.get("llm", 0) >= baseline.get("llm", 0) + 1
 
     resp = await client.post("/api/pipeline/retry-class", json={"cls": "blocked"})
     assert resp.status_code == 200, resp.text
-    assert resp.json()["requeued"] == 1
+    # 同分类可能含其他残留条目——只断言下限（f-1 精确断言在下方按 id 校验）
+    assert resp.json()["requeued"] >= 1
     async with session_factory() as session:
         rows = (await session.execute(
             select(Item).where(Item.source_id.in_(["f-1", "f-2"]))
@@ -280,6 +287,11 @@ async def test_failure_endpoints(client) -> None:
 
     bad = await client.post("/api/pipeline/retry-class", json={"cls": "nope"})
     assert bad.status_code == 422
+
+    # per-test 清理（D-181 惯例）：f-1/f-2 残留会污染后续 /failures 聚合计数
+    async with session_factory() as session:
+        await session.execute(delete(Item).where(Item.source_id.in_(["f-1", "f-2"])))
+        await session.commit()
 
 
 @pytest.mark.asyncio

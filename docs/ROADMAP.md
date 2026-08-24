@@ -22,6 +22,7 @@
 - **v0.20**：工程健康——SettingsPage 拆分（1332 → 265 主壳 + 四分区文件，SectionProps 契约）+ ai_calls 聚合 2 万行防线；PipelineView 五 tab 拆分（1355 → 319 主壳 + pipeline/ 六文件，「state 留壳、JSX 下放」，D-183）；测试门禁修复（Node ≥22 实验性 localStorage 遮蔽 jsdom 致 zustand persist 崩 → setup.ts 内存 shim；后端 4 处存量 lint 清零）——verify.sh 恢复全绿
 - **v0.21**：P0 安装即用闭环（D-184/D-185）——PyInstaller 固化后端（backend/entrypoint.py：asyncpg 兜底建库 + 编程式 alembic + uvicorn）；内嵌 PostgreSQL（zonky darwin-arm64 发行包首启自动下载到 userData，initdb/pg_ctl 托管，动态端口，退出随停）；electron 打包态跑固化二进制 + HERTZ_USER_DATA 隔离钩子；release.yml tag 触发 mac arm64 构建发 GitHub Releases——新机零配置验收通过；ffmpeg 内嵌兜底（imageio 7.1 含 libass，系统版优先）+ ffprobe 独立解析拆雷；冷启动归因留档（冻结静态导入 ~17s，业务侧全快）；CI 实战首跑验证通过，v0.21.0 dmg 已发布（D-185）
 - **v0.22**：栏目化内容工厂（D-186，非破坏性）——多源采集路由（裸名=Reddit 兼容，存量源零改动）；AI 原创情感故事源（LLM 直产 text_only 种子，成本闸 per_tick=2，栏目人设注入）+ RSS 通用文本源双新源；栏目实体 wave20（源池/固定音色/B站分区/简介模板/标签/标题风格/persona/片头配置绑定单元）+ items.channel_key 采集打标；固定音色优先级链（栏目>注册表>自适应）；动态标题卡片头（produce 单点汇聚前置 concat，三重降级）；包装注入（标题风格/标签置顶/desc 模板/bili_tid）；设置页 ChannelsCard 管理 UI。Reddit 凭证路径确认死路后降级为可选插件，存量搬运链路零触碰
+- **v0.22.x**：全系统架构审计第一轮清偿（D-187）——_serialize 双死代码删除；telegram push_alert 三接线（熔断/发布失败/预算阶梯，哑火通道复活）；RSS SSRF 防护；ffprobe 探测收敛单一出口；telemetry tick 环形记录 + /api/metrics 端点 + DB 每日备份滚动保留。遗留 B 系结构清偿逐轮推进（media.py 拆分/retranslate 下沉/service_publish 再切等）
 
 ## 已知缺口
 

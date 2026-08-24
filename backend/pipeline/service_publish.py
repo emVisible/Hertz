@@ -123,7 +123,20 @@ class PublishMixin:
         publisher = PUBLISHERS.get(target)
         if publisher is None:
             raise RuntimeError(f"unknown publish target '{target}'")
-        result = await publisher.publish(ctx, item)
+        try:
+            result = await publisher.publish(ctx, item)
+        except Exception:
+            # 告警（v0.22 A2）：真实发布（非 noop）失败推送 Telegram，best-effort
+            if target != "noop":
+                import asyncio
+
+                from backend.integrations.telegram_bot import push_alert
+
+                asyncio.ensure_future(push_alert(
+                    f"🔴 发布失败 [{target}] {item.title[:60]}\n"
+                    f"item: {item_id}"
+                ))
+            raise
         if target == "noop":
             # v0.3.8：noop 只记录意图——明确标注，前端醒目警示「未真正上传」
             result["noop"] = True
@@ -1024,49 +1037,3 @@ class PublishMixin:
         # 当天无可用槽位 → 返回空（前端回退 now+5min 兜底）
         return slot.isoformat() if slot else ""
 
-    @staticmethod
-    def _serialize(item: Item) -> dict:
-        return {
-            "id": str(item.id),
-            "seq": item.seq,
-            "status": item.status,
-            "item_type": item.item_type,
-            "source": item.source,
-            "source_url": item.source_url,
-            "media_url": item.media_url,
-            "source_id": item.source_id,
-            "title": item.title,
-            "subreddit": item.subreddit,
-            "author": item.author,
-            "reddit_score": item.reddit_score,
-            "upvote_ratio": item.upvote_ratio,
-            "score_total": item.score_total,
-            "score_dimensions": item.score_dimensions,
-            "score_reasons": item.score_reasons or [],
-            "is_lowscore": item.is_lowscore,
-            "produce_options": item.produce_options,
-            "raw_path": item.raw_path,
-            "video_path": item.video_path,
-            "cover_path": item.cover_path,
-            "script_json": item.script_json,
-            "publish_json": item.publish_json,
-            # 发布队列相位（v0.12）：''=手动 / holding=预发布 / ready=发布队列
-            "queue_phase": item.queue_phase,
-            "error": item.error,
-            "error_class": item.error_class,
-            "retry_count": item.retry_count,
-            "created_at": item.created_at.isoformat() if item.created_at else None,
-            # 最近操作（v0.3.12）：状态迁移自动刷新（onupdate）——「最新在前」排序要素
-            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
-            "approved_at": item.approved_at.isoformat() if item.approved_at else None,
-            "scheduled_at": item.scheduled_at.isoformat() if item.scheduled_at else None,
-            # 分区自动建议（v0.2.7，参考原项目 assign_bili_tid）：未手动设置时的推荐分区
-            "auto_tid": (
-                None
-                if (item.script_json or {}).get("bili_tid")
-                else helpers_auto_tid(item)
-            ),
-            "published_at": item.published_at.isoformat() if item.published_at else None,
-            # 软归档（wave10）：备用库标记
-            "archived": item.archived,
-        }

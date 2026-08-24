@@ -7,6 +7,7 @@
 不做路由；环节归因依赖 ai_calls.caller/operation 的语义化取值。
 """
 
+import asyncio
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,6 +17,9 @@ from sqlalchemy import select
 from backend.infrastructure.timeutils import local_day_str
 from backend.models.ai_registry import AICall
 from backend.models.session import session_factory
+
+# 预算阶梯告警去重状态："年月:level"——升级沿才推送（v0.22 A2）
+_last_budget_alert: str | None = None
 
 # 溯源约定（v0.14.1）：pipeline 域调用点 task_id = "item:<uuid>"
 _ITEM_REF = re.compile(r"^item:([0-9a-f-]{36})$")
@@ -314,16 +318,34 @@ async def aggregate_costs(
                 month_cost += c
         used = round(month_cost * rate, 6)
         ratio = used / budget
+        level = (
+            "exceeded" if ratio >= 0.95
+            else "critical" if ratio >= 0.8
+            else "warning" if ratio >= 0.5
+            else "ok"
+        )
+        # 告警（v0.22 A2 接线）：阶梯升级沿推送一次（降级/跨月重置后可再报）。
+        # 模块级状态——进程生命周期内去重；report 本身仍按需计算。
+        global _last_budget_alert
+        if level in ("warning", "critical", "exceeded"):
+            stamp = f"{now.strftime('%Y%m')}:{level}"
+            if _last_budget_alert != stamp:
+                _last_budget_alert = stamp
+
+                async def _push() -> None:
+                    from backend.integrations.telegram_bot import push_alert
+
+                    await push_alert(
+                        f"🟠 AI 成本预算 [{level}]：本月已用 {used:.2f}"
+                        f"/{budget:.2f}（{ratio * 100:.0f}%）"
+                    )
+
+                asyncio.ensure_future(_push())
         report["budget"] = {
             "monthly": budget,
             "used": used,
             "ratio": round(min(ratio, 9.99), 4),
-            "level": (
-                "exceeded" if ratio >= 0.95
-                else "critical" if ratio >= 0.8
-                else "warning" if ratio >= 0.5
-                else "ok"
-            ),
+            "level": level,
             "month_start": local_day_str(m_start_utc),
         }
     else:

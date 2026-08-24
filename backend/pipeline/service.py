@@ -99,56 +99,8 @@ class PipelineService(
         self._task.cancel()
         return {"ok": True, "cancelling": True}
 
-    # 共享序列化（四域 Mixin 经 self._serialize 使用）
-    @staticmethod
-    def _serialize(item: Item) -> dict:
-        return {
-            "id": str(item.id),
-            "seq": item.seq,
-            "status": item.status,
-            "item_type": item.item_type,
-            "source": item.source,
-            "source_url": item.source_url,
-            "media_url": item.media_url,
-            "source_id": item.source_id,
-            "title": item.title,
-            "subreddit": item.subreddit,
-            "author": item.author,
-            "reddit_score": item.reddit_score,
-            "upvote_ratio": item.upvote_ratio,
-            "score_total": item.score_total,
-            "score_dimensions": item.score_dimensions,
-            "score_reasons": item.score_reasons or [],
-            "is_lowscore": item.is_lowscore,
-            "produce_options": item.produce_options,
-            "raw_path": item.raw_path,
-            "video_path": item.video_path,
-            "cover_path": item.cover_path,
-            "script_json": item.script_json,
-            "publish_json": item.publish_json,
-            # 发布队列相位（v0.12）：''=手动 / holding=预发布 / ready=发布队列
-            "queue_phase": item.queue_phase,
-            "error": item.error,
-            "error_class": item.error_class,
-            "retry_count": item.retry_count,
-            # 归属栏目（v0.22 栏目化）：审核/发布卡据此展示栏目上下文
-            "channel_key": item.channel_key,
-            "created_at": item.created_at.isoformat() if item.created_at else None,
-            # 最近操作（v0.3.12）：状态迁移自动刷新（onupdate）——「最新在前」排序要素
-            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
-            "approved_at": item.approved_at.isoformat() if item.approved_at else None,
-            "scheduled_at": item.scheduled_at.isoformat() if item.scheduled_at else None,
-            # 分区自动建议（v0.2.7，参考原项目 assign_bili_tid）：未手动设置时的推荐分区
-            "auto_tid": (
-                None
-                if (item.script_json or {}).get("bili_tid")
-                else _auto_tid(item)
-            ),
-            "published_at": item.published_at.isoformat() if item.published_at else None,
-            # 软归档（wave10）：备用库标记
-            "archived": item.archived,
-        }
-
+    # 共享序列化（四域 Mixin 经 self._serialize 使用；v0.22 后唯一一份——
+    # D-187 清偿历史双定义/字段漂移）
     @staticmethod
     def _serialize(item: Item) -> dict:
         return {
