@@ -16,10 +16,13 @@ from backend.infrastructure.storage import FileStore
 from backend.library.thumbnails import find_ffmpeg
 from backend.pipeline.cancel import (
     ItemCancelledError,
-    active_item,
-    is_cancelled,
     reset_active_item,
     set_active_item,
+)
+from backend.pipeline.producers.common import (
+    ProducerError,
+    _raise_if_cancelled,
+    _run_cmd,
 )
 from backend.pipeline.producers.probe import (
     probe_audio_duration,
@@ -28,6 +31,9 @@ from backend.pipeline.producers.probe import (
 )
 from backend.pipeline.producers.probe import (
     video_stream_params as _probe_video_params,
+)
+from backend.pipeline.producers.story import (
+    produce_story_item,  # noqa: F401 — produce 分派 + 兼容旧引用
 )
 from backend.pipeline.producers.subtitles import (  # noqa: F401 — 兼容旧引用面（asr/engine/tests 经 media.* 访问）
     _EN_LINE_WORDS,
@@ -60,66 +66,11 @@ _WPS = 2.3
 _RATIO = 0.52
 
 
-class ProducerError(RuntimeError):
-    """Raised when a producer cannot complete its artifact."""
-
-
 def _artifacts_dir(files: FileStore, item) -> Path:
     # 锚定 data_dir（cwd 无关）：产物目录 = data/output/pipeline/<output_dir>/
     # output_dir 为结构化名（2026-08-04-01），与 download 步骤一致；旧数据兜底 hex
     slug = (item.output_dir or f"pipeline/{item.id.hex}").split("/")[-1]
     return files.output_root() / "pipeline" / slug
-
-
-def _raise_if_cancelled() -> None:
-    """协作式取消检查点（wave11）：命中即抛 ItemCancelledError 中止产线。
-
-    读取 ContextVar 活动条目（produce_item 入口登记）——检查点无需
-    透传 item_id 参数；无活动条目（测试直接调用/其他产线）时为空操作。
-    ItemCancelledError 继承 Exception——但 produce 内所有 except Exception
-    的降级分支都只会吞 ProducerError 等业务异常，检查点放在阶段之间，
-    不会被误吞（各降级 try 块内部不设检查点）。
-    """
-    current = active_item()
-    if current is not None and is_cancelled(current):
-        raise ItemCancelledError(f"produce cancelled for item {current}")
-
-
-async def _run_cmd(cmd: list[str], *, timeout_s: int = 300) -> bytes:
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        # 协作式取消（wave11）：0.25s 粒度轮询取消标志——命中即 terminate
-        # （合成/转码是耗时大头，必须真杀进程才能省资源）
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout_s
-        while True:
-            current = active_item()
-            if current is not None and is_cancelled(current):
-                if proc.returncode is None:
-                    proc.terminate()
-                out, err = await proc.communicate()
-                raise ItemCancelledError(f"command cancelled: {cmd[0]}")
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                proc.kill()
-                raise ProducerError(f"command timed out after {timeout_s}s: {cmd[0]}") from None
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=min(0.25, remaining))
-                break
-            except TimeoutError:  # asyncio.TimeoutError 是内建 TimeoutError 别名（ruff UP041）
-                continue
-        out, err = await proc.communicate()
-    except TimeoutError:
-        proc.kill()
-        raise ProducerError(f"command timed out after {timeout_s}s: {cmd[0]}") from None
-    if proc.returncode != 0:
-        tail = err.decode(errors="replace")[-500:]
-        raise ProducerError(f"{cmd[0]} failed ({proc.returncode}): {tail}")
-    return out
 
 
 
@@ -1290,219 +1241,6 @@ async def _produce_item(
 # 字幕烧录合成。无原始画面，phash 无意义 → None（去重靠标题指纹）。
 
 # 深紫→暖紫垂直渐变（IP 视觉基调）
-_STORY_GRADIENT = ((24, 20, 38), (58, 42, 74), (96, 64, 94))
-
-
-def _render_story_bg(title: str, out: Path, *, credit: str = "") -> Path:
-    """PIL 渐变背景 + 标题大字卡（1280x720，RGB）。"""
-    from PIL import Image, ImageDraw
-
-    w, h = 1280, 720
-    img = Image.new("RGB", (w, h))
-    px = img.load()
-    top, mid, bot = _STORY_GRADIENT
-    for y in range(h):
-        t = y / (h - 1)
-        if t < 0.5:
-            f = t * 2
-            c = tuple(int(top[i] + (mid[i] - top[i]) * f) for i in range(3))
-        else:
-            f = (t - 0.5) * 2
-            c = tuple(int(mid[i] + (bot[i] - mid[i]) * f) for i in range(3))
-        for x in range(w):
-            px[x, y] = c
-    draw = ImageDraw.Draw(img)
-    font = _subtitle_font(56)
-    max_w = w - 160
-    lines = _wrap_lines(title, font, max_w, draw)[:3]
-    y = 200
-    for line in lines:
-        bbox = draw.textbbox((0, 0), line, font=font)
-        lw = bbox[2] - bbox[0]
-        draw.text(((w - lw) // 2, y), line, font=font, fill=(255, 255, 255))
-        y += (bbox[3] - bbox[1]) + 20
-    # 分隔线 + 来源署名
-    draw.line((w // 2 - 140, y + 6, w // 2 + 140, y + 6), fill=(255, 255, 255), width=2)
-    if credit:
-        small = _subtitle_font(26)
-        bbox = draw.textbbox((0, 0), credit, font=small)
-        draw.text(((w - (bbox[2] - bbox[0])) // 2, y + 22), credit, font=small,
-                  fill=(235, 220, 235))
-    out.parent.mkdir(parents=True, exist_ok=True)
-    img.save(out)
-    return out
-
-
-def _split_story_sentences(text: str) -> list[str]:
-    """故事旁白断句：按句末标点切分（。！？…），超长硬折 22 字。"""
-    cleaned = clean_zh_subtitle_text(text)
-    if not cleaned:
-        return []
-    parts = re.split(r"(?<=[。！？…])\s*", cleaned)
-    out: list[str] = []
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        if len(part) <= 22:
-            out.append(part)
-            continue
-        for i in range(0, len(part), 22):
-            piece = part[i : i + 22]
-            if piece:
-                out.append(piece)
-    return out
-
-
-def _story_cues(sentences: list[str], total_dur: float) -> list[tuple[float, float, str]]:
-    """按字符比例把旁白时长分配到各句（对齐 TTS 朗读节奏的近似）。"""
-    if not sentences:
-        return []
-    total_chars = max(1, sum(len(s) for s in sentences))
-    cues: list[tuple[float, float, str]] = []
-    t = 0.0
-    for s in sentences:
-        d = max(1.2, total_dur * len(s) / total_chars)
-        cues.append((round(t, 2), round(min(t + d, total_dur + 0.3), 2), s))
-        t += d
-    if cues:
-        last = cues[-1]
-        cues[-1] = (last[0], round(max(last[1], total_dur), 2), last[2])
-    return cues
-
-
-async def _compose_story_video(
-    bg: Path, audio: Path, ass: Path, out: Path, *, duration: float,
-) -> dict:
-    """ffmpeg 合成：背景图循环 + 旁白音频 + ASS 字幕烧录（libass）。"""
-    ffmpeg = find_ffmpeg()
-    if ffmpeg is None:
-        raise ProducerError("ffmpeg not found")
-    style = (
-        f"FontSize={int(getattr(settings, 'pipeline_subtitle_font_size', 24))},"
-        f"Outline={int(getattr(settings, 'pipeline_subtitle_outline', 1))},"
-        "OutlineColour=&H66000000"
-    )
-    vf = (
-        f"scale=1280:720,subtitles={ass.as_posix()}:force_style='{style}'"
-    )
-    cmd = [
-        str(ffmpeg), "-y",
-        "-loop", "1", "-i", str(bg),
-        "-i", str(audio),
-        "-t", f"{max(duration, 0.5):.3f}",
-        "-vf", vf,
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
-        "-c:a", "aac", "-b:a", "160k",
-        str(out),
-    ]
-    await _run_cmd(cmd)
-    size_ok = await asyncio.to_thread(out.exists) and (
-        await asyncio.to_thread(out.stat)
-    ).st_size >= 1024
-    if not size_ok:
-        raise ProducerError("story compose failed: no output video")
-    return {"burn": "ass", "mode": "story"}
-
-
-async def produce_story_item(
-    ai: AIRouter, files: FileStore, item,
-    existing_script: dict | None = None,
-) -> dict:
-    """文字故事帖 → 中文旁白 → TTS → 图文合成（v0.11.7）。
-
-    产物：final.mp4（渐变背景 + 字幕烧录）/ narration.mp3 / subs.srt /
-    cover.jpg（标题卡）。phash=None（无原始画面，去重靠标题指纹）。
-    """
-    from backend.pipeline.package import generate_packaging
-
-    directory = _artifacts_dir(files, item)
-    await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
-
-    content = (item.selftext or "").strip()[:6000]
-    if len(content) < 20:
-        content = f"{item.title}\n\n来源: r/{item.subreddit}"
-
-    # 1. 中文故事旁白（LLM → heuristic 兜底）
-    script = dict(existing_script or {})
-    narration = str(script.get("narration") or "").strip()
-    src = "existing" if narration else ""
-    if not narration:
-        try:
-            narration = await ai.script(
-                content=content, title=item.title, max_words=450, story=True,
-            )
-            src = "llm"
-        except Exception:  # noqa: BLE001 — 旁白失败兜底，不阻塞生产
-            logger.exception("story script generation failed, using heuristic")
-        if not narration or len(narration.strip()) < 30:
-            narration = clean_zh_subtitle_text(content)[:300] or item.title
-            src = "heuristic"
-    script["mode"] = "story"
-    script["narration"] = narration.strip()[:1200]
-    script["source"] = src
-    script["content_source"] = "selftext"
-    _raise_if_cancelled()
-
-    # 2. 合规（safety_only：安全红线阻断，营销极限词降级告警——中文旁白
-    #    天然含「最/第一」等口语词，按广告法全量会误杀）
-    compliance = check_script_compliance(script, safety_only=True)
-    artifacts: dict = {
-        "script": script, "compliance": compliance, "directory": str(directory),
-        # 文字帖无原始画面：phash 无意义（去重靠标题指纹），显式置空
-        "phash": None,
-    }
-
-    # 3. TTS 配音（固定中文女声 = IP 听觉标识；注册表手动配置优先）
-    voice = "zh-CN-XiaoxiaoNeural"
-    try:
-        from backend.ai.registry import ProviderRegistry
-
-        resolved = await ProviderRegistry().resolve_role("tts")
-        configured = resolved["model_key"] if resolved else ""
-        if configured and configured.lower() not in ("auto", "random", "smart"):
-            voice = configured
-    except Exception:  # noqa: BLE001 — 音色解析失败用默认
-        pass
-    audio_path = directory / "narration.mp3"
-    tts = await synthesize_tts(ai, script["narration"], audio_path, voice=voice)
-    audio_dur = await probe_audio_duration(audio_path)
-    if audio_dur <= 0:
-        audio_dur = 60.0  # 探测失败 → 按默认 1 分钟兜底
-    artifacts["audio"] = {"path": str(audio_path), "bytes": tts.get("bytes", 0)}
-    _raise_if_cancelled()
-
-    # 4. 字幕（中文旁白 → 断句 → 按字符比例对齐时长 → SRT → ASS）
-    sentences = _split_story_sentences(script["narration"])
-    srt_path = directory / "subs.srt"
-    _write_srt_cues(srt_path, _story_cues(sentences, audio_dur))
-    ass_path = directory / "subs.ass"
-    srt_to_ass(srt_path, ass_path)
-    artifacts["subtitle"] = {"path": str(srt_path)}
-
-    # 5. 背景 + 合成 + 封面
-    bg_path = directory / "bg.png"
-    credit = f"r/{item.subreddit}" if item.subreddit else ""
-    await asyncio.to_thread(_render_story_bg, item.title, bg_path, credit=credit)
-    final_path = directory / "final.mp4"
-    _raise_if_cancelled()
-    quality = await _compose_story_video(
-        bg_path, audio_path, ass_path, final_path, duration=audio_dur,
-    )
-    artifacts["video"] = {"path": str(final_path), "quality": quality}
-    cover_path = directory / "cover.jpg"
-    await asyncio.to_thread(_render_story_bg, item.title, cover_path, credit=credit)
-    artifacts["cover"] = {"path": str(cover_path)}
-
-    # 6. B 站包装（标题/标签；简介 = 原帖标题，v0.11.5 语义）
-    artifacts["script"] = await generate_packaging(ai, item, artifacts["script"])
-    return artifacts
-
-
-# ---- 栏目片头（v0.22 动态标题卡，非破坏性降级设计） ----
-
-
-
 async def _prepend_channel_intro(channel, main: Path) -> Path:
     """栏目动态标题卡前置：渲染栏目名底卡 → 按主片参数编码 → concat。
 
@@ -1527,6 +1265,8 @@ async def _prepend_channel_intro(channel, main: Path) -> Path:
     width, height, fps, has_audio = params
 
     # 标题底卡：复用故事产线 PIL 渐变渲染器（栏目名大字 + 副题署名）
+    from backend.pipeline.producers.story import _render_story_bg
+
     card = main.parent / "intro_card.png"
     await asyncio.to_thread(_render_story_bg, channel.name, card, credit=subtitle)
 

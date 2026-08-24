@@ -762,9 +762,16 @@ async def test_produce_story_item_artifacts(tmp_path, monkeypatch) -> None:
         out.write_bytes(b"video")
         return {"burn": "ass", "mode": "story"}
 
+    # v0.22.x B 系解体：TTS 仍在 media；probe/合成已迁 probe.py / story.py
+    async def fake_batch(texts):
+        return ["结婚十年的那碗汤"] * len(texts)
+
+    monkeypatch.setattr(
+        "backend.pipeline.producers.translate_engine.translate_batch_local", fake_batch
+    )
     monkeypatch.setattr(m, "synthesize_tts", fake_tts)
-    monkeypatch.setattr(m, "probe_audio_duration", fake_probe_audio)
-    monkeypatch.setattr(m, "_compose_story_video", fake_compose)
+    monkeypatch.setattr("backend.pipeline.producers.probe.probe_audio_duration", fake_probe_audio)
+    monkeypatch.setattr("backend.pipeline.producers.story._compose_story_video", fake_compose)
 
     artifacts = await m.produce_item(FakeAI(), Files(), FakeItem())
     assert artifacts["script"]["mode"] == "story"
