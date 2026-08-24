@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from backend.config import settings
+from backend.library.ai_organize import suggest_organization
 from backend.library.browser import LibraryBrowser
 from backend.library.metadata import probe_media
 from backend.library.thumbnails import generate_thumbnail
@@ -177,27 +178,13 @@ async def search_assets(
 _MAX_ORGANIZE_BATCH = 20
 
 
-def _extract_json(text: str) -> dict | None:
-    """宽松解析 LLM 输出：优先 ```json 代码块，其次纯 JSON。"""
-    import json as _json
-    import re
-
-    text = text.strip()
-    match = re.search(r"```(?:json)?\s*(.+?)\s*```", text, re.DOTALL)
-    candidate = match.group(1) if match else text
-    try:
-        data = _json.loads(candidate)
-        return data if isinstance(data, dict) else None
-    except ValueError:
-        return None
-
-
 @router.post("/ai-organize")
 async def ai_organize(body: dict):
     """AI 素材整理（人工触发，走 fast 角色低费用）：为文件名/类型生成
     标签与建议文件名，返回待确认结果；应用由前端逐条确认后调 /tags、/rename。
 
     成本防护：每批 ≤20 条 + 仅手动触发（不自动跑，AXIOM §4.3）。
+    prompt/LLM 调用/解析在 library.ai_organize（v0.22.x B 系下沉）。
     """
     paths = body.get("paths") or []
     if not isinstance(paths, list) or not paths:
@@ -218,42 +205,13 @@ async def ai_organize(body: dict):
     if ai is None or not ai.llm_available:
         raise HTTPException(status_code=502, detail="LLM 未配置，无法整理")
 
-    listing = "\n".join(f"- {t.name}（{t.suffix or '无扩展名'}）" for t in targets)
-    system = (
-        "你是素材库整理助手。根据文件名与常见约定推断内容主题，给出整理建议。\n"
-        '只输出 JSON，格式：{"items":[{"tags":["标签1","标签2"],'
-        '"suggested_name":"建议文件名（含扩展名）"}]}\n'
-        "数组顺序与输入一致，不要包含路径字段。规则：\n"
-        "① tags 2-5 个、用中文、概括内容主题与类型；无法判断的给空数组；\n"
-        "② suggested_name 简洁可读、保留扩展名；无法判断的给原文件名；\n"
-        "③ 只输出 JSON，不要解释。"
-    )
-    from backend.ai.types import ChatMessage
-
-    messages = [
-        ChatMessage(role="system", content=system),
-        ChatMessage(role="user", content=f"以下文件需要整理（按顺序对应输出）：\n{listing}"),
-    ]
     try:
-        text = await ai.chat_messages(messages, role="fast", max_tokens=1200)
+        results = await suggest_organization(ai, targets)
     except Exception as exc:  # noqa: BLE001 — 可读失败（§4.2 快速失败）
         logger.error("ai-organize failed: %s", exc)
         raise HTTPException(status_code=502, detail="AI 整理失败，请稍后重试") from exc
-
-    data = _extract_json(text)
-    raw_items = (data or {}).get("items") if data else None
-    if not isinstance(raw_items, list):
-        raise HTTPException(status_code=502, detail="AI 返回格式无法解析")
-
-    # 按输入顺序映射回真实路径（忽略 LLM 可能幻造的 path 字段——批次内围栏兜底）
-    results = []
-    for i, item in enumerate(raw_items[: _MAX_ORGANIZE_BATCH]):
-        if i >= len(targets) or not isinstance(item, dict):
-            continue
-        tags = [str(x).strip() for x in item.get("tags") or [] if str(x).strip()][:8]
-        name = str(item.get("suggested_name") or "").strip()
-        results.append({"path": str(targets[i]), "tags": tags, "suggested_name": name})
     return {"results": results}
+
 
 
 @router.post("/rename")
