@@ -1389,5 +1389,15 @@
       "internal": "程序内部异常——查看 系统日志 定位堆栈；重试一次常可恢复",
       "other": "未分类错误——点击行查看完整错误信息判断"
     }
+  },
+  "workshop": {
+    "title": "脚本工坊",
+    "record": "开始录音",
+    "stopRecording": "停止录音",
+    "uploadAudio": "上传音频",
+    "transcribing": "转写中…",
+    "emptyHint": "录音或上传音频文件，系统将本地转写为可编辑文字——零 API 成本",
+    "titleContentRequired": "标题与内容不能为空",
+    "itemCreated": "条目已创建，进入流水线"
   }
 }

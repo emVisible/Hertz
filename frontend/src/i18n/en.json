@@ -1389,5 +1389,15 @@
       "internal": "Internal crash — check System Logs for the stack; a retry often recovers",
       "other": "Unclassified error — click the row to read the full message"
     }
+  },
+  "workshop": {
+    "title": "Title",
+    "record": "Record",
+    "stopRecording": "Stop Recording",
+    "uploadAudio": "Upload Audio",
+    "transcribing": "Transcribing…",
+    "emptyHint": "Record or upload audio — transcribed locally to editable text. Zero API cost.",
+    "titleContentRequired": "Title and content are required",
+    "itemCreated": "Item created, entering pipeline"
   }
 }
