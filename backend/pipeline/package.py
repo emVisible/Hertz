@@ -135,7 +135,7 @@ async def generate_packaging(ai, item, script: dict) -> dict:
 
     channel = await get_channel(getattr(item, "channel_key", None))
 
-    narration = str(script.get("narration") or "")[:800]
+    narration = str(script.get(sk.NARRATION) or "")[:800]
     alternatives: list[str] = []
     try:
         content = f"{item.title}\n\n来源: r/{item.subreddit}"

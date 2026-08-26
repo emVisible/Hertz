@@ -14,6 +14,7 @@ from backend.ai.router import AIRouter
 from backend.config import settings
 from backend.infrastructure.storage import FileStore
 from backend.library.thumbnails import find_ffmpeg
+from backend.models import script_keys as sk
 from backend.pipeline.producers.common import (
     ProducerError,
     _raise_if_cancelled,
@@ -175,7 +176,7 @@ async def produce_story_item(
 
     # 1. 中文故事旁白（LLM → heuristic 兜底）
     script = dict(existing_script or {})
-    narration = str(script.get("narration") or "").strip()
+    narration = str(script.get(sk.NARRATION) or "").strip()
     src = "existing" if narration else ""
     if not narration:
         try:
@@ -189,9 +190,9 @@ async def produce_story_item(
             narration = clean_zh_subtitle_text(content)[:300] or item.title
             src = "heuristic"
     script["mode"] = "story"
-    script["narration"] = narration.strip()[:1200]
+    script[sk.NARRATION] = narration.strip()[:1200]
     script["source"] = src
-    script["content_source"] = "selftext"
+    script[sk.CONTENT_SOURCE] = "selftext"
     _raise_if_cancelled()
 
     # 2. 合规（safety_only：安全红线阻断，营销极限词降级告警——中文旁白
@@ -215,7 +216,7 @@ async def produce_story_item(
     except Exception:  # noqa: BLE001 — 音色解析失败用默认
         pass
     audio_path = directory / "narration.mp3"
-    tts = await synthesize_tts(ai, script["narration"], audio_path, voice=voice)
+    tts = await synthesize_tts(ai, script[sk.NARRATION], audio_path, voice=voice)
     audio_dur = await probe_audio_duration(audio_path)
     if audio_dur <= 0:
         audio_dur = 60.0  # 探测失败 → 按默认 1 分钟兜底
@@ -223,7 +224,7 @@ async def produce_story_item(
     _raise_if_cancelled()
 
     # 4. 字幕（中文旁白 → 断句 → 按字符比例对齐时长 → SRT → ASS）
-    sentences = _split_story_sentences(script["narration"])
+    sentences = _split_story_sentences(script[sk.NARRATION])
     srt_path = directory / "subs.srt"
     _write_srt_cues(srt_path, _story_cues(sentences, audio_dur))
     ass_path = directory / "subs.ass"

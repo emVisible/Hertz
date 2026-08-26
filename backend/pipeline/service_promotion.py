@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
+from backend.models import script_keys as sk
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.pipeline.helpers import _auto_tid as helpers_auto_tid
@@ -162,7 +163,7 @@ class PromotionMixin:
             # 有效分区（v0.13）：手动 script_json.bili_tid 优先，否则按来源推荐。
             # Item 无 tid 列——挂在实例属性上供策略层纯函数读取（不落库）
             for it in holding:
-                manual = (it.script_json or {}).get("bili_tid")
+                manual = (it.script_json or {}).get(sk.BILI_TID)
                 suggested = helpers_auto_tid(it)
                 it.auto_tid = int(manual or suggested or 0)
             ready_items = (
@@ -179,7 +180,7 @@ class PromotionMixin:
         for it in ready_items:
             if it.scheduled_at is None:
                 continue
-            manual = (it.script_json or {}).get("bili_tid")
+            manual = (it.script_json or {}).get(sk.BILI_TID)
             existing_ready.append(
                 (it.scheduled_at, int(manual or helpers_auto_tid(it) or 0))
             )
@@ -202,7 +203,7 @@ class PromotionMixin:
         if bool(getattr(self.engine.settings, "pipeline_strategy_dry_run", False)):
             self._shadow_plan = [
                 {
-                    "title": (it.script_json or {}).get("bili_title") or it.title,
+                    "title": (it.script_json or {}).get(sk.BILI_TITLE) or it.title,
                     "subreddit": it.subreddit,
                     "scheduled_at": slot.isoformat(),
                 }

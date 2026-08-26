@@ -14,6 +14,7 @@ from backend.ai.router import AIRouter
 from backend.config import settings
 from backend.infrastructure.storage import FileStore
 from backend.library.thumbnails import find_ffmpeg
+from backend.models import script_keys as sk
 from backend.pipeline.cancel import (
     ItemCancelledError,
     reset_active_item,
@@ -995,7 +996,7 @@ async def _produce_item(
     else:
         subtitle_text = narration_text
     # 中文字幕持久化（v0.8.5）：B 站简介构建复用（subtitle_zh 首句 + 署名）
-    script["subtitle_zh"] = subtitle_text.strip()
+    script[sk.SUBTITLE_ZH] = subtitle_text.strip()
 
     # 字幕模块 · 原声字幕（v0.11：转写先行，复用预转写结果不重复转写）
     # v0.10 语义修正：字幕/翻译的数据源 = 视频原声（视频中的人说的话），
@@ -1072,7 +1073,7 @@ async def _produce_item(
                         subreddit=item.subreddit or "",
                         tags=[
                             t.strip()
-                            for t in str(script.get("bili_tags") or "").split(",")
+                            for t in str(script.get(sk.BILI_TAGS) or "").split(",")
                             if t.strip()
                         ],
                         configured="auto",

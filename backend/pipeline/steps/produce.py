@@ -6,6 +6,7 @@ remain; only a total failure (no media at all) marks the item failed.
 
 import logging
 
+from backend.models import script_keys as sk
 from backend.pipeline.base import Pipe, ProcessResult, StepContext, StepError
 
 logger = logging.getLogger(__name__)
@@ -60,10 +61,10 @@ class ProduceStep(Pipe):
         script = dict(artifacts.get("script") or {})
         if preflight_warnings:
             script["produce_warnings"] = list(preflight_warnings)
-        if not script.get("bili_tid"):
+        if not script.get(sk.BILI_TID):
             from backend.pipeline.category import assign_bili_tid
 
-            script["bili_tid"] = assign_bili_tid(item.subreddit, item.item_type or "video_raw")
+            script[sk.BILI_TID] = assign_bili_tid(item.subreddit, item.item_type or "video_raw")
 
         return ProcessResult(
             status="queued",
