@@ -61,6 +61,15 @@ export function useStudioExecution() {
     enabled: !!planId,
   })
 
+  // v0.22.x 修复：切换计划时 buffKeys 跟随计划持久配置
+  // （此前 zustand 初始值硬编码且从不同步，导致保存的 buff/debuff 不生效）
+  useEffect(() => {
+    if (plan && Array.isArray(plan.buff_keys)) {
+      setBuffKeys(plan.buff_keys)
+    }
+  }, [plan?.id, plan?.buff_keys])
+
+
   // 画布 → Studio：读取草稿主题并自动开跑（画布是流水线输入端）
   useEffect(() => {
     const draft = localStorage.getItem('hertz-studio-draft')

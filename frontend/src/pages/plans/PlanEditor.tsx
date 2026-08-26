@@ -177,7 +177,7 @@ export function PlanEditor({
 
   return (
     <div className="flex min-h-0 w-full flex-col gap-4 lg:flex-row">
-      <Card className="flex w-full min-h-0 shrink-0 flex-col lg:w-80">
+      <Card className="flex w-full min-h-0 shrink-0 flex-col overflow-y-auto lg:w-80">
         <div className="flex flex-col gap-3">
           <Input label={t('plans.name')} value={name} onChange={(e) => onName(e.target.value)} />
           <Input
