@@ -401,3 +401,53 @@ async def _translate_srt_cues(
         body = clean_zh_subtitle_text(zh) or clean_zh_subtitle_text(orig) or " "
         out.append((s, e, body))
     return out
+
+
+# ---- PIL 字体/折行工具（v0.22.x 自 media.py 迁出）----
+
+# 字幕字体（v0.11.2）：霞鹜文楷（LXGW WenKai，SIL OFL 1.1 免费商用）优先——
+# data/assets/fonts/ 或系统字体目录（libass 经 fontconfig 按字体名匹配）；
+# 缺字体回退 PingFang / Noto。优雅楷体，减轻 Noto Bold 的厚重感。
+def _subtitle_font(size: int = 40):
+    """PNG 烧录字幕字体（原项目 _subtitle_font 移植）：assets 霞鹜文楷优先。"""
+    from PIL import ImageFont
+
+    from backend.infrastructure.deps import font_file
+
+    candidates: list[Path] = []
+    ff = font_file()
+    if ff is not None:
+        candidates.append(ff)
+    candidates += [
+        Path("/System/Library/Fonts/PingFang.ttc"),
+        Path("/System/Library/Fonts/STHeiti Light.ttc"),
+        Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+        Path("C:/Windows/Fonts/msyh.ttc"),
+        Path("C:/Windows/Fonts/simhei.ttf"),
+        Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+    ]
+    for path in candidates:
+        if path.exists():
+            try:
+                return ImageFont.truetype(str(path), size=size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
+def _wrap_lines(text: str, font, max_width: int, draw) -> list[str]:
+    """按像素宽折行（原项目 _wrap_lines 移植）。"""
+    lines: list[str] = []
+    for para in text.replace("\\N", "\n").splitlines() or [text]:
+        current = ""
+        for ch in para:
+            trial = current + ch
+            if draw.textlength(trial, font=font) <= max_width:
+                current = trial
+            else:
+                if current:
+                    lines.append(current)
+                current = ch
+        if current:
+            lines.append(current)
+    return lines or [text]

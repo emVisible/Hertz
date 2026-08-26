@@ -2545,7 +2545,8 @@ async def test_subtitles_filter_detection(monkeypatch) -> None:
     # 隔离 deps 缓存（避免真实 data/state/deps.json 干扰）
     monkeypatch.setattr(deps_mod.settings, "data_dir", Path(tempfile.mkdtemp()))
     deps_mod._cache = None
-    media_mod._subtitles_available = None
+    import backend.pipeline.producers.compose as _comp
+    _comp._subtitles_available = None
 
     # 无 ass 行 → False
     async def fake_exec(*a, **kw):
@@ -2554,7 +2555,8 @@ async def test_subtitles_filter_detection(monkeypatch) -> None:
                 return b"Filters:\n T.. anull            A->A       Pass\n", b""
         return P()
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
-    media_mod._subtitles_available = None
+    import backend.pipeline.producers.compose as _comp
+    _comp._subtitles_available = None
     ok = await media_mod.subtitles_filter_available("/fake/ffmpeg")
     assert ok is False
 
@@ -2565,13 +2567,15 @@ async def test_subtitles_filter_detection(monkeypatch) -> None:
                 return b"Filters:\n T.. subtitles       V->V       Convert text subtitles\n", b""
         return P()
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec2)
-    media_mod._subtitles_available = None
+    import backend.pipeline.producers.compose as _comp
+    _comp._subtitles_available = None
     ok2 = await media_mod.subtitles_filter_available("/fake/ffmpeg")
     assert ok2 is True
 
     # deps 缓存存在时直接读缓存（不再 subprocess）
     deps_mod._cache = {"ffmpeg": {"status": "ok", "libass": False}}
-    media_mod._subtitles_available = None
+    import backend.pipeline.producers.compose as _comp
+    _comp._subtitles_available = None
     assert await media_mod.subtitles_filter_available("/fake/ffmpeg") is False
 
 

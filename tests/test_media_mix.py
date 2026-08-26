@@ -12,6 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.pipeline.producers import compose
+
 
 def _write_srt(path: Path) -> None:
     path.write_text(
@@ -40,19 +42,20 @@ async def test_duck_window_filters(monkeypatch, tmp_path):
         return b""
 
     monkeypatch.setattr(m, "_run_cmd", fake_run)
+    monkeypatch.setattr(compose, "_run_cmd", fake_run)
     async def _pd(p):
         return 5.0
 
-    monkeypatch.setattr(m, "probe_duration", _pd)
+    monkeypatch.setattr(compose, "probe_duration", _pd)
     async def _pad(p):
         return 5.0 if str(p).endswith("raw.mp4") else 5.0
 
     async def _sfa(f):
         return False
 
-    monkeypatch.setattr(m, "probe_audio_duration", _pad)
-    monkeypatch.setattr(m, "subtitles_filter_available", _sfa)
-    monkeypatch.setattr(m, "_find_bgm", lambda: None)
+    monkeypatch.setattr(compose, "probe_audio_duration", _pad)
+    monkeypatch.setattr(compose, "subtitles_filter_available", _sfa)
+    monkeypatch.setattr(compose, "_find_bgm", lambda: None)
     monkeypatch.setattr(m, "srt_to_ass", lambda a, b: None)
 
     result = await m.compose_video(
@@ -91,18 +94,19 @@ async def test_audio_guard_remix_with_bgm(monkeypatch, tmp_path):
         return b""
 
     monkeypatch.setattr(m, "_run_cmd", fake_run)
+    monkeypatch.setattr(compose, "_run_cmd", fake_run)
     async def _pd(p):
         return 5.0
 
-    monkeypatch.setattr(m, "probe_duration", _pd)
+    monkeypatch.setattr(compose, "probe_duration", _pd)
     async def _pad2(p):
         return 5.0 if str(p).endswith("raw.mp4") else next(audio_values)
 
-    monkeypatch.setattr(m, "probe_audio_duration", _pad2)
+    monkeypatch.setattr(compose, "probe_audio_duration", _pad2)
     async def _sfa2(f):
         return False
-    monkeypatch.setattr(m, "subtitles_filter_available", _sfa2)
-    monkeypatch.setattr(m, "_find_bgm", lambda: tmp_path / "bgm.mp3")
+    monkeypatch.setattr(compose, "subtitles_filter_available", _sfa2)
+    monkeypatch.setattr(compose, "_find_bgm", lambda: tmp_path / "bgm.mp3")
 
     result = await m.compose_video(raw, narr, None, out, narr_start=0.0, narr_dur=4.0)
 
@@ -125,13 +129,14 @@ async def test_muted_no_narration_drops_audio(monkeypatch, tmp_path):
         return b""
 
     monkeypatch.setattr(m, "_run_cmd", fake_run)
+    monkeypatch.setattr(compose, "_run_cmd", fake_run)
     async def _pd(p):
         return 5.0
 
-    monkeypatch.setattr(m, "probe_duration", _pd)
+    monkeypatch.setattr(compose, "probe_duration", _pd)
     async def _pad3(p):
         return 1.0
-    monkeypatch.setattr(m, "probe_audio_duration", _pad3)
+    monkeypatch.setattr(compose, "probe_audio_duration", _pad3)
 
     result = await m.compose_video(raw, None, None, out, muted=True)
 
@@ -154,13 +159,14 @@ async def test_anullsrc_silence_when_no_original_audio(monkeypatch, tmp_path):
         return b""
 
     monkeypatch.setattr(m, "_run_cmd", fake_run)
+    monkeypatch.setattr(compose, "_run_cmd", fake_run)
     async def _pd(p):
         return 5.0
 
-    monkeypatch.setattr(m, "probe_duration", _pd)
+    monkeypatch.setattr(compose, "probe_duration", _pd)
     async def _pad4(p):
         return 0.0
-    monkeypatch.setattr(m, "probe_audio_duration", _pad4)
+    monkeypatch.setattr(compose, "probe_audio_duration", _pad4)
 
     await m.compose_video(raw, None, None, out)
 
@@ -185,16 +191,17 @@ async def test_libass_burn_in(monkeypatch, tmp_path):
         return b""
 
     monkeypatch.setattr(m, "_run_cmd", fake_run)
+    monkeypatch.setattr(compose, "_run_cmd", fake_run)
     async def _pd(p):
         return 5.0
 
-    monkeypatch.setattr(m, "probe_duration", _pd)
+    monkeypatch.setattr(compose, "probe_duration", _pd)
     async def _pad5(p):
         return 5.0
-    monkeypatch.setattr(m, "probe_audio_duration", _pad5)
+    monkeypatch.setattr(compose, "probe_audio_duration", _pad5)
     async def _sfa5(f):
         return True
-    monkeypatch.setattr(m, "subtitles_filter_available", _sfa5)
+    monkeypatch.setattr(compose, "subtitles_filter_available", _sfa5)
 
     result = await m.compose_video(raw, None, srt, out)
 
@@ -238,6 +245,7 @@ async def test_bilibili_dtime_min_hours_bump(monkeypatch, tmp_path):
         return b"ok BV1xx411c7mD uploaded"
 
     monkeypatch.setattr(m, "_run_cmd", fake_run)
+    monkeypatch.setattr(compose, "_run_cmd", fake_run)
 
     ctx = SimpleNamespace(
         settings=SimpleNamespace(
@@ -283,6 +291,7 @@ async def test_bilibili_dtime_ok_when_far_enough(monkeypatch, tmp_path):
         return b"ok BV1xx411c7mD uploaded"
 
     monkeypatch.setattr(m, "_run_cmd", fake_run)
+    monkeypatch.setattr(compose, "_run_cmd", fake_run)
 
     ctx = SimpleNamespace(
         settings=SimpleNamespace(data_dir=data_dir, pipeline_bili_dtime_min_hours=4),
@@ -412,7 +421,7 @@ async def test_produce_prefers_asr_for_all_subtitle_modes(monkeypatch, tmp_path)
         return {"path": "/x/cover.jpg"}
 
     monkeypatch.setattr(m, "_asr_subtitles", fake_asr)
-    monkeypatch.setattr(m, "probe_duration", fake_probe)
+    monkeypatch.setattr(compose, "probe_duration", fake_probe)
     monkeypatch.setattr(m, "compose_video", fake_compose)
     monkeypatch.setattr(m, "generate_cover", fake_cover)
     from backend.pipeline import phash as phash_mod
@@ -559,11 +568,11 @@ async def test_produce_item_transcript_first(monkeypatch, tmp_path) -> None:
     async def _pd(p):
         return 20.0
 
-    monkeypatch.setattr(m, "probe_duration", _pd)
+    monkeypatch.setattr(compose, "probe_duration", _pd)
     async def _pad(p):
         return 20.0
 
-    monkeypatch.setattr(m, "probe_audio_duration", _pad)
+    monkeypatch.setattr(compose, "probe_audio_duration", _pad)
     async def fake_compose(*a, **kw):
         return {"path": str(a[3])}
 
