@@ -154,8 +154,8 @@ async def produce_story_item(
     ai: AIRouter, files: FileStore, item,
     existing_script: dict | None = None,
 ) -> dict:
-    from backend.pipeline.producers.media import (
-        _artifacts_dir,
+    from backend.pipeline.producers.media import _artifacts_dir
+    from backend.pipeline.producers.narration import (
         check_script_compliance,
         synthesize_tts,
     )

@@ -321,6 +321,9 @@ async def test_asr_translate_false_keeps_original(monkeypatch, tmp_path):
         return True
 
     class FakeAI:
+        async def synthesize(self, text, voice="", rate=""):
+            return b"fake_audio_bytes"
+        tts_available = True
         async def chat_messages(self, messages, **kw):
             calls.append("chat")
             return '{"segments": ["你好"]}'
@@ -357,6 +360,9 @@ async def test_asr_skip_translation_when_already_zh(monkeypatch, tmp_path):
         return True
 
     class FakeAI:
+        async def synthesize(self, text, voice="", rate=""):
+            return b"fake_audio_bytes"
+        tts_available = True
         async def chat_messages(self, messages, **kw):
             calls.append("chat")
             return '{"segments": ["x"]}'
@@ -419,7 +425,7 @@ async def test_produce_prefers_asr_for_all_subtitle_modes(monkeypatch, tmp_path)
     async def fake_tts(*a, **k):
         return None  # TTS 失败降级 subs-only，不阻塞字幕断言
 
-    monkeypatch.setattr(m, "synthesize_tts", fake_tts)
+    monkeypatch.setattr("backend.pipeline.producers.narration.synthesize_tts", fake_tts)
 
     class Files:
         def resolve(self, p):
@@ -429,6 +435,9 @@ async def test_produce_prefers_asr_for_all_subtitle_modes(monkeypatch, tmp_path)
             return out_dir
 
     class FakeAI:
+        async def synthesize(self, text, voice="", rate=""):
+            return b"fake_audio_bytes"
+        tts_available = True
         async def title_and_tags(self, **kw):
             from backend.ai.types import TitleResult
             return TitleResult(title="x", tags=[], description="")
@@ -719,6 +728,9 @@ async def test_produce_story_item_artifacts(tmp_path, monkeypatch) -> None:
     raw.write_bytes(b"x")
 
     class FakeAI:
+        tts_available = True
+        async def synthesize(self, text, voice="", rate=""):
+            return b"fake_audio_bytes"
         async def script(self, *, content: str, title: str = "", max_words: int = 90,
                          task_id: str | None = None, story: bool = False) -> str:
             assert story is True, "故事产线必须走 story prompt"
@@ -769,7 +781,7 @@ async def test_produce_story_item_artifacts(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         "backend.pipeline.producers.translate_engine.translate_batch_local", fake_batch
     )
-    monkeypatch.setattr(m, "synthesize_tts", fake_tts)
+    monkeypatch.setattr("backend.pipeline.producers.narration.synthesize_tts", fake_tts)
     monkeypatch.setattr("backend.pipeline.producers.probe.probe_audio_duration", fake_probe_audio)
     monkeypatch.setattr("backend.pipeline.producers.story._compose_story_video", fake_compose)
 
