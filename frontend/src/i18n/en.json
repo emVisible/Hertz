@@ -1038,7 +1038,8 @@
     "titlePrevAlt": "Previous title candidate",
     "titleNextAlt": "Next title candidate",
     "narrationFallback": "fallback subs",
-    "narrationFallbackHint": "Original-audio subtitles unavailable (no audio/transcribe failed); current subs are generated from narration text and may remain in the source language"
+    "narrationFallbackHint": "Original-audio subtitles unavailable (no audio/transcribe failed); current subs are generated from narration text and may remain in the source language",
+    "workshop": "Workshop"
   },
   "canvas": {
     "tool": {

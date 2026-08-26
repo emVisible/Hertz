@@ -65,13 +65,14 @@ export interface PipelineViewProps {
   busy: Record<string, { action: string; title: string }>
 }
 
-export type PipelineTabId = 'run' | 'preReview' | 'inReview' | 'postReview' | 'exceptions'
+export type PipelineTabId = 'run' | 'preReview' | 'workshop' | 'inReview' | 'postReview' | 'exceptions'
 
 // 第三级路由：内容流水线平铺菜单（v0.2.0 审核三态）——
 // v0.8.4：采集（scheduler 自动 + 手动触发，只入 DB）｜预处理（下载/评分/生产方式/制作）
 // ｜审核（内容判断）｜发布（分发）｜异常（独立恢复区）
 export const PIPELINE_TABS = [
   { id: 'run', labelKey: 'console.stageCollect' },
+  { id: 'workshop', labelKey: 'console.workshop' },
   { id: 'preReview', labelKey: 'console.stagePreReview', countKeys: ['discovered', 'downloaded', 'scored'] },
   { id: 'inReview', labelKey: 'console.stageAudit', countKeys: ['queued'] },
   { id: 'postReview', labelKey: 'console.stagePublish', countKeys: ['approved', 'published'] },

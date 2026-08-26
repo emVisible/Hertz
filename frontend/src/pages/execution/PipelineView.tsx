@@ -10,6 +10,7 @@ import { PreReviewTab, type PreStage } from './pipeline/PreReviewTab'
 import { InReviewTab, type BatchRunAction } from './pipeline/InReviewTab'
 import { ExceptionsTab, type ExSubTabId } from './pipeline/ExceptionsTab'
 import { PostReviewTab, type PostView } from './pipeline/PostReviewTab'
+import { ScriptWorkshop } from '../../components/execution/ScriptWorkshop'
 import { PIPELINE_TABS, type PipelineTabId, type PipelineViewProps } from './pipeline/shared'
 
 // ================= Pipeline 域 =================
@@ -262,6 +263,8 @@ export function PipelineView(p: PipelineViewProps) {
       {/* 内容区（当前部分，独立滚动）；key 化触发切换淡入（v0.2.6 消除抖动观感） */}
       <div key={pTab} className="hz-fade-in min-h-0 flex-1 overflow-y-auto">
         {pTab === 'run' && <RunTab p={p} />}
+
+        {pTab === 'workshop' && <ScriptWorkshop />}
 
         {pTab === 'preReview' && (
           <PreReviewTab

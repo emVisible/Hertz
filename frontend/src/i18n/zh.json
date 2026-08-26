@@ -1053,7 +1053,8 @@
     "titlePrevAlt": "上一个标题候选",
     "titleNextAlt": "下一个标题候选",
     "narrationFallback": "旁白字幕",
-    "narrationFallbackHint": "原声字幕不可用（无音轨/转写失败），当前字幕由旁白文案生成——可能为外语原文"
+    "narrationFallbackHint": "原声字幕不可用（无音轨/转写失败），当前字幕由旁白文案生成——可能为外语原文",
+    "workshop": "脚本工坊"
   },
   "canvas": {
     "tool": {
