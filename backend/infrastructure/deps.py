@@ -127,20 +127,25 @@ def _check_module(name: str, install_hint: str) -> dict:
     }
 
 
-async def _check_local_mt() -> dict:
-    """本地翻译引擎（v0.22.x）：sentencepiece 依赖 + ct2 模型文件。"""
-    from backend.pipeline.producers import translate_engine
+_LOCAL_MT_DIR = "models/opus-mt-en-zh"
+_LOCAL_MT_CORE_FILES = ("model.bin", "source.spm", "target.spm", "vocab.json")
 
-    if not translate_engine.deps_available():
-        return {
-            "status": "missing",
-            "install_hint": "重新运行 uv sync（sentencepiece 已随主依赖安装）",
-        }
-    d = translate_engine.model_dir()
-    missing = [
-        f for f, required in translate_engine._FILES
-        if required and not (d / f).exists()
-    ]
+
+async def _check_local_mt() -> dict:
+    """本地翻译引擎（v0.22.x）：sentencepiece 依赖 + ct2 模型文件。
+
+    不导入 pipeline 模块（依赖方向纪律）——路径约定与文件清单在此维护。
+    """
+    for mod in ("sentencepiece", "ctranslate2"):
+        try:
+            importlib.util.find_spec(mod)
+        except (ImportError, ValueError):
+            return {
+                "status": "missing",
+                "install_hint": "重新运行 uv sync（sentencepiece 已随主依赖安装）",
+            }
+    d = Path(settings.data_dir) / _LOCAL_MT_DIR
+    missing = [f for f in _LOCAL_MT_CORE_FILES if not (d / f).exists()]
     if missing:
         return {
             "status": "missing",
@@ -152,22 +157,21 @@ async def _check_local_mt() -> dict:
 
 def _whisper_cache_exists() -> bool:
     """faster-whisper 模型缓存探测（HF 默认缓存目录，base 档）。"""
-    from pathlib import Path
-
     cache = Path.home() / ".cache" / "huggingface" / "hub"
     return any(cache.glob("models--Systran--faster-whisper-*"))
 
 
 def _check_whisper_model() -> dict:
     """whisper 本地模型就绪态：xinference 服务 / 缓存已下载 / 首次待下载。"""
-    from backend.pipeline.producers.asr import xinference_configured
+    # v0.22.x：不导 pipeline.asr——xinference 配置直读 settings（依赖方向纪律）
+    xinference_on = bool(str(getattr(settings, "xinference_stt_model_id", "") or "").strip())
 
     if not whisper_importable():
         return {
             "status": "missing",
             "install_hint": "uv sync --extra asr",
         }
-    if xinference_configured():
+    if xinference_on:
         return {"status": "ok", "source": "xinference"}
     if _whisper_cache_exists():
         return {"status": "ok", "source": "local-cache"}
