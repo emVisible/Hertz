@@ -108,6 +108,35 @@ class ScoreStep(Pipe):
             return ProcessResult(
                 status="rejected", data={"reason": "title_duplicate"}
             )
+        # v0.25 规则评分引擎：多信号启发式打分——高置信条目免 LLM。
+        # 仅灰区（±margin 内）条目才调 LLM 增强（API 调用 ↓70%+）。
+        if bool(getattr(ctx.settings, "pipeline_heuristic_scoring", True)):
+            from backend.pipeline.producers.heuristic_score import (
+                heuristic_score,
+                is_gray_zone,
+            )
+
+            h_total, h_dims = heuristic_score(
+                reddit_score=item.reddit_score,
+                upvote_ratio=item.upvote_ratio,
+                num_comments=item.num_comments,
+                title=item.title or "",
+                item_type=item.item_type or "video_raw",
+                created_utc=item.created_at.timestamp() if item.created_at else 0,
+            )
+            threshold = float(getattr(ctx.settings, "pipeline_min_score", 6.0))
+            if not is_gray_zone(h_total, threshold):
+                suitable = h_total >= threshold
+                return ProcessResult(
+                    status="scored",
+                    data={
+                        "score_total": h_total,
+                        "score_dimensions": {**h_dims, "engine": "heuristic"},
+                        "score_reasons": [f"规则引擎评分 {h_total}"],
+                        "is_lowscore": not suitable,
+                    },
+                )
+
         # 成本闸门：预算耗尽 → 跳过（保持 downloaded，不消耗 LLM 调用）
         if await self._budget_left(ctx) <= 0:
             logger.info("score budget exhausted — skipping item %s", item.id)

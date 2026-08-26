@@ -23,6 +23,7 @@ RUNTIME_ALLOWLIST = {
     "log_dir",
     "assets_root",
     "pipeline_min_score",
+    "pipeline_heuristic_scoring",
     "pipeline_collect_limit",
     "pipeline_auto_collect_minutes",
     "pipeline_publish_target",

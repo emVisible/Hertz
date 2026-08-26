@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     # Execution pipeline
     pipeline_publish_target: str = "noop"  # noop | bilibili | export
     pipeline_min_score: float = 6.0
+    # 启发式评分引擎（v0.25）：规则先行打分，高置信免 LLM 调用（API ↓70%+）
+    pipeline_heuristic_scoring: bool = True
     pipeline_collect_limit: int = 25
     # AI 原创故事源（v0.22 非破坏性扩展）：单次采集最多生成条数——
     # LLM 成本闸，防 auto_collect tick 放大费用；通道 ai-story/<主题>

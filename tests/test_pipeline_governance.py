@@ -44,6 +44,7 @@ class _BudgetSettings:
     pipeline_score_max_per_run = 1
     pipeline_score_max_per_day = 100  # 日预算放大：隔离验证「单次运行」闸门
     pipeline_min_score = 6.0
+    pipeline_heuristic_scoring = False  # 测试 LLM 预算闸门——禁用启发式
 
 
 class _Ai:
@@ -836,6 +837,7 @@ async def test_score_safety_redline_rejects() -> None:
         pipeline_min_score = 6.0
         pipeline_prefilter_min_reddit_score = 50
         pipeline_prefilter_min_upvote_ratio = 0.85
+        pipeline_heuristic_scoring = False
 
     class Ctx:
         settings = SettingsStub()

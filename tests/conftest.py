@@ -23,6 +23,10 @@ os.environ.setdefault(
     "HERTZ_DATA_DIR", os.path.join(tempfile.mkdtemp(prefix="hertz-test-data-"), "data")
 )
 
+# 测试环境默认关闭启发式评分：LLM 打分路径测试需走完整链路；
+# 启发式有独立测试文件（test_heuristic_score.py）覆盖
+os.environ.setdefault("HERTZ_PIPELINE_HEURISTIC_SCORING", "False")
+
 # Pipeline download step: allow loopback test servers (SSRF guard is
 # on by default; tests opt out explicitly — AXIOM §8.1).
 os.environ.setdefault("HERTZ_PIPELINE_ALLOW_LOOPBACK_URLS", "1")
