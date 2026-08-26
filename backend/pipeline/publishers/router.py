@@ -10,6 +10,7 @@ import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from backend.models import script_keys as sk
 from backend.pipeline.base import StepContext
 
 
@@ -73,7 +74,7 @@ class ExportPublisher(Publisher):
 
         script = item.script_json or {}
         meta_lines = [
-            f"# {script.get('bili_title') or item.title}",
+            f"# {script.get(sk.BILI_TITLE) or item.title}",
             "",
             f"- 来源: {item.source_url}",
             f"- 作者: u/{item.author}",
@@ -82,10 +83,10 @@ class ExportPublisher(Publisher):
             f"- 排期: {item.scheduled_at.isoformat() if item.scheduled_at else '无（人工定）'}",
             "",
             "## 描述",
-            script.get("bili_desc") or item.title,
+            script.get(sk.BILI_DESC) or item.title,
             "",
             "## 标签",
-            script.get("bili_tags") or "(无)",
+            script.get(sk.BILI_TAGS) or "(无)",
             "",
             "## 字幕",
             "subs.srt（如有）",
@@ -126,19 +127,19 @@ class BilibiliPublisher(Publisher):
         # 发布元数据单一真相源：script_json.bili_*（审核/发布环节经 update_meta 写入）
         script = item.script_json or {}
         result_extra: dict = {}
-        title = script.get("bili_title") or item.title[:80]
+        title = script.get(sk.BILI_TITLE) or item.title[:80]
         # 简介（v0.11.5）：优先手动值，兜底原文标题——不换成中文（用户需求）
-        desc = script.get("bili_desc") or item.title[:200]
+        desc = script.get(sk.BILI_DESC) or item.title[:200]
         cmd = [
             "biliup", "-u", cookie, "upload", str(video),
             "--submit", "web",
             "--title", title[:80],
             "--desc", desc,
         ]
-        tags = script.get("bili_tags")
+        tags = script.get(sk.BILI_TAGS)
         if tags:
             cmd += ["--tag", str(tags)]
-        copyright_ = script.get("bili_copyright")
+        copyright_ = script.get(sk.BILI_COPYRIGHT)
         if copyright_ in (1, "1"):
             cmd += ["--copyright", "1"]
         else:
@@ -149,7 +150,7 @@ class BilibiliPublisher(Publisher):
                 cmd += ["--source", str(item.source_url)[:255]]
         # 分区 tid：条目显式设置优先，其次自动建议（参考原项目 assign_bili_tid），
         # 最后配置默认（审核未设分区时兜底）
-        tid = script.get("bili_tid")
+        tid = script.get(sk.BILI_TID)
         if not tid:
             from backend.pipeline.category import assign_bili_tid
 
