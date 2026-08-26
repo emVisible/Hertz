@@ -49,7 +49,7 @@ class PublishMixin:
                 script[sk.BILI_TID] = int(bili_tid)
             elif bili_tid is not None:
                 # 显式清空（0 = 回默认分区）
-                script.pop("bili_tid", None)
+                script.pop(sk.BILI_TID, None)
             if bili_copyright is not None:
                 script[sk.BILI_COPYRIGHT] = int(bili_copyright)
             item.script_json = script or None

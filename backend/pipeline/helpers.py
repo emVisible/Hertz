@@ -1,5 +1,6 @@
 """Pipeline 域共享助手（v0.8 查漏补缺）：消除 service/engine 的重复骨架。"""
 
+from backend.models import script_keys
 from backend.models.item import Item
 from backend.models.session import session_factory
 from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError
@@ -50,7 +51,7 @@ async def bump_item_seq(session, item: Item) -> None:
 
 # 重制后保留的发布元数据（对齐原项目 _purge_derived_media：bili_* 字段保留——
 # 用户可能在审核页手动改过标题/分区；旁白与字幕缓存清除，重制必然重生成）
-_PURGE_KEEP_SCRIPT_KEYS = ("bili_title", "bili_desc", "bili_tags", "bili_tid")
+_PURGE_KEEP_SCRIPT_KEYS = tuple(script_keys.ARCHIVE_SAFE_KEYS)
 
 
 async def purge_derived_media(item: Item, *, keep_raw: bool = True) -> None:

@@ -13,6 +13,16 @@ v0.11.7：Tier1 拆两类——营销极限词（广告法，标题/简介场景
 故故事场景用 safety_only=True：安全红线阻断，营销词降级为 tier2 告警。
 """
 
+from backend.models.script_keys import (
+    BILI_TITLE as _SK_BILI_TITLE,
+)
+from backend.models.script_keys import (
+    NARRATION as _SK_NARRATION,
+)
+from backend.models.script_keys import (
+    SUBTITLE_ZH as _SK_SUBTITLE_ZH,
+)
+
 # 安全红线（内容平台违禁）：任何文本命中即阻断
 TIER1_SAFETY = {
     "赌博", "博彩", "色情", "嫖娼", "毒品", "枪支持有", "洗钱",
@@ -67,7 +77,7 @@ def redact(text: str) -> str:
 
 def check_script(script: dict, *, safety_only: bool = False) -> dict:
     """Check a produced script (narration/title/subtitle fields)."""
-    fields = ["narration", "title", "subtitle_zh", "cover_text", "bili_title"]
+    fields = [_SK_NARRATION, "title", _SK_SUBTITLE_ZH, "cover_text", _SK_BILI_TITLE]
     combined: dict = {"tier1": [], "tier2": [], "tier3": []}
     for field in fields:
         value = script.get(field)
