@@ -469,7 +469,8 @@ def _subtitle_cache_hit(
         return None
     if str(existing_script.get(sk.NARRATION) or "").strip() != narration_text.strip():
         return None
-    if existing_script.get(sk.SUB_SOURCE) != src_lang or existing_script.get(sk.SUB_TARGET) != tgt_lang:
+    if (existing_script.get(sk.SUB_SOURCE) != src_lang
+            or existing_script.get(sk.SUB_TARGET) != tgt_lang):
         return None
     cached = str(existing_script.get(sk.SUBTITLE_ZH) or "").strip()
     return cached or None

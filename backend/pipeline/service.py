@@ -8,9 +8,8 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from backend.models import script_keys as sk
-
 from backend.infrastructure.events import EventHub
+from backend.models import script_keys as sk
 from backend.models.item import Item
 from backend.pipeline.engine import StepEngine
 from backend.pipeline.helpers import _auto_tid  # noqa: F401 — _serialize 使用

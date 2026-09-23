@@ -1,6 +1,6 @@
 # Hertz v0.30 战略方向——从「内容工厂」到「创作者工坊」
 
-> 状态：规划中 · 2026-08-24  
+> 状态：已交付（v0.30.0）· 规划 2026-08-24 / 收口 2026-09-23  
 > 前提：v0.22 已交付完整流水线基建（采集→闸门→制作→审核→发布）  
 > 本文档回答三个问题：为什么转、转成什么、怎么到那里。
 
@@ -41,13 +41,13 @@ Hertz 需要从「用 AI 替代人」转变为「用系统放大人」。
 
 | 维度 | 现状 | 巩固目标 | 状态 |
 |---|---|---|---|
-| media.py 解体 | 2141→1323 行，已切出 subtitles/probe/common/story/retranslate | 继续切出 compose/cover/script 域至 <800 行 | ⬜ |
+| media.py 解体 | producers/ 13 域文件切出（compose/cover/probe/narration/subtitles/retranslate/story…），主文件 648 行 | 继续切出 compose/cover/script 域至 <800 行 | ✅ v0.23（648 < 800） |
 | service 层 | PublishMixin 五域 Mixin 拆分完成 | service.py 门面瘦身；Promotion 域独立文件 ✓ | ✅ |
 | 翻译去 API 化 | Opus-MT 本地引擎 + 缓存复用 | 扩展语言对覆盖；三步法仅在显式要求时启用 | ✅ |
 | 能力预检 | 四条目矩阵 + 阻断语义 + 变化告警 | 泛化为声明式能力注册（四件套约定） | ✅ |
-| script_json 契约 | 写侧收敛至 script_keys.py | 读侧全量覆盖（publishers/engine 序列化） | ⬜ |
-| 前端状态 | usePipelineExecution 630 行总线 hook | 按域拆为 3 个独立 hooks | ⬜ |
-| 错误处理 | 后端层级清晰；前端 toast 模式不统一 | 全局错误边界 + 统一错误展示组件 | ⬜ |
+| script_json 契约 | 读写两侧均引 script_keys 常量（publishers/engine/media/helpers 收敛完成） | 读侧全量覆盖（publishers/engine 序列化） | ✅ v0.23 |
+| 前端状态 | usePipelineExecution 30 行壳 + usePipelineData/Actions/Events 三 hooks | 按域拆为 3 个独立 hooks | ✅ v0.23 |
+| 错误处理 | ErrorBoundary + 全局 unhandledrejection 监听 + 统一 toast | 全局错误边界 + 统一错误展示组件 | ✅ v0.23 |
 
 ---
 
@@ -137,29 +137,34 @@ Tier D  人工输入      创意决策点（脚本工坊产出）
 ## 六、版本节奏
 
 ```
-v0.23  地基巩固
-       ├── media.py 解体收尾（compose/cover/script 域切出）
-       ├── usePipelineExecution 按域拆解
-       ├── 错误处理统一化（全局边界 + 统一 toast）
-       └── script_json 读侧契约全量覆盖
+v0.23  地基巩固                                        ✅ 已交付
+       ├── media.py 解体收尾（compose/cover/script 域切出）✅ 2141→648 行
+       ├── usePipelineExecution 按域拆解                ✅ Data/Actions/Events 三 hooks
+       ├── 错误处理统一化（全局边界 + 统一 toast）        ✅ ErrorBoundary + unhandledrejection
+       └── script_json 读侧契约全量覆盖                  ✅ 读写两侧均引 sk 常量
 
-v0.24  脚本工坊 MVP
-       ├── 语音草稿 → whisper 转写 → 可编辑文本
-       ├── 逐句打磨模式（时长预估/重读标记/顺序拖拽）
-       └── 最小闭环验证：语音 → 文本 → 编辑 → 合成 → 审核
+v0.24  脚本工坊 MVP                                      ✅ 已交付（D-192）
+       ├── 语音草稿 → whisper 转写 → 可编辑文本          ✅ + 纯文本直录 + 草稿暂存
+       ├── 逐句打磨模式（时长预估/重读标记/顺序拖拽）     ✅ TTS 试听已补
+       └── 最小闭环验证：语音 → 文本 → 编辑 → 合成 → 审核 ✅ 第六 tab 接入流水线导航
 
-v0.25  智能路由 + 规则评分
-       ├── 启发式评分引擎（多信号规则，LLM 仅灰区增强）
-       ├── 成本感知降级路由（TaskRouter 增强）
-       └── 可量化验证点：API 调用量 ↓50%
+v0.25  智能路由 + 规则评分                                ✅ 已交付（D-193）
+       ├── 启发式评分引擎（多信号规则，LLM 仅灰区增强）    ✅
+       ├── 成本感知降级路由（TaskRouter 增强）            ✅ critical+ 强制启发式 / exceeded 跳自动批次
+       └── 可量化验证点：API 调用量 ↓50%                 部分达成——高置信免 LLM + 阶梯切断自动消耗
 
-v0.26  创作资产系统 + 半自动面板
-       ├── 灵感片段标记 + 素材组合预览
-       ├── 视觉风格预设系统
-       └── 批量操作面板 + 快捷键全覆盖
+v0.26  创作资产系统 + 半自动面板                          ✅ 已交付（D-194～D-197）
+       ├── 灵感片段标记 + 素材组合预览                    ✅ sidecar <name>.meta.json
+       ├── 视觉风格预设系统                              ✅ wave25_style_presets
+       └── 批量操作面板 + 快捷键全覆盖                    ✅ 批量拖拽 = items.priority 列全链路
+                                                          （wave26 落库 + engine 取件按降序）
+                                                          日历栏目色 + Enter 展开（D-197）
 
-v0.30  整合发布
+v0.30  整合发布                                          ✅ 本版（D-199）
        └── 全部能力整合 + 打包发布 + 正式版标记
+           verify.sh 全绿（351 后端 / 35 前端）· 四处版本对齐 0.30.0 ·
+           固化包 + HERTZ_USER_DATA 新机模拟 · tag v0.30.0 → mac-arm64 dmg
+           遗留（如实记录）：未签名 dmg 手动下载、CI 仅 mac arm64 矩阵
 ```
 
 ---

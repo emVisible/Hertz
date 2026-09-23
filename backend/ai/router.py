@@ -328,7 +328,10 @@ class TaskRouter:
 
             state = await get_budget_state()
             if state is not None and state["level"] in ("critical", "exceeded"):
-                logger.info("score downgraded to heuristic: budget %s (%.0f%%)", state["level"], state["ratio"] * 100)
+                logger.info(
+                    "score downgraded to heuristic: budget %s (%.0f%%)",
+                    state["level"], state["ratio"] * 100,
+                )
                 return self._heuristic_score(title=title, content=content)
         except Exception:  # noqa: BLE001 — 预算查询失败不阻塞评分
             pass

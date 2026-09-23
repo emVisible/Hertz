@@ -23,6 +23,12 @@
 - **v0.21**：P0 安装即用闭环（D-184/D-185）——PyInstaller 固化后端（backend/entrypoint.py：asyncpg 兜底建库 + 编程式 alembic + uvicorn）；内嵌 PostgreSQL（zonky darwin-arm64 发行包首启自动下载到 userData，initdb/pg_ctl 托管，动态端口，退出随停）；electron 打包态跑固化二进制 + HERTZ_USER_DATA 隔离钩子；release.yml tag 触发 mac arm64 构建发 GitHub Releases——新机零配置验收通过；ffmpeg 内嵌兜底（imageio 7.1 含 libass，系统版优先）+ ffprobe 独立解析拆雷；冷启动归因留档（冻结静态导入 ~17s，业务侧全快）；CI 实战首跑验证通过，v0.21.0 dmg 已发布（D-185）
 - **v0.22**：栏目化内容工厂（D-186，非破坏性）——多源采集路由（裸名=Reddit 兼容，存量转载源零改动）；AI 原创情感故事源（LLM 直产 text_only 种子，成本闸 per_tick=2，栏目人设注入）+ RSS 通用文本源双新源；栏目实体 wave20（源池/固定音色/B站分区/简介模板/标签/标题风格/persona/片头配置绑定单元）+ items.channel_key 采集打标；固定音色优先级链（栏目>注册表>自适应）；动态标题卡片头（produce 单点汇聚前置 concat，三重降级）；包装注入（标题风格/标签置顶/desc 模板/bili_tid）；设置页 ChannelsCard 管理 UI。Reddit 凭证路径确认死路后降级为可选插件，存量转载分发链路零触碰
 - **v0.22.x**：全系统架构审计第一轮清偿（D-187）——_serialize 双死代码删除；telegram push_alert 三接线（熔断/发布失败/预算阶梯，哑火通道复活）；RSS SSRF 防护；ffprobe 探测收敛单一出口；telemetry tick 环形记录 + /api/metrics 端点 + DB 每日备份滚动保留。遗留 B 系结构清偿逐轮推进（media.py 拆分/retranslate 下沉/service_publish 再切等）；翻译引擎可插拔（D-188）——本地 Opus-MT en→zh（ctranslate2 零新增重依赖，模型首用自动下载）与 API 三步法随时切换 + 字幕缓存复用省重复调用
+- **v0.23**：地基巩固四项收口（D-191 前置，零行为变更）——media.py 解体收尾（compose/cover/probe/narration/retranslate 等 13 域文件切出，主文件 2141→648 行）；usePipelineExecution 630 行总线 hook 按域拆为 usePipelineData/Actions/Events 三 hooks（壳 30 行）；错误处理统一（ErrorBoundary + 全局 unhandledrejection 监听，异步错误不再无声消失）；script_json 读写两侧全量收敛至 sk 契约常量
+- **v0.24**：脚本工坊 MVP（D-192，能力一落地）——语音草稿 → faster-whisper 本地转写 → 逐句编辑入库，产出直连既有 TTS→ASS→ffmpeg 下游零改动；TTS 试听、句子拖拽排序、朗读时长实时预估、纯文本直录、草稿暂存；第六 tab 接入流水线导航可达
+- **v0.25**：规则评分引擎 + 智能路由阶梯降级（D-193）——多信号启发式打分（高置信免 LLM，仅灰区增强）；成本阶梯收口两处：budget critical/exceeded 时 router.score 强制本地启发式（零 API）、exceeded 时 ScoreStep 跳过自动批次（人工触发仍可用）。可量化点：API 调用量下降
+- **v0.26**：创作资产系统 + 半自动面板（D-194～D-196）——灵感笔记 sidecar 与素材关联、灵感片段标记（t0/t1 + label，与原始素材分离）、素材组合预览、视觉风格预设（wave25_style_presets）；制作优先级 items.priority 列（wave26_item_priority，engine 取件按降序，批量队列拖拽排序的持久化后端）
+- **运营面板补齐**（D-197，并入 v0.26 节奏）——审核卡 Enter 展开、发布日历栏目色彩标记；快捷键覆盖 j/k/a/r/Enter
+- **v0.30**：整合发布（本轮）——零行为变更的发布收尾：verify.sh 全绿基线（后端 351 + 前端 35 + tsc）、四处版本号对齐 0.30.0、本地 --dir 打包 + HERTZ_USER_DATA 新机模拟、tag v0.30.0 走 release.yml 出 mac-arm64 dmg。战略四项能力（脚本工坊/创作资产/降级路由/运营面板）至此成版
 
 ## v0.30 战略方向
 
@@ -54,10 +60,11 @@
 
 ## 下一步候选
 
-1. **P0 安装即用闭环**：PyInstaller 打包后端 → CI（GitHub Actions）产物发布到更新源 → 全新机器零配置安装验收（AXIOM §17.5）
-2. **P1 情感频道第二阶段（收尾）**：故事源数据通道修复（Reddit OAuth 凭证配置/cookie 刷新）→ 全量采集启用，IP 化（片头/固定音色/栏目化）
-3. **P1 体验打磨**：下载队列重排、画布多板/图层/图片卡片、对话引用画布卡片
+1. **P1 情感频道第二阶段（收尾）**：故事源数据通道修复（Reddit OAuth 凭证配置/cookie 刷新）→ 全量采集启用，IP 化（片头/固定音色/栏目化）
+2. **P1 体验打磨**：下载队列重排、画布多板/图层/图片卡片、对话引用画布卡片
+3. **P1 脚本工坊二期**：风格锚点对照检查（当前为预设保存，未做写作时实时比对）、片段↔条目双向引用可视化
 4. **P2 发布扩展**：更多平台发布器、定时自动发布、数据导出/导入
+5. **P2 平台矩阵与签名**：mac Developer ID 签名（解锁自动更新）+ win/linux 真机验证后扩矩阵（见已知缺口，不在 v0.30 范围）
 
 ## 维护约定
 

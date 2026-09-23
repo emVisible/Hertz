@@ -97,7 +97,8 @@ def _clean_snippet(raw: dict) -> dict | None:
         return None
     if t0 < 0 or t1 <= t0 or t1 - t0 > 3600:
         return None
-    return {"t0": round(t0, 2), "t1": round(t1, 2), "label": str(raw.get("label") or "").strip()[:80]}
+    label = str(raw.get("label") or "").strip()[:80]
+    return {"t0": round(t0, 2), "t1": round(t1, 2), "label": label}
 
 
 def _read_snippets(meta_path: Path) -> list[dict] | None:

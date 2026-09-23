@@ -149,7 +149,9 @@ class ScoreStep(Pipe):
             m_state = await get_budget_state(use_cache=True)
             if m_state is not None and m_state["level"] == "exceeded":
                 logger.info("monthly budget exceeded — skip auto score for %s", item.id)
-                ctx.log(f"monthly budget exceeded ({m_state['used']}/{m_state['monthly']}) — skip score")
+                ctx.log(
+                    f"monthly budget exceeded ({m_state['used']}/{m_state['monthly']}) — skip score"
+                )
                 return ProcessResult(status="downloaded")
         except Exception:  # noqa: BLE001 — 预算查询失败不阻塞评分
             pass

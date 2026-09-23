@@ -8,13 +8,12 @@
 
 import asyncio
 import logging
-
-from backend.models import script_keys as sk
 from pathlib import Path
 
 from backend.ai.router import AIRouter
 from backend.config import settings
 from backend.library.thumbnails import find_ffmpeg
+from backend.models import script_keys as sk
 from backend.pipeline.producers.common import ProducerError, _run_cmd
 
 logger = logging.getLogger(__name__)

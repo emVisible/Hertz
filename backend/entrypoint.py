@@ -52,7 +52,13 @@ def _ensure_database() -> None:
 
 
 def _migrate() -> None:
-    """alembic upgrade head（编程式；URL 由 env.py 从 settings 解析）。"""
+    """alembic upgrade heads（编程式；URL 由 env.py 从 settings 解析）。
+
+    用复数 `heads` 而非 `head`：仓库现状为多 head（wave26_item_priority 主线 +
+    wave21_glossary_remove 悬空分支），单数 `head` 在 alembic 侧直接抛
+    CommandError「Multiple head revisions are present」——新库首启即崩（v0.30
+    打包验证暴露）。dev 库存量已同时 stamp 两个 head，upgrade heads 与之对齐。
+    """
     from alembic.config import Config
 
     from alembic import command
@@ -60,8 +66,8 @@ def _migrate() -> None:
     base = _base_dir()
     cfg = Config(str(base / "alembic.ini"))
     cfg.set_main_option("script_location", str(base / "alembic"))
-    command.upgrade(cfg, "head")
-    print("[entrypoint] migrations at head")
+    command.upgrade(cfg, "heads")
+    print("[entrypoint] migrations at heads")
 
 
 def main() -> None:
