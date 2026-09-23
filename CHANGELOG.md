@@ -5,6 +5,20 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.30.0] - 2026-09-23
+### 创作者工坊战略整合发布（v0.23 → v0.30 一轮收口）
+
+本轮零新功能，为「从内容工厂到创作者工坊」战略（D-191）的四项能力做整合发布。
+
+- 脚本工坊 MVP（D-192）：语音草稿 → faster-whisper 本地转写 → 逐句打磨（拖拽排序 / 朗读时长预估 / TTS 试听 / 纯文本直录 / 草稿暂存）→ 入库，产出直连既有 TTS→字幕→合成下游，下游零改动；作为第六个 tab 接入流水线导航
+- 智能路由阶梯降级 + 规则评分（D-193）：多信号启发式评分高置信免 LLM；预算 critical/exceeded 时评分强制本地启发式，exceeded 时自动批次跳过评分（人工仍可触发）——降级路径有日志可追
+- 创作资产（D-194/D-195）：素材 sidecar `<name>.meta.json` 承载笔记与灵感片段（`{t0,t1,label}`，非法条目丢弃不报错）、素材组合预览；视觉风格预设表 `style_presets`（wave25），套用只写创意子集、不动栏目归属字段
+- 半自动运营面板（D-196/D-197）：制作优先级 `items.priority`（wave26，默认 0 与存量行为等价）打通「批量队列拖拽排序 → 落库 → 取件按降序」全链路；发布日历栏目色彩标记；流水线壳 Enter 展开焦点卡
+- 地基巩固收口（v0.23）：media.py 2141→648 行（producers/ 13 域文件）、usePipelineExecution 拆为 Data/Actions/Events 三 hooks、前端全局错误边界 + unhandledrejection、script_json 读写两侧收敛至 sk 契约
+- 修复：固化后端首启在多 head 现状下抛 `Multiple head revisions are present`（仅全新数据库复现，dev 库已 stamp 双 head 故长期隐身）——启动器迁移目标 `head` → `heads`，未改动任何迁移文件，新库终点与开发库一致（D-199）
+- 版本对齐：`backend/config.py` / `electron` / `frontend` / 根 `package.json` / `pyproject.toml` 五处同步 0.30.0（D-185 教训清偿：此前打包版本停在 0.21.0 而 CHANGELOG 已到 0.22）
+- 已知限制（未在本轮解决）：macOS 未签名，dmg 需手动下载且无自动更新；CI 仅 mac arm64 单矩阵，win/linux 未真机验证
+
 ## [v0.22.0] - 2026-08-24
 ### 栏目化内容工厂（非破坏性）
 - 翻译引擎可插拔：本地 Opus-MT en→zh（免费离线，ctranslate2 推理零新增重依赖，模型约 300MB 首用自动下载，支持 hf-mirror 镜像端点）与 API 三步法随时切换；本地失败自动回落 API
