@@ -79,9 +79,16 @@ def _migrate() -> None:
 
 
 def main() -> None:
+    import multiprocessing
     import time
 
     from backend.config import settings
+
+    # 冻结态必须最先执行：faster-whisper 构造模型会经 multiprocessing 派生子进程，
+    # macOS 的 spawn 启动方式让子进程**重新执行本入口**——缺这道守卫时 v0.31 spike
+    # 实测每构造一次就自我重跑（45 秒内进程数 1→7，曾累积 138 个残留进程），
+    # 打包版第一次转写就会拖死用户机器。非冻结态无此现象，只有冻结后暴露。
+    multiprocessing.freeze_support()
 
     t0 = time.perf_counter()
     _ensure_database()
