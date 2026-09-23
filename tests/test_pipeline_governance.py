@@ -146,6 +146,28 @@ def test_next_slot_respects_window_and_interval() -> None:
     assert slot6 is None
 
 
+def test_slot_calls_in_tests_inject_fixed_now() -> None:
+    """守卫：测试里调用 next_slot 必须注入固定 now。
+
+    真实教训——test_reschedule_expired 曾断言「过期条目一定拿到未来槽位」，
+    而对照条目 now+1天 把 earliest 推到次日，本地时间越过末窗口（约 20:00 后）
+    必然返回 None → 发布闸门每晚自己变红。凡是依赖真实挂钟的排期断言，
+    要么注入 now，要么只断言不变量。
+    """
+    import re
+    from pathlib import Path
+
+    offenders = []
+    for path in sorted(Path(__file__).parent.glob("test_*.py")):
+        src = path.read_text(encoding="utf-8")
+        for m in re.finditer(r"next_slot\(([^)]*)\)", src, re.S):
+            args = m.group(1)
+            line_no = src[: m.start()].count("\n") + 1
+            if "now=" not in args or "datetime.now(" in args:
+                offenders.append(f"{path.name}:{line_no}")
+    assert not offenders, "next_slot 调用未注入固定 now（会随挂钟变红）: " + ", ".join(offenders)
+
+
 # ---------- 自动过审 ----------
 
 @pytest.mark.asyncio

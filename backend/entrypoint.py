@@ -29,13 +29,21 @@ def _ensure_database() -> None:
 
     url = make_url(settings.database_url)
     dbname = url.database or "hertz"
-    dsn = (
-        f"postgresql://{url.username or 'postgres'}@{url.host or 'localhost'}:"
-        f"{url.port or 5432}/postgres"
-    )
 
     async def _create() -> bool:
-        conn = await asyncpg.connect(dsn, timeout=10)
+        # 关键字参数直连：此前手拼 DSN 只填了 user/host/port，**丢掉了口令**——
+        # 内嵌 PG 是 trust 认证所以打包版无感，但 main.ts 明文推荐的
+        # 「设 HERTZ_DATABASE_URL 指向外部 PostgreSQL」逃生通道会在迁移之前
+        # 就 InvalidPasswordError 死掉（哪怕目标库已存在）。
+        # 走 kwargs 也顺带回避了口令里特殊字符的 URL 转义问题。
+        conn = await asyncpg.connect(
+            host=url.host or "localhost",
+            port=int(url.port or 5432),
+            user=url.username or "postgres",
+            password=url.password,
+            database="postgres",
+            timeout=10,
+        )
         try:
             exists = await conn.fetchval(
                 "SELECT 1 FROM pg_database WHERE datname = $1", dbname
