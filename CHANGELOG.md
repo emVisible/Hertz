@@ -15,7 +15,7 @@
 - 创作资产（D-194/D-195）：素材 sidecar `<name>.meta.json` 承载笔记与灵感片段（`{t0,t1,label}`，非法条目丢弃不报错）、素材组合预览；视觉风格预设表 `style_presets`（wave25），套用只写创意子集、不动栏目归属字段
 - 半自动运营面板（D-196/D-197）：制作优先级 `items.priority`（wave26，默认 0 与存量行为等价）打通「批量队列拖拽排序 → 落库 → 取件按降序」全链路；发布日历栏目色彩标记；流水线壳 Enter 展开焦点卡
 - 地基巩固收口（v0.23）：media.py 2141→648 行（producers/ 13 域文件）、usePipelineExecution 拆为 Data/Actions/Events 三 hooks、前端全局错误边界 + unhandledrejection、script_json 读写两侧收敛至 sk 契约
-- 修复：固化后端首启在多 head 现状下抛 `Multiple head revisions are present`（仅全新数据库复现，dev 库已 stamp 双 head 故长期隐身）——启动器迁移目标 `head` → `heads`，未改动任何迁移文件，新库终点与开发库一致（D-199）
+- 修复：固化后端首启在多 head 现状下抛 `Multiple head revisions are present`（仅全新数据库复现，dev 库已 stamp 双 head 故长期隐身）——启动器迁移目标 `head` → `heads`，未改动任何迁移文件，新库终点与开发库一致（D-198）
 - 版本对齐：`backend/config.py` / `electron` / `frontend` / 根 `package.json` / `pyproject.toml` 五处同步 0.30.0（D-185 教训清偿：此前打包版本停在 0.21.0 而 CHANGELOG 已到 0.22）
 - 已知限制（未在本轮解决）：macOS 未签名，dmg 需手动下载且无自动更新；CI 仅 mac arm64 单矩阵，win/linux 未真机验证
 
