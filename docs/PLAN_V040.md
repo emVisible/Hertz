@@ -45,7 +45,7 @@ v0.40 的正当主题不是新能力,而是把验证面推到产物上——顺�
 
 | ID | 交付 | 为什么是它 | 验收（可自动） |
 |---|---|---|---|
-| **S1** | alembic autogenerate 护栏：`env.py` 的 `process_revision_directives` 滤掉 `DropTableOp`（除非显式开关）+ `include_object` 黑名单 legacy 表 | 2 个 remove_table 是唯一的**不可逆**风险 | 纯函数测试：喂造出来的 ops，断言 drop 被滤并写日志 |
+| **S1** ✅ | alembic autogenerate 护栏：`env.py` 的 `process_revision_directives` 滤掉 `DropTableOp`（除非显式开关）+ `include_object` 黑名单 legacy 表 | 2 个 remove_table 是唯一的**不可逆**风险 | 纯函数测试：喂造出来的 ops，断言 drop 被滤并写日志 |
 | **S2** | 补真实缺失 schema：`wave27` 加 `ix_items_archived` / `ix_items_error_class` 索引 + `plans.brief_group_id` FK（挂 wave26，**不动双 head**） | 库里现在就缺，是线上查询性能债 | 隔离空库跑 `upgrade heads` 后查 `pg_indexes` 断言三者在场 |
 | **S3** | 工坊中文输出纠偏：`studio.py` 改走 `asr.transcribe_with_whisper` 的同一套繁简重转，消灭第二套转写实现 | 招牌功能给用户看的第一个字是繁体 | 用 6.69s 中文 fixture 断言 `_has_traditional()==False`；且不再存在第二处 `model.transcribe` 直调（AST 守卫） |
 | **S4** | 模型目录单一真相源：`data_dir/models/whisper`，`asr` 与 `deps` 共用；配一键下载 + pending 琥珀态（v0.31 B4/B5） | 现在耦合 `$HOME/.cache`，违背 `HERTZ_USER_DATA` 隔离的存在理由 | 一致性测试（两处解析同目录）+ 无缓存冷启动实测 141MB 首下 |
