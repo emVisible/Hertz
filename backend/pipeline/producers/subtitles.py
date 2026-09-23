@@ -14,6 +14,7 @@ from pathlib import Path
 
 from backend.config import settings
 from backend.infrastructure.deps import font_file
+from backend.models import script_keys as sk
 from backend.pipeline.producers import translate_engine
 
 logger = logging.getLogger(__name__)
@@ -451,3 +452,24 @@ def _wrap_lines(text: str, font, max_width: int, draw) -> list[str]:
         if current:
             lines.append(current)
     return lines or [text]
+
+
+# ---------- 字幕缓存（自 media.py 迁入，D-v0.23） ----------
+
+def _subtitle_cache_hit(
+    existing_script, narration_text: str, src_lang: str, tgt_lang: str
+) -> str | None:
+    """字幕翻译缓存判定（v0.22.x）：narration 未变 + 译文已持久化 + 语言方向
+    匹配 → 返回缓存译文；否则 None（走原翻译逻辑）。
+
+    非破坏性：existing_script 为 None（打回重制）或键缺失 → None；
+    「重新翻译」动作走 engine.retranslate 独立路径，不受此缓存影响。
+    """
+    if not isinstance(existing_script, dict):
+        return None
+    if str(existing_script.get(sk.NARRATION) or "").strip() != narration_text.strip():
+        return None
+    if existing_script.get(sk.SUB_SOURCE) != src_lang or existing_script.get(sk.SUB_TARGET) != tgt_lang:
+        return None
+    cached = str(existing_script.get(sk.SUBTITLE_ZH) or "").strip()
+    return cached or None

@@ -7,7 +7,7 @@ import type {
   PipelineItem,
   PublishQueueView,
 } from '../../api/pipeline'
-import { Badge, Card, EmptyState, Icon } from '../ui'
+import { Badge, Card, EmptyState, Icon, useToast } from '../ui'
 import { QueryErrorState } from '../ui/QueryErrorState'
 
 const TIER_BADGE: Record<ContentTier, { tone: 'primary' | 'neutral' | 'warning'; key: string }> = {
@@ -136,6 +136,8 @@ export function QueueView() {
     refetchInterval: 30_000,
   })
 
+  const toast = useToast()
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['publish-queue'] })
     qc.invalidateQueries({ queryKey: ['pipeline-items'] })
@@ -145,6 +147,7 @@ export function QueueView() {
     mutationFn: ({ id, phase }: { id: string; phase: 'ready' | '' }) =>
       pipelineApi.enqueue(id, phase),
     onSuccess: invalidate,
+    onError: (err) => toast(err instanceof Error ? err.message : String(err), 'error'),
   })
 
   const ready = data?.ready ?? []

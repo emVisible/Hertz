@@ -59,6 +59,10 @@ export interface PipelineItem {
   published_at: string | null
   /** 发布队列相位（v0.12）：''=手动｜holding=预发布队列｜ready=发布队列 */
   queue_phase?: '' | 'holding' | 'ready'
+  /** 归属栏目（v0.22 栏目化，后端 _serialize 全量携带，日历欄目色用） */
+  channel_key?: string | null
+  /** 制作优先级（v0.26 运营面板，默认 0；engine 取件降序） */
+  priority?: number
   /** 软归档（wave10）：备用库标记——异常区删除入口 */
   archived?: boolean
 }
@@ -290,6 +294,9 @@ export const pipelineApi = {
   /** 生产方式批量设置（v0.3.3，预处理人工选择）。 */
   setProduceOptions: (ids: string[], options: Partial<ProduceOptions>) =>
     api.post<{ updated: number }>('/api/pipeline/produce-options', { ids, options }),
+  /** 制作优先级落库（v0.26 运营面板）：按给定顺序赋 priority，首位最高。 */
+  setPriority: (orderedIds: string[]) =>
+    api.post<{ updated: number }>('/api/pipeline/items/priority', { ordered_ids: orderedIds }),
   /** 生产方式预设模板（v0.4 B3）：命名组合一键套用。 */
   produceTemplates: () =>
     api.get<Array<{ id: string; name: string; options: ProduceOptions; builtin: boolean }>>(

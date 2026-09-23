@@ -8,6 +8,8 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from backend.models import script_keys as sk
+
 from backend.infrastructure.events import EventHub
 from backend.models.item import Item
 from backend.pipeline.engine import StepEngine
@@ -130,6 +132,8 @@ class PipelineService(
             "score_reasons": item.score_reasons or [],
             "is_lowscore": item.is_lowscore,
             "produce_options": item.produce_options,
+            # 制作优先级（v0.26）：批量队列拖拽排序落库
+            "priority": item.priority,
             "raw_path": item.raw_path,
             "video_path": item.video_path,
             "cover_path": item.cover_path,
@@ -150,7 +154,7 @@ class PipelineService(
             # 分区自动建议（v0.2.7，参考原项目 assign_bili_tid）：未手动设置时的推荐分区
             "auto_tid": (
                 None
-                if (item.script_json or {}).get("bili_tid")
+                if (item.script_json or {}).get(sk.BILI_TID)
                 else _auto_tid(item)
             ),
             "published_at": item.published_at.isoformat() if item.published_at else None,

@@ -182,7 +182,9 @@ async def test_intro_disabled_returns_original(tmp_path) -> None:
 # ---------- v0.22 可见性补全：SSRF 防护 + /api/metrics ----------
 
 
-def test_ssrf_block_private_and_allow_public() -> None:
+def test_ssrf_block_private_and_allow_public(monkeypatch) -> None:
+    import socket as _socket
+
     from backend.pipeline.collectors.rss import assert_public_http_url, is_blocked_host
 
     # 字面量 IP 不走 DNS，确定性
@@ -197,6 +199,15 @@ def test_ssrf_block_private_and_allow_public() -> None:
         assert_public_http_url("http://localhost/feed.xml")
     with pytest.raises(RuntimeError, match="SSRF"):
         assert_public_http_url("http://169.254.169.254/latest/meta-data/")
+    # example.com 需 DNS，离线环境下 mock 为公网 IP（93.184.216.34）
+    _orig = _socket.getaddrinfo
+
+    def _fake(host, *a, **kw):
+        if host == "example.com":
+            return [(_socket.AF_INET, _socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        return _orig(host, *a, **kw)
+
+    monkeypatch.setattr(_socket, "getaddrinfo", _fake)
     assert_public_http_url("https://example.com/feed.xml")
 
 
@@ -218,6 +229,73 @@ async def test_rss_collect_rejects_internal_feed() -> None:
     with pytest.raises(RuntimeError, match="SSRF"):
         await coll.collect(_Ctx(), "rss/intranet", limit=5)
     app_settings.pipeline_rss_feeds = ""
+
+
+# ---------- 风格预设（v0.26）：命名创意包 CRUD + 套用仅动创意子集 ----------
+
+
+@pytest.mark.asyncio
+async def test_style_preset_crud_and_apply(_channel_cleanup) -> None:
+    import uuid as _uuid
+
+    from sqlalchemy import delete, select
+
+    from backend.models.channel import Channel
+    from backend.models.pipeline import StylePreset
+    from backend.models.session import session_factory
+    from backend.pipeline.style_presets import StylePresetService
+
+    svc = StylePresetService()
+    try:
+        created = await svc.create(
+            name="test-warm",
+            config={
+                "voice": "zh-CN-XiaoxiaoNeural",
+                "bili_tid": 17,
+                "title_style_prompt": "暖心标题",
+                "tags": ["情感", "治愈"],
+                "name": "HACK-should-be-dropped",
+                "source_pool": ["x"],
+            },
+        )
+        assert created["name"] == "test-warm"
+        # 非 PRESET_KEYS 键被清洗
+        assert "name" not in created["config"] and "source_pool" not in created["config"]
+        assert created["config"]["voice"] == "zh-CN-XiaoxiaoNeural"
+
+        listed = await svc.list_presets()
+        assert any(p["id"] == created["id"] for p in listed)
+
+        async with session_factory() as session:
+            session.add(
+                _make_channel(
+                    "test-preset-target",
+                    name="目标栏目",
+                    source_pool=["rss/tech"],
+                    voice="old-voice",
+                )
+            )
+            await session.commit()
+
+        applied = await svc.apply_to_channel(_uuid.UUID(created["id"]), "test-preset-target")
+        assert applied["voice"] == "zh-CN-XiaoxiaoNeural"
+        assert applied["bili_tid"] == 17
+        assert applied["title_style_prompt"] == "暖心标题"
+        # 归属类字段不动
+        assert applied["name"] == "目标栏目"
+        assert applied["public_id"] == "test-preset-target"
+        async with session_factory() as session:
+            row = (
+                await session.execute(
+                    select(Channel).where(Channel.public_id == "test-preset-target")
+                )
+            ).scalar_one()
+            assert row.source_pool == ["rss/tech"]
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(Channel).where(Channel.public_id == "test-preset-target"))
+            await session.execute(delete(StylePreset).where(StylePreset.name == "test-warm"))
+            await session.commit()
 
 
 @pytest.mark.asyncio

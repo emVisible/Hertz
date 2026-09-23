@@ -151,6 +151,46 @@ async def set_tags(body: dict):
     return {"path": path, "tags": meta.get("tags", [])}
 
 
+@router.post("/note")
+async def set_note(body: dict):
+    """资产笔记（v0.26）：写入 `<path>.meta.json` sidecar note 字段（合并保留 tags 等）。
+
+    空字符串 = 清除笔记。返回 note（清除后为 None）。
+    """
+    path = str(body.get("path") or "")
+    note = body.get("note")
+    if not path or not isinstance(note, str):
+        raise HTTPException(status_code=422, detail="path and note(str) required")
+    target = await _ensure_allowed(path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    from backend.library.browser import write_note
+
+    meta = write_note(target, note)
+    saved = (meta.get("note") or "").strip()
+    return {"path": path, "note": saved or None}
+
+
+@router.post("/snippets")
+async def set_snippets(body: dict):
+    """片段标记（v0.26）：整体替换 `<path>.meta.json` snippets 列表。
+
+    每项 {t0, t1, label}，t1>t0≥0，时长 ≤3600s，最多 32 条；非法项丢弃。
+    仅 video/audio 有意义，但路由不强制（图片无时间轴，前端不展示编辑器）。
+    """
+    path = str(body.get("path") or "")
+    snippets = body.get("snippets")
+    if not path or not isinstance(snippets, list):
+        raise HTTPException(status_code=422, detail="path and snippets[] required")
+    target = await _ensure_allowed(path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    from backend.library.browser import write_snippets
+
+    meta = write_snippets(target, snippets)
+    return {"path": path, "snippets": meta.get("snippets", [])}
+
+
 @router.get("/scan")
 async def scan(
     path: str = Query(...),

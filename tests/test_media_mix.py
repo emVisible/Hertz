@@ -337,7 +337,7 @@ async def test_asr_translate_false_keeps_original(monkeypatch, tmp_path):
             calls.append("chat")
             return '{"segments": ["你好"]}'
 
-    monkeypatch.setattr(m, "probe_has_audio", fake_has_audio)
+    monkeypatch.setattr("backend.pipeline.producers.asr.probe_has_audio", fake_has_audio)
     monkeypatch.setattr("backend.pipeline.producers.asr.transcribe", fake_transcribe)
 
     got = await m._asr_subtitles(FakeAI(), Path("x.mp4"), tmp_path, translate=False)
@@ -376,7 +376,7 @@ async def test_asr_skip_translation_when_already_zh(monkeypatch, tmp_path):
             calls.append("chat")
             return '{"segments": ["x"]}'
 
-    monkeypatch.setattr(m, "probe_has_audio", fake_has_audio)
+    monkeypatch.setattr("backend.pipeline.producers.asr.probe_has_audio", fake_has_audio)
     monkeypatch.setattr("backend.pipeline.producers.asr.transcribe", fake_transcribe)
 
     got = await m._asr_subtitles(FakeAI(), Path("x.mp4"), tmp_path, target_lang="zh-CN")

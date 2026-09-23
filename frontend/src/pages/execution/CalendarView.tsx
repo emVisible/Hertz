@@ -23,6 +23,21 @@ function itemTime(item: PipelineItem): string | null {
     : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+/** 栏目色彩（v0.26 运营面板）：channel_key 哈希 → 稳定色相，无栏目返回 null */
+function channelColor(key: string | null | undefined): string | null {
+  if (!key) return null
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 360
+  return `hsl(${h} 65% 55%)`
+}
+
+/** 栏目短名：取 public_id 最后一段（如 ai-story/情感夜话 → 情感夜话） */
+function channelShort(key: string | null | undefined): string | null {
+  if (!key) return null
+  const parts = key.split('/')
+  return parts[parts.length - 1] || key
+}
+
 /**
  * 内容日历（v0.2.3，参考 Buffer/新榜）：月网格展示排期与发布记录，
  * 拖拽改期（落到「未排期」区 = 清空排期，复用 meta 清空语义）。
@@ -206,40 +221,57 @@ export function CalendarView({
                 })()}
               </div>
               <div className="mt-0.5 flex flex-col gap-0.5">
-                {dayItems.map((item) => (
-                  <div
-                    key={item.id}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('text/plain', item.id)
-                      e.dataTransfer.effectAllowed = 'move'
-                      setDragId(item.id)
-                    }}
-                    onDragEnd={() => setDragId(null)}
-                    onClick={(e) => {
-                      // 批量多选（v0.4 A3）：⌘/Shift+点击切换选中
-                      if (e.metaKey || e.ctrlKey || e.shiftKey) {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        toggleMulti(item)
-                      }
-                    }}
-                    title={`${item.title}\n${itemDate(item) ?? ''}`}
-                    className={`flex cursor-grab items-center gap-1 truncate border-l-2 px-1 py-0.5 text-[10px] transition-colors hover:bg-surface-2 ${
-                      multiIds.has(item.id)
-                        ? 'border-primary bg-primary/15 text-text-primary'
-                        : item.status === 'published'
-                          ? 'border-emerald-400 text-text-secondary'
-                          : 'border-warning text-text-primary'
-                    }`}
-                  >
-                    {itemTime(item) && <span className="shrink-0 font-mono text-text-disabled">{itemTime(item)}</span>}
-                    <span className="truncate">{item.title}</span>
-                    {item.status === 'published' && (
-                      <span className="ml-auto shrink-0 text-[9px] text-emerald-400">{t('console.calendarPublished')}</span>
-                    )}
-                  </div>
-                ))}
+                {dayItems.map((item) => {
+                  const chColor = channelColor(item.channel_key)
+                  const chShort = channelShort(item.channel_key)
+                  return (
+                    <div
+                      key={item.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', item.id)
+                        e.dataTransfer.effectAllowed = 'move'
+                        setDragId(item.id)
+                      }}
+                      onDragEnd={() => setDragId(null)}
+                      onClick={(e) => {
+                        // 批量多选（v0.4 A3）：⌘/Shift+点击切换选中
+                        if (e.metaKey || e.ctrlKey || e.shiftKey) {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          toggleMulti(item)
+                        }
+                      }}
+                      title={`${item.title}\n${itemDate(item) ?? ''}${chShort ? `\n[${chShort}]` : ''}`}
+                      className={`flex cursor-grab items-center gap-1 truncate border-l-2 px-1 py-0.5 text-[10px] transition-colors hover:bg-surface-2 ${
+                        multiIds.has(item.id)
+                          ? 'bg-primary/15 text-text-primary'
+                          : item.status === 'published'
+                            ? 'text-text-secondary'
+                            : 'text-text-primary'
+                      }`}
+                      style={{
+                        borderLeftColor: multiIds.has(item.id)
+                          ? 'var(--color-primary)'
+                          : (chColor ?? (item.status === 'published' ? '#34d399' : 'var(--color-warning)')),
+                      }}
+                    >
+                      {chShort && (
+                        <span
+                          className="shrink-0 rounded px-1 font-mono text-[9px] leading-4 text-white"
+                          style={{ backgroundColor: chColor ?? undefined }}
+                        >
+                          {chShort.slice(0, 4)}
+                        </span>
+                      )}
+                      {itemTime(item) && <span className="shrink-0 font-mono text-text-disabled">{itemTime(item)}</span>}
+                      <span className="truncate">{item.title}</span>
+                      {item.status === 'published' && (
+                        <span className="ml-auto shrink-0 text-[9px] text-emerald-400">{t('console.calendarPublished')}</span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )

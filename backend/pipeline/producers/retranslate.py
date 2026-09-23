@@ -18,6 +18,7 @@ from pathlib import Path
 
 from backend.ai.router import AIRouter
 from backend.infrastructure.storage import FileStore
+from backend.models import script_keys as sk
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.pipeline.errors import InvalidItemStateError
@@ -111,9 +112,9 @@ async def run_retranslate(
                 row.audio_path = None
                 row.phash = phash
                 script = {
-                    "mode": "retranslate",
-                    "subtitle_zh": zh_text,
-                    "source": "asr",
+                    sk.MODE: "retranslate",
+                    sk.SUBTITLE_ZH: zh_text,
+                    sk.SOURCE: sk.SUB_FROM_ASR,
                 }
                 script = await generate_packaging(ai, row, script)
                 row.script_json = script

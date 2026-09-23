@@ -142,6 +142,17 @@ class ScoreStep(Pipe):
             logger.info("score budget exhausted — skipping item %s", item.id)
             ctx.log("score budget exhausted — skipping (keep downloaded)")
             return ProcessResult(status="downloaded")
+        # 月度预算阶梯（v0.25）：exceeded 时仅人工触发——自动批次跳过评分
+        try:
+            from backend.ai.costs import get_budget_state
+
+            m_state = await get_budget_state(use_cache=True)
+            if m_state is not None and m_state["level"] == "exceeded":
+                logger.info("monthly budget exceeded — skip auto score for %s", item.id)
+                ctx.log(f"monthly budget exceeded ({m_state['used']}/{m_state['monthly']}) — skip score")
+                return ProcessResult(status="downloaded")
+        except Exception:  # noqa: BLE001 — 预算查询失败不阻塞评分
+            pass
         ai = ctx.ai
         if ai is None or not ai.llm_available:
             raise StepError("LLM provider not configured — cannot score")

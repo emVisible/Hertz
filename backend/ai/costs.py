@@ -21,6 +21,81 @@ from backend.models.session import session_factory
 # 预算阶梯告警去重状态："年月:level"——升级沿才推送（v0.22 A2）
 _last_budget_alert: str | None = None
 
+# 轻量预算状态缓存（v0.25 Router 阶梯降级）：30s TTL 避免每条评分打 DB
+_BUDGET_CACHE: dict | None = None
+_BUDGET_CACHE_AT: float = 0.0
+_BUDGET_CACHE_TTL = 30.0
+
+
+def _budget_level_from_ratio(ratio: float) -> str:
+    """ratio → level（与 aggregate_costs 保持一致）。"""
+    if ratio >= 0.95:
+        return "exceeded"
+    if ratio >= 0.8:
+        return "critical"
+    if ratio >= 0.5:
+        return "warning"
+    return "ok"
+
+
+async def get_budget_state(*, now: datetime | None = None, use_cache: bool = True) -> dict | None:
+    """月度预算阶梯状态（轻量版，供 Router 快速决策）。
+
+    Returns: {monthly, used, ratio, level, month_start} | None（budget=0 时 None）。
+    缓存 30s，避免评分批处理时每条打 DB。
+    """
+    global _BUDGET_CACHE, _BUDGET_CACHE_AT
+    import time as _time
+
+    if use_cache and _BUDGET_CACHE is not None:
+        if _time.monotonic() - _BUDGET_CACHE_AT < _BUDGET_CACHE_TTL:
+            return _BUDGET_CACHE
+
+    from backend.config import settings as app_settings
+
+    budget = float(getattr(app_settings, "cost_monthly_budget", 0.0) or 0.0)
+    if budget <= 0:
+        return None
+    prices = dict(getattr(app_settings, "ai_model_prices", {}) or {})
+    rate = float(getattr(app_settings, "cost_usd_rate", 7.2) or 7.2)
+    currency = str(getattr(app_settings, "cost_currency", "CNY") or "CNY")
+    # CNY 场景 rate 已为 USD→CNY，直接用；USD 场景 rate=1
+    if currency.upper() == "USD":
+        rate = 1.0
+    now = now or datetime.now(UTC)
+    month_start = now.astimezone().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    m_start_utc = month_start.astimezone(UTC)
+    async with session_factory() as session:
+        month_rows = (
+            await session.execute(select(AICall).where(AICall.created_at >= m_start_utc))
+        ).scalars().all()
+    month_cost = 0.0
+    for r in month_rows:
+        c = estimate_cost(r.model_key, r.prompt_tokens, r.completion_tokens, prices)
+        if c is not None:
+            month_cost += c
+    used = round(month_cost * rate, 6)
+    ratio = used / budget if budget else 0.0
+    level = _budget_level_from_ratio(ratio)
+    state = {
+        "monthly": budget,
+        "used": used,
+        "ratio": round(min(ratio, 9.99), 4),
+        "level": level,
+        "month_start": local_day_str(m_start_utc),
+    }
+    if use_cache:
+        _BUDGET_CACHE = state
+        _BUDGET_CACHE_AT = _time.monotonic()
+    return state
+
+
+def _clear_budget_cache() -> None:
+    """测试辅助：清除预算缓存。"""
+    global _BUDGET_CACHE, _BUDGET_CACHE_AT
+    _BUDGET_CACHE = None
+    _BUDGET_CACHE_AT = 0.0
+
 # 溯源约定（v0.14.1）：pipeline 域调用点 task_id = "item:<uuid>"
 _ITEM_REF = re.compile(r"^item:([0-9a-f-]{36})$")
 
@@ -318,12 +393,7 @@ async def aggregate_costs(
                 month_cost += c
         used = round(month_cost * rate, 6)
         ratio = used / budget
-        level = (
-            "exceeded" if ratio >= 0.95
-            else "critical" if ratio >= 0.8
-            else "warning" if ratio >= 0.5
-            else "ok"
-        )
+        level = _budget_level_from_ratio(ratio)
         # 告警（v0.22 A2 接线）：阶梯升级沿推送一次（降级/跨月重置后可再报）。
         # 模块级状态——进程生命周期内去重；report 本身仍按需计算。
         global _last_budget_alert

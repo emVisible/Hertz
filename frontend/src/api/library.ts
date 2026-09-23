@@ -9,6 +9,14 @@ export interface LibraryEntry {
   thumb: string | null
   mime: string | null
   tags?: string[] | null
+  note?: string | null
+  snippets?: AssetSnippet[] | null
+}
+
+export interface AssetSnippet {
+  t0: number
+  t1: number
+  label: string
 }
 
 export interface FileInfo extends LibraryEntry {

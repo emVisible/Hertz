@@ -271,7 +271,15 @@
       "introOn": "片头",
       "cancel": "取消",
       "save": "保存",
-      "channelNameRequired": "请填写栏目名称"
+      "channelNameRequired": "请填写栏目名称",
+      "presetPick": "选择风格预设…",
+      "presetApply": "套用",
+      "presetSaveAs": "存为预设",
+      "presetDelete": "删预设",
+      "presetApplied": "已套用预设：{{name}}",
+      "presetSaved": "预设已保存",
+      "presetDeleted": "预设已删除",
+      "presetNamePrompt": "预设名称"
     },
     "ttsPreview": "试听",
     "ttsPreviewText": "这是一段语音试听。欢迎使用。",
@@ -954,7 +962,7 @@
     "calendarBatchHint": "点击任意日期格统一落位（⌘/Shift 多选）",
     "calendarBatchClear": "批量清空排期",
     "calendarBatchScheduled": "已为 {{n}} 条设置排期",
-    "keyHint": "快捷键：j/k 移动 · a 通过 · r 拒绝 · b 打回预处理 · Esc 退出",
+    "keyHint": "快捷键：j/k 移动 · Enter 展开 · a 通过 · r 拒绝 · b 打回预处理 · Esc 退出",
     "stats": "数据",
     "statsHint": "补录播放/互动数据（自动回捞失败时）",
     "statsTitle": "播放·点赞·收藏·评论·分享",
@@ -1392,13 +1400,24 @@
     }
   },
   "workshop": {
-    "title": "脚本工坊",
+    "title": "标题",
     "record": "开始录音",
     "stopRecording": "停止录音",
     "uploadAudio": "上传音频",
     "transcribing": "转写中…",
     "emptyHint": "录音或上传音频文件，系统将本地转写为可编辑文字——零 API 成本",
     "titleContentRequired": "标题与内容不能为空",
-    "itemCreated": "条目已创建，进入流水线"
+    "itemCreated": "条目已创建，进入流水线",
+    "modeAudio": "语音",
+    "modeText": "文本",
+    "textPlaceholder": "在此粘贴或输入文本，按标点自动分句…",
+    "convertText": "分句",
+    "segmentCount": "{{n}} 段",
+    "charCount": "{{n}} 字",
+    "readingTime": "约 {{t}}",
+    "chars": "字",
+    "preview": "试听",
+    "micDenied": "麦克风权限被拒绝",
+    "createItem": "创建条目"
   }
 }

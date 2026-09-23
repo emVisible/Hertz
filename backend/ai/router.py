@@ -319,7 +319,19 @@ class TaskRouter:
         """Rubric scoring: fast 模型 + JSON 结构化输出；失败回退启发式。
 
         v0.19：有频道洞察时注入 rubric 参考——评分向本账号受众偏好校准
-        （数据飞轮一期；洞察生成失败静默跳过，不阻塞评分）。"""
+        （数据飞轮一期；洞察生成失败静默跳过，不阻塞评分）。
+        v0.25：成本阶梯降级——critical/exceeded 时强制启发式（零 API），
+        warning 时仍走 LLM（已有 heuristic 预筛 70% 节省，阶梯在 ScoreStep 再收口）。"""
+        # 成本阶梯预检（v0.25）：critical+ 强制本地启发式，节省 API
+        try:
+            from backend.ai.costs import get_budget_state
+
+            state = await get_budget_state()
+            if state is not None and state["level"] in ("critical", "exceeded"):
+                logger.info("score downgraded to heuristic: budget %s (%.0f%%)", state["level"], state["ratio"] * 100)
+                return self._heuristic_score(title=title, content=content)
+        except Exception:  # noqa: BLE001 — 预算查询失败不阻塞评分
+            pass
         msgs = score_prompts.build_score_messages(title=title, content=content, source=source)
         insight_suffix = await self._insight_suffix()
         if insight_suffix:

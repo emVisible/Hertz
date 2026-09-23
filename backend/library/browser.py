@@ -34,34 +34,85 @@ class LibraryEntry:
     thumb: str | None = None
     mime: str | None = None
     tags: list[str] | None = None
+    note: str | None = None  # v0.26 资产笔记：sidecar note 字段
+    snippets: list[dict] | None = None  # v0.26 片段标记：sidecar snippets [{t0,t1,label}]
+
+
+def _read_meta(meta_path: Path) -> dict:
+    """Read sidecar `<name>.meta.json` (best effort, dict or {})."""
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {}
 
 
 def _read_tags(meta_path: Path) -> list[str]:
     """Read tags from a sidecar `<name>.meta.json` (best effort)."""
-    try:
-        data = json.loads(meta_path.read_text(encoding="utf-8"))
-        tags = data.get("tags") if isinstance(data, dict) else None
-        if isinstance(tags, list):
-            return [str(t) for t in tags][:8]
-    except (OSError, json.JSONDecodeError):
-        pass
+    tags = _read_meta(meta_path).get("tags")
+    if isinstance(tags, list):
+        return [str(t) for t in tags][:8]
     return []
+
+
+def _read_note(meta_path: Path) -> str | None:
+    """Read note from sidecar (best effort, empty → None)."""
+    note = _read_meta(meta_path).get("note")
+    if isinstance(note, str) and note.strip():
+        return note.strip()[:2000]
+    return None
+
+
+def _write_meta(media_path: Path, patch: dict) -> dict:
+    """Merge patch into sidecar (keep other fields)."""
+    meta_path = Path(f"{media_path}{META_SUFFIX}")
+    data = _read_meta(meta_path)
+    data.update(patch)
+    data["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+    meta_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return data
 
 
 def write_tags(media_path: Path, tags: list[str]) -> dict:
     """Write tags into the `<name>.meta.json` sidecar (merge, keep other fields)."""
-    meta_path = Path(f"{media_path}{META_SUFFIX}")
-    data: dict = {}
+    return _write_meta(media_path, {"tags": [str(t).strip() for t in tags if str(t).strip()]})
+
+
+def write_note(media_path: Path, note: str) -> dict:
+    """Write note into sidecar (merge, keep other fields). Empty clears."""
+    cleaned = str(note or "").strip()[:2000]
+    return _write_meta(media_path, {"note": cleaned})
+
+
+def _clean_snippet(raw: dict) -> dict | None:
+    """Validate/normalize one snippet {t0, t1, label}. Invalid → None."""
+    if not isinstance(raw, dict):
+        return None
     try:
-        data = json.loads(meta_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-    data["tags"] = [str(t).strip() for t in tags if str(t).strip()]
-    data["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
-    meta_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    return data
+        t0 = float(raw.get("t0", 0))
+        t1 = float(raw.get("t1", 0))
+    except (TypeError, ValueError):
+        return None
+    if t0 < 0 or t1 <= t0 or t1 - t0 > 3600:
+        return None
+    return {"t0": round(t0, 2), "t1": round(t1, 2), "label": str(raw.get("label") or "").strip()[:80]}
+
+
+def _read_snippets(meta_path: Path) -> list[dict] | None:
+    """Read snippets from sidecar (best effort, invalid entries dropped, empty → None)."""
+    raw = _read_meta(meta_path).get("snippets")
+    if not isinstance(raw, list):
+        return None
+    cleaned = [s for s in (_clean_snippet(r) for r in raw[:32]) if s is not None]
+    return cleaned or None
+
+
+def write_snippets(media_path: Path, snippets: list[dict]) -> dict:
+    """Replace snippet list (merge, keep other fields). Max 32, validated."""
+    cleaned = [s for s in (_clean_snippet(r) for r in (snippets or [])[:32]) if s is not None]
+    return _write_meta(media_path, {"snippets": cleaned})
 
 
 class LibraryBrowser:
@@ -109,6 +160,7 @@ class LibraryBrowser:
                 if p.is_file():
                     t = Path(f"{p}{THUMB_SUFFIX}")
                     meta = Path(f"{p}{META_SUFFIX}")
+                    meta_exists = meta.exists()
                     entries.append(
                         LibraryEntry(
                             name=p.name,
@@ -118,7 +170,9 @@ class LibraryBrowser:
                             mtime=st.st_mtime,
                             thumb=str(t) if t.exists() else None,
                             mime=mimetypes.guess_type(p.name)[0],
-                            tags=_read_tags(meta) if meta.exists() else None,
+                            tags=_read_tags(meta) if meta_exists else None,
+                            note=_read_note(meta) if meta_exists else None,
+                            snippets=_read_snippets(meta) if meta_exists else None,
                         )
                     )
 
@@ -175,8 +229,16 @@ class LibraryBrowser:
                     walk(child, depth + 1)
                 elif child.is_file():
                     meta = Path(f"{child}{META_SUFFIX}")
-                    tags = _read_tags(meta) if meta.exists() else []
-                    if q in child.name.lower() or any(q in t.lower() for t in tags):
+                    meta_exists = meta.exists()
+                    tags = _read_tags(meta) if meta_exists else []
+                    note = _read_note(meta) if meta_exists else None
+                    snippets = _read_snippets(meta) if meta_exists else None
+                    if (
+                        q in child.name.lower()
+                        or any(q in t.lower() for t in tags)
+                        or (note and q in note.lower())
+                        or any(q in (s.get("label") or "").lower() for s in (snippets or []))
+                    ):
                         thumb = Path(f"{child}{THUMB_SUFFIX}")
                         out.append(
                             LibraryEntry(
@@ -188,6 +250,8 @@ class LibraryBrowser:
                                 thumb=str(thumb) if thumb.exists() else None,
                                 mime=mimetypes.guess_type(child.name)[0],
                                 tags=tags or None,
+                                note=note,
+                                snippets=snippets,
                             )
                         )
         for root in roots:
@@ -198,13 +262,20 @@ class LibraryBrowser:
         if not path.exists():
             return None
         st = path.stat()
-        return {
+        out: dict = {
             "name": path.name,
             "path": str(path),
             "kind": classify(path.name) if path.is_file() else "directory",
             "size": st.st_size,
             "mtime": st.st_mtime,
         }
+        if path.is_file():
+            meta = Path(f"{path}{META_SUFFIX}")
+            if meta.exists():
+                out["tags"] = _read_tags(meta) or None
+                out["note"] = _read_note(meta)
+                out["snippets"] = _read_snippets(meta)
+        return out
 
     def list_roots(self, base: Path, max_depth: int = 2) -> list[dict]:
         """Project directory tree for the library sidebar (AXIOM: browse from known roots)."""

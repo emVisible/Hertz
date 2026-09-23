@@ -149,6 +149,19 @@ export function AssetsPage() {
   // ---- 预览 / 右键 / 下载条 / 文档 ----
   const [quickPreview, setQuickPreview] = useState<LibraryEntry | null>(null)
   const [detail, setDetail] = useState<FileInfo | null>(null)
+  // ---- 多选组合（v0.26）：path 集合，跨过滤保持，切换目录时清空 ----
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    setSelected(new Set())
+  }, [currentPath])
+  function toggleSelect(path: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
   const [menu, setMenu] = useState<{ x: number; y: number; entry: LibraryEntry } | null>(null)
   const [tagEdit, setTagEdit] = useState<LibraryEntry | null>(null)
   const [tagDraft, setTagDraft] = useState('')
@@ -174,6 +187,10 @@ export function AssetsPage() {
   )
 
   const entries = scan.data?.entries ?? []
+  const selectedEntries = useMemo(
+    () => entries.filter((e) => selected.has(e.path)),
+    [entries, selected],
+  )
   // 产物目录（output 下，含 studio / pipeline）：素材库专用提示（标签/下载引导）不适用
   const isArtifactsPath = !!(
     roots.data?.output &&
@@ -194,7 +211,13 @@ export function AssetsPage() {
     return entries
       .filter((e) => kind === 'all' || e.kind === kind)
       .filter((e) => !tagFilter || (e.tags ?? []).includes(tagFilter))
-      .filter((e) => !q || e.name.toLowerCase().includes(q))
+      .filter(
+        (e) =>
+          !q ||
+          e.name.toLowerCase().includes(q) ||
+          (e.tags ?? []).some((tg) => tg.toLowerCase().includes(q)) ||
+          (e.note ?? '').toLowerCase().includes(q),
+      )
   }, [entries, kind, query, tagFilter])
   // 全局排序（对标 Heartstone：名称 / 大小 / 修改时间，三视图共享，默认时间降序；
   // 目录恒前置（Finder 风格），组内再按排序键排列）
@@ -752,37 +775,110 @@ export function AssetsPage() {
           ) : view === 'grid' ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
               {sorted.map((entry) => (
-                <AssetCard
-                  key={entry.path}
-                  entry={entry}
-                  onPreview={() => (entry.kind === 'directory' ? openEntry(entry) : setQuickPreview(entry))}
-                  onDetail={() => openEntry(entry)}
-                  onContext={(x, y) => setMenu({ x, y, entry })}
-                  onFavorite={(e) => {
-                    const tags = e.tags ?? []
-                    void saveTags(e, tags.includes('⭐') ? tags.filter((x) => x !== '⭐') : [...tags, '⭐'])
-                  }}
-                  onShowInFolder={window.electron ? () => window.electron?.showItemInFolder(entry.path) : undefined}
-                  onDelete={() => deleteFile(entry)}
-                />
+                <div key={entry.path} className="relative">
+                  {entry.kind !== 'directory' && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(entry.path)}
+                      onChange={() => toggleSelect(entry.path)}
+                      title={t('assets.select', '加入组合')}
+                      className="absolute left-1.5 top-1.5 z-10 h-4 w-4 accent-primary"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
+                  <AssetCard
+                    entry={entry}
+                    onPreview={() => (entry.kind === 'directory' ? openEntry(entry) : setQuickPreview(entry))}
+                    onDetail={() => openEntry(entry)}
+                    onContext={(x, y) => setMenu({ x, y, entry })}
+                    onFavorite={(e) => {
+                      const tags = e.tags ?? []
+                      void saveTags(e, tags.includes('⭐') ? tags.filter((x) => x !== '⭐') : [...tags, '⭐'])
+                    }}
+                    onShowInFolder={window.electron ? () => window.electron?.showItemInFolder(entry.path) : undefined}
+                    onDelete={() => deleteFile(entry)}
+                  />
+                </div>
               ))}
             </div>
           ) : (
             <ul className="space-y-1">
               {sorted.map((entry) => (
-                <AssetDetailRow
-                  key={entry.path}
-                  entry={entry}
-                  onPreview={() => (entry.kind === 'directory' ? openEntry(entry) : setQuickPreview(entry))}
-                  onDetail={() => openEntry(entry)}
-                  onContext={(x, y) => setMenu({ x, y, entry })}
-                  onShowInFolder={window.electron ? () => window.electron?.showItemInFolder(entry.path) : undefined}
-                  onDelete={() => deleteFile(entry)}
-                />
+                <li key={entry.path} className="flex items-center gap-2">
+                  {entry.kind !== 'directory' && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(entry.path)}
+                      onChange={() => toggleSelect(entry.path)}
+                      title={t('assets.select', '加入组合')}
+                      className="h-4 w-4 shrink-0 accent-primary"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <AssetDetailRow
+                      entry={entry}
+                      onPreview={() => (entry.kind === 'directory' ? openEntry(entry) : setQuickPreview(entry))}
+                      onDetail={() => openEntry(entry)}
+                      onContext={(x, y) => setMenu({ x, y, entry })}
+                      onShowInFolder={window.electron ? () => window.electron?.showItemInFolder(entry.path) : undefined}
+                      onDelete={() => deleteFile(entry)}
+                    />
+                  </div>
+                </li>
               ))}
             </ul>
           )}
         </div>
+
+        {/* 组合预览抽屉（v0.26）：多选集横向排列，验证拼接节奏 */}
+        {selectedEntries.length > 0 && (
+          <div className="border-t border-border bg-surface-1 px-4 py-2">
+            <div className="mb-1.5 flex items-center gap-2">
+              <span className="text-xs font-medium text-text-primary">
+                {t('assets.combo', '组合预览')} · {selectedEntries.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="text-xs text-text-disabled hover:text-error"
+              >
+                {t('common.clear', '清空')}
+              </button>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {selectedEntries.map((e, i) => (
+                <div key={e.path} className="flex w-36 shrink-0 flex-col gap-1 rounded border border-border bg-surface-2 p-1.5">
+                  <div className="flex h-16 items-center justify-center overflow-hidden bg-surface-1">
+                    {e.kind === 'image' ? (
+                      <img src={fileUrl(e.path)} alt={e.name} className="max-h-full max-w-full object-contain" />
+                    ) : e.kind === 'video' ? (
+                      <video src={fileUrl(e.path)} className="max-h-full max-w-full" preload="metadata" />
+                    ) : e.kind === 'audio' ? (
+                      <Icon name="console" size={20} className="text-success" />
+                    ) : (
+                      <Icon name="briefs" size={20} className="text-text-disabled" />
+                    )}
+                  </div>
+                  <p className="truncate text-[10px] text-text-secondary" title={e.name}>
+                    {i + 1}. {e.name}
+                  </p>
+                  {e.note && (
+                    <p className="truncate text-[10px] text-text-disabled" title={e.note}>
+                      {e.note}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleSelect(e.path)}
+                    className="self-end text-[10px] text-text-disabled hover:text-error"
+                  >
+                    {t('common.remove', '移除')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 底部状态栏：进行中任务数 + 当前路径（对标 Heartstone 下载页底部） */}
         <div className="flex items-center gap-2 border-t border-border bg-surface-1 px-4 py-1.5">

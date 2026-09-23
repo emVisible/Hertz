@@ -91,6 +91,22 @@ class ProduceTemplate(BaseModel):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class StylePreset(BaseModel):
+    """风格预设（v0.26 创作资产）：命名栏目创意包，一处定义多处套用。
+
+    config_json = 创意子集 {voice/bili_tid/desc_template/tags/
+    title_style_prompt/persona_prompt/intro_config}——排除 name/source_pool/
+    enabled（归属类字段不随预设走）。无内置，用户从栏目存为预设。
+    """
+
+    __tablename__ = "style_presets"
+
+    name: Mapped[str] = mapped_column(String(120))
+    config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class ChannelInsight(BaseModel):
     """频道洞察快照（v0.19 数据飞轮一期）：历史保留，注入取最新。"""
 

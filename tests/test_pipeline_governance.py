@@ -3128,7 +3128,7 @@ async def test_asr_subtitles_strip_punct(tmp_path, monkeypatch) -> None:
     async def fake_has_audio(*a, **k):
         return True
 
-    monkeypatch.setattr(media_mod, "probe_has_audio", fake_has_audio)
+    monkeypatch.setattr("backend.pipeline.producers.asr.probe_has_audio", fake_has_audio)
     monkeypatch.setattr("backend.pipeline.producers.asr.transcribe", fake_transcribe)
 
     from backend.pipeline.producers import translate_engine

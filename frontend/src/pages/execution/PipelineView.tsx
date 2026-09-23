@@ -204,6 +204,16 @@ export function PipelineView(p: PipelineViewProps) {
             setAuditFocus(null)
           }
           break
+        case 'Enter':
+          // 展开/折叠焦点卡文案（v0.26 运营面板：Enter 不碰鼠标看全文）
+          if (idx >= 0) {
+            e.preventDefault()
+            const el = document.querySelector(
+              `#audit-item-${list[idx].id} details`,
+            ) as HTMLDetailsElement | null
+            if (el) el.open = !el.open
+          }
+          break
         case 'Escape':
           setAuditFocus(null)
           if (auditSel.mode) auditSel.exit()

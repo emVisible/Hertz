@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 
 from backend.config import settings
+from backend.pipeline.producers.probe import probe_has_audio
 
 logger = logging.getLogger(__name__)
 
@@ -275,3 +276,76 @@ async def transcribe(media_path: Path, out_srt: Path) -> Path | None:
     if whisper_available():
         return await transcribe_with_whisper(media_path, out_srt)
     return None
+
+
+# ---------- ASR 字幕（自 media.py 迁入，D-v0.23） ----------
+
+async def _cues_already_target(cues, target_lang: str) -> bool:
+    """转写文本已是目标语言则跳过 LLM 翻译（中文原声视频不绕一圈）。
+
+    v0.10：翻译只对「原声非目标语言」发生——目标为中文且转写已含
+    中文字符（≥3 字）时原文即目标语言，直接复用转写（省一次 LLM 调用）。
+    """
+    if not target_lang.lower().startswith("zh"):
+        return False
+    zh_count = sum(
+        1
+        for _, _, text in cues
+        for ch in (text or " ")
+        if "\u4e00" <= ch <= "\u9fff"
+    )
+    return zh_count >= 3
+
+
+async def _asr_subtitles(
+    ai,  # AIRouter — 避免循环导入，不加类型标注
+    raw_path: Path,
+    directory: Path,
+    target_lang: str = "zh-CN",
+    *,
+    translate: bool = True,
+    asr_srt: Path | None = None,
+    task_id: str | None = None,
+) -> tuple[Path, str] | None:
+    """ASR 原声字幕（v0.8.9 起，v0.10 语义修正：字幕/翻译数据源 = 视频原声）：
+
+    转写原声音轨（xinference 优先 / whisper 兜底）→ 可选 LLM 逐段翻译 →
+    target_lang SRT（保留原声时间戳；translate=True 且目标为中文时译文标点
+    统一清洗）。返回 (srt, 全文)；任一环节失败返回 None。
+    translate=False：转写原文直接作字幕（原声语言），不翻译、不清洗。
+
+    v0.11：asr_srt 传入时复用 produce 步骤的预转写结果（脚本生成已依赖
+    转写全文，同一视频不转写两遍）。
+    """
+    from backend.pipeline.producers.subtitles import (
+        _translate_srt_cues,
+        _write_srt_cues,
+        clean_zh_subtitle_text,
+        parse_srt_cues,
+    )
+
+    if asr_srt is None:
+        has_audio = await probe_has_audio(raw_path)
+        if not has_audio:
+            return None  # 图片帖等无原声——回退旁白字幕
+        asr_srt = directory / "asr.srt"
+        got = await transcribe(raw_path, asr_srt)
+        if got is None:
+            return None
+    cues = parse_srt_cues(asr_srt)
+    if not cues:
+        return None
+    if translate and not await _cues_already_target(cues, target_lang):
+        zh_cues = await _translate_srt_cues(cues, target_lang=target_lang)
+        # v0.8.9 标点清洗（对齐原项目 _rewrite_srt_strip_zh_punct）：
+        # ASR 译文可能残留标点，统一清洗（保留时间戳）
+        zh_cues = [
+            (s, e, clean_zh_subtitle_text(t) or " ")
+            for s, e, t in zh_cues
+        ]
+    else:
+        zh_cues = cues
+    zh_srt = directory / "subs.srt"
+    _write_srt_cues(zh_srt, zh_cues)
+    full = " ".join(t for _, _, t in zh_cues).strip()
+    return zh_srt, full

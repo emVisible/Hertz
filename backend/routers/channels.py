@@ -149,3 +149,85 @@ async def delete_channel(key: str) -> dict:
         if result.rowcount == 0:
             raise HTTPException(404, f"栏目 '{key}' 不存在")
         return {"ok": True}
+
+
+# ---------- 风格预设（v0.26 创作资产）：命名创意包，一处定义多栏目套用 ----------
+
+
+def _presets():
+    from backend.pipeline.style_presets import StylePresetService
+
+    return StylePresetService()
+
+
+class StylePresetBody(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    config: dict = Field(default_factory=dict)
+
+
+@router.get("/style-presets")
+async def list_style_presets() -> list[dict]:
+    return await _presets().list_presets()
+
+
+@router.post("/style-presets")
+async def create_style_preset(body: StylePresetBody) -> dict:
+    try:
+        return await _presets().create(name=body.name, config=body.config)
+    except Exception as exc:  # noqa: BLE001 — 可读失败
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/style-presets/{preset_id}")
+async def update_style_preset(preset_id: str, body: StylePresetBody) -> dict:
+    import json as _json
+    import uuid as _uuid
+
+    try:
+        pid = _uuid.UUID(preset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="preset_id 非法") from exc
+    try:
+        fields: dict = {}
+        if body.name:
+            fields["name"] = body.name.strip()[:120]
+        fields["config_json"] = _json.dumps(
+            {k: v for k, v in body.config.items()}, ensure_ascii=False
+        )
+        return await _presets().update(pid, **fields)
+    except Exception as exc:  # noqa: BLE001 — NotFoundError 等转 404
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/style-presets/{preset_id}")
+async def delete_style_preset(preset_id: str) -> dict:
+    import uuid as _uuid
+
+    try:
+        pid = _uuid.UUID(preset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="preset_id 非法") from exc
+    try:
+        await _presets().delete(pid)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+class StylePresetApplyBody(BaseModel):
+    channel_key: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/style-presets/{preset_id}/apply")
+async def apply_style_preset(preset_id: str, body: StylePresetApplyBody) -> dict:
+    """预设套用到栏目：创意子集覆盖（归属字段不动），返回更新后栏目。"""
+    import uuid as _uuid
+
+    try:
+        pid = _uuid.UUID(preset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="preset_id 非法") from exc
+    try:
+        return await _presets().apply_to_channel(pid, body.channel_key.strip())
+    except Exception as exc:  # noqa: BLE001 — NotFoundError 等转 404
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -9,6 +9,12 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('[Hertz] Unhandled promise rejection:', event.reason)
 })
 
+// 同步未捕获错误（v0.23 D-192）：覆盖 ErrorBoundary 无法触达的
+// setTimeout / 事件回调 / 第三方脚本等场景。
+window.onerror = (message, source, lineno, colno, error) => {
+  console.error('[Hertz] Uncaught error:', { message, source, lineno, colno, error })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

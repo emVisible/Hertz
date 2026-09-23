@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
@@ -37,7 +37,22 @@ export function ProduceBatchModal({
     queryFn: pipelineApi.produceTemplates,
   })
 
-  const list = items
+  // 优先级顺序（v0.26 运营面板）：HTML5 拖拽重排 → 落库 priority
+  const [order, setOrder] = useState<string[]>([])
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [savingPriority, setSavingPriority] = useState(false)
+  useEffect(() => {
+    if (open) {
+      setOrder(items.map((i) => i.id))
+      setDragId(null)
+    }
+  }, [open, items])
+  const byId = new Map(items.map((i) => [i.id, i]))
+  const list = order.map((id) => byId.get(id)).filter((i): i is PipelineItem => !!i)
+  // 新入库条目（order 未覆盖时兜底追加，保持不丢）
+  for (const i of items) {
+    if (!order.includes(i.id)) list.push(i)
+  }
 
   function applyTemplate(id: string) {
     const tpl = templates.find((x) => x.id === id)
@@ -74,6 +89,36 @@ export function ProduceBatchModal({
 
   function toggleAll() {
     setSelected((prev) => (prev.size === list.length ? new Set() : new Set(list.map((i) => i.id))))
+  }
+
+  function onDragStart(id: string) {
+    setDragId(id)
+  }
+  function onDragOver(e: React.DragEvent, id: string) {
+    e.preventDefault()
+    if (dragId === null || dragId === id) return
+    setOrder((prev) => {
+      const next = prev.filter((x) => x !== dragId)
+      const at = next.indexOf(id)
+      next.splice(at < 0 ? next.length : at, 0, dragId)
+      return next
+    })
+    setDragId(id)
+  }
+
+  async function savePriority() {
+    if (order.length === 0) return
+    setSavingPriority(true)
+    try {
+      const res = await pipelineApi.setPriority(order)
+      toast(t('console.produce.prioritySaved', { n: res.updated }), 'success')
+      await queryClient.invalidateQueries({ queryKey: ['pipeline-queue'] })
+      await queryClient.invalidateQueries({ queryKey: ['pipeline-stage'] })
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    } finally {
+      setSavingPriority(false)
+    }
   }
 
   function toggle(id: string) {
@@ -138,19 +183,43 @@ export function ProduceBatchModal({
         {/* 生产方式（应用到所有选中条目） */}
         <ProduceOptionsPicker value={options} onChange={setOptions} />
 
-        {/* 条目多选 */}
+        {/* 条目多选 + 优先级排序（v0.26）：拖拽重排 → 保存优先级落库 */}
         <div className="flex items-center justify-between border-b border-border/60 pb-1.5">
           <p className="text-xs font-medium text-text-primary">{t('console.produce.batchItems', { n: selected.size })}</p>
-          <button type="button" onClick={toggleAll} className="text-[10px] text-text-secondary transition-colors hover:text-text-primary">
-            {selected.size === list.length ? t('console.produce.deselectAll') : t('console.produce.selectAll')}
-          </button>
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void savePriority()}
+              disabled={savingPriority || order.length === 0}
+              className="text-[10px] text-text-secondary transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+              title={t('console.produce.priorityHint', '按当前顺序保存制作优先级，engine 取件优先')}
+            >
+              {t('console.produce.prioritySave', '保存优先级')}
+            </button>
+            <button type="button" onClick={toggleAll} className="text-[10px] text-text-secondary transition-colors hover:text-text-primary">
+              {selected.size === list.length ? t('console.produce.deselectAll') : t('console.produce.selectAll')}
+            </button>
+          </span>
         </div>
         <ul className="max-h-64 space-y-1 overflow-y-auto">
           {list.length === 0 && <p className="py-4 text-center text-xs text-text-disabled">{t('console.emptyPreReview')}</p>}
-          {list.map((item) => {
+          {list.map((item, idx) => {
             const on = selected.has(item.id)
             return (
-              <li key={item.id} className="flex items-center gap-2 px-1">
+              <li
+                key={item.id}
+                draggable
+                onDragStart={() => onDragStart(item.id)}
+                onDragOver={(e) => onDragOver(e, item.id)}
+                onDragEnd={() => setDragId(null)}
+                className={`flex items-center gap-2 px-1 ${dragId === item.id ? 'opacity-50' : ''}`}
+              >
+                <span
+                  className="cursor-grab font-mono text-[10px] text-text-disabled active:cursor-grabbing"
+                  title={t('console.produce.dragHint', '拖拽排序')}
+                >
+                  {idx + 1}
+                </span>
                 <input
                   type="checkbox"
                   checked={on}
@@ -161,6 +230,11 @@ export function ProduceBatchModal({
                 <span className={`min-w-0 flex-1 truncate text-xs ${on ? 'text-text-primary' : 'text-text-secondary'}`}>
                   {item.title}
                 </span>
+                {(item.priority ?? 0) > 0 && (
+                  <span className="shrink-0 rounded bg-primary/15 px-1 font-mono text-[10px] text-primary">
+                    P{item.priority}
+                  </span>
+                )}
                 <span className="shrink-0 font-mono text-[10px] text-text-disabled">{item.status}</span>
               </li>
             )

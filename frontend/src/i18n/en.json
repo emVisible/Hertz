@@ -256,7 +256,15 @@
       "introOn": "intro",
       "cancel": "Cancel",
       "save": "Save",
-      "channelNameRequired": "Column name is required"
+      "channelNameRequired": "Column name is required",
+      "presetPick": "Pick a style preset…",
+      "presetApply": "Apply",
+      "presetSaveAs": "Save as preset",
+      "presetDelete": "Delete preset",
+      "presetApplied": "Preset applied: {{name}}",
+      "presetSaved": "Preset saved",
+      "presetDeleted": "Preset deleted",
+      "presetNamePrompt": "Preset name"
     },
     "ttsPreview": "Preview",
     "ttsPreviewText": "This is a voice preview. Welcome.",
@@ -939,7 +947,7 @@
     "calendarBatchHint": "Click any day cell to schedule all (⌘/Shift multi-select)",
     "calendarBatchClear": "Clear schedules",
     "calendarBatchScheduled": "Scheduled {{n}} items",
-    "keyHint": "Shortcuts: j/k move · a approve · r reject · b back to preprocess · Esc exit",
+    "keyHint": "Shortcuts: j/k move · Enter expand · a approve · r reject · b back to preprocess · Esc exit",
     "stats": "Stats",
     "statsHint": "Fill in views/interactions (fallback when auto-fetch fails)",
     "statsTitle": "views · likes · favorites · comments · shares",
@@ -1399,6 +1407,17 @@
     "transcribing": "Transcribing…",
     "emptyHint": "Record or upload audio — transcribed locally to editable text. Zero API cost.",
     "titleContentRequired": "Title and content are required",
-    "itemCreated": "Item created, entering pipeline"
+    "itemCreated": "Item created, entering pipeline",
+    "modeAudio": "Voice",
+    "modeText": "Text",
+    "textPlaceholder": "Paste or type text here, auto-split by punctuation…",
+    "convertText": "Split",
+    "segmentCount": "{{n}} segments",
+    "charCount": "{{n}} chars",
+    "readingTime": "~{{t}}",
+    "chars": "chars",
+    "preview": "Preview",
+    "micDenied": "Microphone permission denied",
+    "createItem": "Create Item"
   }
 }

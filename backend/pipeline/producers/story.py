@@ -189,9 +189,9 @@ async def produce_story_item(
         if not narration or len(narration.strip()) < 30:
             narration = clean_zh_subtitle_text(content)[:300] or item.title
             src = "heuristic"
-    script["mode"] = "story"
+    script[sk.MODE] = "story"
     script[sk.NARRATION] = narration.strip()[:1200]
-    script["source"] = src
+    script[sk.SOURCE] = src
     script[sk.CONTENT_SOURCE] = "selftext"
     _raise_if_cancelled()
 

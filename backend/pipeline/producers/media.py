@@ -6,7 +6,6 @@ small result dict for the produce step to persist on the item.
 
 import asyncio
 import logging
-import re
 from pathlib import Path
 
 from backend.ai.router import AIRouter
@@ -19,29 +18,37 @@ from backend.pipeline.cancel import (
     reset_active_item,
     set_active_item,
 )
+
+# Re-export from new homes for backward compat (tests / retranslate.py / story.py)
+from backend.pipeline.producers.asr import (  # noqa: F401
+    _asr_subtitles,
+    _cues_already_target,
+)
 from backend.pipeline.producers.common import (
     ProducerError,
     _raise_if_cancelled,
     _run_cmd,
 )
-from backend.pipeline.producers.compose import (
-    _find_bgm,  # noqa: F401
-    _render_cue_png,  # noqa: F401
-    compose_video,  # noqa: F401
-    subtitles_filter_available,  # noqa: F401
-)  # noqa: F401
+from backend.pipeline.producers.compose import (  # noqa: F401
+    _find_bgm,
+    _render_cue_png,
+    compose_video,
+    subtitles_filter_available,
+)
 from backend.pipeline.producers.cover import (  # noqa: F401
     extract_random_cover,
     generate_cover,
 )
-from backend.pipeline.producers.narration import (
+from backend.pipeline.producers.narration import (  # noqa: F401
+    apply_narration_delay,
     check_script_compliance,
     fit_script_to_budget,
     generate_script,
     narration_budget,
+    narration_start_offset,
     synthesize_tts,
 )
-from backend.pipeline.producers.probe import (
+from backend.pipeline.producers.probe import (  # noqa: F401
     probe_audio_duration,
     probe_duration,
     probe_has_audio,
@@ -49,10 +56,10 @@ from backend.pipeline.producers.probe import (
 from backend.pipeline.producers.probe import (
     video_stream_params as _probe_video_params,
 )
-from backend.pipeline.producers.story import (
-    produce_story_item,  # noqa: F401 — produce 分派 + 兼容旧引用
+from backend.pipeline.producers.story import (  # noqa: F401
+    produce_story_item,
 )
-from backend.pipeline.producers.subtitles import (  # noqa: F401 — 兼容旧引用面（asr/engine/tests 经 media.* 访问）  # noqa: F401
+from backend.pipeline.producers.subtitles import (  # noqa: F401
     _EN_LINE_WORDS,
     _FONT_NAMES,
     _LOCALIZE_LEAD_PUNCT,
@@ -66,6 +73,7 @@ from backend.pipeline.producers.subtitles import (  # noqa: F401 — 兼容旧�
     _join_cue_parts,
     _split_en_sentences,
     _split_zh_sentences,
+    _subtitle_cache_hit,
     _subtitle_font,
     _translate_srt_cues,
     _wrap_lines,
@@ -77,12 +85,13 @@ from backend.pipeline.producers.subtitles import (  # noqa: F401 — 兼容旧�
     srt_to_ass,
     subtitle_font_family,
 )
+from backend.pipeline.producers.translate_engine import (  # noqa: F401
+    _clean_nonzh_translation_text,
+    _clean_translation_text,
+    _localize_text,
+)
 
 logger = logging.getLogger(__name__)
-
-# narration target: ~2.3 words/sec, narration covers ~52% of the clip
-_WPS = 2.3
-_RATIO = 0.52
 
 
 def _artifacts_dir(files: FileStore, item) -> Path:
@@ -90,210 +99,6 @@ def _artifacts_dir(files: FileStore, item) -> Path:
     # output_dir 为结构化名（2026-08-04-01），与 download 步骤一致；旧数据兜底 hex
     slug = (item.output_dir or f"pipeline/{item.id.hex}").split("/")[-1]
     return files.output_root() / "pipeline" / slug
-
-
-
-
-
-
-
-
-
-
-
-
-
-_LANG_NAMES = {
-    "en-US": "English", "en-GB": "English (UK)", "zh-CN": "简体中文",
-    "zh-TW": "繁體中文", "ja": "日本語", "ko": "한국어", "vi": "Tiếng Việt",
-    "id": "Bahasa Indonesia", "fil": "Filipino", "pt-BR": "Português (Brasil)",
-    "de": "Deutsch", "fr": "Français", "es": "Español", "ar": "العربية",
-    "ru": "Русский", "it": "Italiano", "tr": "Türkçe", "th": "ภาษาไทย",
-}
-
-
-
-def _clean_nonzh_translation_text(text: str) -> str:
-    """非中文译文清洗（v0.11.3）：去全部标点、保留词间距（与中文
-    clean_zh_subtitle_text 的"去空格"语义不同——英文挤掉空格会糊成一片）；
-    句边界（. ! ? …）折成单空格——script_to_srt 断句依赖。
-    """
-    parts = re.split(r"[.!?…]+", text)
-    out: list[str] = []
-    for part in parts:
-        part = re.sub(
-            r"[\"'“”‘’（）()\[\]{}<>，,、：:；;·•\-_—–~～@#$%^&*+=`|/\\]+",
-            " ", part,
-        )
-        part = re.sub(r"\s+", " ", part).strip()
-        if part and not part.isdigit():  # 编号残留（"1." → "1"）不落字幕
-            out.append(part)
-    return " ".join(out)
-
-
-def _clean_translation_text(text: str) -> str:
-    """翻译文本后置清洗（v0.11.2，v0.11.3 全语言化）：字幕不需要标点——
-
-    - 去除句首/句尾标点（LLM 常在句首补“，”）
-    - v0.11.3：任何语言译文一律去全部标点（用户诉求：翻译不带标点），
-      句边界保留单空格（script_to_srt 断句依赖）
-    """
-    t = _LOCALIZE_LEAD_PUNCT.sub("", (text or "").strip())
-    t = t.strip(" .,;:!?。！？…—")
-    if not t:
-        return ""
-    if any("\u4e00" <= ch <= "\u9fff" for ch in t):
-        return clean_zh_subtitle_text(t)
-    return _clean_nonzh_translation_text(t)
-
-
-_GLOSSARY_LIMIT = 100  # prompt 注入上限（updated_at 新者优先）
-
-
-
-async def _localize_text(
-    text: str, target_lang: str, source_lang: str | None = None,
-) -> str:
-    """旁白/字幕本地化——本地 Opus-MT en→zh 单步直翻（v0.22.x 去 API 化，D-189）。
-
-    旧 LLM 三步法随翻译去 API 化整体移除；机翻质量对字幕场景够用
-    （调研横评记 D-188）。语言对守卫：仅 en→zh 介入，其他对返回原文。
-    失败语义不变：回退原文，不阻塞产线。
-    """
-    if not text.strip():
-        return text
-    if not ((source_lang or "").startswith("en") and target_lang == "zh-CN"):
-        return text
-    try:
-        from backend.pipeline.producers.translate_engine import translate_local
-
-        out = await translate_local(text)
-        return _clean_translation_text(out) if out.strip() else _clean_translation_text(text)
-    except Exception as exc:  # noqa: BLE001 — 翻译失败回退原文，不阻塞生产
-        logger.warning(
-            "localize %s→%s failed (%s) — keeping original",
-            source_lang or "?", target_lang, exc,
-        )
-        return _clean_translation_text(text)
-
-# 中文字幕清洗（v0.8.9，参考原项目 subtitle.py clean_zh_subtitle_text）：
-# 烧录字幕去标点、句间单空格——避免标点符号挤占画面
-def narration_start_offset(text: str, duration: float) -> float:
-    """旁白起始延迟（v0.3.0，参考原项目 narration_start_seconds）：
-    让画面先走一拍——开头 watch/look/see → 0.45s，slow/detail → 1.1s，
-    默认 0.75s；封顶 min(2.2, dur*0.15)。
-    """
-    head = (text or "").strip().lower()[:80]
-    if any(w in head for w in ("watch", "look", "see", "看", "今天")):
-        offset = 0.45
-    elif any(w in head for w in ("slow", "detail", "慢慢", "仔细")):
-        offset = 1.1
-    else:
-        offset = 0.75
-    return min(offset, max(duration * 0.15, 0.2), 2.2)
-
-
-async def apply_narration_delay(audio_path: Path, offset: float) -> Path:
-    """给旁白音频加起始静音（adelay），与字幕 start_offset 对齐（音画同步）。"""
-    if offset <= 0:
-        return audio_path
-    ffmpeg = find_ffmpeg()
-    if ffmpeg is None:
-        return audio_path
-    delayed = audio_path.with_name("narration-delayed.mp3")
-    ms = int(offset * 1000)
-    await _run_cmd([
-        str(ffmpeg), "-y", "-i", str(audio_path),
-        "-af", f"adelay={ms}|{ms}",
-        "-c:a", "libmp3lame", "-q:a", "4",
-        str(delayed),
-    ])
-    return delayed
-
-
-
-
-# libass 可用性缓存（v0.8.8）：ffmpeg 8.x 部分构建未编译 libass——
-# subtitles filter 不存在时跳过烧录（保留 srt），生产降级不阻塞
-
-
-
-
-async def _cues_already_target(cues, target_lang: str) -> bool:
-    """转写文本已是目标语言则跳过 LLM 翻译（中文原声视频不绕一圈）。
-
-    v0.10：翻译只对「原声非目标语言」发生——目标为中文且转写已含
-    中文字符（≥3 字）时原文即目标语言，直接复用转写（省一次 LLM 调用）。
-    """
-    if not target_lang.lower().startswith("zh"):
-        return False
-    zh_count = sum(
-        1
-        for _, _, text in cues
-        for ch in (text or " ")
-        if "\u4e00" <= ch <= "\u9fff"
-    )
-    return zh_count >= 3
-
-
-async def _asr_subtitles(
-    ai: AIRouter,
-    raw_path: Path,
-    directory: Path,
-    target_lang: str = "zh-CN",
-    *,
-    translate: bool = True,
-    asr_srt: Path | None = None,
-    task_id: str | None = None,
-) -> tuple[Path, str] | None:
-    """ASR 原声字幕（v0.8.9 起，v0.10 语义修正：字幕/翻译数据源 = 视频原声）：
-
-    转写原声音轨（xinference 优先 / whisper 兜底）→ 可选 LLM 逐段翻译 →
-    target_lang SRT（保留原声时间戳；translate=True 且目标为中文时译文标点
-    统一清洗）。返回 (srt, 全文)；任一环节失败返回 None。
-    translate=False：转写原文直接作字幕（原声语言），不翻译、不清洗。
-
-    v0.11：asr_srt 传入时复用 produce 步骤的预转写结果（脚本生成已依赖
-    转写全文，同一视频不转写两遍）。
-    """
-    from backend.pipeline.producers.asr import transcribe
-
-    if asr_srt is None:
-        has_audio = await probe_has_audio(raw_path)
-        if not has_audio:
-            return None  # 图片帖等无原声——回退旁白字幕
-        asr_srt = directory / "asr.srt"
-        got = await transcribe(raw_path, asr_srt)
-        if got is None:
-            return None
-    cues = parse_srt_cues(asr_srt)
-    if not cues:
-        return None
-    if translate and not await _cues_already_target(cues, target_lang):
-        zh_cues = await _translate_srt_cues(cues, target_lang=target_lang)
-        # v0.8.9 标点清洗（对齐原项目 _rewrite_srt_strip_zh_punct）：
-        # ASR 译文可能残留标点，统一清洗（保留时间戳）
-        zh_cues = [
-            (s, e, clean_zh_subtitle_text(t) or " ")
-            for s, e, t in zh_cues
-        ]
-    else:
-        zh_cues = cues
-    zh_srt = directory / "subs.srt"
-    _write_srt_cues(zh_srt, zh_cues)
-    full = " ".join(t for _, _, t in zh_cues).strip()
-    return zh_srt, full
-
-
-
-
-
-
-
-
-
-
-
 
 
 async def produce_item(
@@ -337,25 +142,6 @@ async def produce_item(
         return artifacts
     finally:
         reset_active_item(token)
-
-
-def _subtitle_cache_hit(
-    existing_script, narration_text: str, src_lang: str, tgt_lang: str
-) -> str | None:
-    """字幕翻译缓存判定（v0.22.x）：narration 未变 + 译文已持久化 + 语言方向
-    匹配 → 返回缓存译文；否则 None（走原翻译逻辑）。
-
-    非破坏性：existing_script 为 None（打回重制）或键缺失 → None；
-    「重新翻译」动作走 engine.retranslate 独立路径，不受此缓存影响。
-    """
-    if not isinstance(existing_script, dict):
-        return None
-    if str(existing_script.get("narration") or "").strip() != narration_text.strip():
-        return None
-    if existing_script.get("_sub_src") != src_lang or existing_script.get("_sub_tgt") != tgt_lang:
-        return None
-    cached = str(existing_script.get("subtitle_zh") or "").strip()
-    return cached or None
 
 
 async def _produce_item(
@@ -417,7 +203,7 @@ async def _produce_item(
         from backend.pipeline.package import generate_packaging
 
         script = await generate_packaging(
-            ai, item, {"mode": "passthrough", "narration": ""}
+            ai, item, {sk.MODE: "passthrough", sk.NARRATION: ""}
         )
         artifacts["script"] = script
         return artifacts
@@ -457,7 +243,7 @@ async def _produce_item(
     )
     # v0.8.9 迁移数据兜底：旧项目脚本（CandleBone 时代）只有 script 键无
     # narration——重制时旁白会变成字符串 "None" 烧进字幕。无 narration 时重生成
-    if not str(script.get("narration") or "").strip():
+    if not str(script.get(sk.NARRATION) or "").strip():
         logger.warning("existing script lacks narration — regenerating")
         script = await generate_script(
             ai, item, max_words=budget["max_words"] or 120, video_duration=duration,
@@ -473,7 +259,7 @@ async def _produce_item(
 
     # 处理语言（v0.2.7，参考原项目 locales）：英文旁白 + 中文字幕可配置；
     # v0.3.3：翻译模块 = 仅字幕翻译（原声保留）
-    narration_text = str(script.get("narration") or "")[:1000]
+    narration_text = str(script.get(sk.NARRATION) or "")[:1000]
     narration_lang = str(
         getattr(settings, "pipeline_narration_lang", "en-US") or "en-US"
     )
@@ -499,8 +285,8 @@ async def _produce_item(
             narration_text, subtitle_lang, source_lang=translate_source,
         )
         if isinstance(script, dict):
-            script["_sub_src"] = translate_source
-            script["_sub_tgt"] = subtitle_lang
+            script[sk.SUB_SOURCE] = translate_source
+            script[sk.SUB_TARGET] = subtitle_lang
     else:
         subtitle_text = narration_text
     # 中文字幕持久化（v0.8.5）：B 站简介构建复用（subtitle_zh 首句 + 署名）
@@ -533,9 +319,9 @@ async def _produce_item(
             )
         if asr_subtitle:
             srt_path, asr_text = asr_subtitle
-            script["subtitle_zh"] = asr_text.strip()
+            script[sk.SUBTITLE_ZH] = asr_text.strip()
             # 字幕来源标记（v0.22.x）：审核卡 ⚠️ 徽章数据源
-            script["subtitle_source"] = "asr"
+            script[sk.SUBTITLE_SOURCE] = sk.SUB_FROM_ASR
             artifacts["subtitle"] = {"path": str(srt_path), "source": "asr"}
         else:
             logger.warning(
@@ -550,7 +336,7 @@ async def _produce_item(
         # 或跟旁白原文本地化配音（默认 script）
         # v0.11：subtitle 源 = script["subtitle_zh"]（转写译文优先，旁白文案兜底）
         tts_src = getattr(settings, "pipeline_tts_text_source", "script") or "script"
-        subtitle_zh = str(script.get("subtitle_zh") or subtitle_text or "").strip()
+        subtitle_zh = str(script.get(sk.SUBTITLE_ZH) or subtitle_text or "").strip()
         if (tts_src == "subtitle" and want_translate and subtitle_zh):
             tts_text = subtitle_zh
         else:
@@ -690,8 +476,8 @@ async def _produce_item(
             }
             # 降级标记（v0.22.x）：来源非原声时打标——翻译失败场景下
             # 兜底字幕可能是外语原文，前端 ⚠️ 徽章提示不再静默
-            script["subtitle_source"] = (
-                "asr" if asr_subtitle else "narration_fallback"
+            script[sk.SUBTITLE_SOURCE] = (
+                sk.SUB_FROM_ASR if asr_subtitle else sk.SUB_FROM_NARRATION_FALLBACK
             )
         except Exception:  # noqa: BLE001 — subtitles are best-effort
             srt_path = None
@@ -729,7 +515,7 @@ async def _produce_item(
             "degraded": "raw",
         }
         script = dict(artifacts.get("script") or {})
-        script["produced_degraded"] = "raw"
+        script[sk.PRODUCED_DEGRADED] = "raw"
         artifacts["script"] = script
 
     # phash 去重（v0.2.1，参考原项目 Autarkeia block_publish_duplicates）：
@@ -761,7 +547,7 @@ async def _produce_item(
     quality = dict((artifacts.get("video") or {}).get("quality") or {})
     if quality:
         script = dict(artifacts.get("script") or {})
-        script["compose_quality"] = quality
+        script[sk.COMPOSE_QUALITY] = quality
         artifacts["script"] = script
 
     # B 站中文包装（v0.8.5，对齐原项目）：bili_title/bili_desc/bili_tags 自动补齐，

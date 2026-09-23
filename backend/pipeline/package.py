@@ -82,9 +82,9 @@ def heuristic_packaging(item) -> dict:
     """无 LLM 时的包装兜底：中文标题 + 默认标签 + 原文标题简介（v0.11.5 不换中文）。"""
     title = _heuristic_bili_title(item.title or "")
     return {
-        "bili_title": title,
-        "bili_desc": (item.title or "").strip()[:200],
-        "bili_tags": ",".join(_FALLBACK_TAGS),
+        sk.BILI_TITLE: title,
+        sk.BILI_DESC: (item.title or "").strip()[:200],
+        sk.BILI_TAGS: ",".join(_FALLBACK_TAGS),
     }
 
 

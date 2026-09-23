@@ -60,7 +60,7 @@ class ProduceStep(Pipe):
         # 未手动设置 tid 时按 subreddit 推荐（审核页 Select 可改）
         script = dict(artifacts.get("script") or {})
         if preflight_warnings:
-            script["produce_warnings"] = list(preflight_warnings)
+            script[sk.PRODUCE_WARNINGS] = list(preflight_warnings)
         if not script.get(sk.BILI_TID):
             from backend.pipeline.category import assign_bili_tid
 

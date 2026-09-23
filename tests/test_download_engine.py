@@ -168,11 +168,21 @@ async def test_ssrf_blocks_private_hosts(tmp_path):
     await client.aclose()
 
 
-def test_ssrf_rejects_bad_schemes_and_credentials():
+def test_ssrf_rejects_bad_schemes_and_credentials(monkeypatch):
+    import socket as _socket
+
     from backend.download.engine import is_safe_media_url
 
     assert not is_safe_media_url("http://example.com/x.mp4")
     assert not is_safe_media_url("https://user:pass@example.com/x.mp4")
+    _orig = _socket.getaddrinfo
+
+    def _fake(host, *a, **kw):
+        if host == "example.com":
+            return [(_socket.AF_INET, _socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        return _orig(host, *a, **kw)
+
+    monkeypatch.setattr(_socket, "getaddrinfo", _fake)
     assert is_safe_media_url("https://example.com/x.mp4")
 
 

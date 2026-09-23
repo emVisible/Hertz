@@ -86,6 +86,20 @@ const textareaCls =
 
 const fieldLabel = 'mb-0.5 block text-[11px] font-medium text-text-secondary'
 
+interface StylePreset {
+  id: string
+  name: string
+  config: {
+    voice?: string | null
+    bili_tid?: number | null
+    desc_template?: string | null
+    tags?: string[]
+    title_style_prompt?: string | null
+    persona_prompt?: string | null
+    intro_config?: ChannelConfig | null
+  }
+}
+
 export function ChannelsCard() {
   const { t } = useTranslation()
   const toast = useToast()
@@ -93,10 +107,15 @@ export function ChannelsCard() {
   const [draft, setDraft] = useState<Draft>(emptyDraft())
   const [busy, setBusy] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [presetId, setPresetId] = useState('')
 
   const { data: channels = [], refetch } = useQuery({
     queryKey: ['channels'],
     queryFn: () => api.get<ChannelItem[]>('/api/channels'),
+  })
+  const { data: presets = [], refetch: refetchPresets } = useQuery({
+    queryKey: ['style-presets'],
+    queryFn: () => api.get<StylePreset[]>('/api/channels/style-presets'),
   })
   const { data: voices = [] } = useQuery({
     queryKey: ['channel-voices'],
@@ -160,6 +179,67 @@ export function ChannelsCard() {
       toast(err instanceof Error ? err.message : String(err), 'error')
     } finally {
       setBusy(false)
+    }
+  }
+
+  /** draft → 预设 config（创意子集，归属字段不进预设） */
+  function draftToConfig() {
+    return {
+      voice: draft.voice || null,
+      bili_tid: draft.bili_tid ? Number(draft.bili_tid) : null,
+      desc_template: draft.desc_template || null,
+      tags: draft.tags.split(',').map((s) => s.trim()).filter(Boolean),
+      title_style_prompt: draft.title_style_prompt || null,
+      persona_prompt: draft.persona_prompt || null,
+      intro_config: draft.intro_enabled
+        ? {
+            enabled: true,
+            duration_s: Number(draft.intro_duration_s) || 3,
+            subtitle: draft.intro_subtitle,
+          }
+        : { enabled: false },
+    }
+  }
+
+  /** 预设 → draft（仅填创意字段，名称/源池/启用不动） */
+  function applyPreset(p: StylePreset) {
+    const cfg = p.config ?? {}
+    const intro = (cfg.intro_config ?? {}) as ChannelConfig
+    setDraft((prev) => ({
+      ...prev,
+      voice: (cfg.voice as string) ?? '',
+      bili_tid: cfg.bili_tid == null ? '' : String(cfg.bili_tid),
+      desc_template: (cfg.desc_template as string) ?? '',
+      tags: ((cfg.tags as string[]) ?? []).join(', '),
+      title_style_prompt: (cfg.title_style_prompt as string) ?? '',
+      persona_prompt: (cfg.persona_prompt as string) ?? '',
+      intro_enabled: Boolean(intro.enabled),
+      intro_duration_s: String(intro.duration_s ?? 3),
+      intro_subtitle: (intro.subtitle as string) ?? '',
+    }))
+    toast(t('settings.channels.presetApplied', { name: p.name }), 'success')
+  }
+
+  async function saveAsPreset() {
+    const name = window.prompt(t('settings.channels.presetNamePrompt'))
+    if (!name?.trim()) return
+    try {
+      await api.post('/api/channels/style-presets', { name: name.trim(), config: draftToConfig() })
+      toast(t('settings.channels.presetSaved'), 'success')
+      await refetchPresets()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  async function removePreset(id: string) {
+    try {
+      await api.delete(`/api/channels/style-presets/${id}`)
+      if (presetId === id) setPresetId('')
+      toast(t('settings.channels.presetDeleted'), 'success')
+      await refetchPresets()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
     }
   }
 
@@ -232,6 +312,37 @@ export function ChannelsCard() {
       {/* 编辑器 */}
       {editingKey !== null && (
         <div className="mt-3 flex flex-col gap-3 rounded border border-border p-3">
+          {/* 风格预设条（v0.26）：套用填创意字段 / 存当前为预设 / 删除 */}
+          <div className="flex flex-wrap items-center gap-2 rounded bg-surface-2/60 px-2 py-1.5">
+            <Select
+              label=""
+              value={presetId}
+              onChange={(e) => setPresetId(e.target.value)}
+              options={[
+                { value: '', label: t('settings.channels.presetPick') },
+                ...presets.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!presetId}
+              onClick={() => {
+                const p = presets.find((x) => x.id === presetId)
+                if (p) applyPreset(p)
+              }}
+            >
+              {t('settings.channels.presetApply')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => void saveAsPreset()}>
+              {t('settings.channels.presetSaveAs')}
+            </Button>
+            {presetId && (
+              <Button size="sm" variant="danger" onClick={() => void removePreset(presetId)}>
+                {t('settings.channels.presetDelete')}
+              </Button>
+            )}
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className={fieldLabel}>{t('settings.channels.name')}</label>

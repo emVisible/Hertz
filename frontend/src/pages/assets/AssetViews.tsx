@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useDownloadStore } from '../../stores/download'
 import type { DownloadTask } from '../../api/download'
 
-import { api, fileUrl, type FileInfo, type LibraryEntry, type ParseResult } from '../../api'
+import { api, fileUrl, type AssetSnippet, type FileInfo, type LibraryEntry, type ParseResult } from '../../api'
 import { Badge, Button, CopyButton, Icon, Modal, Select, Spinner, useToast, type IconName } from '../../components/ui'
 
 const KIND_ICON: Record<string, IconName> = {
@@ -587,17 +587,107 @@ export function PreviewOverlay({
     enabled: !!preview,
   })
   const [textContent, setTextContent] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState<string | null>(null)
+  const [noteSaving, setNoteSaving] = useState(false)
+  const toast = useToast()
 
   useEffect(() => {
     setTextContent(null)
+    setNoteDraft(null)
     if (!preview || preview.kind !== 'document') return
     void api
       .getText<string>(`/api/library/file?path=${encodeURIComponent(preview.path)}`)
       .then(setTextContent)
       .catch(() => setTextContent(null))
   }, [preview])
+  // 笔记初值：info（含 note）优先，其次 preview 透传
+  useEffect(() => {
+    setNoteDraft(null)
+  }, [preview?.path])
 
   const meta = info.data?.media
+  const savedNote = info.data?.note ?? preview?.note ?? null
+  const noteValue = noteDraft ?? savedNote ?? ''
+
+  // 片段标记（v0.26）：info/snippets 优先，preview 透传兜底
+  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null)
+  const [snippets, setSnippets] = useState<AssetSnippet[] | null>(null)
+  const [snipT0, setSnipT0] = useState('')
+  const [snipT1, setSnipT1] = useState('')
+  const [snipLabel, setSnipLabel] = useState('')
+  const [snipSaving, setSnipSaving] = useState(false)
+  useEffect(() => {
+    setSnippets(null)
+    setSnipT0('')
+    setSnipT1('')
+    setSnipLabel('')
+  }, [preview?.path])
+  const savedSnippets = snippets ?? info.data?.snippets ?? preview?.snippets ?? []
+  const isTimedMedia = preview?.kind === 'video' || preview?.kind === 'audio'
+
+  function captureTime(which: 't0' | 't1') {
+    const cur = mediaRef.current?.currentTime
+    if (cur === undefined || Number.isNaN(cur)) return
+    const v = cur.toFixed(1)
+    if (which === 't0') setSnipT0(v)
+    else setSnipT1(v)
+  }
+  function seekTo(t: number) {
+    const m = mediaRef.current
+    if (!m) return
+    m.currentTime = t
+    void m.play().catch(() => {})
+  }
+  async function persistSnippets(next: AssetSnippet[]) {
+    if (!preview) return
+    setSnipSaving(true)
+    try {
+      const res = await api.post<{ snippets: AssetSnippet[] }>('/api/library/snippets', {
+        path: preview.path,
+        snippets: next,
+      })
+      setSnippets(res.snippets)
+      preview.snippets = res.snippets
+      toast(t('library.snippetsSaved', '片段已保存'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    } finally {
+      setSnipSaving(false)
+    }
+  }
+  function addSnippet() {
+    const t0 = parseFloat(snipT0)
+    const t1 = parseFloat(snipT1)
+    if (Number.isNaN(t0) || Number.isNaN(t1) || t1 <= t0 || t0 < 0) {
+      toast(t('library.snippetInvalid', '时间非法：需 0≤起点<终点'), 'warning')
+      return
+    }
+    void persistSnippets([...savedSnippets, { t0, t1, label: snipLabel.trim() }])
+    setSnipT0('')
+    setSnipT1('')
+    setSnipLabel('')
+  }
+  function removeSnippet(idx: number) {
+    void persistSnippets(savedSnippets.filter((_, i) => i !== idx))
+  }
+
+  async function saveNote() {
+    if (!preview) return
+    setNoteSaving(true)
+    try {
+      const res = await api.post<{ note: string | null }>('/api/library/note', {
+        path: preview.path,
+        note: noteValue,
+      })
+      setNoteDraft(null)
+      preview.note = res.note
+      toast(t('library.noteSaved', '笔记已保存'), 'success')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    } finally {
+      setNoteSaving(false)
+    }
+  }
 
   return (
     <Modal open={!!preview} onClose={onClose} width={760} title={preview?.name}>
@@ -608,9 +698,21 @@ export function PreviewOverlay({
               <img src={fileUrl(preview.path)} alt={preview.name} className="max-h-96 max-w-full object-contain" />
             )}
             {preview.kind === 'video' && (
-              <video src={fileUrl(preview.path)} controls className="max-h-96 max-w-full" />
+              <video
+                ref={mediaRef as React.Ref<HTMLVideoElement>}
+                src={fileUrl(preview.path)}
+                controls
+                className="max-h-96 max-w-full"
+              />
             )}
-            {preview.kind === 'audio' && <audio src={fileUrl(preview.path)} controls className="w-full" />}
+            {preview.kind === 'audio' && (
+              <audio
+                ref={mediaRef as React.Ref<HTMLAudioElement>}
+                src={fileUrl(preview.path)}
+                controls
+                className="w-full"
+              />
+            )}
             {preview.kind === 'document' &&
               (textContent ? (
                 <div className="flex w-full flex-col">
@@ -646,6 +748,99 @@ export function PreviewOverlay({
               </dl>
             )}
             <div className="mt-3 flex flex-col gap-2">
+              <div>
+                <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                  {t('library.note', '笔记')}
+                </h4>
+                <textarea
+                  className="min-h-[64px] w-full resize-y rounded border border-border bg-surface-1 px-2 py-1 text-xs text-text-primary outline-none focus:border-primary"
+                  placeholder={t('library.notePlaceholder', '记录技法/灵感…')}
+                  value={noteValue}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                />
+                {(noteDraft !== null) && (
+                  <Button size="sm" loading={noteSaving} onClick={() => void saveNote()} className="mt-1">
+                    {t('common.save', '保存')}
+                  </Button>
+                )}
+              </div>
+              {isTimedMedia && (
+                <div>
+                  <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                    {t('library.snippets', '片段')} · {savedSnippets.length}
+                  </h4>
+                  {savedSnippets.length > 0 && (
+                    <ul className="mb-1.5 max-h-28 space-y-1 overflow-y-auto">
+                      {savedSnippets.map((s, i) => (
+                        <li key={i} className="group flex items-center gap-1 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => seekTo(s.t0)}
+                            className="min-w-0 flex-1 truncate text-left text-text-primary hover:text-primary"
+                            title={`${s.t0}s → ${s.t1}s`}
+                          >
+                            <span className="font-mono text-[10px] text-text-disabled">
+                              {s.t0}s-{s.t1}s
+                            </span>{' '}
+                            {s.label || t('library.snippetUntitled', '未命名片段')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeSnippet(i)}
+                            className="shrink-0 text-text-disabled opacity-0 hover:text-error group-hover:opacity-100"
+                            title={t('common.delete')}
+                          >
+                            <Icon name="close" size={11} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="flex items-center gap-1">
+                    <input
+                      value={snipT0}
+                      onChange={(e) => setSnipT0(e.target.value)}
+                      placeholder="t0"
+                      inputMode="decimal"
+                      className="w-14 rounded border border-border bg-surface-1 px-1 py-0.5 font-mono text-[11px] outline-none focus:border-primary"
+                    />
+                    <input
+                      value={snipT1}
+                      onChange={(e) => setSnipT1(e.target.value)}
+                      placeholder="t1"
+                      inputMode="decimal"
+                      className="w-14 rounded border border-border bg-surface-1 px-1 py-0.5 font-mono text-[11px] outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => captureTime('t0')}
+                      className="rounded border border-border px-1 py-0.5 text-[10px] text-text-secondary hover:border-primary hover:text-primary"
+                      title={t('library.captureT0', '取当前为起点')}
+                    >
+                      ▸0
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => captureTime('t1')}
+                      className="rounded border border-border px-1 py-0.5 text-[10px] text-text-secondary hover:border-primary hover:text-primary"
+                      title={t('library.captureT1', '取当前为终点')}
+                    >
+                      ▸1
+                    </button>
+                  </div>
+                  <div className="mt-1 flex items-center gap-1">
+                    <input
+                      value={snipLabel}
+                      onChange={(e) => setSnipLabel(e.target.value)}
+                      placeholder={t('library.snippetLabel', '这个转场不错…')}
+                      className="min-w-0 flex-1 rounded border border-border bg-surface-1 px-1.5 py-0.5 text-xs outline-none focus:border-primary"
+                    />
+                    <Button size="sm" loading={snipSaving} onClick={addSnippet}>
+                      +
+                    </Button>
+                  </div>
+                </div>
+              )}
               {window.electron && (
                 <Button size="sm" variant="secondary" onClick={() => window.electron?.showItemInFolder(preview.path)}>
                   {t('library.openInFolder')}

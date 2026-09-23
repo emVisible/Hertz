@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 
 from backend.infrastructure.timeutils import local_day_str
+from backend.models import script_keys as sk
 from backend.models.pipeline import ChannelInsight
 from backend.models.session import session_factory
 
@@ -49,7 +50,7 @@ def _summary_lines(rows) -> str:
         stats = (it.publish_json or {}).get("stats") or {}
         score = f"{it.score_total:.1f}" if it.score_total is not None else "?"
         dur = ""
-        d = (it.script_json or {}).get("duration_s") if it.script_json else None
+        d = (it.script_json or {}).get(sk.DURATION_S) if it.script_json else None
         if d:
             dur = f" · {int(d)}s"
         lines.append(

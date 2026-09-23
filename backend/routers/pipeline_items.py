@@ -247,6 +247,24 @@ async def set_produce_options(body: ProduceOptionsBody):
     return {"updated": updated}
 
 
+class PriorityBody(BaseModel):
+    ordered_ids: list[uuid.UUID]
+
+
+@router.post("/items/priority")
+async def set_priority(body: PriorityBody):
+    """制作优先级落库（v0.26 运营面板）：按给定顺序赋 priority，首位最高。
+    engine 取件按 priority 降序——批量队列拖拽排序的持久化后端。"""
+    if not body.ordered_ids:
+        raise HTTPException(status_code=422, detail="ordered_ids 必填")
+    if len(body.ordered_ids) > 200:
+        raise HTTPException(status_code=422, detail="单批最多 200 条")
+    try:
+        return await _pipe().set_priority(body.ordered_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 class ItemMetaBody(BaseModel):
     """发布元数据（v0.8.8 AXIOM 8.1：长度/范围上限 + 非法排期 422）。"""
     bili_title: str | None = Field(None, max_length=80)

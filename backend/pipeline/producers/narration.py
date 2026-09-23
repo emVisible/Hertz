@@ -8,11 +8,14 @@
 
 import asyncio
 import logging
+
+from backend.models import script_keys as sk
 from pathlib import Path
 
 from backend.ai.router import AIRouter
 from backend.config import settings
-from backend.pipeline.producers.common import ProducerError
+from backend.library.thumbnails import find_ffmpeg
+from backend.pipeline.producers.common import ProducerError, _run_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +82,10 @@ async def generate_script(
             "分享一个值得一看的瞬间。"
         )
     return {
-        "mode": "script",
-        "narration": text.strip(),
-        "source": "llm" if text else "heuristic",
-        "content_source": script_source,
+        sk.MODE: "script",
+        sk.NARRATION: text.strip(),
+        sk.SOURCE: "llm" if text else "heuristic",
+        sk.CONTENT_SOURCE: script_source,
     }
 
 def check_script_compliance(script: dict, *, safety_only: bool = False) -> dict:
@@ -115,3 +118,38 @@ async def synthesize_tts(
         raise ProducerError("TTS produced empty audio")
     await asyncio.to_thread(out_path.write_bytes, audio)
     return {"path": str(out_path), "bytes": len(audio)}
+
+
+# ---------- 旁白时序（自 media.py 迁入，D-v0.23） ----------
+
+def narration_start_offset(text: str, duration: float) -> float:
+    """旁白起始延迟（v0.3.0，参考原项目 narration_start_seconds）：
+    让画面先走一拍——开头 watch/look/see → 0.45s，slow/detail → 1.1s，
+    默认 0.75s；封顶 min(2.2, dur*0.15)。
+    """
+    head = (text or "").strip().lower()[:80]
+    if any(w in head for w in ("watch", "look", "see", "看", "今天")):
+        offset = 0.45
+    elif any(w in head for w in ("slow", "detail", "慢慢", "仔细")):
+        offset = 1.1
+    else:
+        offset = 0.75
+    return min(offset, max(duration * 0.15, 0.2), 2.2)
+
+
+async def apply_narration_delay(audio_path: Path, offset: float) -> Path:
+    """给旁白音频加起始静音（adelay），与字幕 start_offset 对齐（音画同步）。"""
+    if offset <= 0:
+        return audio_path
+    ffmpeg = find_ffmpeg()
+    if ffmpeg is None:
+        return audio_path
+    delayed = audio_path.with_name("narration-delayed.mp3")
+    ms = int(offset * 1000)
+    await _run_cmd([
+        str(ffmpeg), "-y", "-i", str(audio_path),
+        "-af", f"adelay={ms}|{ms}",
+        "-c:a", "libmp3lame", "-q:a", "4",
+        str(delayed),
+    ])
+    return delayed

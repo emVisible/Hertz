@@ -404,7 +404,8 @@ class StepEngine:
             result = await session.execute(
                 select(Item)
                 .where(Item.status.in_(effective))
-                .order_by(Item.created_at.asc())
+                # v0.26 制作优先级：priority 高者先取（默认 0 存量等价），同级按入库时间
+                .order_by(Item.priority.desc(), Item.created_at.asc())
                 .limit(limit)
             )
             return list(result.scalars().all())

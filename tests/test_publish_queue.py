@@ -295,3 +295,29 @@ async def test_queue_api_enqueue_view_and_422(client) -> None:
     )
     assert batch.status_code == 200
     assert batch.json() == {"ok": 1, "failed": []}
+
+# ---------- 制作优先级（v0.26）：顺序落库 + engine 取件降序 ----------
+
+@pytest.mark.asyncio
+async def test_set_priority_assigns_descending_and_pending_respects_it() -> None:
+    a = await _make_item(status=ItemStatus.DOWNLOADED, title="prio-a", source_id="prio-a")
+    b = await _make_item(status=ItemStatus.DOWNLOADED, title="prio-b", source_id="prio-b")
+    c = await _make_item(status=ItemStatus.DOWNLOADED, title="prio-c", source_id="prio-c")
+    svc = _svc()
+    res = await svc.set_priority([c.id, a.id, b.id])
+    assert res == {"updated": 3}
+    assert (await _fetch(c.id)).priority == 3
+    assert (await _fetch(a.id)).priority == 2
+    assert (await _fetch(b.id)).priority == 1
+    engine = StepEngine(hub=None, settings=settings)
+    from backend.pipeline.steps import get_step
+    pending = await engine._pending("produce", get_step("produce")(), limit=10,
+                                    statuses=("downloaded",))
+    ours = [i.id for i in pending if i.id in (a.id, b.id, c.id)]
+    assert ours == [c.id, a.id, b.id]
+
+
+@pytest.mark.asyncio
+async def test_priority_endpoint_validation(client) -> None:
+    empty = await client.post("/api/pipeline/items/priority", json={"ordered_ids": []})
+    assert empty.status_code == 422

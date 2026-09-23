@@ -1,6 +1,6 @@
 export { api, ApiError, API_BASE, fileUrl, thumbnailUrl } from './client'
 export type { DownloadEvent, DownloadTask, DownloadStatus, FormatOption, ParseResult } from './download'
-export type { FileInfo, LibraryEntry } from './library'
+export type { AssetSnippet, FileInfo, LibraryEntry } from './library'
 export { crewsApi, rolesApi, buffsApi, depthsApi, briefsApi, briefGroupsApi, plansApi, studioApi } from './orchestration'
 export type {
   Brief,

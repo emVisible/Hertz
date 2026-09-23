@@ -30,6 +30,11 @@ SUB_TARGET = "_sub_tgt"
 SUBTITLE_SOURCE = "subtitle_source"
 PRODUCE_WARNINGS = "produce_warnings"
 
+# ---- 制作标记 ----
+PRODUCED_DEGRADED = "produced_degraded"
+COMPOSE_QUALITY = "compose_quality"
+DURATION_S = "duration_s"
+
 # ---- subtitle_source 合法值 ----
 SUB_FROM_ASR = "asr"
 SUB_FROM_NARRATION_FALLBACK = "narration_fallback"

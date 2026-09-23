@@ -144,3 +144,25 @@ class PrepOpsMixin:
         request_cancel(item_id)
         return {"ok": True, "cancelling": True}
 
+    async def set_priority(self, ordered_ids: list[uuid.UUID]) -> dict:
+        """制作优先级落库（v0.26 运营面板）：按给定顺序赋 priority。
+
+        首位最高（len），末位 1；不在列表中的条目不动（不清零——
+        避免全量重排误伤他人设定的优先级）。
+        """
+        if not ordered_ids:
+            raise ValueError("ordered_ids 必填")
+        if len(ordered_ids) > 200:
+            raise ValueError("单批最多 200 条")
+        n = len(ordered_ids)
+        updated = 0
+        async with session_factory() as session:
+            for i, item_id in enumerate(ordered_ids):
+                row = await session.get(Item, item_id)
+                if row is None:
+                    continue
+                row.priority = n - i
+                updated += 1
+            await session.commit()
+        return {"updated": updated}
+

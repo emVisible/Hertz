@@ -97,6 +97,10 @@ class Item(BaseModel):
     # 默认 voice+subtitle+translate（英文旁白 + 中文字幕，现状行为）
     produce_options: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # 制作优先级（v0.26 运营面板）：批量队列拖拽排序落库，engine 取件
+    # 按 priority 降序（0 = 默认无优先级，与存量行为等价）
+    priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
     # Review / publish
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 排期发布（独立发布环节，v5.10）：定时上传用
