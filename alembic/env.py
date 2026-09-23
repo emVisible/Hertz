@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from backend.config import settings
+from backend.infrastructure import migration_guard
 from backend.models import Base  # noqa: F401 (imports all models)
 
 config = context.config
@@ -27,13 +28,20 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=migration_guard.include_object,
+        process_revision_directives=migration_guard.process_revision_directives,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=migration_guard.include_object,
+        process_revision_directives=migration_guard.process_revision_directives,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
