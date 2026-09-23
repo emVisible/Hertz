@@ -3,8 +3,8 @@ transcribe_with_xinference）。
 
 翻译生产方式（translate）= 提取视频原话 → 中文字幕。转写双通道：
 xinference STT 服务优先（快，OpenAI 兼容 multipart），faster-whisper 本地
-CPU（base/int8）兜底。依赖 faster-whisper 属于 optional extra：
-    uv sync --extra asr
+CPU（base/int8）兜底。faster-whisper 是主依赖（v0.31 B1——曾在可选组 asr 里，
+而 CI 与 dev 一律跑裸 uv sync，导致打包版与开发态同时不可用）。
 未安装时 asr_available() 返回 False，调用方回退旁白翻译（不阻塞生产）。
 
 v0.11.1 时间轴对齐（专业字幕口径）：whisper 通道改为词级时间戳
@@ -44,7 +44,7 @@ def _has_traditional(text: str) -> bool:
     return any(ch in _TRADITIONAL_CHARS for ch in (text or ""))
 
 _WHISPER_IMPORTED = False
-try:  # optional extra（pyproject [project.optional-dependencies].asr）
+try:  # 主依赖（v0.31 B1）；导入失败时 whisper_available() 返回 False 走降级
     from faster_whisper import WhisperModel  # type: ignore
 
     _WHISPER_IMPORTED = True
@@ -77,7 +77,7 @@ async def _get_whisper():
         if _whisper_model is not None:
             return _whisper_model
         if not _WHISPER_IMPORTED:
-            raise RuntimeError("faster-whisper not installed — run `uv sync --extra asr`")
+            raise RuntimeError("faster-whisper 不可用 — 执行 uv sync 安装主依赖")
         _whisper_model = await asyncio.to_thread(
             WhisperModel, "base", device="cpu", compute_type="int8"
         )

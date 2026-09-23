@@ -169,7 +169,7 @@ def _check_whisper_model() -> dict:
     if not whisper_importable():
         return {
             "status": "missing",
-            "install_hint": "uv sync --extra asr",
+            "install_hint": "执行 uv sync；打包版缺此依赖说明用的是 v0.31 前的安装包",
         }
     if xinference_on:
         return {"status": "ok", "source": "xinference"}

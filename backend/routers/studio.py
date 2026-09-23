@@ -101,9 +101,9 @@ async def transcribe_audio(
         raise HTTPException(
             status_code=502,
             detail=(
-                "本地转写引擎不可用（faster-whisper 未就绪）——开发态执行 "
-                "uv sync --extra asr 安装；打包版请查看 设置 → 流水线 能力矩阵的 "
-                "Whisper 条目（v0.31 起随包内置 + 可一键下载模型）"
+                "本地转写引擎不可用（faster-whisper 未就绪）——开发态执行 uv sync "
+                "安装依赖；打包版请查看 设置 → 流水线 能力矩阵的 Whisper 条目"
+                "（模型未下载时可在该处一键下载）"
             ),
         )
 

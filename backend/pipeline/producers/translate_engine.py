@@ -3,8 +3,8 @@
 - 模型按需下载（约 300MB，float16 ct2）到 data/models/opus-mt-en-zh；
   下载端点可经 pipeline_translate_hf_endpoint 切换镜像（国内网络场景）
 - tokenizer 用 SentencePiece 直读 source/target.spm——不引入 transformers
-  重依赖（sentencepiece 位于可选依赖组 translate；未安装时引擎不可用，
-  调用方回落 api 三步法）
+  重依赖（sentencepiece 与 ctranslate2 均为主依赖；任一不可导入时引擎不可用，
+  调用方保留原文不阻塞）
 - 推理跑 CPU（int8），与 faster-whisper 共享 ctranslate2 运行时
 """
 
@@ -66,7 +66,7 @@ def _alert(text: str) -> None:
 
 
 def deps_available() -> bool:
-    """sentencepiece/ctranslate2 可导入（可选依赖组 translate 已安装）。"""
+    """sentencepiece/ctranslate2 可导入（两者均为主依赖，v0.31 B1）。"""
     try:
         import ctranslate2  # noqa: F401
         import sentencepiece  # noqa: F401

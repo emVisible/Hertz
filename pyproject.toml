@@ -24,11 +24,13 @@ dependencies = [
     "python-multipart>=0.0.32",
     "pillow>=12.3.0",
     "sentencepiece>=0.2",
-]
-
-[project.optional-dependencies]
-asr = [
-    "faster-whisper>=1.1",
+    # 本地引擎运行时（v0.31 B1）：asr.py 直接 import faster_whisper，
+    # translate_engine.py 直接 import ctranslate2——被代码直接 import 的依赖
+    # 必须是主依赖。此前 faster-whisper 待在可选组 asr、ctranslate2 仅靠传递
+    # 依赖存在，而 CI/dev.sh/模拟脚本一律跑裸 `uv sync`，于是「去 API 化转写
+    # 与翻译」在开发态和打包态同时不可用（v0.31 spike 实测暴露）。
+    "faster-whisper>=1.2.1",
+    "ctranslate2>=4.8.1",
 ]
 
 [dependency-groups]

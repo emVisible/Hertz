@@ -79,8 +79,8 @@ async def run_retranslate(
         result = await _asr_subtitles(ai, raw, directory, target_lang=lang)
         if result is None:
             raise ProducerError(
-                "ASR unavailable — install with `uv sync --extra asr` "
-                "or configure xinference STT"
+                "ASR unavailable — 执行 uv sync 安装 faster-whisper 主依赖，"
+                "或配置 xinference STT"
             )
         srt_path, zh_text = result
 
