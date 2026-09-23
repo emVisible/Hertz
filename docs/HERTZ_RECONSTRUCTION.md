@@ -1814,8 +1814,8 @@ echo "==> ALL GATES PASSED"
 # 启动 PostgreSQL（如用 Docker）
 docker compose -f docker-compose.dev.yml up -d postgres
 
-# 初始化数据库
-cd backend && uv run alembic upgrade head && cd ..
+# 初始化数据库（复数 heads——仓库多 head 现状，单数 head 会被 alembic 拒绝）
+cd backend && uv run alembic upgrade heads && cd ..
 
 # 并行启动后端 + 前端 + Electron
 uv run -m backend.main &          # FastAPI :8787

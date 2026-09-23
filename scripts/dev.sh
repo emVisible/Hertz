@@ -23,7 +23,9 @@ echo "==> [3/5] Installing dependencies..."
 [ -d frontend/node_modules ] || pnpm install
 
 echo "==> [4/5] Running migrations..."
-uv run alembic upgrade head
+# 复数 heads：仓库为多 head 现状（wave26 主线 + wave21_glossary_remove 悬空分支），
+# 单数 head 会被 alembic 直接拒绝（CommandError）。与 backend/entrypoint.py 同源（D-198）。
+uv run alembic upgrade heads
 
 echo "==> [5/5] Starting services..."
 # 端口占用自动清理：残留进程会挡住本次启动（vite "Port 3000 already in use"）

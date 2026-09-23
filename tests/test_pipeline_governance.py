@@ -620,15 +620,25 @@ async def test_requeue_from_published(client) -> None:
 
 @pytest.mark.asyncio
 async def test_reschedule_expired(client) -> None:
-    """过期排期自动更新为未来推荐槽位；未过期不动。"""
+    """过期排期被重排：拿到未来槽位，或按 D-128 保持无排期——但绝不留在过去。
+
+    此前断言写死 `scheduled_at is not None and > now`，把「当天窗口已排满 →
+    保持无排期（用户手动设）」这条正确行为当成失败：next_slot 的 earliest 被
+    本用例自己的对照条目（now+1 天）推到次日，本地时间落在末窗口之后时
+    （如 20:00 后）必然返回 None → 测试随挂钟变红，而 verify.sh 是发布闸门。
+    「能拿到未来槽位」这一支由 test_next_slot_respects_window_and_interval
+    （注入固定 now）确定性覆盖，本用例只守端点不变量。
+    """
     from datetime import UTC, datetime, timedelta
 
     now = datetime.now(UTC)
+    expired_at = now - timedelta(days=2)
+    fresh_at = now + timedelta(days=1)
     async with session_factory() as session:
         expired = Item(status=ItemStatus.QUEUED, source="reddit", source_id="rs-1",
-                       title="过期", scheduled_at=now - timedelta(days=2))
+                       title="过期", scheduled_at=expired_at)
         fresh = Item(status=ItemStatus.QUEUED, source="reddit", source_id="rs-2",
-                     title="未过期", scheduled_at=now + timedelta(days=1))
+                     title="未过期", scheduled_at=fresh_at)
         session.add_all([expired, fresh])
         await session.commit()
         expired_id, fresh_id = expired.id, fresh.id
@@ -639,8 +649,10 @@ async def test_reschedule_expired(client) -> None:
     async with session_factory() as session:
         expired = await session.get(Item, expired_id)
         fresh = await session.get(Item, fresh_id)
-        assert expired.scheduled_at is not None and expired.scheduled_at > now
-        assert fresh.scheduled_at == now + timedelta(days=1)  # 未过期不动
+        # 不变量：过期条目不再留在过去（要么未来槽位，要么显式无排期）
+        assert expired.scheduled_at is None or expired.scheduled_at > now
+        assert expired.scheduled_at != expired_at
+        assert fresh.scheduled_at == fresh_at  # 未过期不动
 
 
 def test_auto_tid_in_serialize(client) -> None:
