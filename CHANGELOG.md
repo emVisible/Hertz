@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v0.30.1] - 2026-09-23
+### 补丁发布：三处「文档说交付了、产物里没有」的缺陷
+
+- **修复脚本工坊转写端点从未可用**：`POST /api/studio/transcribe` 在函数内 import 了 `asr` 模块并不存在的 `whisper_importable`（真符号是 `whisper_available`），且该 import 在 try 之外——任何真实请求以裸 ImportError 崩成 500。因是函数级 import，ruff / tsc / 全部后端测试都看不见
+- **修复新克隆冷启动即挂**：`scripts/dev.sh` 与重构计划书里的初始化指令仍用单数 `alembic upgrade head`，在多 head 现状下被 alembic 直接拒绝（`webui.sh` 是这两个的入口）；`DECISIONS` 里 D-184 的历史记述按原样保留
+- **修复外部 PostgreSQL 逃生通道**：固化后端建库时手拼 DSN 丢掉口令，导致「设 `HERTZ_DATABASE_URL` 指向外部 PostgreSQL」这条被明确推荐的路径在迁移之前就因认证失败死掉；内嵌 PG（trust 认证）行为逐字节不变
+- **修复随挂钟变红的发布闸门**：排期重排测试把「当天窗口排满 → 保持无排期」这条正确行为判成失败，本地约 20:00 之后必然红；改为守端点不变量，并由注入固定时钟的纯函数测试继续覆盖「能拿到未来槽位」一支
+- 新增 10 项防复发护栏（351 → 361）：全仓函数级 import 幽灵符号 AST 扫描、迁移入口必须用复数 `heads`（文本层 + 行为层）、口令透传与 trust 双路径、测试不得在未注入时钟时断言具体槽位
+- 版本五处对齐 0.30.1；`hertz.spec` 的 `faster_whisper` 排除与 `--extra asr` 话术清理**刻意留到 v0.31**（引擎入包一并做，本轮加入会立刻跑红）
+
 ## [v0.30.0] - 2026-09-23
 ### 创作者工坊战略整合发布（v0.23 → v0.30 一轮收口）
 

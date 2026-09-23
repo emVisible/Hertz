@@ -29,6 +29,7 @@
 - **v0.26**：创作资产系统 + 半自动面板（D-194～D-196）——灵感笔记 sidecar 与素材关联、灵感片段标记（t0/t1 + label，与原始素材分离）、素材组合预览、视觉风格预设（wave25_style_presets）；制作优先级 items.priority 列（wave26_item_priority，engine 取件按降序，批量队列拖拽排序的持久化后端）
 - **运营面板补齐**（D-197，并入 v0.26 节奏）——流水线壳 Enter 展开/折叠焦点卡文案（与既有 j/k/a/r 同域，state 留壳故监听单点）、发布日历栏目色彩标记（channel_key 哈希稳定色相）
 - **v0.30**：整合发布（本轮）——零新功能，但**非零行为变更**：唯一实改是固化启动器迁移目标 `head` → `heads`（多 head 现状下新库首启必抛 CommandError，dev 库早已 stamp 双 head 故隐身，D-198）。发布收尾四件：verify.sh 全绿（ruff/pytest 351/tsc/vitest 35/vite build）、版本号五处对齐 0.30.0（config/electron/frontend/根 package/pyproject）、本地 --dir 打包 + 隔离库新机模拟（health database ok + pipeline API 200 + style_presets 表 + items.priority 列）+ dmg 挂载卷直启实测（首启内嵌 PG 自动装成 → health ok → 零残留退出）、tag v0.30.0 推远端走 release.yml 出 mac-arm64 dmg。战略四项能力（脚本工坊/创作资产/降级路由/运营面板）至此成版
+- **v0.30.1**：补丁发布（D-199，三处「文档说交付了、产物里没有」）——转写端点函数级 import 幽灵符号导致招牌路径从未可用（崩 500，静态检查与既有测试全不可见）；`scripts/dev.sh` 与计划书指令仍是单数 `alembic upgrade head`，新克隆冷启动即挂；固化后端建库丢弃口令，外部 PostgreSQL 逃生通道必死。附带修掉一条随挂钟变红的闸门测试，并补 10 项防复发护栏（AST 全仓幽灵符号扫描 / 迁移入口必须复数 heads 的文本+行为双守卫 / 口令透传双路径 / 禁测试裸用真实时钟）——351 → 361
 
 ## v0.30 战略方向
 
