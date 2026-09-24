@@ -85,6 +85,16 @@ v0.40          可信交付（签名 / 矩阵 / 自动更新 / 备份可验证 /
 
 ---
 
+## 五·五、v0.32 执行期新增的三条产物级教训（源码级全绿也拦不住）
+
+| 陷阱 | 只有什么才能暴露 | 已钉的守卫 |
+|---|---|---|
+| 冻结体缺 `multiprocessing.freeze_support()` → 每次构造 whisper 模型就自我重跑主脚本（45s 内 1→7 进程，观测到 138 残留） | 非冻结开发态永远正常；只有跑冻结二进制才现形 | `test_frozen_entrypoint_declares_freeze_support`（AST 断言存在且先于建库/迁移）+ S5 产物门禁数进程 |
+| `alembic/env.py` 以**数据文件**进包，它的 import 对 PyInstaller 静态分析不可见 → S1 新引 `migration_guard` 后固化后端**首启迁移即 ImportError** | 380 项源码级测试全绿、`verify.sh` 也绿；只有重建并启动固化二进制才发现 | `test_alembic_env_imports_are_reachable_or_declared`（从冻结入口 BFS 可达性 + spec 登记二选一）+ 直钉 `migration_guard` 必须登记；已做删除行反向对照：删则 2 失败、还原则 7 通过 |
+| macOS APFS 大小写不敏感 → 用 `Path.exists()` 判「是不是子模块」会把 `backend/models/Base.py` 判成存在（真实文件 `base.py`），守卫当场虚报 | 只在 macOS 上跑才看得到；Linux CI 上表现不同 | 模块判定一律走 `importlib.util.find_spec`，不再靠路径拼接猜 |
+
+推论（直接指向 S5）：**发布门禁必须包含一次「启动固化二进制」的冒烟**，否则上述三类永远只能靠人手动撞。
+
 ## 六、定档（2026-09-24 用户拍板，不再是开放问题）
 
 1. **v0.40 主题 = 可信交付**（签名 / 自动更新 / 三端矩阵 / 备份可恢复 / 首启零终端操作）。

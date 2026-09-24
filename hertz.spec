@@ -50,6 +50,11 @@ hiddenimports = (
         "apscheduler.schedulers.asyncio",
         "apscheduler.triggers.cron",
         "alembic.migration",
+        # alembic/env.py 是以**数据文件**形式随包的，它里面的 import 对 PyInstaller
+        # 静态分析完全不可见（v0.32 S1 实测踩坑：env.py 新引 migration_guard 后，
+        # 固化后端每次首启迁移都 ImportError 崩溃，而源码级 380 项测试全绿）。
+        # 凡 env.py 顶层引用的自研模块，都必须在这里显式列出。
+        "backend.infrastructure.migration_guard",
         # yt-dlp 提取器全量动态加载——必须整包收口
     ]
     + collect_submodules("yt_dlp")

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
 import tomllib
 from pathlib import Path
@@ -46,6 +47,92 @@ def test_no_stale_extra_asr_instructions() -> None:
         if "--extra asr" in p.read_text(encoding="utf-8")
     ]
     assert not offenders, "仍在指导用户安装可选组: " + ", ".join(offenders)
+
+
+def test_alembic_env_imports_are_reachable_or_declared() -> None:
+    """alembic/env.py 以**数据文件**进包，它的 import 对 PyInstaller 不可见。
+
+    v0.32 S1 实测踩坑：env.py 新引 migration_guard 而无人登记 → 冻结固化后端
+    首启迁移即 ImportError 崩溃，而源码级 380 项测试全绿、`verify.sh` 也绿。
+    规则：env.py 顶层引用的自研模块，要么从冻结入口可达（被运行时代码 import），
+    要么在 hertz.spec 的 hiddenimports 里显式登记。"""
+    import ast
+
+    backend_root = ROOT / "backend"
+
+    def local_imports(path: Path) -> set[str]:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            return set()
+        found: set[str] = set()
+        for node in ast.walk(tree):
+            mod = getattr(node, "module", None) or ""
+            if isinstance(node, ast.ImportFrom) and mod.startswith("backend"):
+                found.add(mod)
+                found.update(f"{mod}.{a.name}" for a in node.names)
+            elif isinstance(node, ast.Import):
+                found.update(a.name for a in node.names)
+        return found
+
+    def module_source(dotted: str) -> Path | None:
+        """模块 → 源文件。必须走 importlib 而不是 Path.exists()：
+        macOS APFS 默认大小写不敏感，`backend/models/Base.py` 会被 exists()
+        判为存在（真实文件是 base.py），把符号误认成子模块。"""
+        try:
+            spec = importlib.util.find_spec(dotted)
+        except (ImportError, ValueError, ModuleNotFoundError):
+            return None
+        origin = getattr(spec, "origin", None) if spec else None
+        if not origin or origin in {"frozen", "built-in"}:
+            return None
+        path = Path(origin)
+        return path if path.exists() else None
+
+    def is_real_module(dotted: str) -> bool:
+        return module_source(dotted) is not None
+
+    # 从冻结入口做静态 BFS：凡运行图够得到的自研模块，PyInstaller 自己能收集到
+    queue: list[Path] = [backend_root / "entrypoint.py"]
+    seen: set[str] = set()
+    scanned: set[Path] = set()
+    while queue:
+        path = queue.pop()
+        if path in scanned or not path.exists():
+            continue
+        scanned.add(path)
+        for mod in local_imports(path):
+            seen.add(mod)
+            resolved = module_source(mod)
+            if resolved:
+                queue.append(resolved)
+
+    spec_src = (ROOT / "hertz.spec").read_text(encoding="utf-8")
+    env_src = (ROOT / "alembic" / "env.py").read_text(encoding="utf-8")
+    unregistered = []
+    for node in ast.walk(ast.parse(env_src)):
+        if not isinstance(node, ast.ImportFrom) or not (node.module or "").startswith("backend"):
+            continue
+        for alias in node.names:
+            dotted = f"{node.module}.{alias.name}"
+            # 「from pkg import name」里 name 可能是子模块，也可能只是符号——
+            # 只有真子模块才需单独收集（符号随父模块一起进包）
+            requirement = dotted if is_real_module(dotted) else node.module
+            if requirement in seen or requirement in spec_src:
+                continue
+            unregistered.append(requirement)
+    assert not unregistered, (
+        "alembic/env.py 引用的模块既不从冻结入口可达、也未登记 hiddenimports，"
+        "固化后端首启会 ImportError: " + ", ".join(sorted(set(unregistered)))
+    )
+
+
+def test_migration_guard_is_declared_for_freeze() -> None:
+    """S1 回归直钉：migration_guard 必须留在 spec 的登记清单里。"""
+    spec_src = (ROOT / "hertz.spec").read_text(encoding="utf-8")
+    assert "backend.infrastructure.migration_guard" in spec_src, (
+        "alembic/env.py 依赖的守卫模块未登记——固化后端首启即崩（v0.32 S1 实测）"
+    )
 
 
 def test_local_engine_not_blocked_from_bundle() -> None:
