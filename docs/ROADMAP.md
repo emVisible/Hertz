@@ -35,7 +35,7 @@
 
 - **v0.31 尾巴**：B1/B3 引擎入包 ✅（D-200）；B4/B5「模型搬家 + 一键下载」✅ 已并入 v0.32 S4（D-203）。**仍未做**：141MB 全量冷启动首下的成功实测——本机代理 egress 两次中断，只拿到 30MB/141MB 进度与完整失败路径证据；判据已沉淀为 `scripts/sim-newmachine.sh --with-download`（断言模型落进应用目录且 `~/.cache/huggingface` 一个字节不长）
 - **v0.32 质量片 S1–S6 ✅**（D-201…D-204）：alembic 删表闸 / 工坊中文输出繁体纠偏 / schema 漂移清偿 / 文档卫生 / 产物级发布门禁 / 本地模型单一真相源，外加清偿一条 **v0.20 起设置页只演出不落盘**的回归（D-204：`save()` 提交的是空 `overrides`，改动全在内存里，页面却 toast「已保存」）。S7 前端拆壳按定档不在本版。**发布动作未执行**：先 `./scripts/release-check.sh` 通过，再谈版本号五处对齐与 tag（push / 打 tag 需单独授权）
-- 当前门禁水位：pytest 422 + vitest 47（11 文件）+ tsc + vite build 全绿，pytest 告警 7 条（v0.32 起 8→7）
+- 当前门禁水位：pytest 422 + vitest 47（11 文件）+ tsc + vite build 全绿，pytest 告警 6 条（v0.32 起 8→6，余下均在依赖的生成代码里，仓库侧已核为零）
 
 ## v0.30 战略方向
 

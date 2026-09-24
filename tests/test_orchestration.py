@@ -52,6 +52,8 @@ class FailingLLM:
 
     async def chat_stream(self, messages, *, temperature=0.7, max_tokens=4096):
         raise RuntimeError("provider down")
+        yield ""  # 有 yield 才是**异步生成器**：否则调用方的 `async for` 拿到的是
+        # 一个从未 await 的协程，测试绿但每次跑都吐 RuntimeWarning（真错被噪音盖住）
 
     async def aclose(self) -> None:
         pass
