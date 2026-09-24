@@ -47,7 +47,7 @@ v0.40 的正当主题不是新能力,而是把验证面推到产物上——顺�
 |---|---|---|---|
 | **S1** ✅ | alembic autogenerate 护栏：`env.py` 的 `process_revision_directives` 滤掉 `DropTableOp`（除非显式开关）+ `include_object` 黑名单 legacy 表 | 2 个 remove_table 是唯一的**不可逆**风险 | 纯函数测试：喂造出来的 ops，断言 drop 被滤并写日志 |
 | **S2** | 补真实缺失 schema：`wave27` 加 `ix_items_archived` / `ix_items_error_class` 索引 + `plans.brief_group_id` FK（挂 wave26，**不动双 head**） | 库里现在就缺，是线上查询性能债 | 隔离空库跑 `upgrade heads` 后查 `pg_indexes` 断言三者在场 |
-| **S3** | 工坊中文输出纠偏：`studio.py` 改走 `asr.transcribe_with_whisper` 的同一套繁简重转，消灭第二套转写实现 | 招牌功能给用户看的第一个字是繁体 | 用 6.69s 中文 fixture 断言 `_has_traditional()==False`；且不再存在第二处 `model.transcribe` 直调（AST 守卫） |
+| **S3** ✅ | 工坊中文输出纠偏：抽出 `asr.transcribe_cues()` 作为**全仓唯一 whisper 出口**（词级时间戳 + 断句 + 繁简纠偏），`studio.py` 与字幕产线共用；并补 `_TRADITIONAL_CHARS` 63→83 字 | 实测两层根因：①工坊自己调 `model.transcribe` 绕开纠偏；②**检测集漏掉真实模型输出**（氣/錯/園/錄/順/實/語/嬰 全不在集内）→ 连字幕产线的纠偏也永不触发 | 注入「首繁二简」假模型断言响应无繁体且发生第二次带 prompt 重转；AST 守卫全仓不得有第二处直调；实测原句可识别 + 简体字形不得入集（防误触发） |
 | **S4** | 模型目录单一真相源：`data_dir/models/whisper`，`asr` 与 `deps` 共用；配一键下载 + pending 琥珀态（v0.31 B4/B5） | 现在耦合 `$HOME/.cache`，违背 `HERTZ_USER_DATA` 隔离的存在理由 | 一致性测试（两处解析同目录）+ 无缓存冷启动实测 141MB 首下 |
 | **S5** | 产物级门禁：把 `scripts/sim-newmachine-v030.sh` 泛化成 `scripts/sim-newmachine.sh`（去绝对路径/参数化），加 ASR 断言与「子进程不得重跑入口」断言；`verify.sh` 增加可选 `--with-bundle` 档 | 四个事故全是产物级,而门禁只在源码级 | 脚本本身即验收；文档写明发布必跑 |
 | **S6** | 文档真相守卫：ROADMAP 里 术语表/三步法 两条过期交付项改为历史标注；VISION 重读标记假 ✅ 已订正（D-199）；`alembic.ini` 补 `path_separator` 消弃用告警；删 `frontend/src/hooks/useStudioExecution.py.tmp`（tracked 空文件，零引用） | 一处真相是 butler 红线，也是本轮反复踩到的 | 加一条文档 grep 守卫（宣称已交付的能力必须能在代码里找到锚点） |
@@ -75,7 +75,8 @@ v0.40 的正当主题不是新能力,而是把验证面推到产物上——顺�
 
 ```
 v0.31（在飞）  B4 模型搬家 → B5 一键下载 → B6 端到端 → B7 文档自洽 → 发布
-v0.32          S1 护栏 → S3 繁体 → S2 索引迁移 → S6 文档/卫生 → S5 产物门禁 → S4 → S7 前端拆壳
+v0.32          S1 护栏✅ → S3 繁体✅ → S2 缺失索引迁移 → S6 文档/卫生 → S5 产物门禁 → S4 模型搬家
+               （S7 前端拆壳已按定档移出 v0.32）
 v0.40          可信交付（签名 / 矩阵 / 自动更新 / 备份可验证 / 首启体验）
 ```
 
@@ -84,8 +85,14 @@ v0.40          可信交付（签名 / 矩阵 / 自动更新 / 备份可验证 /
 
 ---
 
-## 六、留给用户定的三件事
+## 六、定档（2026-09-24 用户拍板，不再是开放问题）
 
-1. v0.40 主题选 A / B / C（我建议 A,但那是产品取向,不是工程判断）
-2. v0.32 是否含 S7 前端拆壳（它是纯结构改动,会挤掉 S1–S6 的时间）
-3. `messages` / `conversations` 两张 legacy 表：留（S1 只上护栏）还是走一次**显式**迁移删除（需要你先确认里面没有你要的聊天历史）
+1. **v0.40 主题 = 可信交付**（签名 / 自动更新 / 三端矩阵 / 备份可恢复 / 首启零终端操作）。
+   「资产与叙事」五项功能缺口与「智能供给分层」排在 v0.40 之后。
+2. **v0.32 不含 S7 前端拆壳**——纯结构改动无用户可感知收益，不与其他六片争时间。
+   `AssetsPage.tsx` 1277 行 / `PlansPage.tsx` 1212 行 记为 v0.40 期间的独立机会窗口，
+   动手时照 D-182/D-183 的「state 留壳、JSX 下放」既有模式（D-182 已记：JSX 手工切割
+   比 Python 方法块脆弱得多，曾有整文件重写才是最快路径的先例）。
+3. **`messages` / `conversations` 只留护栏、不删**。实测存量：conversations 3 行、
+   messages 8 行，最后写入 2026-08-03。S1 的 `include_object` 黑名单让 autogenerate
+   永远碰不到它们；真要删必须走一次显式迁移 + 事先归档，推到 v0.40 一并决定。
