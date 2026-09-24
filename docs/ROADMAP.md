@@ -31,6 +31,12 @@
 - **v0.30**：整合发布（本轮）——零新功能，但**非零行为变更**：唯一实改是固化启动器迁移目标 `head` → `heads`（多 head 现状下新库首启必抛 CommandError，dev 库早已 stamp 双 head 故隐身，D-198）。发布收尾四件：verify.sh 全绿（ruff/pytest 351/tsc/vitest 35/vite build）、版本号五处对齐 0.30.0（config/electron/frontend/根 package/pyproject）、本地 --dir 打包 + 隔离库新机模拟（health database ok + pipeline API 200 + style_presets 表 + items.priority 列）+ dmg 挂载卷直启实测（首启内嵌 PG 自动装成 → health ok → 零残留退出）、tag v0.30.0 推远端走 release.yml 出 mac-arm64 dmg。战略四项能力（脚本工坊/创作资产/降级路由/运营面板）至此成版
 - **v0.30.1**：补丁发布（D-199，三处「文档说交付了、产物里没有」）——转写端点函数级 import 幽灵符号导致招牌路径从未可用（崩 500，静态检查与既有测试全不可见）；`scripts/dev.sh` 与计划书指令仍是单数 `alembic upgrade head`，新克隆冷启动即挂；固化后端建库丢弃口令，外部 PostgreSQL 逃生通道必死。附带修掉一条随挂钟变红的闸门测试，并补 10 项防复发护栏（AST 全仓幽灵符号扫描 / 迁移入口必须复数 heads 的文本+行为双守卫 / 口令透传双路径 / 禁测试裸用真实时钟）——351 → 361
 
+## 在飞（代码已在 main，未打 tag、未发布）
+
+- **v0.31 尾巴**：B1/B3 引擎入包 ✅（D-200）；B4/B5「模型搬家 + 一键下载」✅ 已并入 v0.32 S4（D-203）。**仍未做**：141MB 全量冷启动首下的成功实测——本机代理 egress 两次中断，只拿到 30MB/141MB 进度与完整失败路径证据；判据已沉淀为 `scripts/sim-newmachine.sh --with-download`（断言模型落进应用目录且 `~/.cache/huggingface` 一个字节不长）
+- **v0.32 质量片 S1–S6 ✅**（D-201…D-204）：alembic 删表闸 / 工坊中文输出繁体纠偏 / schema 漂移清偿 / 文档卫生 / 产物级发布门禁 / 本地模型单一真相源，外加清偿一条 **v0.20 起设置页只演出不落盘**的回归（D-204：`save()` 提交的是空 `overrides`，改动全在内存里，页面却 toast「已保存」）。S7 前端拆壳按定档不在本版。**发布动作未执行**：先 `./scripts/release-check.sh` 通过，再谈版本号五处对齐与 tag（push / 打 tag 需单独授权）
+- 当前门禁水位：pytest 422 + vitest 47（11 文件）+ tsc + vite build 全绿，pytest 告警 7 条（v0.32 起 8→7）
+
 ## v0.30 战略方向
 
 > 详见 [VISION_V030.md](./VISION_V030.md)
