@@ -15,6 +15,7 @@ import { GeneralSection } from './sections/GeneralSection'
 import { AiSection } from './sections/AiSection'
 import { PipelineSection } from './sections/PipelineSection'
 import { SettingsNav, type SettingsSection } from './SettingsNav'
+import { buildOverrides } from '../../core/settingsOverrides'
 
 interface ConfigData {
   data_dir?: string
@@ -61,6 +62,9 @@ interface ConfigData {
   pipeline_subtitle_lang?: string
   pipeline_translate_source_lang?: string
   pipeline_tts_text_source?: string
+  /** 本地模型下载端点 + 转写档位（v0.32 S4）：不设草稿 = 保存时被静默丢掉 */
+  pipeline_hf_endpoint?: string
+  pipeline_whisper_model?: string
   pipeline_reddit_client_id?: string
   pipeline_reddit_client_id_set?: boolean
   pipeline_reddit_cookie?: string
@@ -152,6 +156,8 @@ export function SettingsPage() {
       pipeline_subtitle_lang: cfg.pipeline_subtitle_lang ?? 'zh-CN',
       pipeline_translate_source_lang: cfg.pipeline_translate_source_lang ?? 'en-US',
       pipeline_tts_text_source: cfg.pipeline_tts_text_source ?? 'script',
+      pipeline_hf_endpoint: cfg.pipeline_hf_endpoint ?? '',
+      pipeline_whisper_model: cfg.pipeline_whisper_model ?? 'base',
       pipeline_reddit_client_id: cfg.pipeline_reddit_client_id ?? '',
       pipeline_reddit_client_secret: '',
       pipeline_reddit_cookie: '',
@@ -161,10 +167,7 @@ export function SettingsPage() {
 
   async function save() {
     try {
-      await api.patch('/api/config', {
-        overrides: {
-        },
-      })
+      await api.patch('/api/config', { overrides: buildOverrides(cfg, form) })
       setDirty(false)
       await refetch()
       toast(t('settings.saved'), 'success')
