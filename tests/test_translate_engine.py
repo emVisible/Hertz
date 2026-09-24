@@ -10,19 +10,11 @@ from backend.pipeline.producers.media import (
     _subtitle_cache_hit,
 )
 
-
-def _set_engine(value: str, monkeypatch) -> None:
-    from backend.config import settings as app_settings
-
-    monkeypatch.setattr(app_settings, "pipeline_translate_engine", value, raising=False)
-
-
 # ---------- 引擎分支 ----------
 
 
 @pytest.mark.asyncio
 async def test_local_translate_success(monkeypatch) -> None:
-    _set_engine("local", monkeypatch)
 
     async def fake_translate(text: str) -> str:
         return "楼下的灯还亮着。"
@@ -39,7 +31,6 @@ async def test_local_translate_success(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_local_failure_falls_back_to_original(monkeypatch) -> None:
     """D-189 新语义：本地引擎失败 → 回原文（不再有 api 三步法回落）。"""
-    _set_engine("local", monkeypatch)
 
     async def boom(text: str) -> str:
         raise RuntimeError("model missing")
@@ -55,7 +46,6 @@ async def test_local_failure_falls_back_to_original(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_language_guard_non_en_zh_pair_returns_original(monkeypatch) -> None:
     """语言对守卫：非 en→zh 组合 local 不介入，直接返回原文。"""
-    _set_engine("local", monkeypatch)
     called = {"n": 0}
 
     async def fake_translate(text: str) -> str:

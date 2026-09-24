@@ -50,7 +50,7 @@ v0.40 的正当主题不是新能力,而是把验证面推到产物上——顺�
 | **S3** ✅ | 工坊中文输出纠偏：抽出 `asr.transcribe_cues()` 作为**全仓唯一 whisper 出口**（词级时间戳 + 断句 + 繁简纠偏），`studio.py` 与字幕产线共用；并补 `_TRADITIONAL_CHARS` 63→83 字 | 实测两层根因：①工坊自己调 `model.transcribe` 绕开纠偏；②**检测集漏掉真实模型输出**（氣/錯/園/錄/順/實/語/嬰 全不在集内）→ 连字幕产线的纠偏也永不触发 | 注入「首繁二简」假模型断言响应无繁体且发生第二次带 prompt 重转；AST 守卫全仓不得有第二处直调；实测原句可识别 + 简体字形不得入集（防误触发） |
 | **S4** | 模型目录单一真相源：`data_dir/models/whisper`，`asr` 与 `deps` 共用；配一键下载 + pending 琥珀态（v0.31 B4/B5） | 现在耦合 `$HOME/.cache`，违背 `HERTZ_USER_DATA` 隔离的存在理由 | 一致性测试（两处解析同目录）+ 无缓存冷启动实测 141MB 首下 |
 | **S5** | 产物级门禁：把 `scripts/sim-newmachine-v030.sh` 泛化成 `scripts/sim-newmachine.sh`（去绝对路径/参数化），加 ASR 断言与「子进程不得重跑入口」断言；`verify.sh` 增加可选 `--with-bundle` 档 | 四个事故全是产物级,而门禁只在源码级 | 脚本本身即验收；文档写明发布必跑 |
-| **S6** | 文档真相守卫：ROADMAP 里 术语表/三步法 两条过期交付项改为历史标注；VISION 重读标记假 ✅ 已订正（D-199）；`alembic.ini` 补 `path_separator` 消弃用告警；删 `frontend/src/hooks/useStudioExecution.py.tmp`（tracked 空文件，零引用） | 一处真相是 butler 红线，也是本轮反复踩到的 | 加一条文档 grep 守卫（宣称已交付的能力必须能在代码里找到锚点） |
+| **S6** ✅ | 文档真相与卫生：ROADMAP v0.15 行标注「三步法/术语表已于 D-189 移除」；`alembic.ini` 补 `path_separator = os`；删 tracked 的 0 字节 `useStudioExecution.py.tmp`；删测试里空转的 `_set_engine()` 助手 | 文档不得宣称代码没做的事；门禁日志噪音早晚被误读 | `alembic check` 弃用告警 0 次、pytest 告警 8→7；14 项翻译/闸测试通过；门禁 382 全绿 |
 | **S7** | 前端巨石拆解第一批：`AssetsPage.tsx` 1277 → 主壳 + 分区（照 D-182/D-183 的「state 留壳、JSX 下放」既有模式），`PlansPage.tsx` 1212 同批或紧随 | 前端已成唯一的巨石区（后端最大 698 行健康） | tsc + vitest 不降；主壳 <400 行 |
 
 非目标（v0.32 明确不做）：新表新能力、mac 签名（要花钱买证书,不是代码问题）、win/linux 矩阵、双 head 的完整合并。
@@ -94,6 +94,15 @@ v0.40          可信交付（签名 / 矩阵 / 自动更新 / 备份可验证 /
 | macOS APFS 大小写不敏感 → 用 `Path.exists()` 判「是不是子模块」会把 `backend/models/Base.py` 判成存在（真实文件 `base.py`），守卫当场虚报 | 只在 macOS 上跑才看得到；Linux CI 上表现不同 | 模块判定一律走 `importlib.util.find_spec`，不再靠路径拼接猜 |
 
 推论（直接指向 S5）：**发布门禁必须包含一次「启动固化二进制」的冒烟**，否则上述三类永远只能靠人手动撞。
+
+计划更正（S6 执行时）：本片原列「删除 `backend/config.py` 与 `AiSection.tsx` 里指向不存在功能的死引用」，
+该前提来自侦察阶段的报告，逐个 grep 核实后**不成立**——这两处没有 `pipeline_translate_engine`
+/ `three_pass` / `glossary` 的任何残留（只有 wave15/wave21 迁移文件与一处测试助手）。
+唯一真死物是 `tests/test_translate_engine.py` 的 `_set_engine()`：它用 `raising=False`
+设置一个 D-189 起就不存在的字段，静默 no-op，只在测试里制造「还能切引擎」的错觉——已连定义
+一起删除（不留会 raise 的占位桩：半吊子既不是删除又会炸调用点）。
+
+推论：**侦察结论在写入计划前必须自己复核一遍**，否则修一个不存在的问题还要搭上审查成本。
 
 ## 六、定档（2026-09-24 用户拍板，不再是开放问题）
 
