@@ -355,7 +355,9 @@
     "translateModelMissing": "Model not downloaded",
     "translateModelNoDeps": "Deps missing (run uv sync again)",
     "translateModelDownload": "Download local MT model",
-    "modelDownloading": "Downloading…"
+    "modelDownloading": "Downloading…",
+    "modelChecking": "Checking…",
+    "modelStatusUnavailable": "Status query failed — retry on the right"
   },
   "execution": {
     "modeStudio": "Studio",

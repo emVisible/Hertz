@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 
 import { api } from '../../../api'
+import { modelState, modelStateTone } from '../../../core/modelStatus'
 import { Badge, Button, Icon, Input, Select, useToast } from '../../../components/ui'
 import { SOURCE_CATALOG_NAMES, SOURCE_GROUPS } from '../../../constants/sources'
 import { heading, sub, type SectionProps } from './shared'
@@ -28,24 +29,27 @@ function ModelStatusCard({
   queryKey,
   statusPath,
   downloadPath,
-  badgeText,
+  texts,
   actionText,
   noteText,
 }: {
   queryKey: string
   statusPath: string
   downloadPath: string
-  badgeText: (s: ModelStatus | undefined) => string
+  /** 引擎相关文案（拿到状态后才算，档位名要进徽章）；「还没问到 / 问失败」由公共
+   *  文案承担，判定见 core/modelStatus */
+  texts: (s: ModelStatus) => { noDeps: string; ready: string; missing: string }
   actionText: string
   noteText?: (s: ModelStatus) => string | null
 }) {
   const { t } = useTranslation()
   const [downloading, setDownloading] = useState(false)
-  const { data, refetch } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: [queryKey],
     queryFn: () => api.get<ModelStatus>(statusPath),
+    // 保存档位后徽章要自己变绿/变琥珀：这张卡的查询不在主壳 save() 的失效范围内
+    refetchInterval: 15_000,
   })
-  const ready = data?.model_ready === true
 
   async function startDownload() {
     setDownloading(true)
@@ -60,19 +64,34 @@ function ModelStatusCard({
     await refetch()
   }
 
-  const note = data ? noteText?.(data) : null
+  const state = modelState({
+    loaded: !!data,
+    error: isError,
+    deps: data?.deps,
+    ready: data?.model_ready,
+  })
+  // data 到位后 state 只会是 noDeps / ready / missing 三者之一（见 modelState）
+  const label = !data
+    ? isError
+      ? t('settings.modelStatusUnavailable')
+      : t('settings.modelChecking')
+    : texts(data)[state as 'noDeps' | 'ready' | 'missing']
+
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-      <Badge tone={data == null ? 'neutral' : ready ? 'success' : 'warning'}>
-        {badgeText(data)}
-      </Badge>
-      {!ready && data?.deps && (
+      <Badge tone={modelStateTone(state)}>{label}</Badge>
+      {state === 'missing' && (
         <Button size="sm" variant="secondary" disabled={downloading} onClick={() => void startDownload()}>
           <Icon name="downloads" size={12} />
           {downloading ? t('settings.modelDownloading') : actionText}
         </Button>
       )}
-      {note && <span className="text-text-disabled">{note}</span>}
+      {state === 'unavailable' && (
+        <Button size="sm" variant="secondary" onClick={() => void refetch()}>
+          {t('common.retry')}
+        </Button>
+      )}
+      {data && noteText?.(data) ? <span className="text-text-disabled">{noteText(data)}</span> : null}
     </div>
   )
 }
@@ -85,13 +104,11 @@ export function TranslateModelStatus() {
       queryKey="translate-model-status"
       statusPath="/api/pipeline/translate-model/status"
       downloadPath="/api/pipeline/translate-model/download"
-      badgeText={(s) =>
-        !s?.deps
-          ? t('settings.translateModelNoDeps')
-          : s.model_ready
-            ? t('settings.translateModelReady')
-            : t('settings.translateModelMissing')
-      }
+      texts={() => ({
+        noDeps: t('settings.translateModelNoDeps'),
+        ready: t('settings.translateModelReady'),
+        missing: t('settings.translateModelMissing'),
+      })}
       actionText={t('settings.translateModelDownload')}
     />
   )
@@ -105,13 +122,11 @@ export function WhisperModelStatus() {
       queryKey="whisper-model-status"
       statusPath="/api/pipeline/whisper-model/status"
       downloadPath="/api/pipeline/whisper-model/download"
-      badgeText={(s) =>
-        !s?.deps
-          ? t('settings.whisperModelNoDeps')
-          : s.model_ready
-            ? t('settings.whisperModelReady', { name: s.model_name ?? '' })
-            : t('settings.whisperModelMissing', { name: s.model_name ?? '' })
-      }
+      texts={(s) => ({
+        noDeps: t('settings.whisperModelNoDeps'),
+        ready: t('settings.whisperModelReady', { name: s.model_name ?? '' }),
+        missing: t('settings.whisperModelMissing', { name: s.model_name ?? '' }),
+      })}
       actionText={t('settings.whisperModelDownload')}
       noteText={(s) => (s.xinference_on ? t('settings.whisperModelViaService') : null)}
     />

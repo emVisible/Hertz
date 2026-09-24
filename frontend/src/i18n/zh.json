@@ -370,7 +370,9 @@
     "translateModelMissing": "模型未下载",
     "translateModelNoDeps": "依赖未安装（请重新 uv sync）",
     "translateModelDownload": "下载本地翻译模型",
-    "modelDownloading": "下载中…"
+    "modelDownloading": "下载中…",
+    "modelChecking": "检测中…",
+    "modelStatusUnavailable": "状态查询失败——点右侧重试"
   },
   "execution": {
     "modeStudio": "Studio 编排",
