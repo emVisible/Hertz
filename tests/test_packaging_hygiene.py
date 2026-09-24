@@ -49,6 +49,26 @@ def test_no_stale_extra_asr_instructions() -> None:
     assert not offenders, "仍在指导用户安装可选组: " + ", ".join(offenders)
 
 
+def test_frozen_read_config_files_are_ascii_only() -> None:
+    """固化进程会读的配置文件必须纯 ASCII。
+
+    v0.32 S6 实测踩坑：给 alembic.ini 加了中文注释（本意是解释 path_separator），
+    结果冻结后端首启即 `UnicodeDecodeError: 'ascii' codec can't decode byte 0xe6`
+    ——configparser 在 PyInstaller 运行期按 ASCII 解这个文件，而 dev 态 Python 默认
+    UTF-8，所以源码级测试全绿、只有产物会崩（正是 S5 产物门禁抓到的）。
+
+    范围只含「冻结运行期真会被解析」的文件：pyproject.toml 等只在安装期被
+    tomllib/uv 以 UTF-8 读取，纳入只会制造虚警（第一版就误纳过一次）。"""
+    offenders = []
+    for rel in ("alembic.ini",):
+        raw = (ROOT / rel).read_bytes()
+        try:
+            raw.decode("ascii")
+        except UnicodeDecodeError as exc:
+            offenders.append(f"{rel}: {exc}")
+    assert not offenders, "冻结运行期读取的配置文件含非 ASCII 内容: " + "; ".join(offenders)
+
+
 def test_alembic_env_imports_are_reachable_or_declared() -> None:
     """alembic/env.py 以**数据文件**进包，它的 import 对 PyInstaller 不可见。
 

@@ -70,4 +70,5 @@
 ## 维护约定
 
 - 每个迭代跑 `./scripts/verify.sh`（ruff → pytest → tsc → vitest → vite build）全绿才算完成
+- **打 tag 前必跑 `./scripts/release-check.sh`**（v0.32 S5）：源码门禁 → 重建固化包 → 产物级门禁（空库首启 / head 对比 / schema / API 契约 / 转写 / 进程守卫）。v0.30–v0.32 有四个缺陷全部绕过了 `verify.sh`——源码级绿不代表装得上
 - 新决策记入 `docs/DECISIONS.md`，波次回顾记入 `HERTZ_RECONSTRUCTION.md`
