@@ -118,7 +118,10 @@ class Item(BaseModel):
     # Failure diagnostics
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 失败分类（v0.2.1）：blocked/rate_limit/timeout/llm/tts/ffmpeg/download/publish/internal/other
-    error_class: Mapped[str] = mapped_column(String(32), default="", index=True)
+    # 不建索引（v0.32 S2 实测）：本库 5281 行里 5181 为空串、仅 100 行非空——
+    # 全表扫与索引扫代价同量级，而声明 index=True 会让模型与库长期不一致
+    # （`alembic check` 每轮都报 add_index，混在真正的危险项里）。
+    error_class: Mapped[str] = mapped_column(String(32), default="")
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
 
     # Optional ownership link to an orchestration run
@@ -128,4 +131,6 @@ class Item(BaseModel):
 
     # 软归档（wave10）：删除入口收口异常区——归档 = 磁盘清理 + 字段清洗后标记，
     # 保留基础数据（标题/来源/评分/发布记录）作备用库；不再出现在任何流程列表
-    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # 不建索引（v0.32 S2 实测）：archived 全表 5281 行均为 False，零选择性，
+    # B-tree 索引不会被查询规划器使用；同 error_class，声明与库不一致只会制造漂移。
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)

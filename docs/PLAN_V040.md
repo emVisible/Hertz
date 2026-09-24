@@ -46,7 +46,7 @@ v0.40 的正当主题不是新能力,而是把验证面推到产物上——顺�
 | ID | 交付 | 为什么是它 | 验收（可自动） |
 |---|---|---|---|
 | **S1** ✅ | alembic autogenerate 护栏：`env.py` 的 `process_revision_directives` 滤掉 `DropTableOp`（除非显式开关）+ `include_object` 黑名单 legacy 表 | 2 个 remove_table 是唯一的**不可逆**风险 | 纯函数测试：喂造出来的 ops，断言 drop 被滤并写日志 |
-| **S2** | 补真实缺失 schema：`wave27` 加 `ix_items_archived` / `ix_items_error_class` 索引 + `plans.brief_group_id` FK（挂 wave26，**不动双 head**） | 库里现在就缺，是线上查询性能债 | 隔离空库跑 `upgrade heads` 后查 `pg_indexes` 断言三者在场 |
+| **S2** ✅ | 漂移清偿（**按实测反转**）：`items.archived`/`error_class` 的 `index=True` 是无效声明（5281 行全 False / 5181 空串），改模型而非造索引；`plans.brief_group_id` 补真缺失的外键（wave27，先清孤儿再加约束） | 原判断「库里缺索引=性能债」被数据推翻；FK 缺失则会让悬挂引用不被置空 | `add_fk` 2→0、`add_index` 8→4、`remove_table` 保持 0；dev 库与**空库**均 `upgrade heads` 退出码 0 且 FK/版本经 SQL 核对 |
 | **S3** ✅ | 工坊中文输出纠偏：抽出 `asr.transcribe_cues()` 作为**全仓唯一 whisper 出口**（词级时间戳 + 断句 + 繁简纠偏），`studio.py` 与字幕产线共用；并补 `_TRADITIONAL_CHARS` 63→83 字 | 实测两层根因：①工坊自己调 `model.transcribe` 绕开纠偏；②**检测集漏掉真实模型输出**（氣/錯/園/錄/順/實/語/嬰 全不在集内）→ 连字幕产线的纠偏也永不触发 | 注入「首繁二简」假模型断言响应无繁体且发生第二次带 prompt 重转；AST 守卫全仓不得有第二处直调；实测原句可识别 + 简体字形不得入集（防误触发） |
 | **S4** | 模型目录单一真相源：`data_dir/models/whisper`，`asr` 与 `deps` 共用；配一键下载 + pending 琥珀态（v0.31 B4/B5） | 现在耦合 `$HOME/.cache`，违背 `HERTZ_USER_DATA` 隔离的存在理由 | 一致性测试（两处解析同目录）+ 无缓存冷启动实测 141MB 首下 |
 | **S5** | 产物级门禁：把 `scripts/sim-newmachine-v030.sh` 泛化成 `scripts/sim-newmachine.sh`（去绝对路径/参数化），加 ASR 断言与「子进程不得重跑入口」断言；`verify.sh` 增加可选 `--with-bundle` 档 | 四个事故全是产物级,而门禁只在源码级 | 脚本本身即验收；文档写明发布必跑 |
