@@ -34,9 +34,17 @@ _MIN_CUE_DUR = 0.35    # 低于此时长的 cue 并入相邻 cue（一闪而过�
 _SENT_END_RE = re.compile(r"[.!?。！？；;…]\s*$")
 
 # 繁体检测（v0.11.2）：base 模型中文常输出繁体——含这些字符触发简体重转
+#
+# v0.32 S3 扩充：原 63 字集**漏掉了打包版实测输出的整句**——
+# 「今天天氣不錯,我打算去公園離走走,順便錄一段雨嬰草稿事實」判繁体为 False，
+# 于是纠偏根本不触发（字幕产线与工坊同样受影响）。补的都是繁体独有字形，
+# 其简体写法（气错园录顺实语婴）绝不进集合——否则简体文本会误触发一次
+# 额外 whisper 重转（白烧 CPU）。tests 里两条断言分别钉住「实测句可识别」
+# 与「简体字不在集内」。
 _TRADITIONAL_CHARS = frozenset(
     "這橋撐從裡們當體還馬電門開關對應該聽華飛車來個時間邊長樣億萬義鳥"
-    "說話見建築點兩國寫讀買賣東練習龍鳳歸還為於無與卻後乾淨盡寧願緣紅"
+    "說話見建築點兩國寫讀買賣東練習龍鳳歸還為於無與卻後乾淨寧願緣紅"
+    "氣錯園錄順實語嬰圖塊壇畫眾盡據處慮頭題腳臉"
 )
 
 
@@ -177,40 +185,53 @@ def _collect_words(segments) -> list[tuple[float, float, str]]:
     return words
 
 
+_SIMPLIFIED_PROMPT = "以下是简体中文的普通话。"
+
+
+async def transcribe_cues(
+    media_path: Path, *, language: str | None = None
+) -> list[tuple[float, float, str]]:
+    """faster-whisper 转写 → 词级时间戳 → 按说话者节奏断句的 cue。
+
+    **全仓唯一的 whisper 调用出口**（v0.32 S3）：字幕产线与脚本工坊共享同一套
+    时间轴口径与同一套繁简纠偏。此前工坊在路由里自己调了一次 `model.transcribe`，
+    结果 v0.11.2 的纠偏只作用于字幕，工坊中文实测输出繁体。
+
+    失败时抛异常（由调用方决定降级或报错）——「静默返回 None」的语义留在
+    `transcribe_with_whisper`（生产链路依赖它回退旁白字幕）。
+    """
+    model = await _get_whisper()
+    segments, _ = await asyncio.to_thread(
+        model.transcribe, str(media_path), language=language or None,
+        word_timestamps=True, vad_filter=True,
+    )
+    words = _collect_words(segments)
+    # base 模型 zh 常偏繁体，且繁体状态下误认生僻字 → 带简体 prompt 重转一遍
+    if not language and words and _has_traditional("".join(w[2] for w in words)):
+        logger.info("zh 转写结果含繁体 — 带简体 initial_prompt 重转（唯一纠偏点）")
+        segments, _ = await asyncio.to_thread(
+            model.transcribe, str(media_path), language="zh",
+            word_timestamps=True, vad_filter=True,
+            initial_prompt=_SIMPLIFIED_PROMPT,
+        )
+        words = _collect_words(segments)
+    return _words_to_cues(words)
+
+
 async def transcribe_with_whisper(
     media_path: Path, out_srt: Path, *, language: str | None = None
 ) -> Path | None:
-    """faster-whisper 转写 → 词级时间戳 → 按说话者节奏断句 → 精确对齐 SRT。
+    """faster-whisper 转写 → cue → 写 SRT（生产链路用，失败返回 None 供回退）。
 
     v0.11.1：不再把整段文本拼起来按词数权重重新铺满总时长（会丢失原声
     位置造成字幕错位）——word_timestamps=True 取每个词的绝对时间，
     _words_to_cues 按停顿/标点/长度断句，_write_srt_cues 直写原始时间轴。
-    vad_filter=True 先滤静音，避免幻听与静音区残字。
-    language=None 自动检测（英文优先）。
-
-    v0.11.2：中文自动检测若输出繁体 → 带简体 initial_prompt 重转一遍
-    （base 模型 zh 常偏繁体且繁体状态下误认生僻字）。
+    v0.11.2 的繁简纠偏与 vad 静音过滤现已收在 `transcribe_cues` 单一出口。
     """
     from backend.pipeline.producers.media import _write_srt_cues
 
     try:
-        model = await _get_whisper()
-        segments, _ = await asyncio.to_thread(
-            model.transcribe, str(media_path), language=language or None,
-            word_timestamps=True, vad_filter=True,
-        )
-        words = _collect_words(segments)
-        if not language and _has_traditional("".join(w[2] for w in words)):
-            logger.info(
-                "zh text has traditional chars — retranscribing in simplified"
-            )
-            segments, _ = await asyncio.to_thread(
-                model.transcribe, str(media_path), language="zh",
-                word_timestamps=True, vad_filter=True,
-                initial_prompt="以下是简体中文的普通话。",
-            )
-            words = _collect_words(segments)
-        cues = _words_to_cues(words)
+        cues = await transcribe_cues(media_path, language=language)
         if not cues:
             return None
         out_srt.parent.mkdir(parents=True, exist_ok=True)

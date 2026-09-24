@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import importlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
@@ -19,6 +20,9 @@ from httpx import AsyncClient
 BACKEND_ROOT = Path(__file__).resolve().parent.parent / "backend"
 
 _WEBM_HEADER = b"\x1a\x45\xdf\xa3" + b"\x00" * 200  # 够长以越过「音频过小」的 422 门槛
+
+# v0.31 spike 在打包版上实测到的原始输出（含繁体与错字，见 D-200）
+REAL_TRADITIONAL_SAMPLE = "今天天氣不錯,我打算去公園離走走,順便錄一段雨嬰草稿事實"
 
 
 def _patch_whisper(monkeypatch, available: bool) -> None:
@@ -67,6 +71,112 @@ async def test_transcribe_rejects_undersized_payload(
         files={"file": ("draft.webm", b"\x1a\x45\xdf\xa3", "audio/webm")},
     )
     assert resp.status_code == 422, resp.text
+
+
+def test_no_second_whisper_transcribe_call_site() -> None:
+    """whisper 的 `model.transcribe(` 只允许出现在 asr.py 一处。
+
+    实测缺陷（v0.32 S3）：工坊在 studio.py 里自己调了一次 `model.transcribe`，
+    于是 asr.transcribe_with_whisper 的「自动检测出繁体 → 带简体 prompt 重转」
+    只作用于字幕产线，工坊中文实测输出繁体（今天天氣不錯…公園離走走）。
+    两条调用链共享一个语义时，必须只有一个权威实现。"""
+    offenders = []
+    for path in sorted(BACKEND_ROOT.rglob("*.py")):
+        if path.name == "asr.py":
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            code = line.strip()
+            if code.startswith("#"):
+                continue
+            if "model.transcribe(" in code or "_get_whisper" in code:
+                offenders.append(f"{path.relative_to(BACKEND_ROOT)}:{i}")
+    assert not offenders, (
+        "出现第二处 whisper 直调（应复用 asr.transcribe_cues）: " + ", ".join(offenders)
+    )
+
+
+def test_cues_mapper_is_single_source_of_truth() -> None:
+    """工坊与字幕产线的 cue 结构必须共用 asr 的出口，不得各自组装一遍。"""
+    import backend.pipeline.producers.asr as asr
+
+    assert hasattr(asr, "transcribe_cues"), "缺少共享转写出口 transcribe_cues"
+    studio_src = (BACKEND_ROOT / "routers" / "studio.py").read_text(encoding="utf-8")
+    assert "transcribe_cues" in studio_src, "工坊未走共享出口"
+
+
+class _FakeWord:
+    def __init__(self, word: str, start: float, end: float) -> None:
+        self.word, self.start, self.end = word, start, end
+
+
+class _FakeSeg:
+    def __init__(self, words) -> None:
+        self.words = words
+
+
+class _FakeModel:
+    """第一次返回繁体，第二次（带简体 prompt）返回简体——复现 base 模型的真实行为。"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def transcribe(self, _path, **kw):
+        self.calls.append(kw)
+        traditional = len(self.calls) == 1
+        text = "今天天氣不錯" if traditional else "今天天气不错"
+        words = [_FakeWord(ch, i * 0.4, i * 0.4 + 0.35) for i, ch in enumerate(text)]
+        return [_FakeSeg(words)], SimpleNamespace(language="zh")
+
+
+@pytest.mark.asyncio
+async def test_workshop_output_is_simplified(client: AsyncClient, monkeypatch) -> None:
+    """工坊中文产出不含繁体字——S3 的正题（行为级，不测实现）。"""
+    from backend.pipeline.producers import asr
+    from backend.pipeline.producers.asr import _has_traditional
+
+    fake = _FakeModel()
+
+    async def _fake_get_whisper():
+        return fake
+
+    monkeypatch.setattr(asr, "_get_whisper", _fake_get_whisper)
+    monkeypatch.setattr(asr, "whisper_available", lambda: True)
+
+    resp = await client.post(
+        "/api/studio/transcribe",
+        files={"file": ("draft.wav", _WEBM_HEADER, "audio/wav")},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["text"], "转写文本为空"
+    assert not _has_traditional(body["text"]), f"工坊输出繁体: {body['text']}"
+    # 纠偏必须是真发生的第二次调用，而不是字符串转换糊过去
+    assert len(fake.calls) == 2, f"未触发简体重转，调用记录: {fake.calls}"
+    assert fake.calls[1].get("initial_prompt"), "重转未带简体 initial_prompt"
+
+
+def test_traditional_detector_covers_real_model_output() -> None:
+    """检测集必须覆盖 base 模型的**真实**繁体输出。
+
+    v0.32 S3 实测：打包版转出「今天天氣不錯…公園…錄…雨嬰草稿事實」，
+    而原 63 字检测集不含 氣/錯/園/錄/順/實/語/嬰 → `_has_traditional` 返回
+    False，简体重转纠偏根本不触发（字幕产线与工坊同时受影响）。"""
+    from backend.pipeline.producers.asr import _TRADITIONAL_CHARS, _has_traditional
+
+    assert _has_traditional(REAL_TRADITIONAL_SAMPLE), "实测繁体句未被识别——纠偏永不触发"
+    for ch in "氣錯園錄順實語嬰":
+        assert ch in _TRADITIONAL_CHARS, f"{ch} 缺失"
+
+
+def test_traditional_detector_excludes_simplified_forms() -> None:
+    """简体字形绝不能在集合里。
+
+    这些字与上面的繁体字互为简繁（气↔氣 / 错↔錯 / 录↔錄 …）。混进集合会让
+    正常简体文本误触发一次额外的 whisper 重转——白烧 CPU 且拖慢工坊响应。"""
+    from backend.pipeline.producers.asr import _TRADITIONAL_CHARS
+
+    for ch in "气错园录顺实语婴图块坛画众尽据处虑头题脚脸":
+        assert ch not in _TRADITIONAL_CHARS, f"简体字 {ch} 混入检测集会造成误触发"
 
 
 # ---------- 整类缺陷守卫 ----------

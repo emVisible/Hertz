@@ -116,25 +116,28 @@ async def transcribe_audio(
     await asyncio.to_thread(tmp.write_bytes, content)
 
     try:
-        from backend.pipeline.producers.asr import _get_whisper
+        from backend.pipeline.producers.asr import transcribe_cues
 
-        model = await _get_whisper()
-
-        def _run():
-            segments_iter, info = model.transcribe(str(tmp), vad_filter=True)
-            return [
-                {"start": round(seg.start, 2), "end": round(seg.end, 2), "text": seg.text.strip()}
-                for seg in segments_iter
-                if seg.text.strip()
-            ]
-
-        segments = await asyncio.to_thread(_run)
+        # 走 asr 的单一转写出口：与字幕产线共用时间轴断句口径 + 繁简纠偏。
+        # 此前这里自己调了一次 whisper，导致工坊中文输出繁体（v0.32 S3）。
+        cues = await transcribe_cues(tmp)
+        segments = [
+            {
+                "start": round(float(t0), 2),
+                "end": round(float(t1), 2),
+                "text": str(text).strip(),
+            }
+            for t0, t1, text in cues
+            if str(text).strip()
+        ]
         full_text = " ".join(s["text"] for s in segments).strip()
         return {
             "segments": segments,
             "text": full_text,
             "duration_s": segments[-1]["end"] if segments else 0,
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         if "not installed" in str(exc).lower() or "faster-whisper" in str(exc).lower():
             raise HTTPException(status_code=502, detail=f"转写失败: {exc}") from exc
