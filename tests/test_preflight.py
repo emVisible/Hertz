@@ -28,14 +28,32 @@ def test_normalize_all_bool_coerced() -> None:
 # ---------- 预检矩阵 ----------
 
 
-def _plan(opts, *, local_mt=True, tts=None, asr=True, llm=True):
+def _plan(opts, *, local_mt=True, tts=None, asr=True, whisper_model=True, llm=True):
     return plan_capability_checks(
         opts,
         local_mt_ready=local_mt,
         tts_available=tts,
         asr_available=asr,
+        whisper_model_ready=whisper_model,
         llm_ok=llm,
     )
+
+
+def test_missing_asr_engine_warning_beats_missing_model() -> None:
+    """引擎都不在时不必再提模型——两条一起说会把人引向错误的修复动作。"""
+    _warnings = _plan({"subtitle": True}, asr=False, whisper_model=False)[1]
+    assert any("ASR 不可用" in w for w in _warnings)
+    assert not any("转写模型" in w for w in _warnings)
+
+
+def test_pending_whisper_model_warns_with_download_cost() -> None:
+    """v0.32 S4：模型未下载是「先等下载」不是「产不出」——警告要说清耗时与替代路径，
+    而不是静默让条目停在转写步骤十几分钟。"""
+    blockers, warnings = _plan({"subtitle": True, "translate": False}, whisper_model=False)
+    assert blockers == []  # 不阻断（旁白兜底仍在）
+    assert any("转写模型未下载" in w and "141MB" in w for w in warnings)
+    # 模型就绪 → 不再有这条
+    assert not any("转写模型未下载" in w for w in _plan({"subtitle": True})[1])
 
 
 def test_passthrough_never_blocks() -> None:

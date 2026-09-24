@@ -14,50 +14,107 @@ import { heading, sub, type SectionProps } from './shared'
 import { PublishStatusCard } from './settingsCards'
 import { ChannelsCard } from './ChannelsCard'
 
-/** 本地翻译模型状态卡（v0.22.x）：依赖/模型就绪态 + 一键下载（后台任务轮询）。 */
-export function TranslateModelStatus() {
+/** 本地模型状态卡通用件（v0.32 S4）：就绪徽章 + 后台下载 + 轮询到就绪。
+ *  翻译与转写两个引擎这件事的语义完全一致（只是端点与文案），复制两份轮询
+ *  循环的下场是下次改动只改到一半。 */
+type ModelStatus = {
+  deps: boolean
+  model_ready: boolean
+  model_name?: string
+  xinference_on?: boolean
+}
+
+function ModelStatusCard({
+  queryKey,
+  statusPath,
+  downloadPath,
+  badgeText,
+  actionText,
+  noteText,
+}: {
+  queryKey: string
+  statusPath: string
+  downloadPath: string
+  badgeText: (s: ModelStatus | undefined) => string
+  actionText: string
+  noteText?: (s: ModelStatus) => string | null
+}) {
   const { t } = useTranslation()
   const [downloading, setDownloading] = useState(false)
   const { data, refetch } = useQuery({
-    queryKey: ['translate-model-status'],
-    queryFn: () =>
-      api.get<{ deps: boolean; model_ready: boolean }>(
-        '/api/pipeline/translate-model/status',
-      ),
+    queryKey: [queryKey],
+    queryFn: () => api.get<ModelStatus>(statusPath),
   })
   const ready = data?.model_ready === true
 
   async function startDownload() {
     setDownloading(true)
-    await api.post('/api/pipeline/translate-model/download')
-    const deadline = Date.now() + 600_000
+    await api.post(downloadPath)
+    const deadline = Date.now() + 1_800_000 // 141MB~3GB 级下载，留足轮询窗口
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 3000))
-      const st = await api.get<{ model_ready: boolean }>(
-        '/api/pipeline/translate-model/status',
-      )
+      const st = await api.get<ModelStatus>(statusPath)
       if (st.model_ready) break
     }
     setDownloading(false)
     await refetch()
   }
 
+  const note = data ? noteText?.(data) : null
   return (
-    <div className="mt-2 flex items-center gap-2 text-xs">
-      <Badge tone={data == null ? 'neutral' : data.model_ready ? 'success' : 'warning'}>
-        {!data?.deps
-          ? t('settings.translateModelNoDeps')
-          : ready
-            ? t('settings.translateModelReady')
-            : t('settings.translateModelMissing')}
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <Badge tone={data == null ? 'neutral' : ready ? 'success' : 'warning'}>
+        {badgeText(data)}
       </Badge>
       {!ready && data?.deps && (
         <Button size="sm" variant="secondary" disabled={downloading} onClick={() => void startDownload()}>
           <Icon name="downloads" size={12} />
-          {downloading ? t('settings.translateModelDownloading') : t('settings.translateModelDownload')}
+          {downloading ? t('settings.modelDownloading') : actionText}
         </Button>
       )}
+      {note && <span className="text-text-disabled">{note}</span>}
     </div>
+  )
+}
+
+/** 本地翻译模型状态卡（v0.22.x）：依赖/模型就绪态 + 一键下载（后台任务轮询）。 */
+export function TranslateModelStatus() {
+  const { t } = useTranslation()
+  return (
+    <ModelStatusCard
+      queryKey="translate-model-status"
+      statusPath="/api/pipeline/translate-model/status"
+      downloadPath="/api/pipeline/translate-model/download"
+      badgeText={(s) =>
+        !s?.deps
+          ? t('settings.translateModelNoDeps')
+          : s.model_ready
+            ? t('settings.translateModelReady')
+            : t('settings.translateModelMissing')
+      }
+      actionText={t('settings.translateModelDownload')}
+    />
+  )
+}
+
+/** 本地转写模型状态卡（v0.32 S4）：档位显于徽章，切档位后这里就是重下入口。 */
+export function WhisperModelStatus() {
+  const { t } = useTranslation()
+  return (
+    <ModelStatusCard
+      queryKey="whisper-model-status"
+      statusPath="/api/pipeline/whisper-model/status"
+      downloadPath="/api/pipeline/whisper-model/download"
+      badgeText={(s) =>
+        !s?.deps
+          ? t('settings.whisperModelNoDeps')
+          : s.model_ready
+            ? t('settings.whisperModelReady', { name: s.model_name ?? '' })
+            : t('settings.whisperModelMissing', { name: s.model_name ?? '' })
+      }
+      actionText={t('settings.whisperModelDownload')}
+      noteText={(s) => (s.xinference_on ? t('settings.whisperModelViaService') : null)}
+    />
   )
 }
 
@@ -615,18 +672,36 @@ export function PipelineSection({
           />
           <div>
             <label className="mb-0.5 block text-[11px] font-medium text-text-secondary">
-              {t('settings.translateHfEndpoint')}
+              {t('settings.hfEndpoint')}
             </label>
             <Input
-              value={form.pipeline_translate_hf_endpoint ?? ''}
-              onChange={(e) => set('pipeline_translate_hf_endpoint', e.target.value)}
+              value={form.pipeline_hf_endpoint ?? ''}
+              onChange={(e) => set('pipeline_hf_endpoint', e.target.value)}
               placeholder="https://huggingface.co"
             />
             <p className="mt-0.5 text-[10px] text-text-disabled">
-              {t('settings.translateHfEndpointHint')}
+              {t('settings.hfEndpointHint')}
             </p>
           </div>
+          <Select
+            label={t('settings.whisperModel')}
+            value={form.pipeline_whisper_model ?? 'base'}
+            onChange={(e) => set('pipeline_whisper_model', e.target.value)}
+            options={
+              [
+                // tiny 中文实测不可用（D-200），不放进选项免得一键挑坏转写
+                { value: 'base', label: 'base' },
+                { value: 'small', label: 'small' },
+                { value: 'medium', label: 'medium' },
+                { value: 'large-v3', label: 'large-v3' },
+              ] as Array<{ value: string; label: string }>
+            }
+          />
+          <p className="mt-0.5 text-[10px] text-text-disabled">
+            {t('settings.whisperModelHint')}
+          </p>
           <TranslateModelStatus />
+          <WhisperModelStatus />
           <Select
             label={t('settings.ttsTextSource')}
             value={form.pipeline_tts_text_source ?? 'script'}

@@ -104,5 +104,6 @@ async def _preflight(ctx: StepContext, item) -> tuple[list[str], list[str]]:
         local_mt_ready=local_mt_ready,
         tts_available=tts_available,
         asr_available=asr_available(),
+        whisper_model_ready=dep_ok(deps, "whisper_model"),
         llm_ok=dep_ok(deps, "llm"),
     )

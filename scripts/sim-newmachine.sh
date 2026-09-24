@@ -9,16 +9,25 @@
 # 源码级门禁（verify.sh）对上述全部无感。本脚本是第二道闸：**真的启动打包产物**。
 #
 # 用法：
-#   scripts/sim-newmachine.sh            # 默认档：迁移/健康/契约/进程守卫，且保证不联网下载模型
-#   scripts/sim-newmachine.sh --with-asr # 深度档：额外做真音频转写并断言输出非繁体
-#   PORT=8899 scripts/sim-newmachine.sh  # 换端口（默认 8791；避开 8787 上的残留 dev 后端）
+#   scripts/verify.sh && scripts/build-backend.sh && scripts/sim-newmachine.sh
+#   scripts/sim-newmachine.sh                 # 默认档：迁移/健康/契约/进程守卫，且保证不联网下载模型
+#   scripts/sim-newmachine.sh --with-asr      # 深度档：额外做真音频转写并断言输出非繁体
+#   scripts/sim-newmachine.sh --with-download # 再加冷启动首下：真下 141MB 并证明没借 ~/.cache
+#   PORT=8899 scripts/sim-newmachine.sh       # 换端口（默认 8791；避开 8787 上的残留 dev 后端）
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 WITH_ASR=0
-[ "${1:-}" = "--with-asr" ] && WITH_ASR=1
+WITH_DOWNLOAD=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-asr) WITH_ASR=1 ;;
+    --with-download) WITH_DOWNLOAD=1 ;;
+    *) printf '未知参数：%s（忽略）\n' "$arg" ;;
+  esac
+done
 
 VERSION="$(grep -E '^APP_VERSION' backend/config.py | sed -E 's/.*"([^"]+)".*/\1/')"
 BIN="${HERTZ_BUNDLE_BIN:-$ROOT/electron/backend-dist/hertz-backend/hertz-backend}"
@@ -139,6 +148,42 @@ w = items.get('whisper_model') or {}
 print(w.get('status','unknown'))" 2>/dev/null)
   note "  whisper_model 能力矩阵状态：$WHISPER_STATUS"
 
+  # ---------- 4b. 冷启动首下（v0.32 S4：新机无缓存的真实路径）----------
+  # 这一段只产物级能验：源码级测试里 data_dir 是 tmp、模型是手写的假文件。
+  # 两件事必须同时成立——模型真的进了应用目录，且 HF 默认缓存一个字节都没长。
+  if [ "$WITH_DOWNLOAD" = "1" ]; then
+    ST=$(curl -s -m 8 "http://127.0.0.1:$PORT/api/pipeline/whisper-model/status")
+    case "$ST" in
+      *'"model_ready":false'*)
+        ok "干净 data_dir 判为未就绪（没有借用 ~/.cache 里现成的模型）" ;;
+      *)
+        bad "首启即 model_ready=true——模型落位又跑出应用之外了：$ST" ;;
+    esac
+    HF_BEFORE=$(du -sk "$HOME/.cache/huggingface" 2>/dev/null | cut -f1 || echo 0)
+    T0=$(date +%s)
+    curl -s -m 15 -X POST "http://127.0.0.1:$PORT/api/pipeline/whisper-model/download" >/dev/null
+    DOWN_READY=""
+    # 轮询上限 40 分钟：本机实测到 huggingface.co 只有 ~150KB/s，141MB 单档就要十几分钟
+    # （且端点切换不续传、从头再下一遍）——窗口按「慢网络」设，不按本机 WiFi 设
+    for j in $(seq 1 480); do
+      sleep 5
+      curl -s -m 8 "http://127.0.0.1:$PORT/api/pipeline/whisper-model/status" \
+        | grep -q '"model_ready":true' && { DOWN_READY=1; break; }
+    done
+    ELAPSED=$(( $(date +%s) - T0 ))
+    if [ -n "$DOWN_READY" ]; then
+      SIZE=$(du -sk "$DATA/models/whisper" 2>/dev/null | cut -f1)
+      HF_AFTER=$(du -sk "$HOME/.cache/huggingface" 2>/dev/null | cut -f1 || echo 0)
+      ok "冷启动首下 ${ELAPSED}s，落位 ${SIZE}kB 于 $DATA/models/whisper"
+      [ "${HF_BEFORE:-0}" = "${HF_AFTER:-0}" ] \
+        && ok "~/.cache/huggingface 未增长（${HF_BEFORE}kB → ${HF_AFTER}kB）" \
+        || bad "HF 默认缓存被写了（${HF_BEFORE}kB → ${HF_AFTER}kB）——S4 的隔离破了"
+      WHISPER_STATUS=ok
+    else
+      bad "首下 ${ELAPSED}s 仍未就绪（网络或端点问题；能力矩阵应显示 pending）"
+    fi
+  fi
+
   WAV=""
   if [ -x /usr/bin/say ] && command -v ffmpeg >/dev/null; then
     if /usr/bin/say -v Tingting -o "$DATA/d.aiff" "今天天气不错，我打算去公园里走走，顺便录一段语音草稿试试。" 2>/dev/null \
@@ -149,7 +194,7 @@ print(w.get('status','unknown'))" 2>/dev/null)
 
   if [ -z "$WAV" ]; then
     skip "本地无法生成音频夹具（缺 say/ffmpeg）——转写断言未跑"
-  elif [ "$WHISPER_STATUS" != "ok" ] && [ "$WITH_ASR" != "1" ]; then
+  elif [ "$WHISPER_STATUS" != "ok" ] && [ "$WITH_ASR" != "1" ] && [ "$WITH_DOWNLOAD" != "1" ]; then
     CODE=$(curl -s -m 60 -o "$DATA/tr.out" -w "%{http_code}" -F "file=@$WAV;type=audio/wav" \
       "http://127.0.0.1:$PORT/api/studio/transcribe")
     case "$CODE" in
@@ -188,7 +233,10 @@ PY
 fi
 
 if [ "$FAILURES" = "0" ]; then
-  note "SIM_RESULT: PASS（v$VERSION，$([ "$WITH_ASR" = 1 ] && echo 深度档 || echo 默认档)）"
+  MODE="默认档"
+  [ "$WITH_ASR" = "1" ] && MODE="深度档（含转写）"
+  [ "$WITH_DOWNLOAD" = "1" ] && MODE="$MODE + 冷启动首下"
+  note "SIM_RESULT: PASS（v$VERSION，$MODE）"
   exit 0
 fi
 note "SIM_RESULT: FAIL（$FAILURES 项未过）"

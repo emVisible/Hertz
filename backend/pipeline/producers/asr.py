@@ -6,6 +6,8 @@ xinference STT 服务优先（快，OpenAI 兼容 multipart），faster-whisper 
 CPU（base/int8）兜底。faster-whisper 是主依赖（v0.31 B1——曾在可选组 asr 里，
 而 CI 与 dev 一律跑裸 uv sync，导致打包版与开发态同时不可用）。
 未安装时 asr_available() 返回 False，调用方回退旁白翻译（不阻塞生产）。
+本地模型只认 `data_dir/models/whisper/<档位>`（v0.32 S4，路径权威在
+`infrastructure/paths`）——档位与下载端点在设置 → 流水线 可配。
 
 v0.11.1 时间轴对齐（专业字幕口径）：whisper 通道改为词级时间戳
 （word_timestamps=True + vad 过滤静音）→ _words_to_cues 按说话者节奏
@@ -20,6 +22,7 @@ import re
 from pathlib import Path
 
 from backend.config import settings
+from backend.infrastructure import alerts, hf, paths
 from backend.pipeline.producers.probe import probe_has_audio
 
 logger = logging.getLogger(__name__)
@@ -60,11 +63,83 @@ except ImportError:  # pragma: no cover — 未装 extra 的正常降级路径
     WhisperModel = None  # type: ignore[assignment,misc]
 
 _whisper_model = None
+_whisper_key = ""
 _whisper_lock = asyncio.Lock()
+
+_WHISPER_ALERT_KEY = "whisper_model_download"
+
+
+class AsrUnavailableError(RuntimeError):
+    """引擎不可导入 / 模型拿不到——调用方（工坊端点）据此回 502。
+
+    状态码不能再靠猜异常文案决定：S4 之前 `studio.py` 用 `"faster-whisper" in str(exc)`
+    判 502，模型未就绪的新文案一换，端点就从 502 退成裸 500（本轮产物实测抓到）。
+    """
 
 
 def whisper_available() -> bool:
     return _WHISPER_IMPORTED
+
+
+def whisper_model_name() -> str:
+    """当前档位（单一口径）：`settings.pipeline_whisper_model`，空/空白回落 base。
+
+    档位只此一源——能力矩阵、下载、加载、设置页都读它，改完即生效（重启不需要）。
+    """
+    return (str(getattr(settings, "pipeline_whisper_model", "") or "").strip() or "base")
+
+
+def _whisper_repo_id(name: str) -> str:
+    """档位别名 → HF repo id。
+
+    先问 faster-whisper 自己的注册表：`large`→large-v3、`turbo`→
+    mobiuslabsgmbh/…、`distil-*`→另一个 org，这些都不是简单拼接（1.2.1 实测 19 条
+    里 8 条不符合 `Systran/faster-whisper-<name>`）。查不到时按 HF 惯例兜底。
+    """
+    try:
+        from faster_whisper import utils as fw_utils
+
+        repo = (getattr(fw_utils, "_MODELS", None) or {}).get(name)
+        if repo:
+            return str(repo)
+    except Exception as exc:  # noqa: BLE001 — 注册表是私有名，库改了就走兜底而不是让转写崩
+        logger.debug("faster_whisper._MODELS lookup failed: %s", exc)
+    return name if "/" in name else f"Systran/{paths.WHISPER_REPO_PREFIX}-{name}"
+
+
+async def ensure_model(force: bool = False) -> Path | None:
+    """把配置的 whisper 模型下到 `data_dir/models/whisper`（端点：配置→官方→镜像）。
+
+    就绪即返回，不碰网络。全部端点失败 → 逐端点原因入日志 + 单次告警，返回 None。
+
+    **绝不回退 `~/.cache/huggingface`**：那是应用之外的目录，本机就躺着别的程序
+    留下的 whisper 模型；静默借用会让「当前用哪档模型」在两处真相间漂移，用户在
+    设置页切档位看不到变化，`HERTZ_DATA_DIR` 隔离也形同被绕过。
+    """
+    name = whisper_model_name()
+    d = paths.whisper_model_dir(name)
+    if not force and paths.whisper_model_ready(name):
+        return d
+    ok, errors = await hf.download_files(
+        _whisper_repo_id(name),
+        paths.WHISPER_FILES,
+        d,
+        hf.endpoint_candidates(),
+    )
+    if not ok:
+        reason = "; ".join(errors) or "unknown"
+        logger.warning(
+            "whisper model %s download failed on all endpoints: %s", name, reason
+        )
+        alerts.notify_once(
+            _WHISPER_ALERT_KEY,
+            f"🔴 本地转写模型（{name}）下载失败\n"
+            f"{reason[:300]}\n\n"
+            "可在设置 → 流水线 切换下载端点（如镜像 hf-mirror）后点「下载转写模型」重试。",
+        )
+        return None
+    alerts.reset(_WHISPER_ALERT_KEY)  # 成功后复位，让下次失败仍可告警一次
+    return d
 
 
 def xinference_configured() -> bool:
@@ -77,19 +152,32 @@ def asr_available() -> bool:
 
 
 async def _get_whisper():
-    """懒加载 faster-whisper base 模型（首次调用下载 ~150MB，缓存于 ~/.cache）。"""
-    global _whisper_model
-    if _whisper_model is not None:
+    """懒加载 faster-whisper（int8/CPU），模型目录由 `ensure_model` 定在 data_dir 下。
+
+    缓存键含「档位 @ 目录」：设置页改了档位或数据目录，下一次转写就重建——
+    S4 之前没有这层失效，切档位只在重启后生效，且模型悄悄落在 `~/.cache`。
+    """
+    global _whisper_model, _whisper_key
+    name = whisper_model_name()
+    key = f"{name}@{paths.whisper_model_dir(name)}"
+    if _whisper_model is not None and _whisper_key == key:
         return _whisper_model
     async with _whisper_lock:
-        if _whisper_model is not None:
+        if _whisper_model is not None and _whisper_key == key:
             return _whisper_model
         if not _WHISPER_IMPORTED:
-            raise RuntimeError("faster-whisper 不可用 — 执行 uv sync 安装主依赖")
-        _whisper_model = await asyncio.to_thread(
-            WhisperModel, "base", device="cpu", compute_type="int8"
+            raise AsrUnavailableError("faster-whisper 不可用 — 执行 uv sync 安装主依赖")
+        model_dir = await ensure_model()
+        if model_dir is None:
+            raise AsrUnavailableError(
+                f"whisper 模型未就绪且下载失败（{name}）"
+                "——设置 → 流水线 可切换下载端点后重试"
+            )
+        model = await asyncio.to_thread(
+            WhisperModel, str(model_dir), device="cpu", compute_type="int8"
         )
-        return _whisper_model
+        _whisper_model, _whisper_key = model, key
+        return model
 
 
 def _is_zh(text: str) -> bool:

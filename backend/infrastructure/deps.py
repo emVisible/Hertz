@@ -127,14 +127,11 @@ def _check_module(name: str, install_hint: str) -> dict:
     }
 
 
-_LOCAL_MT_DIR = "models/opus-mt-en-zh"
-_LOCAL_MT_CORE_FILES = ("model.bin", "source.spm", "target.spm", "vocab.json")
+async def _check_local_mt() -> dict:  # noqa: C901 — 依赖/模型两级判定，拆开会绕
+    """本地翻译引擎（v0.22.x）：sentencepiece/ctranslate2 依赖 + ct2 模型文件。
 
-
-async def _check_local_mt() -> dict:
-    """本地翻译引擎（v0.22.x）：sentencepiece 依赖 + ct2 模型文件。
-
-    不导入 pipeline 模块（依赖方向纪律）——路径约定与文件清单在此维护。
+    路径与文件清单的权威在 `infrastructure/paths.py`（此前这里与
+    `translate_engine.model_dir()` 各写一份字符串，属于双真相源）。
     """
     for mod in ("sentencepiece", "ctranslate2"):
         try:
@@ -144,9 +141,11 @@ async def _check_local_mt() -> dict:
                 "status": "missing",
                 "install_hint": "重新运行 uv sync（sentencepiece 已随主依赖安装）",
             }
-    d = Path(settings.data_dir) / _LOCAL_MT_DIR
-    missing = [f for f in _LOCAL_MT_CORE_FILES if not (d / f).exists()]
-    if missing:
+    from backend.infrastructure import paths
+
+    d = paths.local_mt_dir()
+    if not paths.local_mt_ready():
+        missing = [f for f in paths.LOCAL_MT_CORE_FILES if not (d / f).exists()]
         return {
             "status": "missing",
             "detail": f"模型未下载: {', '.join(missing)}",
@@ -155,15 +154,13 @@ async def _check_local_mt() -> dict:
     return {"status": "ok", "path": str(d)}
 
 
-def _whisper_cache_exists() -> bool:
-    """faster-whisper 模型缓存探测（HF 默认缓存目录，base 档）。"""
-    cache = Path.home() / ".cache" / "huggingface" / "hub"
-    return any(cache.glob("models--Systran--faster-whisper-*"))
+def _check_whisper_model() -> dict:  # noqa: C901 — 状态分支表，拆开反而绕
+    """whisper 本地模型就绪态：xinference 服务 / 应用内模型目录 / 待下载。
 
-
-def _check_whisper_model() -> dict:
-    """whisper 本地模型就绪态：xinference 服务 / 缓存已下载 / 首次待下载。"""
-    # v0.22.x：不导 pipeline.asr——xinference 配置直读 settings（依赖方向纪律）
+    v0.32 S4：探测目录从 `~/.cache/huggingface` 改到 `data_dir/models/whisper`
+    ——HF 默认缓存落在应用沙箱之外，打包版「下了模型也探不到」，
+    且 `HERTZ_DATA_DIR` 隔离形同被绕过（`HERTZ_USER_DATA` 的存在理由就是不碰 $HOME）。
+    """
     xinference_on = bool(str(getattr(settings, "xinference_stt_model_id", "") or "").strip())
 
     if not whisper_importable():
@@ -173,12 +170,18 @@ def _check_whisper_model() -> dict:
         }
     if xinference_on:
         return {"status": "ok", "source": "xinference"}
-    if _whisper_cache_exists():
-        return {"status": "ok", "source": "local-cache"}
-    # 依赖已装但模型未拉取——首次转写会自动下载（~150MB），非阻断
+
+    from backend.infrastructure import paths
+
+    name = str(getattr(settings, "pipeline_whisper_model", "") or "base").strip() or "base"
+    info: dict = {"model_name": name, "dir": str(paths.whisper_model_dir(name))}
+    if paths.whisper_model_ready(name):
+        return {"status": "ok", "source": "app-data", **info}
+    # 依赖已装但模型未下载——可一键下载，或首次转写时自动下载（非阻断）
     return {
         "status": "pending",
-        "detail": "首次转写自动下载 ~150MB",
+        **info,
+        "detail": f"模型未下载（档位 {name}）——设置 → 流水线 可一键下载",
     }
 
 

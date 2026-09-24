@@ -236,9 +236,15 @@
     "ttsTextSourceScript": "跟旁白原文（本地化配音）",
     "ttsTextSourceSubtitle": "跟中文字幕（译文配音）",
     "ttsTextSourceHint": "配音跟字幕译文时需同时启用翻译；原文配音按旁白语言合成。",
-    "translateEngineHint": "本地引擎仅支持英→中，首次使用自动下载约 300MB 模型；失败自动回落 API。",
-    "translateHfEndpoint": "模型下载端点",
-    "translateHfEndpointHint": "国内网络可切换 https://hf-mirror.com",
+    "hfEndpoint": "本地模型下载端点",
+    "hfEndpointHint": "翻译与转写模型共用这一项。国内网络直连超时可切 https://hf-mirror.com",
+    "whisperModel": "转写模型档位",
+    "whisperModelHint": "原声转写用哪一档：越高越准也越慢。切档位后要重新下载（下方按钮），base 约 141MB。",
+    "whisperModelReady": "转写模型已就绪（{{name}}）",
+    "whisperModelMissing": "转写模型未下载（{{name}}）",
+    "whisperModelNoDeps": "faster-whisper 未安装（请重新 uv sync）",
+    "whisperModelDownload": "下载转写模型",
+    "whisperModelViaService": "已配 xinference STT，本地模型仅作兜底",
     "channels": {
       "title": "栏目",
       "hint": "栏目 = 源池 × 音色 × 包装的绑定单元。采集通道归属栏目后，新入库条目自动应用栏目的音色/片头/简介/标签/分区；未绑定条目不受影响。",
@@ -362,9 +368,9 @@
     "tgHint": "零公网暴露：本机 long-polling。待审条目推送封面卡片，手机 inline 按钮直接 通过/打回/拒绝；预算告警同通道。",
     "translateModelReady": "模型已就绪",
     "translateModelMissing": "模型未下载",
-    "translateModelNoDeps": "依赖未安装（uv sync --extra translate）",
+    "translateModelNoDeps": "依赖未安装（请重新 uv sync）",
     "translateModelDownload": "下载本地翻译模型",
-    "translateModelDownloading": "下载中…"
+    "modelDownloading": "下载中…"
   },
   "execution": {
     "modeStudio": "Studio 编排",

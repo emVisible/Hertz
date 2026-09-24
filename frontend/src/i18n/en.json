@@ -221,9 +221,15 @@
     "ttsTextSourceScript": "Follow narration (localized voice)",
     "ttsTextSourceSubtitle": "Follow Chinese subtitles (translated voice)",
     "ttsTextSourceHint": "Following subtitles requires translate mode; following narration uses the narration language.",
-    "translateEngineHint": "Local engine covers EN→ZH only and downloads a ~300MB model on first use; falls back to API on failure.",
-    "translateHfEndpoint": "Model download endpoint",
-    "translateHfEndpointHint": "Use https://hf-mirror.com if huggingface.co is unreachable",
+    "hfEndpoint": "Local model download endpoint",
+    "hfEndpointHint": "Shared by the translation and transcription models. Use https://hf-mirror.com if huggingface.co is unreachable",
+    "whisperModel": "Transcription model size",
+    "whisperModelHint": "Which faster-whisper checkpoint transcribes the original audio: bigger is more accurate and slower. Re-download (button below) after switching; base is ~141MB.",
+    "whisperModelReady": "Transcription model ready ({{name}})",
+    "whisperModelMissing": "Transcription model not downloaded ({{name}})",
+    "whisperModelNoDeps": "faster-whisper missing (run uv sync again)",
+    "whisperModelDownload": "Download transcription model",
+    "whisperModelViaService": "xinference STT configured — local model is only the fallback",
     "channels": {
       "title": "Columns",
       "hint": "A column binds source pool × voice × packaging. Items collected via its channels automatically apply the column's voice / intro / description / tags / category; unbound items are unaffected.",
@@ -347,9 +353,9 @@
     "tgHint": "Zero public exposure: local long-polling. Queued items are pushed as cards with inline Approve / Back / Reject buttons; budget alerts share the channel.",
     "translateModelReady": "Model ready",
     "translateModelMissing": "Model not downloaded",
-    "translateModelNoDeps": "Deps missing (uv sync --extra translate)",
+    "translateModelNoDeps": "Deps missing (run uv sync again)",
     "translateModelDownload": "Download local MT model",
-    "translateModelDownloading": "Downloading…"
+    "modelDownloading": "Downloading…"
   },
   "execution": {
     "modeStudio": "Studio",

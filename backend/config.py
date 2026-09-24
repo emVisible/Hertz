@@ -157,10 +157,14 @@ class Settings(BaseSettings):
     pipeline_narration_lang: str = "en-US"
     pipeline_subtitle_lang: str = "zh-CN"
     pipeline_translate_source_lang: str = ""  # 空 = 沿用 narration_lang（默认 en-US）
-    # 三步翻译法（v0.15，VideoLingo 精华）：旁白文本 直译→反思→意译（3× token）；
-    # 字幕批量保持单步 + 术语表注入。成本敏感可关。
-    # 本地翻译模型 HF 下载端点（国内网络可切换 https://hf-mirror.com 镜像）
-    pipeline_translate_hf_endpoint: str = "https://huggingface.co"
+    # HuggingFace 模型下载端点（国内网络可切 https://hf-mirror.com 镜像）。
+    # v0.32 S4 起两个本地引擎共用这一份：「用哪个端点」是关于网络的配置，
+    # 不是关于某个引擎的——两边各设一个只会让人漏设一个。
+    pipeline_hf_endpoint: str = "https://huggingface.co"
+
+    # whisper 本地模型档位（v0.32 S4）。base≈141MB(int8 CPU)，
+    # tiny 中文实测不可用（D-200），故默认钉 base 且不把 tiny 摆在首选。
+    pipeline_whisper_model: str = "base"
 
     # ASR 原声转写（v0.8.9 起，v0.10 语义：字幕/翻译的数据源 = 视频原声）：
     # 字幕生产方式 = 原声转写字幕（原声语言）；翻译生产方式 = 原声转写 →

@@ -1,7 +1,7 @@
 """本地翻译引擎（v0.22.x）：Opus-MT en→zh（ct2 格式）via ctranslate2。
 
 - 模型按需下载（约 300MB，float16 ct2）到 data/models/opus-mt-en-zh；
-  下载端点可经 pipeline_translate_hf_endpoint 切换镜像（国内网络场景）
+  下载端点经 pipeline_hf_endpoint 切换镜像（国内网络场景，与转写模型共用一项）
 - tokenizer 用 SentencePiece 直读 source/target.spm——不引入 transformers
   重依赖（sentencepiece 与 ctranslate2 均为主依赖；任一不可导入时引擎不可用，
   调用方保留原文不阻塞）
@@ -13,56 +13,21 @@ import logging
 import re
 from pathlib import Path
 
+from backend.infrastructure import alerts, hf, paths
+
 logger = logging.getLogger(__name__)
 
 _MODEL_REPO = "gaudi/opus-mt-en-zh-ctranslate2"
-# (文件名, 是否必需)——必需文件缺失视为模型不完整触发下载
-_FILES: list[tuple[str, bool]] = [
-    ("model.bin", True),
-    ("source.spm", True),
-    ("target.spm", True),
-    ("vocab.json", True),
-]
+_ALERT_KEY = "local_mt_model_download"
+# (文件名, 是否必需)——权威在 infrastructure/paths（就绪探测与下载清单必须同一份，
+# 否则「下哪些」与「缺哪些算没就绪」会长成两处各自漂移）
+_FILES: list[tuple[str, bool]] = list(paths.LOCAL_MT_FILES)
 
 _translator_cache: dict = {}
 
 
 def model_dir() -> Path:
-    from backend.config import settings
-
-    return Path(settings.data_dir) / "models" / "opus-mt-en-zh"
-
-
-_MIRROR_ENDPOINT = "https://hf-mirror.com"
-_download_alerted = False
-
-
-def _candidate_endpoints(configured: str | None = None) -> list[str]:
-    """下载端点候选序：用户配置优先 → 官方 → 镜像（去重）。
-
-    抽为纯函数便于单测。
-    """
-    from backend.config import settings
-
-    cfg = (
-        configured
-        if configured is not None
-        else str(getattr(settings, "pipeline_translate_hf_endpoint", "") or "")
-    ).strip().rstrip("/")
-    out: list[str] = []
-    for ep in (cfg, "https://huggingface.co", _MIRROR_ENDPOINT):
-        if ep and ep not in out:
-            out.append(ep)
-    return out
-
-
-def _alert(text: str) -> None:
-    """告警（best-effort，进程内单次去重由调用方控制）。"""
-    import asyncio
-
-    from backend.integrations.telegram_bot import push_alert
-
-    asyncio.ensure_future(push_alert(text))
+    return paths.local_mt_dir()
 
 
 def deps_available() -> bool:
@@ -77,63 +42,33 @@ def deps_available() -> bool:
 
 
 async def ensure_model(force: bool = False) -> Path | None:
-    """确保 ct2 模型就绪；多端点依序尝试（配置端点→官方→镜像）。
+    """确保 ct2 翻译模型就绪；多端点依序尝试（配置端点→官方→镜像）。
 
-    全部失败：记录各端点错误原因 + Telegram 单次告警（进程生命周期去重，
-    成功后复位），返回 None 由调用方回落 api/原文。
+    传输细节（流式写盘、`.part` 原子改名、可选文件 404、幂等补缺）在
+    `infrastructure/hf.download_files`——whisper 引擎走的是同一条路。
+    全部失败：逐端点原因进日志 + Telegram 单次告警（去重与成功后复位由
+    `infrastructure/alerts` 负责），返回 None 由调用方保留原文。
     """
-    global _download_alerted
     d = model_dir()
-    core_missing = [f for f, required in _FILES if required and not (d / f).exists()]
-    if not core_missing and not force:
+    if not force and paths.local_mt_ready():
         return d
-    try:
-        d.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        logger.warning("local MT model dir create failed: %s", exc)
-        return None
 
-    errors: list[str] = []
-    import httpx
-
-    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-        for endpoint in _candidate_endpoints():
-            try:
-                base = f"{endpoint}/{_MODEL_REPO}/resolve/main"
-                for fname, required in _FILES:
-                    out = d / fname
-                    if out.exists():
-                        continue
-                    resp = await client.get(f"{base}/{fname}")
-                    if resp.status_code == 404 and not required:
-                        continue
-                    resp.raise_for_status()
-                    await asyncio.to_thread(out.write_bytes, resp.content)
-                    logger.info("downloaded %s from %s (%d bytes)",
-                                fname, endpoint, len(resp.content))
-                still_missing = [
-                    f for f, req in _FILES if req and not (d / f).exists()
-                ]
-                if still_missing:
-                    raise RuntimeError(f"incomplete: {still_missing}")
-                _translator_cache.clear()
-                _download_alerted = False  # 成功后复位告警去重
-                logger.info("local MT model ready at %s (via %s)", d, endpoint)
-                return d
-            except Exception as exc:  # noqa: BLE001 — 换下一端点
-                errors.append(f"{endpoint}: {exc}")
-                logger.warning("endpoint failed (%s): %s", endpoint, exc)
-
-    reason = "; ".join(errors) or "unknown"
-    logger.warning("local MT model download failed on all endpoints: %s", reason)
-    if not _download_alerted:
-        _download_alerted = True
-        _alert(
+    ok, errors = await hf.download_files(
+        _MODEL_REPO, _FILES, d, hf.endpoint_candidates()
+    )
+    if not ok:
+        reason = "; ".join(errors) or "unknown"
+        logger.warning("local MT model download failed on all endpoints: %s", reason)
+        alerts.notify_once(
+            _ALERT_KEY,
             "🔴 本地翻译模型下载失败\n"
             f"{reason[:300]}\n\n"
-            "可在设置切换下载端点后重试，或将引擎切回 API 三步法。"
+            "可在设置 → 流水线 切换下载端点（如镜像 hf-mirror）后点「下载本地翻译模型」重试。",
         )
-    return None
+        return None
+    _translator_cache.clear()
+    alerts.reset(_ALERT_KEY)  # 成功后复位，让下次失败仍可告警一次
+    return d
 
 
 def _load():

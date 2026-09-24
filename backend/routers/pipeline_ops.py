@@ -4,12 +4,15 @@ v0.8.9 AXIOM 2.1 路由域拆分：原 pipeline.py 30+ 端点 7 域挤一文件�
 按用户可感知域拆出；路径与语义不变（pipeline_ops.router 由 pipeline 聚合 include）。
 """
 
+import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.factory.registry import ServiceRegistry
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
@@ -213,44 +216,83 @@ async def auto_approve():
 
 
 
+def _spawn_model_download(task_name: str, ensure_model) -> dict:
+    """后台触发模型下载（fire-and-forget）+ telemetry tick（成败均记）。
+
+    100MB 级下载不能挂在 HTTP 请求上：前端轮询对应的 /status 直到 model_ready。
+    `ensure_model` 幂等（就绪即返回，不碰网络），所以按钮重复点也无害。
+    """
+    import asyncio
+
+    from backend.infrastructure.telemetry import record_tick
+
+    async def _job() -> None:
+        t0 = asyncio.get_running_loop().time()
+        ok = (await ensure_model(force=False)) is not None
+        ms = int((asyncio.get_running_loop().time() - t0) * 1000)
+        record_tick(task_name, ok, ms, "" if ok else "download failed")
+        if ok:
+            # 能力矩阵与制作前预检都读这份缓存；不刷新的话「刚下好」要等到下次
+            # 重启/手动重测才算数——同一次操作的两半互相看不见
+            from backend.infrastructure.deps import refresh_dependencies
+
+            try:
+                await refresh_dependencies()
+            except Exception as exc:  # noqa: BLE001 — 刷新失败不影响已下好的模型
+                logger.info("deps refresh after %s failed: %s", task_name, exc)
+
+    asyncio.create_task(_job())
+    return {"started": True}
+
+
 @router.get("/translate-model/status")
 async def translate_model_status() -> dict:
-    """本地翻译引擎就绪状态（依赖 + 模型文件）。"""
+    """本地翻译引擎就绪状态（依赖 + 模型文件）。
+
+    就绪判定读 `infrastructure/paths`（能力矩阵同一份），不在这里重数一遍文件名。
+    """
+    from backend.infrastructure import paths
     from backend.pipeline.producers import translate_engine
 
-    model_dir = translate_engine.model_dir()
-    core_ok = all(
-        (model_dir / f).exists()
-        for f, required in translate_engine._FILES
-        if required
-    )
     return {
         "deps": translate_engine.deps_available(),
-        "model_ready": core_ok,
+        "model_ready": paths.local_mt_ready(),
     }
 
 
 @router.post("/translate-model/download")
 async def translate_model_download() -> dict:
-    """后台触发本地翻译模型下载（幂等：已就绪直接返回）。
-
-    300MB 级下载——fire-and-forget，前端轮询 status 直到 model_ready。
-    结果经 telemetry tick 记录（成败均可见）。
-    """
-    import asyncio
-
-    from backend.infrastructure.telemetry import record_tick
+    """后台触发本地翻译模型下载（幂等：已就绪直接返回）。"""
     from backend.pipeline.producers import translate_engine
 
-    async def _job() -> None:
-        t0 = asyncio.get_running_loop().time()
-        result = await translate_engine.ensure_model(force=False)
-        ok = result is not None
-        record_tick(
-            "translate_model_download", ok,
-            int((asyncio.get_running_loop().time() - t0) * 1000),
-            "" if ok else "download failed",
-        )
+    return _spawn_model_download(
+        "translate_model_download", translate_engine.ensure_model
+    )
 
-    asyncio.create_task(_job())
-    return {"started": True}
+
+@router.get("/whisper-model/status")
+async def whisper_model_status() -> dict:
+    """本地转写（faster-whisper）就绪状态：依赖可导入 + 配置档位已在 data_dir 下。
+
+    `xinference_on` 一并回给前端：配了 STT 服务时本地模型并非必经之路，
+    卡片要说「服务优先」而不是把服务态判成缺模型。
+    """
+    from backend.infrastructure import deps, paths
+    from backend.pipeline.producers import asr
+
+    name = asr.whisper_model_name()
+    return {
+        "deps": deps.whisper_importable(),
+        "model_ready": paths.whisper_model_ready(name),
+        "model_name": name,
+        "dir": str(paths.whisper_model_dir(name)),
+        "xinference_on": asr.xinference_configured(),
+    }
+
+
+@router.post("/whisper-model/download")
+async def whisper_model_download() -> dict:
+    """后台触发当前档位转写模型下载（幂等；切档位后需重新点一次）。"""
+    from backend.pipeline.producers import asr
+
+    return _spawn_model_download("whisper_model_download", asr.ensure_model)

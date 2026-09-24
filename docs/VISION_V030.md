@@ -43,7 +43,7 @@ Hertz 需要从「用 AI 替代人」转变为「用系统放大人」。
 |---|---|---|---|
 | media.py 解体 | producers/ 13 域文件切出（compose/cover/probe/narration/subtitles/retranslate/story…），主文件 648 行 | 继续切出 compose/cover/script 域至 <800 行 | ✅ v0.23（648 < 800） |
 | service 层 | PublishMixin 五域 Mixin 拆分完成 | service.py 门面瘦身；Promotion 域独立文件 ✓ | ✅ |
-| 翻译去 API 化 | Opus-MT 本地引擎 + 缓存复用 | 扩展语言对覆盖；三步法仅在显式要求时启用 | ✅ |
+| 翻译去 API 化 | Opus-MT 本地引擎 + 缓存复用 | 扩展语言对覆盖（三步法已于 D-189 随去 API 化整体移除，不再启用） | ✅ |
 | 能力预检 | 四条目矩阵 + 阻断语义 + 变化告警 | 泛化为声明式能力注册（四件套约定） | ✅ |
 | script_json 契约 | 读写两侧均引 script_keys 常量（publishers/engine/media/helpers 收敛完成） | 读侧全量覆盖（publishers/engine 序列化） | ✅ v0.23 |
 | 前端状态 | usePipelineExecution 30 行壳 + usePipelineData/Actions/Events 三 hooks | 按域拆为 3 个独立 hooks | ✅ v0.23 |
@@ -146,7 +146,8 @@ v0.23  地基巩固                                        ✅ 已交付
 v0.24  脚本工坊 MVP                                      ✅ 已交付（D-192）
        ├── 语音草稿 → whisper 转写 → 可编辑文本          ✅ + 纯文本直录 + 草稿暂存
        ├── 逐句打磨模式（时长预估/重读标记/顺序拖拽）     部分达成：时长预估/拖拽/试听 ✅；
-       │                                                重读标记未交付（→ v0.32）
+       │                                                重读标记未交付（→ 另议；v0.32 已定档
+       │                                                为纯质量片，不承接新能力）
        └── 最小闭环验证：语音 → 文本 → 编辑 → 合成 → 审核 ✅ 第六 tab 接入流水线导航
 
 v0.25  智能路由 + 规则评分                                ✅ 已交付（D-193）
@@ -181,7 +182,7 @@ v0.30.1 补丁发布                                          ✅（D-199）
 | 指标 | 当前基线 | v0.30 目标 |
 |---|---|---|
 | 单视频 LLM 调用次数 | 6-8 | ≤2（仅灰区评分增强） |
-| ASR 可用率（打包版） | 0%（未固化） | 100%（**v0.30 未达成**：`hertz.spec` 将 `faster_whisper` 列入 blocklist，且 `ctranslate2` 从未在任何依赖中声明——只作为 faster-whisper 的传递依赖存在，而 CI 跑裸 `uv sync`。→ v0.31「引擎入包」清偿） |
+| ASR 可用率（打包版） | 0%（未固化） | 引擎层已达成，端到端仍差一次实测：v0.30 未达成（`hertz.spec` 把 `faster_whisper` 列入 blocklist，且 `ctranslate2` 从未声明——只是传递依赖，而 CI 跑裸 `uv sync`）→ v0.31 B1/B3 引擎入包（D-200，实测 dmg +52.7MiB、工坊真转写 HTTP 200）→ v0.32 S4 模型入应用目录 + 一键下载 + 预检第三态（D-203）。**遗留**：141MB 全量冷启动首下至今未实测成功（本机代理 egress 两次中断，只拿到 30MB 进度与完整失败路径证据），达成判据推迟到 `sim-newmachine.sh --with-download` 通过 |
 | 制作前置阻断可见性 | 无（静默降级） | 100%（StepError 即时反馈） |
 | 设置页能力矩阵覆盖 | 10 条目 | 全量可选能力 |
 | 审核卡降级标注覆盖 | narration_fallback | 所有降级路径 |

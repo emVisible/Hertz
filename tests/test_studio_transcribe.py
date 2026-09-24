@@ -73,6 +73,50 @@ async def test_transcribe_rejects_undersized_payload(
     assert resp.status_code == 422, resp.text
 
 
+@pytest.mark.asyncio
+async def test_model_unavailable_maps_to_502_by_type(client, monkeypatch) -> None:
+    """模型未就绪/下载失败 → 502。
+
+    实测回归（v0.32 S4 产物级）：端点原先靠 `"faster-whisper" in str(exc)` 判 502，
+    S4 把文案换成「whisper 模型未就绪且下载失败」后当场退成裸 500——外部条件不可用
+    与内部异常必须按**类型**分，不能按话说得像不像来分。
+    """
+    import backend.pipeline.producers.asr as asr
+
+    _patch_whisper(monkeypatch, True)
+
+    async def boom(*_a, **_k):
+        raise asr.AsrUnavailableError(
+            "whisper 模型未就绪且下载失败（base）——设置 → 流水线 可切换下载端点后重试"
+        )
+
+    monkeypatch.setattr(asr, "transcribe_cues", boom)
+    resp = await client.post(
+        "/api/studio/transcribe",
+        files={"file": ("draft.webm", _WEBM_HEADER, "audio/webm")},
+    )
+    assert resp.status_code == 502, resp.text
+    assert "设置" in resp.json()["detail"]  # 必须给出应用内出路
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_still_500_not_masked_as_502(client, monkeypatch) -> None:
+    """反向对照：真正的内部异常不许被顺手报成「引擎不可用」。"""
+    import backend.pipeline.producers.asr as asr
+
+    _patch_whisper(monkeypatch, True)
+
+    async def boom(*_a, **_k):
+        raise ValueError("faster-whisper 里某个参数不对")  # 文案含关键词，旧实现会误判 502
+
+    monkeypatch.setattr(asr, "transcribe_cues", boom)
+    resp = await client.post(
+        "/api/studio/transcribe",
+        files={"file": ("draft.webm", _WEBM_HEADER, "audio/webm")},
+    )
+    assert resp.status_code == 500, resp.text
+
+
 def test_no_second_whisper_transcribe_call_site() -> None:
     """whisper 的 `model.transcribe(` 只允许出现在 asr.py 一处。
 

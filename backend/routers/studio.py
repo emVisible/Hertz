@@ -115,9 +115,11 @@ async def transcribe_audio(
         raise HTTPException(status_code=422, detail="音频文件过小或为空")
     await asyncio.to_thread(tmp.write_bytes, content)
 
-    try:
-        from backend.pipeline.producers.asr import transcribe_cues
+    # 异常类型必须在 try 之前绑定：写在 try 里会让 `except AsrUnavailableError` 在
+    # 导入自身失败时查不到名字（NameError 盖住真实原因）
+    from backend.pipeline.producers.asr import AsrUnavailableError, transcribe_cues
 
+    try:
         # 走 asr 的单一转写出口：与字幕产线共用时间轴断句口径 + 繁简纠偏。
         # 此前这里自己调了一次 whisper，导致工坊中文输出繁体（v0.32 S3）。
         cues = await transcribe_cues(tmp)
@@ -136,11 +138,13 @@ async def transcribe_audio(
             "text": full_text,
             "duration_s": segments[-1]["end"] if segments else 0,
         }
+    except AsrUnavailableError as exc:
+        # 引擎/模型不可得是「外部条件」不是「服务异常」——502 带可执行的下一步，
+        # 不再靠 `"faster-whisper" in str(exc)` 猜（文案一改就退成裸 500）
+        raise HTTPException(status_code=502, detail=f"转写不可用: {exc}") from exc
     except HTTPException:
         raise
     except Exception as exc:
-        if "not installed" in str(exc).lower() or "faster-whisper" in str(exc).lower():
-            raise HTTPException(status_code=502, detail=f"转写失败: {exc}") from exc
         logger.exception("transcribe failed")
         raise HTTPException(status_code=500, detail="转写服务异常") from exc
     finally:

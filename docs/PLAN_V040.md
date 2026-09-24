@@ -48,7 +48,8 @@ v0.40 的正当主题不是新能力,而是把验证面推到产物上——顺�
 | **S1** ✅ | alembic autogenerate 护栏：`env.py` 的 `process_revision_directives` 滤掉 `DropTableOp`（除非显式开关）+ `include_object` 黑名单 legacy 表 | 2 个 remove_table 是唯一的**不可逆**风险 | 纯函数测试：喂造出来的 ops，断言 drop 被滤并写日志 |
 | **S2** ✅ | 漂移清偿（**按实测反转**）：`items.archived`/`error_class` 的 `index=True` 是无效声明（5281 行全 False / 5181 空串），改模型而非造索引；`plans.brief_group_id` 补真缺失的外键（wave27，先清孤儿再加约束） | 原判断「库里缺索引=性能债」被数据推翻；FK 缺失则会让悬挂引用不被置空 | `add_fk` 2→0、`add_index` 8→4、`remove_table` 保持 0；dev 库与**空库**均 `upgrade heads` 退出码 0 且 FK/版本经 SQL 核对 |
 | **S3** ✅ | 工坊中文输出纠偏：抽出 `asr.transcribe_cues()` 作为**全仓唯一 whisper 出口**（词级时间戳 + 断句 + 繁简纠偏），`studio.py` 与字幕产线共用；并补 `_TRADITIONAL_CHARS` 63→83 字 | 实测两层根因：①工坊自己调 `model.transcribe` 绕开纠偏；②**检测集漏掉真实模型输出**（氣/錯/園/錄/順/實/語/嬰 全不在集内）→ 连字幕产线的纠偏也永不触发 | 注入「首繁二简」假模型断言响应无繁体且发生第二次带 prompt 重转；AST 守卫全仓不得有第二处直调；实测原句可识别 + 简体字形不得入集（防误触发） |
-| **S4** | 模型目录单一真相源：`data_dir/models/whisper`，`asr` 与 `deps` 共用；配一键下载 + pending 琥珀态（v0.31 B4/B5） | 现在耦合 `$HOME/.cache`，违背 `HERTZ_USER_DATA` 隔离的存在理由 | 一致性测试（两处解析同目录）+ 无缓存冷启动实测 141MB 首下 |
+| **S4** ✅ | 模型目录单一真相源（D-203）：`data_dir/models/whisper`，`asr`/`deps`/设置页共用一个 `paths.py`；下载底座 `hf.py`（端点序 + 流式 `.part` 原子改名 + 串行锁）；一键下载 + pending 琥珀态；档位缓存键 `档位@目录`；端点设置合并为 `pipeline_hf_endpoint`；预检新增「引擎在但模型没下」第三态 | 现在耦合 `$HOME/.cache`，违背 `HERTZ_USER_DATA` 隔离的存在理由 | `tests/test_local_models.py` 28 项（含下载锁的删除式反向对照：拆锁→并发测试红在 `.part` 被 unlink）；产物级实测：干净目录判 `model_ready:false`、`deps` pending 带档位、工坊 **502 带出路**（S4 换文案后曾退成裸 500，已按类型修好）。**遗留：141MB 全量首下仍未实测成功**（本机代理 egress 两次中断，只拿到 30MB 进度与完整失败路径证据）→ 待 `sim-newmachine.sh --with-download` |
+| **S4.1** ✅ | 设置页保存回归（D-204）：`save()` 自 v0.20 起提交 `overrides: {}`，抽 `core/settingsOverrides.ts`（草稿与配置的差集 + 按 cfg 真值还原类型 + 只写字段「空=不动」） | 「点了说成功」的入口没有一条改→存→重读的机器断言 | `settingsOverrides.test.ts` 7 项 + `tests/test_settings_wiring.py` 7 项（可编辑键 ⊆ 草稿 ⊆ 后端白名单；空载荷字面量禁止；对 HEAD 旧代码跑守卫当场红）+ 产物级 `PATCH→runtime.yaml→GET` 回读 |
 | **S5** ✅ | 产物级门禁：`scripts/sim-newmachine.sh`（泛化，去绝对路径、端口与隔离库名按版本派生）+ `scripts/release-check.sh`（源码门禁 → 重建固化包 → 产物门禁；任一阶段非零退出即「禁止打 tag」） | 四个事故全是产物级,而门禁只在源码级 | 实测 `RELEASE_CHECK: PASS`（退出码 0）：空库首启 ~9s、新库 head == 仓库 heads、schema 三项 SQL 核对、版本回读、pipeline API 200、转写非繁体、无进程风暴；上线即抓出 S6 的 ini 中文注释崩点与「包内迁移落后仓库」 |
 | **S6** ✅ | 文档真相与卫生：ROADMAP v0.15 行标注「三步法/术语表已于 D-189 移除」；`alembic.ini` 补 `path_separator = os`；删 tracked 的 0 字节 `useStudioExecution.py.tmp`；删测试里空转的 `_set_engine()` 助手 | 文档不得宣称代码没做的事；门禁日志噪音早晚被误读 | `alembic check` 弃用告警 0 次、pytest 告警 8→7；14 项翻译/闸测试通过；门禁 382 全绿 |
 | **S7** | 前端巨石拆解第一批：`AssetsPage.tsx` 1277 → 主壳 + 分区（照 D-182/D-183 的「state 留壳、JSX 下放」既有模式），`PlansPage.tsx` 1212 同批或紧随 | 前端已成唯一的巨石区（后端最大 698 行健康） | tsc + vitest 不降；主壳 <400 行 |
@@ -74,8 +75,9 @@ v0.40 的正当主题不是新能力,而是把验证面推到产物上——顺�
 ## 五、执行节奏与度量
 
 ```
-v0.31（在飞）  B4 模型搬家 → B5 一键下载 → B6 端到端 → B7 文档自洽 → 发布
-v0.32          S1 护栏✅ → S3 繁体✅ → S2 漂移清偿✅ → S6 文档/卫生✅ → S5 产物门禁✅ → S4 模型搬家（进行中）
+v0.31（在飞）  B1 引擎入包✅ → B3 入固化包✅ → B4/B5 并入 v0.32 S4✅ → B6 端到端 → B7 文档自洽 → 发布
+v0.32          S1 护栏✅ → S3 繁体✅ → S2 漂移清偿✅ → S6 文档/卫生✅ → S5 产物门禁✅
+               → S4 模型搬家 + 一键下载✅ → S4.1 设置保存回归✅
                （S7 前端拆壳已按定档移出 v0.32）
 v0.40          可信交付（签名 / 矩阵 / 自动更新 / 备份可验证 / 首启体验）
 ```
@@ -85,13 +87,14 @@ v0.40          可信交付（签名 / 矩阵 / 自动更新 / 备份可验证 /
 
 ---
 
-## 五·五、v0.32 执行期新增的三条产物级教训（源码级全绿也拦不住）
+## 五·五、v0.32 执行期新增的产物级教训（源码级全绿也拦不住）
 
 | 陷阱 | 只有什么才能暴露 | 已钉的守卫 |
 |---|---|---|
 | 冻结体缺 `multiprocessing.freeze_support()` → 每次构造 whisper 模型就自我重跑主脚本（45s 内 1→7 进程，观测到 138 残留） | 非冻结开发态永远正常；只有跑冻结二进制才现形 | `test_frozen_entrypoint_declares_freeze_support`（AST 断言存在且先于建库/迁移）+ S5 产物门禁数进程 |
 | `alembic/env.py` 以**数据文件**进包，它的 import 对 PyInstaller 静态分析不可见 → S1 新引 `migration_guard` 后固化后端**首启迁移即 ImportError** | 380 项源码级测试全绿、`verify.sh` 也绿；只有重建并启动固化二进制才发现 | `test_alembic_env_imports_are_reachable_or_declared`（从冻结入口 BFS 可达性 + spec 登记二选一）+ 直钉 `migration_guard` 必须登记；已做删除行反向对照：删则 2 失败、还原则 7 通过 |
 | macOS APFS 大小写不敏感 → 用 `Path.exists()` 判「是不是子模块」会把 `backend/models/Base.py` 判成存在（真实文件 `base.py`），守卫当场虚报 | 只在 macOS 上跑才看得到；Linux CI 上表现不同 | 模块判定一律走 `importlib.util.find_spec`，不再靠路径拼接猜 |
+| **UI 承诺型回归**：v0.20 拆 `SettingsPage` 时 `save()` 的字段表被删成 `overrides: {}` ——从 v0.20（08-23）到本轮 S4 之前，设置页只演出不落盘，点保存照样 toast「已保存」，runtime.yaml 一个字节没写 | 只有「改一个设置 → 重启 → 看它有没有回来」这种端到端动作才现形；tsc/vitest/pytest 与看一眼页面全都无感（空载荷的正确形态就是空） | `tests/test_settings_wiring.py`（分区可编辑键 ⊆ 主壳草稿 ⊆ 后端白名单，且 `save()` 不得回退成字面量空对象）+ `frontend/src/core/settingsOverrides.test.ts`（差集与类型还原 7 项）；删除式反向对照已做：拿 HEAD 的旧 `save()` 跑守卫，当场红 |
 
 推论（直接指向 S5）：**发布门禁必须包含一次「启动固化二进制」的冒烟**，否则上述三类永远只能靠人手动撞。
 
