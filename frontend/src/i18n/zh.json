@@ -1509,6 +1509,14 @@
     "genOk": "已生成（{beats} 拍），可再编辑",
     "auditionPick": "试听音色…",
     "attachedOk": "图片已挂载",
-    "dragHint": "拖拽排序"
+    "dragHint": "拖拽排序",
+    "tone": "语气",
+    "length": "篇幅",
+    "toneNeutral": "沉稳",
+    "toneLively": "活泼",
+    "toneSerious": "严肃",
+    "lenShort": "短",
+    "lenMedium": "中",
+    "lenLong": "长"
   }
 }

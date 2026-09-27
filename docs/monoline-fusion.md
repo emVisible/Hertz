@@ -2,7 +2,7 @@
 
 > 状态：执行中。参照实现：`monoline/`（完工验收后归档删除）。
 > 决策（2026-09-26）：前端原生移植 / 保留 Kokoro TTS / 作业表迁入 Postgres / Sidecar 先做复用评估。
-> 相关决策编号：D-020 起见本文 §8。
+> 相关决策编号：D-205~D-211 见本文 §8（已迁入 docs/DECISIONS.md）。
 
 ## 1. 背景与目标
 
@@ -29,11 +29,11 @@ Hertz（单进程：8787 后端 + 3000 前端 dev / Electron file:// 打包）
 └── frontend/src/pages/monoline/     # /monoline/* 原生页面（New/Outline/Studio/History/Modes/Setup）
 ```
 
-- **D-020 单进程单端口**：废弃 monoline 的 8787/8790 独立进程、`/` SPA 吞噬挂载、
+- **D-205 单进程单端口**：废弃 monoline 的 8787/8790 独立进程、`/` SPA 吞噬挂载、
   vite proxy 硬编码、`instance.json` 排他锁、`start.sh` 杀端口逻辑。
-- **D-021 菜单位置**：`AppShell.tsx` 加 `{to:'/monoline', group:'produce'}`（紧随 `/plans`），
+- **D-206 菜单位置**：`AppShell.tsx` 加 `{to:'/monoline', group:'produce'}`（紧随 `/plans`），
   不复用 `/execution?mode=`（现有 studio/pipeline 单航班状态机 + 全局徽标逻辑不可再添第三态）。
-- **D-022 LLM 统一**：删除 monoline 自带的 LLM 环境探测与 `/chat/completions` 直调
+- **D-207 LLM 统一**：删除 monoline 自带的 LLM 环境探测与 `/chat/completions` 直调
   （`llm/client.py` 思想），写稿走 TaskRouter `main`、分镜/评分走 `fast`；
   规则回退链保留（无 LLM 也可出片是 monoline 的核心优点）。
 
@@ -127,14 +127,14 @@ History + Modes（28 种模式库）+ Setup（九项自检→`/api/monoline/heal
 3. `display_text.py` 中文排版单一 owner 推广到 Hertz 字幕/标题链。
 4. `warmup` fixture 思想：monoline 一键冷启动验收（2 拍中文样例）。
 
-## 8. 决策记录（D-020 起）
+## 8. 决策记录（D-205~D-211，仓库 DECISIONS.md 为准）
 
-- **D-020 单进程单端口**：monoline 独立进程/端口/锁/杀端口脚本全部废弃，以 Hertz 进程为准。
-- **D-021 一级菜单 sibling**：`/monoline` 与 `/execution` 平级，不污染现有双 Tab 状态机。
-- **D-022 LLM 统一走 TaskRouter**：monoline 自带 LLM 客户端删除，规则回退保留。
-- **D-023 作业数据迁 PG**：`monoline_` 前缀，只加表；SQLite 文件方案否决（双 DB 运维 + 跨库不可查）。
-- **D-024 Kokoro 以 protocol 分支保留**：与 edge-tts 并存，权重目录收敛到 `data_dir/models`。
-- **D-025 原目录只读参照**：`monoline/` 完工前不动，验收后归档删除；移植按文件重写，不整目录复制。
+- **D-205 单进程单端口**：monoline 独立进程/端口/锁/杀端口脚本全部废弃，以 Hertz 进程为准。
+- **D-206 一级菜单 sibling**：`/monoline` 与 `/execution` 平级，不污染现有双 Tab 状态机。
+- **D-207 LLM 统一走 TaskRouter**：monoline 自带 LLM 客户端删除，规则回退保留。
+- **D-208 作业数据迁 PG**：`monoline_` 前缀，只加表；SQLite 文件方案否决（双 DB 运维 + 跨库不可查）。
+- **D-209 Kokoro 以 protocol 分支保留**：与 edge-tts 并存，权重目录收敛到 `data_dir/models`。
+- **D-210 原目录只读参照**：`monoline/` 完工前不动，验收后归档删除；移植按文件重写，不整目录复制。
 
 ## 9. 风险与回滚
 
@@ -161,7 +161,7 @@ Phase 0（0.5天）→ Phase 1（3~5天）→ Phase 2（3~4天）→ Phase 3（1
 - 中文 G2P 实测：`你好，世界` → `ni↓xau↓ , ʂɨ↘ʨje↘`，声调标记正常；英文经 espeak 路径正常。
 - 端到端合成实测：`zf_xiaoxiao` 音色输出 4.52s / 217KB wav（权重来自
   `kokoro-onnx/model-files-v1.0`，已缓存于 `~/.cache/hyperframes/tts/`）。
-- **结论：3.11 pin 可删**（D-024 成立条件满足）；`@hyperframes/player 0.8.63` 在 npm 存在，
+- **结论：3.11 pin 可删**（D-209 成立条件满足）；`@hyperframes/player 0.8.63` 在 npm 存在，
   前端安装留待 Phase 2。
 
 ## 12. Phase 3 执行记录（2026-09-27 实测）
@@ -191,7 +191,7 @@ Phase 0（0.5天）→ Phase 1（3~5天）→ Phase 2（3~4天）→ Phase 3（1
   "重新跑一次"的语义；实测还确认 prior excerpt 本来就是指纹的有效输入（写盘后
   第二次输入真变，指纹变化是正确的）。
 
-## 14. 归档（D-025，2026-09-27）
+## 14. 归档（D-210，2026-09-27）
 
 - `monoline/` 原目录已归档并删除：归档包 `~/monoline-archive-20260927.tgz`
   （25MB / 244 文件，含其独立 .git 历史），Hertz 树内零引用残留（全仓 grep 确认）。

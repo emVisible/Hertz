@@ -17,6 +17,8 @@ export function NewTab({ onCreated }: { onCreated: (id: string) => void }) {
   const [brand, setBrand] = useState('Monoline')
   const [busy, setBusy] = useState(false)
   const [topic, setTopic] = useState('')
+  const [tone, setTone] = useState('neutral')
+  const [genLen, setGenLen] = useState('medium')
   const [genBusy, setGenBusy] = useState(false)
 
   const { data: voicesData } = useQuery({ queryKey: ['monoline-voices'], queryFn: monolineApi.voices })
@@ -61,13 +63,35 @@ export function NewTab({ onCreated }: { onCreated: (id: string) => void }) {
             placeholder={t('monoline.genPlaceholder')}
             className="min-w-0 flex-1 border border-border bg-surface-1 px-2 py-1 text-sm text-text-primary outline-none focus:border-primary"
           />
+          <Select
+            value={tone}
+            onChange={(e) => setTone(e.target.value)}
+            options={[
+              { value: 'neutral', label: t('monoline.toneNeutral') },
+              { value: 'lively', label: t('monoline.toneLively') },
+              { value: 'serious', label: t('monoline.toneSerious') },
+            ]}
+            className="w-28"
+            aria-label={t('monoline.tone')}
+          />
+          <Select
+            value={genLen}
+            onChange={(e) => setGenLen(e.target.value)}
+            options={[
+              { value: 'short', label: t('monoline.lenShort') },
+              { value: 'medium', label: t('monoline.lenMedium') },
+              { value: 'long', label: t('monoline.lenLong') },
+            ]}
+            className="w-24"
+            aria-label={t('monoline.length')}
+          />
           <Button
             variant="secondary"
             disabled={genBusy || !topic.trim()}
             onClick={async () => {
               setGenBusy(true)
               try {
-                const r = await monolineApi.generateScript(topic.trim())
+                const r = await monolineApi.generateScript(topic.trim(), tone, genLen)
                 setScript(r.script)
                 toast(t('monoline.genOk', { beats: r.beats }), 'success')
               } catch (e) {
