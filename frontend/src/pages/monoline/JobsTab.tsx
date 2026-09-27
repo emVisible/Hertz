@@ -76,17 +76,41 @@ export function JobsTab({ selectedId, onSelect }: { selectedId: string | null; o
 }
 
 function Player({ src, aspect }: { src: string; aspect?: string }) {
-  // hyperframes-player 为自定义元素：src 经 attribute 设置；composition 内 <audio id=vo>
-  // 在纯静态预览下不会被 player 接管，ready 后把音频代理到父帧使其可听（上游同修复）。
+  // hyperframes-player 驱动 paused 时间线需要同源 DOM（读场景/接管音频），
+  // 而合成页在 :8787、应用在 :3000/file://，跨域 iframe 下 player 永远等不到
+  // runtime 握手。解法：fetch 下 HTML、相对资源改写为绝对路径后走 player 原生
+  // 支持的 `srcdoc` 注入——srcdoc 继承父域，探测与音频代理全通。
   const ref = useRef<HTMLElement | null>(null)
+  const [failed, setFailed] = useState<string | null>(null)
   useEffect(() => {
+    let cancelled = false
+    setFailed(null)
     const el = ref.current as unknown as HTMLElement & {
       setAttribute(k: string, v: string): void
       addEventListener(t: string, fn: () => void): void
       removeEventListener(t: string, fn: () => void): void
       ready?: boolean
     } | null
-    if (el) el.setAttribute('src', src)
+    if (!el) return
+    const base = src.slice(0, src.lastIndexOf('/') + 1)
+    const absolutize = (html: string) =>
+      html
+        .replace(/((?:src|href)=["'])(?!https?:|data:|blob:)([^"']+)/g, `$1${base}$2`)
+        .replace(/url\((["']?)(?!https?:|data:)([^)"']+)/g, `url($1${base}$2`)
+    fetch(src)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.text()
+      })
+      .then((html) => {
+        if (!cancelled) el.setAttribute('srcdoc', absolutize(html))
+      })
+      .catch((e) => {
+        if (!cancelled) setFailed(e instanceof Error ? e.message : String(e))
+      })
+    return () => {
+      cancelled = true
+    }
   }, [src])
   useEffect(() => {
     const el = ref.current as unknown as {
@@ -120,6 +144,7 @@ function Player({ src, aspect }: { src: string; aspect?: string }) {
     if (el.ready) promote()
     return () => el.removeEventListener('ready', onReady)
   }, [src])
+  if (failed) return <div className="p-4 text-xs text-error">预览加载失败：{failed}</div>
   return createElement('hyperframes-player', {
     ref,
     controls: true,
@@ -291,19 +316,50 @@ function JobDetail({ jobId, onDeleted }: { jobId: string; onDeleted: () => void 
           </Button>
         </span>
       </div>
-      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-w-0 flex-col gap-3">
-          {(job.stages ?? []).some((s) => s.key === 'compose' && s.status === 'succeeded') && (
-            <Card>
-              <div className="mb-1 text-xs text-text-secondary">{t('monoline.preview')}</div>
-              <Player src={monolineApi.fileUrl(jobId, 'composition/index.html')} aspect={`${cw} / ${ch}`} />
-            </Card>
-          )}
           {(job.stages ?? []).some((s) => s.key === 'deliver' && s.status === 'succeeded') && (
             <Card>
               <div className="mb-2 text-xs text-text-secondary">{t('monoline.watch')}</div>
               {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
               <video controls preload="metadata" poster={posterUrl} src={mp4Url} className="w-full bg-black" />
+            </Card>
+          )}
+          <Card>
+            <div className="mb-2 text-xs text-text-secondary">{t('monoline.stages')}</div>
+            <div className="flex flex-col gap-1">
+              {(job.stages ?? []).map((s) => (
+                <div key={s.key} className="flex items-center gap-2 font-mono text-xs">
+                  <span className="w-20 text-text-primary">{s.key}</span>
+                  <Badge tone={s.status === 'succeeded' ? 'success' : s.status === 'failed' ? 'error' : 'neutral'}>
+                    {s.status}
+                  </Badge>
+                  {s.duration_ms != null && <span className="text-text-disabled">{s.duration_ms}ms</span>}
+                  {s.error && <span className="truncate text-error">{s.error}</span>}
+                </div>
+              ))}
+              {(job.stages ?? []).length === 0 && <span className="text-xs text-text-disabled">—</span>}
+            </div>
+          </Card>
+          <Card>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs text-text-secondary">{t('monoline.events')}</span>
+              <Button size="sm" variant="ghost" onClick={loadEvents}>{t('common.refresh')}</Button>
+            </div>
+            <div className="flex max-h-64 flex-col gap-1 overflow-y-auto font-mono text-[11px]">
+              {events.slice(-80).map((e, i) => (
+                <div key={i} className={e.level === 'error' ? 'text-error' : e.level === 'warn' ? 'text-text-secondary' : 'text-text-disabled'}>
+                  [{e.stage_key ?? '-'}] {e.message ?? e.kind}
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+        <div className="flex min-w-0 flex-col gap-3">
+          {(job.stages ?? []).some((s) => s.key === 'compose' && s.status === 'succeeded') && (
+            <Card>
+              <div className="mb-1 text-xs text-text-secondary">{t('monoline.preview')}</div>
+              <Player src={monolineApi.fileUrl(jobId, 'composition/index.html')} aspect={`${cw} / ${ch}`} />
             </Card>
           )}
           {(job.stages ?? []).some((s) => s.key === 'plan' && s.status === 'succeeded') && (
@@ -328,8 +384,6 @@ function JobDetail({ jobId, onDeleted }: { jobId: string; onDeleted: () => void 
               </div>
             </Card>
           )}
-        </div>
-        <div className="flex min-w-0 flex-col gap-3">
           {job.status === 'succeeded' && (
             <Card>
               <div className="mb-1 text-xs text-text-secondary">{t('monoline.narration')}</div>
@@ -338,35 +392,6 @@ function JobDetail({ jobId, onDeleted }: { jobId: string; onDeleted: () => void 
             </Card>
           )}
           <BgmCard jobId={jobId} bgm={job.config?.bgm as { src?: string } | undefined} onChanged={refetch} />
-      <Card>
-        <div className="mb-2 text-xs text-text-secondary">{t('monoline.stages')}</div>
-        <div className="flex flex-col gap-1">
-          {(job.stages ?? []).map((s) => (
-            <div key={s.key} className="flex items-center gap-2 font-mono text-xs">
-              <span className="w-20 text-text-primary">{s.key}</span>
-              <Badge tone={s.status === 'succeeded' ? 'success' : s.status === 'failed' ? 'error' : 'neutral'}>
-                {s.status}
-              </Badge>
-              {s.duration_ms != null && <span className="text-text-disabled">{s.duration_ms}ms</span>}
-              {s.error && <span className="truncate text-error">{s.error}</span>}
-            </div>
-          ))}
-          {(job.stages ?? []).length === 0 && <span className="text-xs text-text-disabled">—</span>}
-        </div>
-      </Card>
-      <Card>
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs text-text-secondary">{t('monoline.events')}</span>
-          <Button size="sm" variant="ghost" onClick={loadEvents}>{t('common.refresh')}</Button>
-        </div>
-        <div className="flex max-h-64 flex-col gap-1 overflow-y-auto font-mono text-[11px]">
-          {events.slice(-80).map((e, i) => (
-            <div key={i} className={e.level === 'error' ? 'text-error' : e.level === 'warn' ? 'text-text-secondary' : 'text-text-disabled'}>
-              [{e.stage_key ?? '-'}] {e.message ?? e.kind}
-            </div>
-          ))}
-        </div>
-      </Card>
         </div>
       </div>
     </div>
