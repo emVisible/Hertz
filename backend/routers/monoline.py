@@ -614,9 +614,12 @@ async def patch_scene(job_id: str, i: int, body: dict):
         scenes[i]["kind"] = kind
         scenes[i]["source"] = "manual:studio"
     if slots is not None:
-        merged = dict(scenes[i].get("slots") or {})
-        merged.update(slots)
-        scenes[i]["slots"] = merged
+        if not slots:
+            scenes[i]["slots"] = {}
+        else:
+            merged = dict(scenes[i].get("slots") or {})
+            merged.update(slots)
+            scenes[i]["slots"] = merged
         scenes[i]["source"] = "manual:studio"
     ver = await svc.store.save_plan(jid, plan, "manual:studio", [])
     result = await recompose_mod.recompose(svc.store, svc.ws_root(jid), jid, hf=_recompose_hf())

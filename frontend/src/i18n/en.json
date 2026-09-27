@@ -1506,6 +1506,9 @@
     "genTitle": "Or have AI write it",
     "genPlaceholder": "Topic, e.g. night running",
     "generate": "Write",
-    "genOk": "Draft ready ({beats} beats), editable"
+    "genOk": "Draft ready ({beats} beats), editable",
+    "auditionPick": "Audition…",
+    "attachedOk": "Image attached",
+    "dragHint": "Drag to reorder"
   }
 }

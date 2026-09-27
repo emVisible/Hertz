@@ -1506,6 +1506,9 @@
     "genTitle": "或让 AI 写稿",
     "genPlaceholder": "输入主题，如：城市夜跑",
     "generate": "写稿",
-    "genOk": "已生成（{beats} 拍），可再编辑"
+    "genOk": "已生成（{beats} 拍），可再编辑",
+    "auditionPick": "试听音色…",
+    "attachedOk": "图片已挂载",
+    "dragHint": "拖拽排序"
   }
 }

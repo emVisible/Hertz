@@ -211,3 +211,15 @@ async def test_suggest_and_script_validation(client, monkeypatch) -> None:
     assert r.status_code == 502 and "LLM" in r.json()["detail"]
     r = await client.post("/api/monoline/script", json={"topic": "测试主题"})
     assert r.status_code == 502
+
+
+async def test_patch_scene_slots_reset(client, stub_tts) -> None:
+    jid = await _succeeded_job(client, stub_tts)
+    r = await client.patch(f"/api/monoline/jobs/{jid}/plan/scenes/0",
+                           json={"kind": "image", "slots": {"image": "x", "verbatim": True}})
+    assert r.status_code == 200
+    r = await client.patch(f"/api/monoline/jobs/{jid}/plan/scenes/0",
+                           json={"kind": "statement", "slots": {}})
+    assert r.status_code == 200
+    outline = (await client.get(f"/api/monoline/jobs/{jid}/outline")).json()
+    assert outline["entries"][0]["kind"] == "statement"
