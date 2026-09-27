@@ -15,9 +15,33 @@ blocklist = ["tkinter"]
 # av 与 onnxruntime 有 hook，但一并走 collect_all 以保证 dylib 与数据同层落位。
 _local_engines = ("faster_whisper", "ctranslate2", "av", "onnxruntime", "tokenizers", "huggingface_hub")
 
+# Monoline 融合域 TTS 链（v1.1 打包验证实测）：
+# - soundfile 的 libsndfile 藏在 _soundfile_data 包内（无 hook 必漏）；
+# - misaki 自带 data/词典资源（无 hook 必漏，中文 G2P 直接崩）；
+# - espeakng_loader 把 dylib + espeak-ng-data 放在包内（就地加载，无需下载）；
+# - kokoro_onnx/cn2an/pypinyin 系纯 Python 但只被函数内懒导入，静态分析扫不到。
+_monoline_engines = (
+    "soundfile",
+    "kokoro_onnx",
+    "misaki",
+    "espeakng_loader",
+    "cn2an",
+    "pypinyin",
+    "pypinyin_dict",
+    "phonemizer",
+)
+
 datas = [
     ("alembic.ini", "."),
     ("alembic", "alembic"),
+    # Monoline 融合域运行期数据（PyInstaller 不自动收包数据，漏任一项即
+    # compose/themes/icons/fonts 在固化包里 FileNotFound 崩）：
+    # templates/**（28 kinds + base）/ tokens/**（4 套主题）/
+    # data/icons.json / vendor/**（gsap/katex/17MB 中文字源）。
+    ("backend/monoline/templates", "backend/monoline/templates"),
+    ("backend/monoline/tokens", "backend/monoline/tokens"),
+    ("backend/monoline/data", "backend/monoline/data"),
+    ("backend/monoline/vendor", "backend/monoline/vendor"),
 ]
 # jieba 词典 / certifi CA 束等运行期数据
 for pkg in ("jieba", "certifi", "edge_tts"):
@@ -30,6 +54,13 @@ for pkg in _local_engines:
     datas += _d
     binaries += _b
     _engine_hidden += _h
+
+_monoline_hidden: list[str] = []
+for pkg in _monoline_engines:
+    _d, _b, _h = collect_all(pkg)
+    datas += _d
+    binaries += _b
+    _monoline_hidden += _h
 
 hiddenimports = (
     [
@@ -59,6 +90,17 @@ hiddenimports = (
     ]
     + collect_submodules("yt_dlp")
     + _engine_hidden
+    + _monoline_hidden
+    + [
+        # backend.monoline.tts 链只被函数内懒导入（provider 按 protocol 分发），
+        # 静态分析扫不到——漏任一个则固化包里切到 Kokoro 即 ImportError
+        # （v0.32 S1 env.py 教训同类）。
+        "backend.monoline.tts_zh",
+        "backend.monoline.voices",
+        "backend.monoline.narration",
+        "backend.monoline.llm_plan",
+        "backend.ai.providers.kokoro",
+    ]
 )
 
 a = Analysis(

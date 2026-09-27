@@ -59,7 +59,7 @@ PY
 }
 trap cleanup EXIT INT TERM
 
-note "=== Hertz 产物级门禁 v$VERSION（端口 $PORT，隔离库 $SIM_DB） ==="
+note "=== Hertz 产物级门禁 v${VERSION}（端口 ${PORT}，隔离库 ${SIM_DB}） ==="
 
 if [ ! -x "$BIN" ]; then
   bad "固化后端二进制缺失：$BIN —— 先跑 scripts/build-backend.sh"
@@ -132,7 +132,7 @@ PY
   HEALTH=$(curl -s -m 8 "http://127.0.0.1:$PORT/api/health" 2>/dev/null)
   echo "$HEALTH" | grep -q '"database":{"status":"ok"}' && ok "health: database ok" || bad "health 数据库检查未通过"
   echo "$HEALTH" | grep -q "\"version\":\"$VERSION\"" \
-    && ok "产物回读版本 $VERSION（版本标记真的进了包）" || bad "产物版本与期望 $VERSION 不符"
+    && ok "产物回读版本 ${VERSION}（版本标记真的进了包）" || bad "产物版本与期望 ${VERSION} 不符"
   for P in "/api/pipeline/items?limit=1" "/api/pipeline/items/counts" "/api/channels"; do
     C=$(curl -s -m 10 -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT$P")
     [ "$C" = "200" ] && ok "$P → 200" || bad "$P → $C"
@@ -200,7 +200,7 @@ print(w.get('status','unknown'))" 2>/dev/null)
     case "$CODE" in
       200) ok "转写 200（引擎与模型均可用）" ;;
       502) ok "转写 502：模型未就绪时给出明确指引，而非裸 500（幽灵符号类缺陷正是以 500 现形）；不隐式触发下载" ;;
-      *)   bad "转写返回 $CODE，契约要求 200 或 502" ;;
+      *)   bad "转写返回 ${CODE}，契约要求 200 或 502" ;;
     esac
   else
     CODE=$(curl -s -m 600 -o "$DATA/tr.json" -w "%{http_code}" -F "file=@$WAV;type=audio/wav" \
@@ -216,7 +216,7 @@ assert t and not _has_traditional(t), f'输出为空或仍含繁体: {t}'
 PY
       then ok "转写输出为简体（S3 在产物上成立）"; else bad "转写输出含繁体或为空"; fi
     else
-      bad "转写 HTTP $CODE（深度档期望 200）：$(head -c 140 "$DATA/tr.json" 2>/dev/null)"
+      bad "转写 HTTP ${CODE}（深度档期望 200）：$(head -c 140 "$DATA/tr.json" 2>/dev/null)"
     fi
   fi
 
@@ -236,7 +236,7 @@ if [ "$FAILURES" = "0" ]; then
   MODE="默认档"
   [ "$WITH_ASR" = "1" ] && MODE="深度档（含转写）"
   [ "$WITH_DOWNLOAD" = "1" ] && MODE="$MODE + 冷启动首下"
-  note "SIM_RESULT: PASS（v$VERSION，$MODE）"
+  note "SIM_RESULT: PASS（v${VERSION}，${MODE}）"
   exit 0
 fi
 note "SIM_RESULT: FAIL（$FAILURES 项未过）"
