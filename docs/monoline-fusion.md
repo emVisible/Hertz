@@ -209,3 +209,12 @@ Phase 0（0.5天）→ Phase 1（3~5天）→ Phase 2（3~4天）→ Phase 3（1
   单拍换音色端点（segments 表 voice 列此前只有全片 revoice 在用）。
 - 上游 32 路径对照：29 有 Hertz 对应实现 + 本轮 icons/brand-logo/segments-voice；
   剩余 3 条为 CLI 专属（serve/start/doctor），单进程架构下 N/A；守卫确认无遗漏。
+
+## 16. 执行页合并（2026-09-27）
+
+- `/monoline` 一级菜单并入执行页第三 tab（`?mode=monoline`，顺序 studio/pipeline/monoline）；
+  原路由保留跳转兼容，⌘K 与运行徽标同步改址。
+- 选择与页内 tab 状态进 `stores/execution.ts`（monoline 切片，与 studio/pipeline
+  同 Wave 7 缓存语义），切走再回不丢。
+- 作业详情改主列（预览→成片→精修→下载）+ 右 rail（旁白→BGM→阶段→事件）+ 列表收窄，
+  `lg:` 以下塌单列；状态操作条 sticky 置顶。

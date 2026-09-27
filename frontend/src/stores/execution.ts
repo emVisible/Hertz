@@ -39,11 +39,20 @@ export interface PipelineExecState {
   busy: Record<string, { action: string; title: string }>
 }
 
+export interface MonolineExecState {
+  /** 页内 tab：新建/大纲/作业/模式库/设置（跨执行 tab 切换保持） */
+  tab: 'new' | 'outline' | 'jobs' | 'modes' | 'setup'
+  /** 当前选中作业（跨切换保持，与 studio.activeRunId 对齐） */
+  jobId: string | null
+}
+
 interface ExecutionState {
   studio: StudioExecState
   pipeline: PipelineExecState
+  monoline: MonolineExecState
   setStudio: (patch: Partial<StudioExecState>) => void
   setPipeline: (patch: Partial<PipelineExecState>) => void
+  setMonoline: (patch: Partial<MonolineExecState>) => void
   resetStudioLogs: () => void
 }
 
@@ -68,8 +77,13 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
     collectProgress: [],
     busy: {},
   },
+  monoline: {
+    tab: 'new',
+    jobId: null,
+  },
   setStudio: (patch) => set((s) => ({ studio: { ...s.studio, ...patch } })),
   setPipeline: (patch) => set((s) => ({ pipeline: { ...s.pipeline, ...patch } })),
+  setMonoline: (patch) => set((s) => ({ monoline: { ...s.monoline, ...patch } })),
   resetStudioLogs: () =>
     set((s) => ({ studio: { ...s.studio, logs: [], logSeq: 0, phaseStates: {} } })),
 }))

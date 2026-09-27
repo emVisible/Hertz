@@ -122,7 +122,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         hint: t('command.openMonolineHint'),
         icon: 'play',
         run: () => {
-          navigate('/monoline')
+          navigate('/execution?mode=monoline')
           onClose()
         },
       })

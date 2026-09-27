@@ -8,18 +8,20 @@ import { usePipelineExecution } from '../../hooks/usePipelineExecution'
 import { useModelSwitch } from '../../hooks/useModelSwitch'
 import { StudioView } from './StudioView'
 import { PipelineView } from './PipelineView'
+import { MonolinePage } from '../monoline/MonolinePage'
 
-type Mode = 'studio' | 'pipeline'
+type Mode = 'studio' | 'pipeline' | 'monoline'
 
-/** 执行工作台：第二级路由（Studio / Pipeline 切换）+ 组装。
- *  Studio 域与 Pipeline 域分别位于 StudioView.tsx / PipelineView.tsx（解耦）。
+/** 执行工作台：第二级路由（Studio / Pipeline / 文稿成片切换）+ 组装。
+ *  Studio 域与 Pipeline 域分别位于 StudioView.tsx / PipelineView.tsx（解耦）；
+ *  文稿成片为独立融合域（pages/monoline/），在此仅挂载为第三 tab。
  *  发布队列（v0.12）已融合进 PipelineView 发布 tab（QueueView）。 */
 export function ExecutionPage() {
   const { t } = useTranslation()
   const [params, setParams] = useSearchParams()
   const [mode, setModeState] = useState<Mode>(() => {
     const m = params.get('mode')
-    if (m === 'pipeline') return m
+    if (m === 'pipeline' || m === 'monoline') return m
     return 'studio'
   })
 
@@ -40,13 +42,18 @@ export function ExecutionPage() {
           items={[
             { id: 'studio', label: t('execution.modeStudio') },
             { id: 'pipeline', label: t('execution.modePipeline') },
+            { id: 'monoline', label: t('nav.monoline') },
           ]}
           active={mode}
           onChange={setMode}
         />
       </div>
 
-      {mode === 'studio' ? (
+      {mode === 'monoline' ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <MonolinePage />
+        </div>
+      ) : mode === 'studio' ? (
         <StudioView
           plans={studio.plans}
           planId={studio.planId}

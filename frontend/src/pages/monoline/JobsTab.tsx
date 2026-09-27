@@ -29,7 +29,7 @@ export function JobsTab({ selectedId, onSelect }: { selectedId: string | null; o
 
   return (
     <div className="flex h-full min-h-0 gap-3">
-      <div className="flex w-72 shrink-0 flex-col gap-2 overflow-y-auto">
+      <div className="flex w-60 shrink-0 flex-col gap-2 overflow-y-auto">
         <div className="flex items-center justify-between">
           <span className="text-xs text-text-secondary">{t('monoline.jobs', { n: jobs.length })}</span>
           <Button size="sm" variant="ghost" onClick={() => refetch()}>{t('common.refresh')}</Button>
@@ -245,7 +245,7 @@ function JobDetail({ jobId, onDeleted }: { jobId: string; onDeleted: () => void 
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 bg-bg pb-2">
         <Badge tone={STATUS_TONE[job.status] ?? 'neutral'}>{job.status}</Badge>
         {job.total_duration != null && <span className="font-mono text-xs">{job.total_duration.toFixed(1)}s</span>}
         {job.error && <span className="text-xs text-error">{job.error}</span>}
@@ -291,49 +291,53 @@ function JobDetail({ jobId, onDeleted }: { jobId: string; onDeleted: () => void 
           </Button>
         </span>
       </div>
-      {job.status === 'succeeded' && (
-        <Card>
-          <div className="mb-1 text-xs text-text-secondary">{t('monoline.narration')}</div>
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <audio controls src={audioUrl} className="w-full" />
-        </Card>
-      )}
-      <BgmCard jobId={jobId} bgm={job.config?.bgm as { src?: string } | undefined} onChanged={refetch} />
-      {(job.stages ?? []).some((s) => s.key === 'plan' && s.status === 'succeeded') && (
-        <BeatsEditor jobId={jobId} onChanged={refetch} />
-      )}
-      {(job.stages ?? []).some((s) => s.key === 'compose' && s.status === 'succeeded') && (
-        <Card>
-          <div className="mb-1 text-xs text-text-secondary">{t('monoline.preview')}</div>
-          <Player src={monolineApi.fileUrl(jobId, 'composition/index.html')} aspect={`${cw} / ${ch}`} />
-        </Card>
-      )}
-      {(job.stages ?? []).some((s) => s.key === 'deliver' && s.status === 'succeeded') && (
-        <Card>
-          <div className="mb-2 text-xs text-text-secondary">{t('monoline.watch')}</div>
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <video controls preload="metadata" poster={posterUrl} src={mp4Url} className="w-full bg-black" />
-        </Card>
-      )}
-      {(job.stages ?? []).some((s) => s.key === 'deliver' && s.status === 'succeeded') && (
-        <Card>
-          <div className="mb-2 text-xs text-text-secondary">{t('monoline.downloads')}</div>
-          <div className="flex flex-wrap gap-2 text-sm">
-            <a className="text-primary hover:underline" href={mp4Url}>
-              MP4
-            </a>
-            <a className="text-primary hover:underline" href={`${API_BASE}/api/monoline/jobs/${jobId}/subtitles?fmt=srt`}>
-              SRT
-            </a>
-            <a className="text-primary hover:underline" href={`${API_BASE}/api/monoline/jobs/${jobId}/subtitles?fmt=vtt`}>
-              VTT
-            </a>
-            <a className="text-primary hover:underline" href={`${API_BASE}/api/monoline/jobs/${jobId}/poster`} target="_blank" rel="noreferrer">
-              {t('monoline.poster')}
-            </a>
-          </div>
-        </Card>
-      )}
+      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="flex min-w-0 flex-col gap-3">
+          {(job.stages ?? []).some((s) => s.key === 'compose' && s.status === 'succeeded') && (
+            <Card>
+              <div className="mb-1 text-xs text-text-secondary">{t('monoline.preview')}</div>
+              <Player src={monolineApi.fileUrl(jobId, 'composition/index.html')} aspect={`${cw} / ${ch}`} />
+            </Card>
+          )}
+          {(job.stages ?? []).some((s) => s.key === 'deliver' && s.status === 'succeeded') && (
+            <Card>
+              <div className="mb-2 text-xs text-text-secondary">{t('monoline.watch')}</div>
+              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+              <video controls preload="metadata" poster={posterUrl} src={mp4Url} className="w-full bg-black" />
+            </Card>
+          )}
+          {(job.stages ?? []).some((s) => s.key === 'plan' && s.status === 'succeeded') && (
+            <BeatsEditor jobId={jobId} onChanged={refetch} />
+          )}
+          {(job.stages ?? []).some((s) => s.key === 'deliver' && s.status === 'succeeded') && (
+            <Card>
+              <div className="mb-2 text-xs text-text-secondary">{t('monoline.downloads')}</div>
+              <div className="flex flex-wrap gap-2 text-sm">
+                <a className="text-primary hover:underline" href={mp4Url}>
+                  MP4
+                </a>
+                <a className="text-primary hover:underline" href={`${API_BASE}/api/monoline/jobs/${jobId}/subtitles?fmt=srt`}>
+                  SRT
+                </a>
+                <a className="text-primary hover:underline" href={`${API_BASE}/api/monoline/jobs/${jobId}/subtitles?fmt=vtt`}>
+                  VTT
+                </a>
+                <a className="text-primary hover:underline" href={posterUrl} target="_blank" rel="noreferrer">
+                  {t('monoline.poster')}
+                </a>
+              </div>
+            </Card>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-col gap-3">
+          {job.status === 'succeeded' && (
+            <Card>
+              <div className="mb-1 text-xs text-text-secondary">{t('monoline.narration')}</div>
+              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+              <audio controls src={audioUrl} className="w-full" />
+            </Card>
+          )}
+          <BgmCard jobId={jobId} bgm={job.config?.bgm as { src?: string } | undefined} onChanged={refetch} />
       <Card>
         <div className="mb-2 text-xs text-text-secondary">{t('monoline.stages')}</div>
         <div className="flex flex-col gap-1">
@@ -363,6 +367,8 @@ function JobDetail({ jobId, onDeleted }: { jobId: string; onDeleted: () => void 
           ))}
         </div>
       </Card>
+        </div>
+      </div>
     </div>
   )
 }

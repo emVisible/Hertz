@@ -17,7 +17,6 @@ import { AssetsPage } from '../pages/assets/AssetsPage'
 import { DashboardPage } from '../pages/dashboard/DashboardPage'
 import { PlansPage } from '../pages/plans/PlansPage'
 import { ExecutionPage } from '../pages/execution/ExecutionPage'
-import { MonolinePage } from '../pages/monoline/MonolinePage'
 import { CanvasPage } from '../pages/canvas/CanvasPage'
 import { SettingsPage } from '../pages/settings/SettingsPage'
 import { CostPage } from '../pages/cost/CostPage'
@@ -66,7 +65,6 @@ export function AppShell() {
     { to: '/dashboard', icon: 'whisper', label: t('nav.dashboard'), group: 'produce' },
     // 生产
     { to: '/execution', icon: 'console', label: t('nav.execution'), group: 'produce' },
-    { to: '/monoline', icon: 'play', label: t('nav.monoline'), group: 'produce' },
     { to: '/plans', icon: 'plans', label: t('nav.plans'), group: 'produce' },
     // 素材（唯一出口：下载/资源/文档）
     { to: '/assets', icon: 'box', label: t('nav.assets'), group: 'assets' },
@@ -97,7 +95,7 @@ export function AppShell() {
               onClick={() =>
                 navigate(
                   monolineRunning
-                    ? '/monoline'
+                    ? '/execution?mode=monoline'
                     : pipelineRunning
                       ? '/execution?mode=pipeline'
                       : '/execution?mode=studio',
@@ -127,7 +125,7 @@ export function AppShell() {
           <PageTransition>
             <Routes>
               <Route path="/execution" element={<ExecutionPage />} />
-              <Route path="/monoline" element={<MonolinePage />} />
+              <Route path="/monoline" element={<Navigate to="/execution?mode=monoline" replace />} />
               <Route path="/studio" element={<Navigate to="/execution?mode=studio" replace />} />
               <Route path="/console" element={<Navigate to="/execution?mode=pipeline" replace />} />
               {/* v0.12：发布队列并入执行页第三 tab（队列也是执行域） */}
