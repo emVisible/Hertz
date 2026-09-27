@@ -198,3 +198,14 @@ Phase 0（0.5天）→ Phase 1（3~5天）→ Phase 2（3~4天）→ Phase 3（1
 - 融合终态：后端 `backend/monoline/`（25 模块）+ 模型 8 表 + 路由 30 路径
   （API 清单 225 操作）+ 前端 `/monoline` 五视图 + 精修/交付/资产/写稿；
   上游 32 路径中 29 有 Hertz 对应实现（3 条 CLI 专属在单进程架构下 N/A）。
+
+## 15. 100% 对齐补完记录（2026-09-27）
+
+- 直接浏览：作业列表 poster 缩略、MP4 行内播放（poster 做封面）、预览按 canvas 画幅自适应。
+- 精修：大纲一键向上合并；版式三档（hero/flush/frame，模板原生 `sbody--*` 生效）；
+  IconPicker（158 Lucide 清单端点，`slots.icon` 模板原生支持）；槽位 JSON 通用编辑；
+  j/k/1-9 快捷键；BGM 音量/duck 上传参数。
+- 后端小件：brand logo 下发；llm 配额进 job config（batch/chars/budget）；
+  单拍换音色端点（segments 表 voice 列此前只有全片 revoice 在用）。
+- 上游 32 路径对照：29 有 Hertz 对应实现 + 本轮 icons/brand-logo/segments-voice；
+  剩余 3 条为 CLI 专属（serve/start/doctor），单进程架构下 N/A；守卫确认无遗漏。

@@ -108,9 +108,11 @@
 `GET /api/monoline/brand`
 `PATCH /api/monoline/brand`
 `DELETE /api/monoline/brand/logo`
+`GET /api/monoline/brand/logo`
 `POST /api/monoline/brand/logo`
 `GET /api/monoline/events`
 `GET /api/monoline/health`
+`GET /api/monoline/icons`
 `GET /api/monoline/jobs`
 `POST /api/monoline/jobs`
 `DELETE /api/monoline/jobs/{job_id}`
@@ -135,6 +137,7 @@
 `POST /api/monoline/jobs/{job_id}/reorder`
 `POST /api/monoline/jobs/{job_id}/run`
 `PATCH /api/monoline/jobs/{job_id}/segments/{i}`
+`PATCH /api/monoline/jobs/{job_id}/segments/{i}/voice`
 `GET /api/monoline/jobs/{job_id}/stream`
 `GET /api/monoline/jobs/{job_id}/subtitles`
 `POST /api/monoline/jobs/{job_id}/voice`

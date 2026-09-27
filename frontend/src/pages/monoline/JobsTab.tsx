@@ -42,13 +42,23 @@ export function JobsTab({ selectedId, onSelect }: { selectedId: string | null; o
             className={`cursor-pointer ${selectedId === j.id ? 'border-primary' : ''}`}
             padded
           >
-            <div onClick={() => onSelect(j.id)} className="flex flex-col gap-1">
-              <div className="truncate text-sm text-text-primary">{j.title || t('monoline.untitled')}</div>
-              <div className="flex items-center gap-2">
-                <Badge tone={STATUS_TONE[j.status] ?? 'neutral'}>{j.status}</Badge>
-                {j.total_duration != null && (
-                  <span className="font-mono text-[11px] text-text-disabled">{j.total_duration.toFixed(1)}s</span>
-                )}
+            <div onClick={() => onSelect(j.id)} className="flex gap-2">
+              <img
+                src={monolineApi.fileUrl(j.id, 'renders/poster.jpg')}
+                alt=""
+                className="h-12 w-20 shrink-0 border border-border object-cover"
+                onError={(e) => {
+                  ;(e.target as HTMLImageElement).style.display = 'none'
+                }}
+              />
+              <div className="flex min-w-0 flex-col gap-1">
+                <div className="truncate text-sm text-text-primary">{j.title || t('monoline.untitled')}</div>
+                <div className="flex items-center gap-2">
+                  <Badge tone={STATUS_TONE[j.status] ?? 'neutral'}>{j.status}</Badge>
+                  {j.total_duration != null && (
+                    <span className="font-mono text-[11px] text-text-disabled">{j.total_duration.toFixed(1)}s</span>
+                  )}
+                </div>
               </div>
             </div>
           </Card>
@@ -65,7 +75,7 @@ export function JobsTab({ selectedId, onSelect }: { selectedId: string | null; o
   )
 }
 
-function Player({ src }: { src: string }) {
+function Player({ src, aspect }: { src: string; aspect?: string }) {
   // hyperframes-player 为自定义元素：src 经 attribute 设置；composition 内 <audio id=vo>
   // 在纯静态预览下不会被 player 接管，ready 后把音频代理到父帧使其可听（上游同修复）。
   const ref = useRef<HTMLElement | null>(null)
@@ -113,20 +123,49 @@ function Player({ src }: { src: string }) {
   return createElement('hyperframes-player', {
     ref,
     controls: true,
-    style: { width: '100%', height: 'auto', display: 'block', background: '#000' },
+    style: {
+      width: '100%',
+      height: 'auto',
+      display: 'block',
+      background: '#000',
+      ...(aspect ? { aspectRatio: aspect } : {}),
+    },
   } as unknown as Record<string, unknown>)
 }
 
-function BgmCard({ jobId, bgm, onChanged }: { jobId: string; bgm?: { src?: string }; onChanged: () => void }) {
+function BgmCard({ jobId, bgm, onChanged }: {
+  jobId: string
+  bgm?: { src?: string; volume?: number; duck?: boolean }
+  onChanged: () => void
+}) {
   const { t } = useTranslation()
   const toast = useToast()
+  const [volume, setVolume] = useState(typeof bgm?.volume === 'number' ? bgm.volume : 0.22)
+  const [duck, setDuck] = useState(bgm?.duck !== false)
   return (
     <Card>
       <div className="mb-1 flex items-center justify-between">
         <span className="text-xs text-text-secondary">
           {t('monoline.bgm')}{bgm?.src ? ` · ${bgm.src.split('/').pop()}` : ''}
         </span>
-        <span className="flex gap-1">
+        <span className="flex items-center gap-1">
+          <label className="flex items-center gap-1 text-[11px] text-text-secondary" title={t('monoline.bgmVolume')}>
+            {t('monoline.bgmVolume')}
+            <input
+              type="range"
+              min={0}
+              max={0.6}
+              step={0.02}
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              className="w-20"
+            />
+            <span className="font-mono">{volume.toFixed(2)}</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-1 text-[11px] text-text-secondary">
+            <input type="checkbox" checked={duck} onChange={(e) => setDuck(e.target.checked)} />
+            {t('monoline.bgmDuck')}
+          </label>
           <label className="flex h-7 cursor-pointer items-center px-3 text-xs text-text-secondary hover:bg-surface-2 hover:text-text-primary">
             {t('monoline.bgmUpload')}
             <input
@@ -138,7 +177,7 @@ function BgmCard({ jobId, bgm, onChanged }: { jobId: string; bgm?: { src?: strin
                 e.target.value = ''
                 if (!f) return
                 try {
-                  await monolineApi.uploadBgm(jobId, f)
+                  await monolineApi.uploadBgm(jobId, f, volume, duck)
                   toast(t('monoline.bgmOk'), 'success')
                   onChanged()
                 } catch (err) {
@@ -198,6 +237,11 @@ function JobDetail({ jobId, onDeleted }: { jobId: string; onDeleted: () => void 
 
   if (!job) return <Spinner />
   const audioUrl = monolineApi.fileUrl(jobId, 'composition/audio/narration.wav')
+  const canvas = (job.canvas ?? {}) as { width?: number; height?: number }
+  const cw = Number(canvas.width) || 1920
+  const ch = Number(canvas.height) || 1080
+  const mp4Url = `${API_BASE}/api/monoline/jobs/${jobId}/download`
+  const posterUrl = `${API_BASE}/api/monoline/jobs/${jobId}/poster`
 
   return (
     <div className="flex flex-col gap-3">
@@ -261,14 +305,21 @@ function JobDetail({ jobId, onDeleted }: { jobId: string; onDeleted: () => void 
       {(job.stages ?? []).some((s) => s.key === 'compose' && s.status === 'succeeded') && (
         <Card>
           <div className="mb-1 text-xs text-text-secondary">{t('monoline.preview')}</div>
-          <Player src={monolineApi.fileUrl(jobId, 'composition/index.html')} />
+          <Player src={monolineApi.fileUrl(jobId, 'composition/index.html')} aspect={`${cw} / ${ch}`} />
+        </Card>
+      )}
+      {(job.stages ?? []).some((s) => s.key === 'deliver' && s.status === 'succeeded') && (
+        <Card>
+          <div className="mb-2 text-xs text-text-secondary">{t('monoline.watch')}</div>
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <video controls preload="metadata" poster={posterUrl} src={mp4Url} className="w-full bg-black" />
         </Card>
       )}
       {(job.stages ?? []).some((s) => s.key === 'deliver' && s.status === 'succeeded') && (
         <Card>
           <div className="mb-2 text-xs text-text-secondary">{t('monoline.downloads')}</div>
           <div className="flex flex-wrap gap-2 text-sm">
-            <a className="text-primary hover:underline" href={`${API_BASE}/api/monoline/jobs/${jobId}/download`}>
+            <a className="text-primary hover:underline" href={mp4Url}>
               MP4
             </a>
             <a className="text-primary hover:underline" href={`${API_BASE}/api/monoline/jobs/${jobId}/subtitles?fmt=srt`}>

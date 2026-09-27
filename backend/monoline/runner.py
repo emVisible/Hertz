@@ -517,7 +517,9 @@ def _slug(text: str, n: int = 24) -> str:
 
 async def run_text(store: MonolineStore, ws_root: Path, job_id: UUID, *,
                    force: bool = False, llm_upgrade: bool = False, ai=None,
-                   model: str = "default", cancel: asyncio.Event | None = None,
+                   model: str = "default", batch_beats: int = 3, batch_chars: int = 900,
+                   budget_seconds: float = 150.0,
+                   cancel: asyncio.Event | None = None,
                    emit=None) -> dict:
     """script + plan 文本路径（上游 s_script + s_plan 的 Hertz 版）。
 
@@ -616,7 +618,9 @@ async def run_text(store: MonolineStore, ws_root: Path, job_id: UUID, *,
             from .llm_plan import upgrade
 
             try:
-                scenes, llm = await upgrade(ai, beats, scenes, model=model)
+                scenes, llm = await upgrade(ai, beats, scenes, model=model,
+                                            batch_beats=batch_beats, batch_chars=batch_chars,
+                                            budget_seconds=budget_seconds)
                 if llm.get("batches"):
                     await store.add_event(
                         job_id, "log", stage_key="plan",

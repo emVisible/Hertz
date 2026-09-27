@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+### 文稿成片融合域（D-205~D-211，执行域独立菜单 `/monoline`）
+
+- 九阶段文稿转视频全链：大纲审阅（合并/拆分/ pin 图）→ Kokoro 本地配音 → 组装 → 分镜 → 字体子集化 → 合成 → HyperFrames 门禁/渲染/交付；`scripts/monoline_warmup.py` 冷启动验收
+- 逐拍精修：改旁白（单拍重 TTS）、换 kind/版式/图标/槽位、拖拽重排（音频跟随）、单拍/全片换音色、换主题、单拍问模型、快捷键 j/k/1-9
+- 交付物：分镜浏览器内预览、MP4 行内播放与下载、字幕 srt/vtt、封面；作业列表 poster 缩略图
+- 资产链：图片/BGM/Logo 上传冻结、品牌默认外观、音色试听、AI 写稿（主题/语气/篇幅）
+- 地基回哺：API 清单 228 操作双向比对、标题排版 owner、阶段输入指纹、httpx 本地直连（`trust_env=False`）+ 502/503 重试
+- 打包：`hertz.spec` 收 TTS 链与 monoline 运行期数据，冻结包内真机验证通过
+
 ## [v0.30.1] - 2026-09-23
 ### 补丁发布：三处「文档说交付了、产物里没有」的缺陷
 

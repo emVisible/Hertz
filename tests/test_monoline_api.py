@@ -223,3 +223,46 @@ async def test_patch_scene_slots_reset(client, stub_tts) -> None:
     assert r.status_code == 200
     outline = (await client.get(f"/api/monoline/jobs/{jid}/outline")).json()
     assert outline["entries"][0]["kind"] == "statement"
+
+
+async def test_revoice_beat_and_llm_config(client, stub_tts) -> None:
+    jid = await _succeeded_job(client, stub_tts)
+    r = await client.patch(f"/api/monoline/jobs/{jid}/segments/0/voice",
+                           json={"voice": "zm_yunxi"})
+    assert r.status_code == 200 and r.json()["voice"] == "zm_yunxi"
+    assert r.json()["beat"] == 0
+    r = await client.patch(f"/api/monoline/jobs/{jid}/segments/0/voice",
+                           json={"voice": "nope"})
+    assert r.status_code == 422
+    r = await client.patch(f"/api/monoline/jobs/{jid}/segments/9/voice",
+                           json={"voice": "zm_yunxi"})
+    assert r.status_code == 422
+
+    r = await client.patch(f"/api/monoline/jobs/{jid}/config",
+                           json={"llm_plan": True, "llm_batch_beats": 2})
+    assert r.status_code == 200
+    job = (await client.get(f"/api/monoline/jobs/{jid}")).json()
+    assert job["config"]["llm_batch_beats"] == 2
+
+    r = await client.get("/api/monoline/icons")
+    assert r.status_code == 200 and r.json()["count"] >= 150
+    r = await client.get("/api/monoline/brand/logo")
+    assert r.status_code == 404
+
+
+async def test_patch_scene_variant_and_icon(client, stub_tts) -> None:
+    jid = await _succeeded_job(client, stub_tts)
+    r = await client.patch(f"/api/monoline/jobs/{jid}/plan/scenes/0",
+                           json={"slots": {"variant": "flush"}})
+    assert r.status_code == 200
+    outline = (await client.get(f"/api/monoline/jobs/{jid}/outline")).json()
+    assert outline["entries"]
+    plan = await client.get(f"/api/monoline/jobs/{jid}")
+    assert plan.status_code == 200
+    # variant 清空回自动
+    r = await client.patch(f"/api/monoline/jobs/{jid}/plan/scenes/0",
+                           json={"slots": {"variant": None}})
+    assert r.status_code == 200
+    r = await client.patch(f"/api/monoline/jobs/{jid}/plan/scenes/0",
+                           json={"slots": {"icon": "cpu"}})
+    assert r.status_code == 200

@@ -180,6 +180,30 @@ async def list_themes():
     return {"themes": available()}
 
 
+@router.get("/icons")
+async def list_icons():
+    """158 Lucide 内联图标清单（name + path body，供逐拍图标覆盖选择器）。"""
+    from backend.monoline.icons import catalog
+
+    icons = catalog()
+    return {"icons": icons, "count": len(icons)}
+
+
+@router.get("/brand/logo")
+async def serve_brand_logo():
+    """品牌 logo 文件流（无则 404，前端显示占位）。"""
+    from fastapi.responses import FileResponse
+
+    svc = _svc()
+    brand = await svc.store.get_brand()
+    name = brand.get("logo_name")
+    path = svc.brand_dir() / name if name else None
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="未设置品牌 logo")
+    media = "image/svg+xml" if path.suffix == ".svg" else None
+    return FileResponse(path, media_type=media or "application/octet-stream")
+
+
 @router.get("/voices")
 async def list_voices():
     from backend.ai.providers.kokoro import KokoroProvider
@@ -587,6 +611,27 @@ async def patch_segment(job_id: str, i: int, body: dict):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.patch("/jobs/{job_id}/segments/{i}/voice")
+async def revoice_beat(job_id: str, i: int, body: dict):
+    """单拍换音色（文本/关键词不动，该拍时长重测，全片重计时）。"""
+    from backend.monoline import recompose as recompose_mod
+    from backend.monoline import voices as _voices
+
+    svc = _svc()
+    jid = _uuid(job_id)
+    if await svc.get_job(jid) is None:
+        raise HTTPException(status_code=404, detail="job 不存在")
+    voice = str(body.get("voice") or "")
+    if not _voices.is_known_voice(voice):
+        raise HTTPException(status_code=422, detail=f"未知音色 {voice!r}")
+    try:
+        return await recompose_mod.revoice_segment(
+            svc.store, svc.ws_root(jid), jid, i, voice,
+            tts_provider=await svc.tts_provider(), hf=_recompose_hf())
+    except IndexError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.patch("/jobs/{job_id}/plan/scenes/{i}")
 async def patch_scene(job_id: str, i: int, body: dict):
     """换一拍 kind/slots 并落盘（source=manual:studio）→ 秒级重组。"""
@@ -618,7 +663,12 @@ async def patch_scene(job_id: str, i: int, body: dict):
             scenes[i]["slots"] = {}
         else:
             merged = dict(scenes[i].get("slots") or {})
-            merged.update(slots)
+            for k, v in slots.items():
+                # null 值删键（如清掉 variant 回自动派发），其余合并
+                if v is None:
+                    merged.pop(k, None)
+                else:
+                    merged[k] = v
             scenes[i]["slots"] = merged
         scenes[i]["source"] = "manual:studio"
     ver = await svc.store.save_plan(jid, plan, "manual:studio", [])
@@ -677,7 +727,8 @@ async def patch_job_config(job_id: str, body: dict):
     job = await svc.get_job(jid)
     if job is None:
         raise HTTPException(status_code=404, detail="job 不存在")
-    allowed = {"theme", "accent", "brand", "layout", "speed", "format", "quality", "fps"}
+    allowed = {"theme", "accent", "brand", "layout", "speed", "format", "quality", "fps",
+               "llm_plan", "llm_batch_beats", "llm_batch_chars", "llm_plan_seconds"}
     unknown = set(body) - allowed
     if unknown:
         raise HTTPException(status_code=422, detail=f"未知配置键 {sorted(unknown)}")

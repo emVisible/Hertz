@@ -1517,6 +1517,17 @@
     "toneSerious": "严肃",
     "lenShort": "短",
     "lenMedium": "中",
-    "lenLong": "长"
+    "lenLong": "长",
+    "watch": "成片直阅",
+    "variantAuto": "自动版式",
+    "mergeUp": "向上合并",
+    "mergedOk": "已合并",
+    "slotsJson": "槽位 JSON",
+    "slotsApply": "应用槽位",
+    "slotsBadJson": "JSON 解析失败",
+    "pickIcon": "选图标",
+    "iconSearch": "搜图标名…",
+    "bgmVolume": "音量",
+    "bgmDuck": "旁白时压低"
   }
 }

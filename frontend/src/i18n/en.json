@@ -1517,6 +1517,17 @@
     "toneSerious": "Serious",
     "lenShort": "Short",
     "lenMedium": "Medium",
-    "lenLong": "Long"
+    "lenLong": "Long",
+    "watch": "Watch film",
+    "variantAuto": "Auto layout",
+    "mergeUp": "Merge up",
+    "mergedOk": "Merged",
+    "slotsJson": "Slots JSON",
+    "slotsApply": "Apply slots",
+    "slotsBadJson": "Invalid JSON",
+    "pickIcon": "Pick icon",
+    "iconSearch": "Search icons…",
+    "bgmVolume": "Volume",
+    "bgmDuck": "Duck under VO"
   }
 }

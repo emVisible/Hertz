@@ -224,6 +224,9 @@ class MonolineService:
                 self.store, self.ws_root(job_id), job_id, force=force,
                 llm_upgrade=bool(config.get("llm_plan", False)),
                 ai=self._registry_ai(), model=await self._main_model(),
+                batch_beats=int(config.get("llm_batch_beats") or 3),
+                batch_chars=int(config.get("llm_batch_chars") or 900),
+                budget_seconds=float(config.get("llm_plan_seconds") or 150),
                 cancel=cancel, emit=_emit)
             beats = text_out.get("beats", 0)
             job = await self.store.get_job(job_id)

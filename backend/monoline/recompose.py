@@ -246,3 +246,37 @@ async def resynth_segment(store: MonolineStore, ws_root: Path, job_id: UUID, i: 
         ver = await store.save_plan(job_id, plan, "manual", [])
     result = await recompose(store, ws_root, job_id, hf=hf)
     return {"version": ver, "total_duration": total, "beat_duration": dur, **result}
+
+
+async def revoice_segment(store: MonolineStore, ws_root: Path, job_id: UUID, i: int,
+                          voice: str, *, tts_provider, hf: HF | None = None) -> dict:
+    """单拍换音色：该拍用新音色重 TTS（文本不变，关键词不动）→ 重 concat/计时 → 重组。
+
+    segments 表本就按拍存 voice/lang/speed，此前只有全片 revoice 用得上；
+    plan 内容不变，仅 bump 版本 bust 预览缓存。
+    """
+    from . import voices as _voices
+
+    if not _voices.is_known_voice(voice):
+        raise ValueError(f"unknown voice {voice!r}")
+    job = await store.get_job(job_id)
+    if job is None:
+        raise KeyError(str(job_id))
+    segs = await store.get_segments(job_id)
+    if not (0 <= i < len(segs)):
+        raise IndexError(f"segment {i} out of range")
+    config = job.get("config") or {}
+    ws = Workspace(ws_root).ensure()
+
+    dur = await _synth_beat(store, ws, job_id, i, segs[i]["text"],
+                            voice=voice, lang=_voices.voice_lang(voice) or "zh",
+                            speed=float(config.get("speed", 1.0)),
+                            tts_provider=tts_provider)
+    total = await _reconcat(store, ws, job_id)
+    plan_row = await store.get_plan(job_id)
+    ver = 0
+    if plan_row:
+        ver = await store.save_plan(job_id, plan_row["plan_json"], "manual:revoice", [])
+    result = await recompose(store, ws_root, job_id, hf=hf)
+    return {"version": ver, "total_duration": total, "beat_duration": dur,
+            "beat": i, "voice": voice, **result}

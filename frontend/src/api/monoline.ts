@@ -120,6 +120,7 @@ export const monolineApi = {
     api.get<{ events: MonolineEvent[] }>(`/api/monoline/jobs/${id}/events?limit=${limit}`),
   fileUrl: (id: string, rel: string) => `${API_BASE}/api/monoline/jobs/${id}/files/${rel}`,
   themes: () => api.get<{ themes: MonolineTheme[] }>('/api/monoline/themes'),
+  icons: () => api.get<{ icons: Array<{ name: string; body: string }>; count: number }>('/api/monoline/icons'),
   voices: () => api.get<{ voices: MonolineVoice[]; default: string }>('/api/monoline/voices'),
   eventsUrl: () => `${API_BASE}/api/monoline/events`,
   jobStreamUrl: (id: string) => `${API_BASE}/api/monoline/jobs/${id}/stream`,
