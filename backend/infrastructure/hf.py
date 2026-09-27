@@ -92,12 +92,11 @@ def _reason(exc: BaseException) -> str:
         if cause is not None:
             msg = str(cause).strip() or type(cause).__name__
     if name in {"ConnectError", "ConnectTimeout", "ProxyError"}:
-        try:
-            from backend.infrastructure.net import system_proxies
+        from backend.infrastructure.net import system_proxies
 
-            prox = system_proxies()
-        except Exception:  # noqa: BLE001 — 探测失败不该盖住真实原因
-            prox = {}
+        # 探测失败不该盖住真实原因——吞成空表是 net.system_proxies 的职责，
+        # 这里不再自己套一层只能接住 import 拼错的 try。
+        prox = system_proxies()
         detail = "、".join(f"{k}→{v}" for k, v in sorted(prox.items())) or "直连（未设代理）"
         msg = f"{msg}；代理：{detail}" if msg else f"连不上，代理：{detail}"
     return f"{name}: {msg}" if msg else name

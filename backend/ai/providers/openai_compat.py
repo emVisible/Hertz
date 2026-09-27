@@ -55,7 +55,7 @@ class OpenAICompatProvider:
             headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
             # 本地 Provider（Ollama/ComfyUI/xinference 常在 127.0.0.1）必须直连：
             # 代理到不了回环地址，Clash 在时只会回 502；判据在 infrastructure/net。
-            # 远端主机则正常跟随环境/系统代理（v0.33 收口后有意的行为变化）。
+            # 远端主机则照常跟随环境变量里的代理设置（v0.33 收口后有意的行为变化）。
             **client_kwargs(base, timeout=httpx.Timeout(30.0, read=180.0)),
         )
 

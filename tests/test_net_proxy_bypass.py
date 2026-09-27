@@ -58,7 +58,34 @@ def test_system_proxies_is_the_full_table_author(monkeypatch) -> None:
     assert system_proxy() == "http://p:1"
 
 
-def test_remote_provider_still_follows_env_proxy() -> None:
-    """本地直连不等于「所有 Provider 都不走代理」——远端主机必须照旧。"""
-    assert client_kwargs("http://127.0.0.1:11434/v1")["trust_env"] is False
-    assert client_kwargs("https://comfyui.example.com:8188")["trust_env"] is True
+async def test_openai_compat_client_carries_the_owner_decision() -> None:
+    """判据要落在**真构造出来的 client** 上，不是落在 helper 的返回值上。
+
+    只调 `client_kwargs(...)` 的断言是自证：把 Provider 里那行 `**client_kwargs(...)`
+    整个删掉（退回 httpx 默认，本地照旧被代理吃掉），字面量断言照样绿。
+    这里让两类主机各构造一个真 client，回退即红。
+    """
+    from backend.ai.providers.openai_compat import OpenAICompatProvider
+
+    local = OpenAICompatProvider(api_key="", base_url="http://127.0.0.1:11434/v1", model="m")
+    remote = OpenAICompatProvider(api_key="", base_url="https://api.siliconflow.cn/v1", model="m")
+    try:
+        assert local._client.trust_env is False
+        assert remote._client.trust_env is True
+    finally:
+        await local.aclose()
+        await remote.aclose()
+
+
+async def test_comfyui_client_carries_the_owner_decision() -> None:
+    """ComfyUI 的 client 不带 base_url，目标是 self.base_url——同样钉真实构造。"""
+    from backend.ai.providers.comfyui import ComfyUIProvider
+
+    local = ComfyUIProvider(base_url="http://127.0.0.1:8188")
+    remote = ComfyUIProvider(base_url="https://comfyui.example.com:8188")
+    try:
+        assert local._client.trust_env is False
+        assert remote._client.trust_env is True
+    finally:
+        await local.aclose()
+        await remote.aclose()

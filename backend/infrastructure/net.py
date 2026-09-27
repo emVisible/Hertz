@@ -47,7 +47,11 @@ def system_proxies() -> dict[str, str]:
     macOS 的代理设置不在环境变量里，`urllib.request.getproxies()` 会去读
     SystemConfiguration；Reddit 采集、签名直链与 infra/hf 的失败诊断此前各写
     了一份这段逻辑，于是「谁走代理」这件事有三个作者（D-205 同类形状）。
-    探测失败一律按无代理处理——这是诊断辅助，不许反手把调用方崩掉。
+
+    依赖方不止诊断：collectors/reddit.py 与 reddit_media.py 拿导出的
+    `system_proxy()` 当 client 的 proxy 参数用，是真正的出网路径——所以这里
+    吞异常等于「探测失败就静默直连」，绝不许把调用方崩掉；infra/hf 的失败诊断
+    同理（探测失败不该盖住真实原因，它要的是全表）。
     """
     try:
         import urllib.request
