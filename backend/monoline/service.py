@@ -78,6 +78,7 @@ class MonolineService:
             script_text=script, config=config, canvas=canvas or {},
         )
         await self.freeze_brand_logo(job_id)
+        await self.apply_brand_bgm(job_id)
         return {"id": str(job_id)}
 
     async def freeze_brand_logo(self, job_id: UUID) -> str:
@@ -98,6 +99,34 @@ class MonolineService:
         rel = f"assets/{hashlib.sha1(data).hexdigest()[:16]}{src.suffix.lower()}"
         (ws.composition / rel).write_bytes(data)
         return rel
+
+    async def apply_brand_bgm(self, job_id: UUID) -> str:
+        """品牌默认 BGM（brand_dir/bgm.* 约定，无迁移）：拷入作业并落 config.bgm。
+
+        显式 config.bgm 优先（用户已传则不动）；无品牌曲则返回空。
+        """
+        import shutil
+
+        from .workspace import Workspace
+
+        job = await self.store.get_job(job_id)
+        if job is None:
+            return ""
+        config = dict(job.get("config") or {})
+        if config.get("bgm"):
+            return ""
+        candidates = sorted(self.brand_dir().glob("bgm.*"))
+        src = next((p for p in candidates if p.is_file()), None)
+        if src is None:
+            return ""
+        ws = Workspace(self.ws_root(job_id)).ensure()
+        for old in ws.comp_audio.glob("bgm.*"):
+            old.unlink(missing_ok=True)
+        shutil.copy(src, ws.comp_audio / f"bgm{src.suffix.lower()}")
+        config["bgm"] = {"src": f"audio/bgm{src.suffix.lower()}",
+                         "volume": 0.22, "duck": True}
+        await self.store.update_job(job_id, config=config)
+        return config["bgm"]["src"]
 
     async def get_job(self, job_id: UUID) -> dict | None:
         job = await self.store.get_job(job_id)

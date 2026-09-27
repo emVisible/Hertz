@@ -119,6 +119,7 @@ function BrandCard() {
         </div>
       </div>
       {brand.logo_name && <p className="mt-1 font-mono text-[11px] text-text-disabled">{brand.logo_name}</p>}
+      <BrandBgm />
       <div className="mt-2">
         <Button
           size="sm"
@@ -132,5 +133,53 @@ function BrandCard() {
         </Button>
       </div>
     </Card>
+  )
+}
+
+function BrandBgm() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const { data } = useQuery({ queryKey: ['monoline-brand-bgm'], queryFn: monolineApi.brandBgm })
+  return (
+    <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
+      <span className="text-xs text-text-secondary">
+        {t('monoline.brandBgm')}{data?.src ? ` · ${data.src}` : ''}
+      </span>
+      <span className="ml-auto flex gap-1">
+        <label className="flex h-7 cursor-pointer items-center px-3 text-xs text-text-secondary hover:bg-surface-2 hover:text-text-primary">
+          {t('monoline.bgmUpload')}
+          <input
+            type="file"
+            accept=".mp3,.wav,.m4a,.ogg,.flac"
+            className="hidden"
+            onChange={async (e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (!f) return
+              try {
+                await monolineApi.uploadBrandBgm(f)
+                queryClient.invalidateQueries({ queryKey: ['monoline-brand-bgm'] })
+                toast(t('monoline.bgmOk'), 'success')
+              } catch (err) {
+                toast(err instanceof Error ? err.message : String(err), 'error')
+              }
+            }}
+          />
+        </label>
+        {data?.src && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={async () => {
+              await monolineApi.removeBrandBgm()
+              queryClient.invalidateQueries({ queryKey: ['monoline-brand-bgm'] })
+            }}
+          >
+            {t('monoline.bgmRemove')}
+          </Button>
+        )}
+      </span>
+    </div>
   )
 }

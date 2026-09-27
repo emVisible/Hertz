@@ -70,9 +70,13 @@ def _entries(segs: list[dict], scenes: list[dict]) -> list[dict]:
 
 
 def _view(entries: list[dict]) -> dict:
+    from .llm_plan import WEAK_KINDS
+
+    weak = sum(1 for e in entries if e.get("kind") in WEAK_KINDS)
     return {"entries": entries, "beats": len(entries),
             "est_seconds": round(sum(e["seconds"] for e in entries), 1),
-            "sections": sorted({e["section"] for e in entries if e["section"]})}
+            "sections": sorted({e["section"] for e in entries if e["section"]}),
+            "weak_beats": weak}
 
 
 async def store_plan(store: MonolineStore, ws_root: Path, job_id: UUID,

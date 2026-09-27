@@ -44,6 +44,7 @@ export interface OutlineView {
   beats: number
   est_seconds: number
   sections: string[]
+  weak_beats: number
   pinned?: number
   imaged?: number
   version?: number
@@ -113,6 +114,17 @@ export const monolineApi = {
   getOutline: (id: string) => api.get<OutlineView>(`/api/monoline/jobs/${id}/outline`),
   applyOutline: (id: string, entries: Array<Record<string, unknown>>) =>
     api.patch<OutlineView>(`/api/monoline/jobs/${id}/outline`, { entries }),
+  upgradePlan: (id: string) =>
+    api.post<{
+      upgraded: number
+      declined: number
+      batches?: number
+      skipped_batches?: number
+      failed_batches?: number
+      model?: string
+      seconds?: number
+      plan_version?: number
+    }>(`/api/monoline/jobs/${id}/plan/upgrade`),
   run: (id: string, force = false) =>
     api.post<{ id: string; status: string }>(`/api/monoline/jobs/${id}/run${force ? '?force=1' : ''}`),
   cancel: (id: string) => api.post<{ cancelled: boolean }>(`/api/monoline/jobs/${id}/cancel`),
@@ -147,6 +159,9 @@ export const monolineApi = {
   removeLogo: (id: string) => api.delete<{ removed: boolean }>(`/api/monoline/jobs/${id}/logo`),
   patchSegment: (id: string, i: number, text: string) =>
     api.patch<{ version: number; beat_duration: number }>(`/api/monoline/jobs/${id}/segments/${i}`, { text }),
+  revoiceBeat: (id: string, i: number, voice: string) =>
+    api.patch<{ version: number; beat_duration: number; voice: string }>(
+      `/api/monoline/jobs/${id}/segments/${i}/voice`, { voice }),
   patchScene: (id: string, i: number, body: { kind?: string; slots?: Record<string, unknown> }) =>
     api.patch<{ version: number; ok: boolean }>(`/api/monoline/jobs/${id}/plan/scenes/${i}`, body),
   reorder: (id: string, order: number[]) =>
@@ -174,6 +189,13 @@ export const monolineApi = {
     }),
   getBrand: () => api.get<MonolineBrand>('/api/monoline/brand'),
   updateBrand: (body: Partial<MonolineBrand>) => api.patch<MonolineBrand>('/api/monoline/brand', body),
+  brandBgm: () => api.get<{ src: string | null }>('/api/monoline/brand/bgm'),
+  uploadBrandBgm: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.postForm<{ src: string; bytes: number }>('/api/monoline/brand/bgm', form)
+  },
+  removeBrandBgm: () => api.delete<{ removed: boolean }>('/api/monoline/brand/bgm'),
   uploadBrandLogo: (file: File) => {
     const form = new FormData()
     form.append('file', file)

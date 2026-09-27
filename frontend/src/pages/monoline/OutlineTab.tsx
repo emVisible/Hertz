@@ -85,10 +85,40 @@ export function OutlineTab({ jobId, onPickJob }: { jobId: string | null; onPickJ
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-2">
-      <div className="flex items-center gap-3 text-xs text-text-secondary">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-text-secondary">
         <span>{t('monoline.beats', { n: view.beats })}</span>
         <span>{t('monoline.estSeconds', { n: view.est_seconds })}</span>
         {view.sections.length > 0 && <span>{view.sections.join(' / ')}</span>}
+        {(view.weak_beats ?? 0) > 0 && (
+          <span className="flex items-center gap-2">
+            {t('monoline.weakBeats', { n: view.weak_beats })}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy || running}
+              onClick={async () => {
+                if (!jobId) return
+                setBusy(true)
+                try {
+                  const st = await monolineApi.upgradePlan(jobId)
+                  toast(t('monoline.upgraded', {
+                    up: st.upgraded ?? 0,
+                    kept: st.declined ?? 0,
+                  }), 'success')
+                  const v = await monolineApi.getOutline(jobId)
+                  setView(v)
+                  setRows(v.entries)
+                } catch (e) {
+                  toast(e instanceof Error ? e.message : String(e), 'error')
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              {t('monoline.upgradeAll')}
+            </Button>
+          </span>
+        )}
       </div>
       {rows.map((r, i) => (
         <Card key={i} className="flex flex-col gap-2">

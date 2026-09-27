@@ -114,3 +114,70 @@ async def test_suggest_unanswered_on_failure(tmp_path, monkeypatch) -> None:
     v = await suggest(FakeAI([], fail=True), "纯文字拍", _scenes(1)[0],
                       model="m", timeout_s=30)
     assert v["status"] == "unanswered" and v["error"]
+
+
+class _SuggestAI:
+    """suggest() 经 upgrade() 走 chat_messages；此处直接喂 verdict 载荷。"""
+
+    def __init__(self, payload: dict) -> None:
+        import json as _json
+
+        self.payload = _json.dumps(payload)
+        self.calls = 0
+
+    async def chat_messages(self, messages, **kw) -> str:
+        self.calls += 1
+        return self.payload
+
+
+async def test_breakout_upgrades_mid_of_long_run(tmp_path, monkeypatch) -> None:
+    from backend.monoline import runner as R
+
+    monkeypatch.setattr(R, "suggest", _fake_suggest_changed())
+    beats = [f"第{i}拍纯文字" for i in range(5)]
+    scenes = [{"i": i, "kind": "statement", "source": "rules", "slots": {}} for i in range(5)]
+    logged: list[str] = []
+
+    async def _log(msg: str, **kw) -> None:
+        logged.append(msg)
+
+    mid = await R._breakout_long_run(object(), beats, scenes, model="m", log=_log)
+    assert mid == 2
+    assert scenes[2]["kind"] == "quote" and scenes[2]["source"] == "llm:breakout"
+    assert any("破格" in m for m in logged)
+
+
+async def test_breakout_skips_short_run() -> None:
+    from backend.monoline import runner as R
+
+    beats = ["a", "b", "c"]
+    scenes = [{"i": i, "kind": "statement", "source": "rules", "slots": {}} for i in range(3)]
+    assert await R._breakout_long_run(object(), beats, scenes, model="m") is None
+
+
+def _fake_suggest_changed():
+    async def _suggest(ai, beat: str, scene: dict, *, model: str, **kw) -> dict:
+        return {"status": "changed", "kind": "quote", "slots": {"q": beat[:6]},
+                "model": model, "seconds": 1.0, "why": [], "error": "", "cached": False}
+
+    return _suggest
+
+
+def test_position_factor_shape() -> None:
+    from backend.monoline.runner import position_factor
+
+    assert position_factor(0, 1) == 1.0
+    assert position_factor(0, 5) == 0.95
+    assert position_factor(4, 5) == 0.97
+    assert position_factor(2, 5) == 1.02
+
+
+def test_append_silence_extends(tmp_path) -> None:
+    import numpy as np
+    import soundfile as sf
+
+    from backend.monoline.runner import append_silence
+
+    p = tmp_path / "x.wav"
+    sf.write(str(p), np.zeros(22050, dtype="float32"), 22050)
+    assert append_silence(p, 0.4) == 1.4

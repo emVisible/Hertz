@@ -47,8 +47,19 @@ def test_subtitles_srt_shape() -> None:
 
 def test_themes_available_and_resolve() -> None:
     ids = [t["id"] for t in themes.available()]
-    assert ids == ["mono-ink", "mono-noir", "mono-paper", "mono-slate"]
+    assert ids == ["ember", "lagoon", "mono-ink", "mono-noir", "mono-paper", "mono-slate"]
     assert themes.resolve({}).id == "mono-ink"
     assert themes.resolve({"theme": "no-such"}).id == "mono-ink"  # 回退默认
     accented = themes.resolve({"accent": "#FFFFFF"})
     assert accented.tokens["color"]["accent"] == "#FFFFFF"
+
+
+def test_density_changes_kinetic_grouping() -> None:
+    from backend.monoline.compose import _DENSITY_KINETIC
+    from backend.monoline.display_text import kinetic_chunks
+
+    text = "第一分句，第二分句；第三分句。第四分句！"
+    assert _DENSITY_KINETIC["intense"]["group"] < _DENSITY_KINETIC["subtle"]["group"]
+    calm = kinetic_chunks(text, **_DENSITY_KINETIC["subtle"])
+    dense = kinetic_chunks(text, **_DENSITY_KINETIC["intense"])
+    assert len(dense) >= len(calm)

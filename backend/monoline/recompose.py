@@ -17,7 +17,7 @@ from pathlib import Path
 from uuid import UUID
 
 from .hf import HF
-from .runner import VENDOR_DIR, _ffprobe_duration
+from .runner import VENDOR_DIR, _ffprobe_duration, position_factor
 from .store import MonolineStore
 from .workspace import Workspace
 
@@ -60,7 +60,8 @@ async def recompose(store: MonolineStore, ws_root: Path, job_id: UUID, *,
     vo_src = await ensure_voice_track(ws, config, timings.total)
     html = await asyncio.to_thread(
         render_composition, timings, plan, title=job.get("title") or "",
-        vo_src=vo_src, layout=config.get("layout", "minimal"))
+        vo_src=vo_src, layout=config.get("layout", "minimal"),
+        density=config.get("density") or "standard")
     ws.index_html.write_text(html, encoding="utf-8")
     await asyncio.to_thread(vendor_composition_assets, ws, VENDOR_DIR, html)
 
@@ -222,11 +223,21 @@ async def resynth_segment(store: MonolineStore, ws_root: Path, job_id: UUID, i: 
     dur = await _synth_beat(store, ws, job_id, i, new_text,
                             voice=config.get("voice") or "zf_xiaoxiao",
                             lang=config.get("lang") or "zh",
-                            speed=float(config.get("speed", 1.0)),
+                            speed=round(float(config.get("speed", 1.0))
+                                        * position_factor(i, len(segs)), 3),
                             tts_provider=tts_provider)
+    # R4：章节拍尾焊停顿（与 run_tts 同口径；plan 先读后写）
+    plan_row = await store.get_plan(job_id)
+    _scenes = (plan_row["plan_json"] or {}).get("scenes", []) if plan_row else []
+    if 0 <= i < len(_scenes) and _scenes[i].get("kind") == "section":
+        from .runner import _SECTION_PAUSE_S, append_silence
+
+        line_wav = ws.tts / f"seg_{i:03d}.wav"
+        dur = await asyncio.to_thread(append_silence, line_wav, _SECTION_PAUSE_S)
+        await store.update_segment(job_id, i, wav_bytes=line_wav.stat().st_size,
+                                   tts_duration=dur)
     total = await _reconcat(store, ws, job_id)
 
-    plan_row = await store.get_plan(job_id)
     ver = 0
     if plan_row:
         plan = dict(plan_row["plan_json"])

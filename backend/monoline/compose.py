@@ -125,9 +125,23 @@ def _env() -> Environment:
     return env
 
 
+_DENSITY_KINETIC = {
+    # 揭示粒度：subtle 疏（大组少reveals，镇定）、standard 出厂、intense 密（逐字感强）
+    "subtle": {"min_groups": 2, "group": 4},
+    "standard": {},
+    "intense": {"min_groups": 5, "group": 1},
+}
+
+
 def render_composition(timings: Timings, plan: ScenePlan, *, title: str = "", vo_src: str = "audio/narration.wav",
-                       layout: str = "minimal") -> str:
+                       layout: str = "minimal", density: str = "standard") -> str:
+    from .display_text import kinetic_chunks as _kinetic_mod
+
     env = _env()
+    _kinetic_params = _DENSITY_KINETIC.get(density, _DENSITY_KINETIC["standard"])
+    env.globals["kinetic_chunks"] = (
+        (lambda text: _kinetic_mod(text, **_kinetic_params)) if _kinetic_params else _kinetic_mod
+    )
     tmpl = env.get_template("base.html.j2")
     # Compose is where "no punctuation on screen" stops being a generation-time habit and
     # becomes a guarantee: a plan saved before V62b still holds the old text in its slots.

@@ -134,7 +134,7 @@ async def test_voice_sample_needs_weights(client) -> None:
 async def test_themes_voices_presets(client) -> None:
     r = await client.get("/api/monoline/themes")
     ids = [t["id"] for t in r.json()["themes"]]
-    assert ids == ["mono-ink", "mono-noir", "mono-paper", "mono-slate"]
+    assert ids == ["ember", "lagoon", "mono-ink", "mono-noir", "mono-paper", "mono-slate"]
     r = await client.get("/api/monoline/voices")
     assert r.json()["default"] == "zf_xiaoxiao" and len(r.json()["voices"]) == 25
     r = await client.post("/api/monoline/presets",
@@ -266,3 +266,44 @@ async def test_patch_scene_variant_and_icon(client, stub_tts) -> None:
     r = await client.patch(f"/api/monoline/jobs/{jid}/plan/scenes/0",
                            json={"slots": {"icon": "cpu"}})
     assert r.status_code == 200
+
+
+async def test_outline_weak_beats_and_upgrade_validation(client, stub_tts) -> None:
+    r = await client.post("/api/monoline/jobs", json={"script": SCRIPT})
+    jid = r.json()["id"]
+    view = (await client.post(f"/api/monoline/jobs/{jid}/outline")).json()
+    assert view["beats"] == 3 and view["weak_beats"] >= 1
+    # 无 LLM 时 502 中文（registry.ai 置空）
+    from backend.factory.registry import ServiceRegistry
+
+    old = ServiceRegistry.get().ai
+    ServiceRegistry.get().ai = None
+    try:
+        r = await client.post(f"/api/monoline/jobs/{jid}/plan/upgrade")
+        assert r.status_code == 502
+    finally:
+        ServiceRegistry.get().ai = old
+    r = await client.post("/api/monoline/jobs/00000000-0000-0000-0000-000000000000/plan/upgrade")
+    assert r.status_code == 404
+
+
+async def test_density_and_brand_bgm(client, stub_tts) -> None:
+    import io
+
+    jid = await _succeeded_job(client, stub_tts)
+    r = await client.patch(f"/api/monoline/jobs/{jid}/config", json={"density": "intense"})
+    assert r.status_code == 200
+    r = await client.post(
+        "/api/monoline/brand/bgm",
+        files={"file": ("bed.mp3", io.BytesIO(b"ID3" + b"\x00" * 50), "audio/mpeg")},
+    )
+    assert r.status_code == 200
+    r = await client.get("/api/monoline/brand/bgm")
+    assert r.json()["src"] == "bgm.mp3"
+    # 新作业自动挂载品牌 BGM
+    r = await client.post("/api/monoline/jobs", json={"script": SCRIPT})
+    jid2 = r.json()["id"]
+    job = (await client.get(f"/api/monoline/jobs/{jid2}")).json()
+    assert job["config"].get("bgm", {}).get("src") == "audio/bgm.mp3"
+    r = await client.delete("/api/monoline/brand/bgm")
+    assert r.json() == {"removed": True}

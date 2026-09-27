@@ -574,6 +574,39 @@ async def remove_brand_logo():
     return await svc.store.save_brand(logo_name="")
 
 
+@router.post("/brand/bgm")
+async def upload_brand_bgm(file: UploadFile = File(...)):  # noqa: B008
+    """品牌默认 BGM（存 brand_dir/bgm.*；新建作业自动挂载）。"""
+    svc = _svc()
+    suffix = Path(file.filename or "bgm").suffix.lower()
+    if suffix not in _ALLOWED_BGM:
+        raise HTTPException(status_code=422, detail=f"不支持的音频类型 {suffix!r}")
+    data = await file.read()
+    if not data or len(data) > _MAX_BGM:
+        raise HTTPException(status_code=422, detail="空文件或过大（>50MB）")
+    for old in svc.brand_dir().glob("bgm.*"):
+        old.unlink(missing_ok=True)
+    (svc.brand_dir() / f"bgm{suffix}").write_bytes(data)
+    return {"src": f"bgm{suffix}", "bytes": len(data)}
+
+
+@router.delete("/brand/bgm")
+async def remove_brand_bgm():
+    svc = _svc()
+    removed = False
+    for old in svc.brand_dir().glob("bgm.*"):
+        old.unlink(missing_ok=True)
+        removed = True
+    return {"removed": removed}
+
+
+@router.get("/brand/bgm")
+async def brand_bgm_status():
+    svc = _svc()
+    names = sorted(p.name for p in svc.brand_dir().glob("bgm.*") if p.is_file())
+    return {"src": names[0] if names else None}
+
+
 def _recompose_hf():
     """逐拍编辑的 HF：service 注入优先（测试 FakeHF），否则真实。"""
     svc = _svc()
@@ -727,7 +760,7 @@ async def patch_job_config(job_id: str, body: dict):
     job = await svc.get_job(jid)
     if job is None:
         raise HTTPException(status_code=404, detail="job 不存在")
-    allowed = {"theme", "accent", "brand", "layout", "speed", "format", "quality", "fps",
+    allowed = {"theme", "accent", "brand", "layout", "density", "speed", "format", "quality", "fps",
                "llm_plan", "llm_batch_beats", "llm_batch_chars", "llm_plan_seconds"}
     unknown = set(body) - allowed
     if unknown:
@@ -740,13 +773,56 @@ async def patch_job_config(job_id: str, body: dict):
     await svc.store.update_job(jid, config=config)
     from backend.monoline import recompose as recompose_mod
 
-    if keys & {"theme", "accent", "brand", "layout"}:
+    if keys & {"theme", "accent", "brand", "layout", "density"}:
         return await recompose_mod.retheme(svc.store, svc.ws_root(jid), jid, hf=_recompose_hf())
     if "speed" in body:
         voice = config.get("voice") or "zf_xiaoxiao"
         return await recompose_mod.revoice(svc.store, svc.ws_root(jid), jid, voice,
                                tts_provider=await svc.tts_provider(), hf=_recompose_hf())
     return {"updated": sorted(keys)}
+
+
+@router.post("/jobs/{job_id}/plan/upgrade")
+async def upgrade_weak_beats(job_id: str):
+    """弱拍一键问模型：规则分镜上只升格 statement 弱拍，结果落盘（source=llm）。"""
+    from backend.monoline import llm_plan
+    from backend.monoline.planner import apply_icons, number_sections
+
+    svc = _svc()
+    jid = _uuid(job_id)
+    job = await svc.get_job(jid)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job 不存在")
+    segs = await svc.store.get_segments(jid)
+    if not segs:
+        raise HTTPException(status_code=409, detail="尚无节拍，先审大纲")
+    plan_row = await svc.store.get_plan(jid)
+    if plan_row is None:
+        raise HTTPException(status_code=409, detail="尚无分镜，先审大纲")
+    ai, model = await svc.llm_target()
+    if ai is None:
+        raise HTTPException(status_code=502, detail="LLM 未配置（规则分镜不受影响）")
+    beats = [s["text"] for s in segs]
+    scenes = [dict(s) for s in (plan_row["plan_json"] or {}).get("scenes", [])]
+    if len(scenes) != len(beats):
+        raise HTTPException(status_code=409, detail="分镜与节拍数量不一致，先重审大纲")
+    config = job.get("config") or {}
+    try:
+        scenes, stats = await llm_plan.upgrade(
+            ai, beats, scenes, model=model,
+            batch_beats=int(config.get("llm_batch_beats") or 3),
+            batch_chars=int(config.get("llm_batch_chars") or 900),
+            budget_seconds=float(config.get("llm_plan_seconds") or 150))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"升级失败：{exc}") from exc
+    if stats.get("upgraded"):
+        apply_icons(scenes, beats)
+        number_sections(scenes)
+        full = dict(plan_row["plan_json"] or {})
+        full["scenes"] = scenes
+        ver = await svc.store.save_plan(jid, full, "llm", [])
+        stats["plan_version"] = ver
+    return stats
 
 
 @router.post("/jobs/{job_id}/plan/scenes/{i}/suggest")
@@ -792,7 +868,10 @@ async def generate_script(body: dict):
     if ai is None:
         raise HTTPException(status_code=502, detail="LLM 未配置，无法写稿（可手工粘贴文稿）")
     system = ("你是短视频解说稿作者。输出可直接念的口播文稿：短句为主，每句一行，"
-              "不要标题符号/列表符/markdown 修饰，不要寒暄和结语解释，只要正文。")
+              "不要标题符号/列表符/markdown 修饰，不要寒暄和结语解释，只要正文。"
+              "可画性要求（分镜能直接配图）：全篇至少包含一处数字锚点（如年份/数量/比例）、"
+              "一处两两对照（如 A 与 B）、一处三步以上的做法或流程、一处时间先后线；"
+              "数字与对照要写进句子里，不要单列成表。")
     hint = {"short": "约200字", "medium": "约500字", "long": "约1000字"}.get(length, "约500字")
     try:
         from backend.ai.types import ChatMessage

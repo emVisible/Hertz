@@ -15,6 +15,9 @@ export function NewTab({ onCreated }: { onCreated: (id: string) => void }) {
   const [theme, setTheme] = useState('')
   const [speed, setSpeed] = useState('1.0')
   const [brand, setBrand] = useState('Monoline')
+  const [layout, setLayout] = useState('minimal')
+  const [density, setDensity] = useState('standard')
+  const [llmPlan, setLlmPlan] = useState(false)
   const [busy, setBusy] = useState(false)
   const [topic, setTopic] = useState('')
   const [tone, setTone] = useState('neutral')
@@ -39,6 +42,9 @@ export function NewTab({ onCreated }: { onCreated: (id: string) => void }) {
         theme: theme || undefined,
         speed: Number(speed) || 1.0,
         brand: brand || undefined,
+        layout,
+        density,
+        llm_plan: llmPlan,
       })
       await monolineApi.buildOutline(created.id)
       onCreated(created.id)
@@ -140,7 +146,31 @@ export function NewTab({ onCreated }: { onCreated: (id: string) => void }) {
           />
           <Input label={t('monoline.speed')} value={speed} onChange={(e) => setSpeed(e.target.value)} placeholder="1.0" />
           <Input label={t('monoline.brand')} value={brand} onChange={(e) => setBrand(e.target.value)} />
+          <Select
+            label={t('monoline.layout')}
+            value={layout}
+            onChange={(e) => setLayout(e.target.value)}
+            options={[
+              { value: 'minimal', label: t('monoline.layoutMinimal') },
+              { value: 'editorial', label: t('monoline.layoutEditorial') },
+              { value: 'bold', label: t('monoline.layoutBold') },
+            ]}
+          />
+          <Select
+            label={t('monoline.density')}
+            value={density}
+            onChange={(e) => setDensity(e.target.value)}
+            options={[
+              { value: 'subtle', label: t('monoline.densitySubtle') },
+              { value: 'standard', label: t('monoline.densityStandard') },
+              { value: 'intense', label: t('monoline.densityIntense') },
+            ]}
+          />
         </div>
+        <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
+          <input type="checkbox" checked={llmPlan} onChange={(e) => setLlmPlan(e.target.checked)} />
+          {t('monoline.llmPlan')}
+        </label>
         {voice && (
           <div className="mt-2">
             <div className="mb-1 text-xs text-text-secondary">{t('monoline.audition')}</div>

@@ -17,6 +17,25 @@ import { MODES, VARIANTS } from './modes'
 
 const KIND_OPTIONS = Object.keys(MODES)
 
+function VoiceMiniSelect({ onVoice }: { onVoice: (voice: string) => void }) {
+  const { t } = useTranslation()
+  const { data } = useQuery({ queryKey: ['monoline-voices'], queryFn: monolineApi.voices })
+  return (
+    <Select
+      value=""
+      onChange={(e) => {
+        if (e.target.value) onVoice(e.target.value)
+        e.target.value = ''
+      }}
+      options={[
+        { value: '', label: t('monoline.beatVoice') },
+        ...(data?.voices ?? []).map((v) => ({ value: v.id, label: v.label })),
+      ]}
+      className="w-28"
+    />
+  )
+}
+
 type Row = OutlineEntry & { uid: number; old: number }
 
 function SortableBeatRow({
@@ -27,6 +46,7 @@ function SortableBeatRow({
   onText,
   onResynth,
   onKind,
+  onVoice,
   onVariant,
   onIcon,
   onSlots,
@@ -43,6 +63,7 @@ function SortableBeatRow({
   onResynth: () => void
   onKind: (kind: string) => void
   onVariant: (variant: string) => void
+  onVoice: (voice: string) => void
   onIcon: () => void
   onSlots: (slots: string) => void
   onMergeUp: () => void
@@ -79,6 +100,7 @@ function SortableBeatRow({
           options={KIND_OPTIONS.map((k) => ({ value: k, label: `${MODES[k].zh} · ${k}` }))}
           className="w-40"
         />
+        <VoiceMiniSelect onVoice={onVoice} />
         <Select
           value={String(slots.variant ?? '')}
           onChange={(e) => onVariant(e.target.value)}
@@ -369,6 +391,7 @@ export function BeatsEditor({ jobId, onChanged }: { jobId: string; onChanged: ()
                 onText={(text) => setRows((rs) => rs.map((x) => (x.uid === r.uid ? { ...x, text } : x)))}
                 onResynth={() => run(`text-${r.uid}`, () => monolineApi.patchSegment(jobId, r.old, r.text), t('monoline.resynthed'))}
                 onKind={(kind) => run(`kind-${r.uid}`, () => monolineApi.patchScene(jobId, r.old, { kind }))}
+                onVoice={(voice) => run(`voice-${r.uid}`, () => monolineApi.revoiceBeat(jobId, r.old, voice), t('monoline.revoiced'))}
                 onVariant={(variant) =>
                   run(`variant-${r.uid}`, () =>
                     monolineApi.patchScene(jobId, r.old, { slots: { variant: variant || null } }))}

@@ -1528,6 +1528,20 @@
     "pickIcon": "Pick icon",
     "iconSearch": "Search icons…",
     "bgmVolume": "Volume",
-    "bgmDuck": "Duck under VO"
+    "bgmDuck": "Duck under VO",
+    "llmPlan": "Upgrade weak beats with model at run (slow, ~150s budget)",
+    "weakBeats": "{n} plain beats, ask model",
+    "upgradeAll": "Ask all",
+    "upgraded": "Upgraded {up}, kept {kept}",
+    "layout": "Layout",
+    "layoutMinimal": "Minimal",
+    "layoutEditorial": "Editorial",
+    "layoutBold": "Bold",
+    "density": "Motion density",
+    "densitySubtle": "Subtle",
+    "densityStandard": "Standard",
+    "densityIntense": "Intense",
+    "brandBgm": "Default BGM (auto-attached to new jobs)",
+    "beatVoice": "Voice…"
   }
 }

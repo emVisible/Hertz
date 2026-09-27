@@ -1528,6 +1528,20 @@
     "pickIcon": "选图标",
     "iconSearch": "搜图标名…",
     "bgmVolume": "音量",
-    "bgmDuck": "旁白时压低"
+    "bgmDuck": "旁白时压低",
+    "llmPlan": "运行时用模型升格弱拍（慢，约150秒预算）",
+    "weakBeats": "{n} 拍纯文字，可问模型",
+    "upgradeAll": "全部问模型",
+    "upgraded": "升格 {up} 拍，保持 {kept} 拍",
+    "layout": "版式",
+    "layoutMinimal": "极简",
+    "layoutEditorial": "杂志",
+    "layoutBold": "浓烈",
+    "density": "动效密度",
+    "densitySubtle": "克制",
+    "densityStandard": "标准",
+    "densityIntense": "浓烈",
+    "brandBgm": "默认 BGM（新作业自动挂载）",
+    "beatVoice": "换音色…"
   }
 }

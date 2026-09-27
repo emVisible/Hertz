@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+from . import llm_plan as _llm_plan
+from .display_text import tidy_slots as _tidy_slots
 from .hf import HF, _lint_summary
 from .store import MonolineStore
 from .timings import Timings
@@ -56,11 +58,47 @@ async def _check_cancel(store: MonolineStore, job_id: UUID, cancel: asyncio.Even
         raise JobCancelledError(key)
 
 
+# R4 音频生命力：位置能量曲线（开场/收束稍慢、中间稍快）+ 章节拍后停顿。
+# 位置系数叠在用户语速上；章节停顿直接焊进该拍 wav 尾（0.4s 静音）。
+_POS_FACTOR_FIRST = 0.95
+_POS_FACTOR_LAST = 0.97
+_POS_FACTOR_MID = 1.02
+_SECTION_PAUSE_S = 0.4
+
+
+def position_factor(i: int, n: int) -> float:
+    """拍位置 → 语速系数。单拍恒 1.0（无从谈起伏）。"""
+    if n <= 1:
+        return 1.0
+    if i == 0:
+        return _POS_FACTOR_FIRST
+    if i == n - 1:
+        return _POS_FACTOR_LAST
+    return _POS_FACTOR_MID
+
+
+def append_silence(wav: Path, seconds: float) -> float:
+    """wav 尾追加静音，返回新时长（读→拼→写回，原位覆盖）。"""
+    import numpy as np
+    import soundfile as sf
+
+    audio, sr = sf.read(str(wav), dtype="float32", always_2d=True)
+    pad = np.zeros((int(seconds * sr), audio.shape[1]), dtype=np.float32)
+    out = np.concatenate([audio, pad], axis=0)
+    sf.write(str(wav), out, sr)
+    return round(len(out) / sr, 3)
+
+
 async def run_tts(store: MonolineStore, ws_root: Path, job_id: UUID, *,
                   voice: str, lang: str, speed: float,
                   tts_provider, cancel: asyncio.Event | None = None,
                   emit=None) -> dict:
-    """逐拍合成；文本/音色/语速不变复用已有 wav（与上游 s_tts 同语义）。"""
+    """逐拍合成；文本/音色/语速不变复用已有 wav（与上游 s_tts 同语义）。
+
+    R4：每拍实际语速 = 用户语速 × 位置系数；章节拍 wav 尾焊 0.4s 停顿。
+    kinds 经纯规则 storyboard 就地推导（毫秒级，无需等 plan 阶段）。
+    """
+    from .outline import storyboard
 
     ws = Workspace(ws_root).ensure()
     job = await store.get_job(job_id)
@@ -68,7 +106,11 @@ async def run_tts(store: MonolineStore, ws_root: Path, job_id: UUID, *,
         raise KeyError(str(job_id))
     segs = await store.get_segments(job_id)
     script = job.get("script_text") or ""
-    ihash = _h(script, voice, lang, speed, TTS_INPUT_VERSION)
+    config = job.get("config") or {}
+    kinds = [sc.get("kind", "") for sc in storyboard(
+        [s["text"] for s in segs], script=script, brand=config.get("brand", "Monoline"))]
+    kinds_hash = _h(json.dumps(kinds, ensure_ascii=False))
+    ihash = _h(script, voice, lang, speed, TTS_INPUT_VERSION, kinds_hash)
 
     prior = await store.get_stage(job_id, "tts")
     n = len(segs)
@@ -105,16 +147,22 @@ async def run_tts(store: MonolineStore, ws_root: Path, job_id: UUID, *,
                 await emit("tts", {"stage": "tts", "status": "running",
                                    "message": f"合成第 {s['i']+1}/{len(segs)} 拍",
                                    "beat": s["i"], "of": len(segs)})
-            wav_bytes = await tts_provider.synthesize(s["text"], voice, f"+{(speed-1)*100:.0f}%"
-                                                      if speed != 1.0 else "+0%")
+            # R4：位置系数叠入语速（首 0.95 / 尾 0.97 / 中 1.02）
+            eff_speed = round(speed * position_factor(s["i"], len(segs)), 3)
+            wav_bytes = await tts_provider.synthesize(
+                s["text"], voice,
+                f"+{(eff_speed - 1) * 100:.0f}%" if eff_speed != 1.0 else "+0%")
             wav.write_bytes(wav_bytes)
             dur = float(s.get("tts_duration") or 0.0)
             if not dur:
                 # provider 给字节时按 ffprobe 实测（与上游 payload.durationSeconds 回退一致）
                 dur = await _ffprobe_duration(wav)
+            # R4：章节拍尾焊 0.4s 停顿（剪辑感；kinds 与 ihash 同源，变则重合成）
+            if s["i"] < len(kinds) and kinds[s["i"]] == "section":
+                dur = await asyncio.to_thread(append_silence, wav, _SECTION_PAUSE_S)
             durs.append(dur)
             await store.update_segment(job_id, s["i"], wav_path=str(wav),
-                                       wav_bytes=len(wav_bytes), tts_duration=dur,
+                                       wav_bytes=wav.stat().st_size, tts_duration=dur,
                                        voice=voice, lang=lang, speed=speed)
         out = {"beats": len(durs), "audio_seconds": round(sum(durs), 3), "reused": reused}
         await store.upsert_stage(job_id, "tts", 1, status="succeeded",
@@ -336,7 +384,8 @@ async def run_compose(store: MonolineStore, ws_root: Path, job_id: UUID, *,
     av = _h(job.get("script_text") or "", (segs[0].get("voice") if segs else ""),
             (segs[0].get("lang") if segs else ""), (segs[0].get("speed") if segs else ""))
     bg = json.dumps(config.get("bgm"), sort_keys=True) if config.get("bgm") else ""
-    ihash = _h(plan_json_str, av, bg)
+    density = config.get("density") or "standard"
+    ihash = _h(plan_json_str, av, bg, density)
 
     prior = await store.get_stage(job_id, "compose")
     if (prior and prior["status"] == "succeeded" and prior.get("input_hash") == ihash
@@ -349,7 +398,8 @@ async def run_compose(store: MonolineStore, ws_root: Path, job_id: UUID, *,
         vo_src = await ensure_voice_track(ws, config, timings.total)
         html = await asyncio.to_thread(
             render_composition, timings, plan, title=job.get("title") or "",
-            vo_src=vo_src, layout=config.get("layout", "minimal"))
+            vo_src=vo_src, layout=config.get("layout", "minimal"),
+            density=config.get("density") or "standard")
         ws.index_html.write_text(html, encoding="utf-8")
         await asyncio.to_thread(vendor_composition_assets, ws, VENDOR_DIR, html)
         await asyncio.to_thread(_write_hf_project, ws.composition, job_id,
@@ -515,6 +565,49 @@ def _slug(text: str, n: int = 24) -> str:
     return s[:n] or "untitled"
 
 
+# R5 破格位阈值：statement 连播达到此长度，强制升级其中一拍。
+BREAKOUT_RUN_LENGTH = 4
+
+
+async def _breakout_long_run(ai, beats: list[str], scenes: list[dict], *, model: str,
+                             log=None) -> int | None:
+    """最长 statement 连播段（≥阈值）取中点强制问模型，成功返回拍号，否则 None。
+
+    每轮最多一次（预算封顶）；走 suggest() 故拍级缓存命中时零成本；
+    落盘用 _clean_slots + tidy_slots 全套守卫，与 upgrade() 同口径。
+    """
+    from .display_text import tidy_slots
+    from .llm_plan import _clean_slots, suggest
+
+    best: list[int] = []
+    cur: list[int] = []
+    for i, sc in enumerate(scenes):
+        if sc.get("kind") == "statement":
+            cur.append(i)
+        else:
+            if len(cur) > len(best):
+                best = cur
+            cur = []
+    if len(cur) > len(best):
+        best = cur
+    if len(best) < BREAKOUT_RUN_LENGTH:
+        return None
+    mid = best[len(best) // 2]
+    verdict = await suggest(ai, beats[mid], scenes[mid], model=model)
+    if verdict.get("status") != "changed":
+        return None
+    slots, why = _clean_slots(verdict.get("kind"), verdict.get("slots"), beats[mid])
+    if slots is None:
+        if log is not None:
+            await log(f"破格第 {mid + 1} 拍被守卫拦下：{why}", level="warn")
+        return None
+    scenes[mid] = {"i": mid, "kind": verdict["kind"], "source": "llm:breakout",
+                   "slots": tidy_slots(verdict["kind"], slots)}
+    if log is not None:
+        await log(f"破格：第 {mid + 1} 拍 statement 连播，强制换形→{verdict['kind']}")
+    return mid
+
+
 async def run_text(store: MonolineStore, ws_root: Path, job_id: UUID, *,
                    force: bool = False, llm_upgrade: bool = False, ai=None,
                    model: str = "default", batch_beats: int = 3, batch_chars: int = 900,
@@ -636,6 +729,19 @@ async def run_text(store: MonolineStore, ws_root: Path, job_id: UUID, *,
                 await store.add_event(job_id, "log", stage_key="plan", level="warn",
                                       message=f"LLM 升格失败走规则：{e}")
                 source = "rules"
+        # R5 破格位：statement 连播 ≥4 时强制升级其中一拍（可控的意外）。
+        # 仅一次、仅 llm_upgrade 开启时；suggest 自带拍级缓存，重复跑不重复付费。
+        if llm_upgrade and ai is not None:
+            try:
+                broke = await _breakout_long_run(
+                    ai, beats, scenes, model=model,
+                    emit=lambda msg, **kw: store.add_event(
+                        job_id, "log", stage_key="plan", **kw, message=msg))
+                if broke is not None:
+                    source = "llm"
+            except Exception as e:  # noqa: BLE001 — 破格失败静默，规则保底
+                await store.add_event(job_id, "log", stage_key="plan", level="warn",
+                                      message=f"破格位跳过：{e}")
         if source != "llm" and keep_richer_plan(prior, source, forced=force):
             await store.add_event(
                 job_id, "log", stage_key="plan", level="warn",
