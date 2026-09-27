@@ -403,7 +403,10 @@ class StepEngine:
         async with session_factory() as session:
             result = await session.execute(
                 select(Item)
-                .where(Item.status.in_(effective))
+                # 空壳条目（v0.33）不进步骤：它们没有可下载的媒体，跑一轮只会
+                # 换来一次 403 + 一次整域冷却（同域真视频跟着被冻）。列表/计数排除
+                # 它们只解决「看得见」，这里解决「白跑」——两件事不是一个作者。
+                .where(Item.status.in_(effective), Item.is_invalid.is_(False))
                 # v0.26 制作优先级：priority 高者先取（默认 0 存量等价），同级按入库时间
                 .order_by(Item.priority.desc(), Item.created_at.asc())
                 .limit(limit)

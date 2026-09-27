@@ -64,7 +64,7 @@ class ProduceStep(Pipe):
         if not script.get(sk.BILI_TID):
             from backend.pipeline.category import assign_bili_tid
 
-            script[sk.BILI_TID] = assign_bili_tid(item.subreddit, item.item_type or "video_raw")
+            script[sk.BILI_TID] = assign_bili_tid(item.subreddit, item.item_type)
 
         return ProcessResult(
             status="queued",

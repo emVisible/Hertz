@@ -165,6 +165,8 @@ class Settings(BaseSettings):
     # whisper 本地模型档位（v0.32 S4）。base≈141MB(int8 CPU)，
     # tiny 中文实测不可用（D-200），故默认钉 base 且不把 tiny 摆在首选。
     pipeline_whisper_model: str = "base"
+    # 数据体检间隔（v0.33 分钟）：默认 12 小时；0 = 关闭常驻巡检（手动端点仍可用）
+    pipeline_integrity_minutes: int = 720
 
     # ASR 原声转写（v0.8.9 起，v0.10 语义：字幕/翻译的数据源 = 视频原声）：
     # 字幕生产方式 = 原声转写字幕（原声语言）；翻译生产方式 = 原声转写 →

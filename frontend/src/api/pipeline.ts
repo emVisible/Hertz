@@ -2,6 +2,9 @@
 
 import { api, API_BASE } from './client'
 
+/** 空壳池一次取多少条（异常区标题靠它判断数字是不是被截断） */
+export const INVALID_POOL_LIMIT = 200
+
 export type ItemStatus =
   | 'discovered'
   | 'scored'
@@ -65,6 +68,8 @@ export interface PipelineItem {
   priority?: number
   /** 软归档（wave10）：备用库标记——异常区删除入口 */
   archived?: boolean
+  /** 空壳隔离（v0.33）：无媒体且无正文 → 不在流水线计数里，只出现在异常区 */
+  is_invalid?: boolean
 }
 
 /** 发布队列相位（v0.12）：与后端 publish_queue 常量一致 */
@@ -255,6 +260,10 @@ export const pipelineApi = {
   /** 备用库（wave10）：archived 条目列表 */
   archivedItems: (limit = 200) =>
     api.get<PipelineItem[]>(`/api/pipeline/items/archived?limit=${limit}`),
+  /** 空壳池（v0.33）：is_invalid 条目 + 隔离原因（error 文本）。
+   *  上限只在一处定义：池子标题要靠它判断数字是不是被截断的。 */
+  invalidItems: (limit = INVALID_POOL_LIMIT) =>
+    api.get<PipelineItem[]>(`/api/pipeline/items/invalid?limit=${limit}`),
   /** 批量归档（wave10）：磁盘清理 + 字段清洗 + 标记 archived */
   archive: (ids: string[]) =>
     api.post<{ ok: number; failed: Array<{ id: string; error: string }> }>(

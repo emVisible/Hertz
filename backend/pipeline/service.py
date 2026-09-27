@@ -130,6 +130,8 @@ class PipelineService(
             "score_dimensions": item.score_dimensions,
             "score_reasons": item.score_reasons or [],
             "is_lowscore": item.is_lowscore,
+            # 空壳隔离（v0.33）：异常区专属池的判据，前端据此不再把它当可操作数据
+            "is_invalid": item.is_invalid,
             "produce_options": item.produce_options,
             # 制作优先级（v0.26）：批量队列拖拽排序落库
             "priority": item.priority,

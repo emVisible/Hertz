@@ -92,6 +92,12 @@ export function usePipelineData() {
     queryFn: () => pipelineApi.archivedItems(200),
     refetchInterval: pollingInterval,
   })
+  // 空壳池（v0.33）：无媒体且无正文的条目已被隔离，只在异常区出现
+  const { data: invalidItems = [] } = useQuery({
+    queryKey: ['pipeline-invalid'],
+    queryFn: () => pipelineApi.invalidItems(),
+    refetchInterval: pollingInterval,
+  })
 
   const store = useExecutionStore()
   const { tab, limit, collectProgress, busy } = store.pipeline
@@ -125,6 +131,7 @@ export function usePipelineData() {
     collectStatus,
     collectProgress,
     archivedItems,
+    invalidItems,
     setPipeline,
   }
 }

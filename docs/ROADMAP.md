@@ -35,7 +35,8 @@
 
 - **v0.31 尾巴**：B1/B3 引擎入包 ✅（D-200）；B4/B5「模型搬家 + 一键下载」✅ 已并入 v0.32 S4（D-203）。**仍未做**：141MB 全量冷启动首下的成功实测——本机代理 egress 两次中断，只拿到 30MB/141MB 进度与完整失败路径证据；判据已沉淀为 `scripts/sim-newmachine.sh --with-download`（断言模型落进应用目录且 `~/.cache/huggingface` 一个字节不长）
 - **v0.32 质量片 S1–S6 ✅**（D-201…D-204）：alembic 删表闸 / 工坊中文输出繁体纠偏 / schema 漂移清偿 / 文档卫生 / 产物级发布门禁 / 本地模型单一真相源，外加清偿一条 **v0.20 起设置页只演出不落盘**的回归（D-204：`save()` 提交的是空 `overrides`，改动全在内存里，页面却 toast「已保存」）。S7 前端拆壳按定档不在本版。**发布动作未执行**：先 `./scripts/release-check.sh` 通过，再谈版本号五处对齐与 tag（push / 打 tag 需单独授权）
-- 当前门禁水位：pytest 422 + vitest 47（11 文件）+ tsc + vite build 全绿，pytest 告警 6 条（v0.32 起 8→6，余下均在依赖的生成代码里，仓库侧已核为零）
+- **v0.33 空壳条目治理（D-205，本轮唯一新增工作面）**：起因是用户报「下载一直 403」。实测根因不是 CDN，而是采集器兜底「不确定就算 video_raw」把 **2011 条 `media_url == source_url`（帖子页当媒体）** 的空壳放进了可操作队列，其中 1989 条连正文都没有；点一次下载就是抓被 Reddit 反爬拦截的页面（实测同机页面 403 / `v.redd.it` 直链 200），403 还会把整域冻进冷却，连带 2089 条真视频停摆。交付：`pipeline/quality.py` 作判据唯一作者（含状态范围：终态一律不动）+ 新增布尔 `is_invalid`（wave30）+ `counts()` 与列表共用 `operational_filters()` + 异常区「空壳」池 + `engine._pending` 不再白跑 + 常驻数据体检 `integrity`（六条不变量，只报不改）+ `scripts/quarantine-shell-items.py`（干跑/`--apply`/`--restore`）。dev 库实测：**discovered 4703→2666、failed 181→27、queued 5→0，rejected 371 / published 18 一条未动**。附带修掉「回环地址被系统代理吃掉」（`infrastructure/net.client_kwargs`）。**发布动作未执行**
+- 当前门禁水位（v0.33 空壳片落地后）：pytest **495 passed / 1 failed** + vitest **50（12 文件）** + tsc 全绿；`verify.sh` 目前整体**红在第一阶段**，红点是并发 monoline 工作流的在飞改动（`backend/monoline/runner.py` 2×F401、`tests/test_monoline_llm.py` 2×N812、以及它那个 `runner.suggest` 缺失的测试），**不是本片引入**，本片范围内 `ruff check` 干净。pytest 告警 6 条（v0.32 起 8→6，余下均在依赖的生成代码里，仓库侧已核为零）
 
 ## v0.30 战略方向
 

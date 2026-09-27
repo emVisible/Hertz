@@ -174,13 +174,20 @@ async def ensure_reddit_token() -> str | None:
 def classify_media(url: str, is_video: bool, extra: dict) -> str:
     """Route a post to the right production pipeline.
 
-    video_raw: direct video file / v.redd.it clip (default when unsure)
+    video_raw: direct video file / v.redd.it clip
     image_gallery: one or more still images
     text_only: self post without media
+    no_media: url 只是帖子页（Reddit 页面域）——**不是**内容类型，而是「媒体缺失」，
+        由 `steps/collect.py` 按 `quality.shell_reason` 决定走文字产线还是隔离入库
 
     v0.8.8 修复：reddit.com/gallery/{id} 多图帖此前落入 fallback 被标成
     video_raw（JSON 通道 url 字段为 gallery 页链接）——显式识别为图片。
+    v0.33 修复：兜底不再猜 video_raw。实测 2011 条 `media_url == source_url`
+    （文字/求助帖的 url 就是 permalink）被那行 `return "video_raw"` 一路推成视频，
+    下载必然抓被反爬拦截的帖子页 → 403 → 冻整域。**不确定就说不确定。**
     """
+    from backend.pipeline.quality import is_reddit_page_url
+
     if is_video or "v.redd.it" in url or "/video" in url:
         return "video_raw"
     lowered = url.lower()
@@ -190,6 +197,8 @@ def classify_media(url: str, is_video: bool, extra: dict) -> str:
         return "image_gallery"
     if not url:
         return "text_only"
+    if is_reddit_page_url(url):
+        return "no_media"
     return "video_raw"
 
 
@@ -363,7 +372,9 @@ class RedditCollector(SourceCollector):
         media = _MEDIA_RE.search(content)
         media_url = media.group(0).rstrip("/") if media else ""
         kind = classify_media(media_url, "v.redd.it" in media_url, {})
-        if kind == "text_only":
+        # RSS 通道拿不到 selftext，所以「没媒体」在这里就是真没内容：按原语义丢弃
+        # （与 JSON 通道不同——那条有正文可查，空壳要留着进异常区）
+        if kind in ("text_only", "no_media"):
             return None
         created_utc = time.time()
         return RawPost(
@@ -386,11 +397,17 @@ class RedditCollector(SourceCollector):
             return None
         url = str(data.get("url") or "")
         kind = classify_media(url, bool(data.get("is_video")), data)
-        # v0.11.7 情感故事产线：text_only 帖不再丢弃——保留 selftext（≥50 字
-        # 才算有效故事帖，不足则跳过避免产出弱内容）；下载/制作走文字分支
-        if kind == "text_only":
+        # v0.11.7 情感故事产线：text_only 帖不再丢弃——保留 selftext（≥门槛 才算
+        # 有效故事帖，不足则跳过避免产出弱内容）；下载/制作走文字分支。
+        # v0.33 no_media（url 只是帖子页）走同一入口，但方向相反：**留着**且把
+        # media_url 置空——空壳由 collect 按 quality.shell_reason 打隔离标，
+        # 异常区因此能看到它、source_id 也继续参与去重（丢弃等于两者皆失）。
+        if kind in ("text_only", "no_media"):
+            from backend.pipeline import quality
+
             selftext = str(data.get("selftext") or "").strip()
-            if len(selftext) < 50:
+            is_story = len(selftext) >= quality.MIN_STORY_CHARS
+            if kind == "text_only" and not is_story:
                 return None
             return RawPost(
                 source_id=str(data.get("id") or ""),
@@ -403,7 +420,7 @@ class RedditCollector(SourceCollector):
                 num_comments=int(data.get("num_comments") or 0),
                 created_utc=float(data.get("created_utc") or time.time()),
                 is_video=False,
-                item_type="text_only",
+                item_type="text_only" if is_story else "",
                 selftext=selftext,
             )
         media_url = url

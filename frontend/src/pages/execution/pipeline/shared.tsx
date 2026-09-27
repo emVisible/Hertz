@@ -45,6 +45,8 @@ export interface PipelineViewProps {
   setProduceOptions: (items: PipelineItem[], options: Record<string, boolean>) => Promise<void>
   /** 备用库（wave10）：归档条目 + 归档/恢复/彻底删除 */
   archivedItems: ReturnType<typeof usePipelineExecution>['archivedItems']
+  /** 空壳池（v0.33）：被隔离的无媒体无正文条目（含隔离原因 error 文本） */
+  invalidItems: PipelineItem[]
   archiveItems: (items: PipelineItem[]) => Promise<void>
   unarchiveItems: (items: PipelineItem[]) => Promise<void>
   purgeItems: (items: PipelineItem[]) => Promise<void>

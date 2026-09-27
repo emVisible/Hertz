@@ -96,6 +96,13 @@ class DownloadStep(Pipe):
             trip_cdn_circuit,
         )
 
+        # 空壳隔离（v0.33）：批量路径已由 `engine._pending` 挡掉，这里挡的是
+        # 手动单条下载与旁路批量（skip_score）——它们不经过 _pending。判据只有一个
+        # 作者（quality.shell_reason → items.is_invalid），步骤只消费结论。
+        if getattr(item, "is_invalid", False):
+            ctx.log(f"[download] 条目无可用媒体（已隔离），跳过：{item.title[:40]}")
+            return ProcessResult(status="discovered", skip=True)
+
         # v0.11.7 情感故事产线：文字帖无媒体——分配产物目录后直接进入
         # downloaded（produce 走文字分支：脚本 → TTS → 图文合成）
         if (item.item_type or "") == "text_only":

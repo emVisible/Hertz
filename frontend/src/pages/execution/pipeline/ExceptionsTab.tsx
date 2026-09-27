@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { Dispatch, SetStateAction } from 'react'
 
-import type { PipelineItem } from '../../../api'
+import { INVALID_POOL_LIMIT, type PipelineItem } from '../../../api'
 import { Badge, Button, Icon, QueryErrorState } from '../../../components/ui'
 import {
   PIPELINE_ITEM_TONE,
@@ -16,8 +16,8 @@ import {
 import type { useBatchSelect } from '../../../hooks/useBatchSelect'
 import type { PipelineViewProps } from './shared'
 
-// 异常区次级 tab（wave10）：低分池｜异常｜归档清理｜备用库
-export const EX_SUB_TABS = ['lowscore', 'exceptions', 'archive', 'backup'] as const
+// 异常区次级 tab（wave10，v0.33 加空壳池）：低分池｜异常｜空壳｜归档清理｜备用库
+export const EX_SUB_TABS = ['lowscore', 'exceptions', 'invalid', 'archive', 'backup'] as const
 export type ExSubTabId = (typeof EX_SUB_TABS)[number]
 
 interface ExceptionsTabProps {
@@ -107,6 +107,46 @@ export function ExceptionsTab({
                       </Button>
                     }
                   />
+                )}
+              />
+            </>
+          )}
+        </SectionCard>
+      )}
+
+      {/* 空壳池（v0.33）：无媒体且无正文的条目——已从流水线计数与步骤里隔离，
+          但仍留在库里参与 source_id 去重（重复抓取时直接跳过）。原因逐条显示。 */}
+      {exTab === 'invalid' && (
+        <SectionCard
+          title={`${t('console.invalidPool')} (${p.invalidItems.length}${
+            // 接口按 limit=200 截断：不带「+」就会把「取到的条数」读成「总数」，
+            // 而这片的目标恰恰是让数字诚实
+            p.invalidItems.length >= INVALID_POOL_LIMIT ? '+' : ''
+          })`}
+          padded={false}
+        >
+          {p.invalidItems.length === 0 ? (
+            <p className="p-3 text-sm text-text-disabled">{t('console.noExceptions')}</p>
+          ) : (
+            <>
+              <p className="border-b border-border/60 px-3 py-2 text-xs text-text-secondary">
+                {t('console.invalidPoolHint')}
+              </p>
+              <StageList
+                items={p.invalidItems}
+                emptyText={t('console.noExceptions')}
+                renderRow={(item) => (
+                  <>
+                    <StageItemRow
+                      item={item}
+                      badge={<Badge tone="neutral">{t('console.invalidBadge')}</Badge>}
+                    />
+                    {item.error && (
+                      <p className="px-3 pb-1 text-[11px] leading-relaxed text-text-disabled">
+                        {item.error}
+                      </p>
+                    )}
+                  </>
                 )}
               />
             </>

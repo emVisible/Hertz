@@ -121,7 +121,7 @@ class ScoreStep(Pipe):
                 upvote_ratio=item.upvote_ratio,
                 num_comments=item.num_comments,
                 title=item.title or "",
-                item_type=item.item_type or "video_raw",
+                item_type=item.item_type,
                 created_utc=item.created_at.timestamp() if item.created_at else 0,
             )
             threshold = float(getattr(ctx.settings, "pipeline_min_score", 6.0))

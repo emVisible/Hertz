@@ -978,7 +978,8 @@
       "lowscore": "Low score",
       "exceptions": "Exceptions",
       "archive": "Archive",
-      "backup": "Backup"
+      "backup": "Backup",
+      "invalid": "Shells"
     },
     "archivePoolHint": "Final-state items (published/approved/failed/rejected): archiving clears disk media and redundant data, keeping base info in the backup store",
     "archivePoolEmpty": "Nothing to archive",
@@ -1058,7 +1059,10 @@
     "titleNextAlt": "Next title candidate",
     "narrationFallback": "fallback subs",
     "narrationFallbackHint": "Original-audio subtitles unavailable (no audio/transcribe failed); current subs are generated from narration text and may remain in the source language",
-    "workshop": "Workshop"
+    "workshop": "Workshop",
+    "invalidPool": "Shell items (no media, no text)",
+    "invalidPoolHint": "No downloadable media and too little text for the story pipeline. Excluded from pipeline counts and production steps, but kept in the library so re-collection dedupes.",
+    "invalidBadge": "shell"
   },
   "canvas": {
     "tool": {

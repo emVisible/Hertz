@@ -19,28 +19,44 @@ logger = logging.getLogger(__name__)
 
 
 
+def operational_filters(*, include_archived: bool, include_invalid: bool) -> list:
+    """流水线可操作视图的统一过滤条件（v0.33）。
+
+    `counts()` 与 `list_items()` 必须走同一份条件：两侧各写一次就会漂移成
+    「列表里没有、数字里还在」——那正是空壳条目最伤人的表现（用户照着数字
+    做批量操作）。归档（备用库）与隔离（异常区）是两个独立开关，语义不同。
+    """
+    conditions: list = []
+    if not include_archived:
+        conditions.append(Item.archived.is_(False))
+    if not include_invalid:
+        conditions.append(Item.is_invalid.is_(False))
+    return conditions
+
+
 class QueriesMixin:
     # ---------- queries ----------
 
     async def list_items(
         self, status: str | None = None, limit: int = 50, source: str | None = None,
-        include_archived: bool = False,
+        include_archived: bool = False, include_invalid: bool = False,
     ) -> list[dict]:
         """条目列表；status 支持逗号分隔多状态（wave13：前端单查询聚合阶段队列）。
         排序：入库序号 seq desc（v0.3.1——同批 created_at 相同，seq 才是真实先后）。
         v0.5 A：QUEUED 条目标注相似内容（phash 汉明 ≤5，排除同 source_id 同源）。
-        wave10：默认排除 archived（备用库用独立 archived_items 查询）。"""
+        wave10：默认排除 archived（备用库用独立 archived_items 查询）。
+        v0.33：默认排除 is_invalid（空壳只出现在异常区，不再冒充可操作数据）。"""
         statuses = [s.strip() for s in (status or "").split(",") if s.strip()] or None
         async with session_factory() as session:
             order = Item.seq.desc().nulls_last()
             stmt = select(Item).order_by(order).limit(limit)
-            conditions = []
+            conditions = operational_filters(
+                include_archived=include_archived, include_invalid=include_invalid
+            )
             if statuses:
                 conditions.append(Item.status.in_(statuses))
             if source:
                 conditions.append(Item.source == source)
-            if not include_archived:
-                conditions.append(Item.archived.is_(False))
             if conditions:
                 stmt = select(Item).where(*conditions).order_by(order).limit(limit)
             result = await session.execute(stmt)
@@ -109,10 +125,28 @@ class QueriesMixin:
         async with session_factory() as session:
             rows = await session.execute(
                 select(Item.status, func.count())
-                .where(Item.archived.is_(False))
+                .where(*operational_filters(include_archived=False, include_invalid=False))
                 .group_by(Item.status)
             )
             return {str(status): count for status, count in rows.all()}
+
+    async def invalid_items(self, limit: int = 200) -> list[dict]:
+        """异常区「空壳/无效媒体」池（v0.33）：is_invalid 条目，seq desc 有界。
+
+        `archive()` 有终态白名单（approved/published/rejected/failed），停在
+        discovered 的空壳**归档不进去**，所以必须有这个独立入口承接——否则它们
+        既不在流水线也不在异常区，等于静默消失。
+        """
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(Item)
+                    .where(Item.is_invalid.is_(True))
+                    .order_by(Item.seq.desc().nulls_last())
+                    .limit(limit)
+                )
+            ).scalars().all()
+            return [self._serialize(i) for i in rows]
 
     async def collect_status(self) -> dict:
         """采集运维状态（v0.8.2）：运行中/上次结果/下次自动/间隔（监视 + 操作依据）。"""

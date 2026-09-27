@@ -993,7 +993,8 @@
       "lowscore": "低分池",
       "exceptions": "异常",
       "archive": "归档清理",
-      "backup": "备用库"
+      "backup": "备用库",
+      "invalid": "空壳"
     },
     "archivePoolHint": "终态条目（已发布/待发/失败/拒绝）：归档后清理磁盘与冗余数据，仅保留基础信息入备用库",
     "archivePoolEmpty": "没有可归档的条目",
@@ -1073,7 +1074,10 @@
     "titleNextAlt": "下一个标题候选",
     "narrationFallback": "旁白字幕",
     "narrationFallbackHint": "原声字幕不可用（无音轨/转写失败），当前字幕由旁白文案生成——可能为外语原文",
-    "workshop": "脚本工坊"
+    "workshop": "脚本工坊",
+    "invalidPool": "空壳条目（无媒体无正文）",
+    "invalidPoolHint": "这些条目既没有可下载媒体、正文也不够走文字产线，已从流水线计数与制作步骤里隔离；仍留在库里参与重复抓取判断。",
+    "invalidBadge": "空壳"
   },
   "canvas": {
     "tool": {

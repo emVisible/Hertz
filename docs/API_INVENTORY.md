@@ -107,6 +107,9 @@
 `GET /api/metrics`
 `GET /api/monoline/brand`
 `PATCH /api/monoline/brand`
+`DELETE /api/monoline/brand/bgm`
+`GET /api/monoline/brand/bgm`
+`POST /api/monoline/brand/bgm`
 `DELETE /api/monoline/brand/logo`
 `GET /api/monoline/brand/logo`
 `POST /api/monoline/brand/logo`
@@ -133,6 +136,7 @@
 `POST /api/monoline/jobs/{job_id}/outline`
 `PATCH /api/monoline/jobs/{job_id}/plan/scenes/{i}`
 `POST /api/monoline/jobs/{job_id}/plan/scenes/{i}/suggest`
+`POST /api/monoline/jobs/{job_id}/plan/upgrade`
 `GET /api/monoline/jobs/{job_id}/poster`
 `POST /api/monoline/jobs/{job_id}/reorder`
 `POST /api/monoline/jobs/{job_id}/run`
@@ -162,12 +166,14 @@
 `GET /api/pipeline/collect/status`
 `GET /api/pipeline/events`
 `GET /api/pipeline/failures`
+`GET /api/pipeline/integrity`
 `GET /api/pipeline/items`
 `POST /api/pipeline/items/archive`
 `GET /api/pipeline/items/archived`
 `POST /api/pipeline/items/batch`
 `POST /api/pipeline/items/batch/queue`
 `GET /api/pipeline/items/counts`
+`GET /api/pipeline/items/invalid`
 `POST /api/pipeline/items/priority`
 `POST /api/pipeline/items/purge`
 `POST /api/pipeline/items/unarchive`

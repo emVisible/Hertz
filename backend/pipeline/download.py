@@ -115,8 +115,11 @@ async def download_via_mpd(
     video_bytes: bytes | None = None
     audio_bytes: bytes | None = None
     try:
+        from backend.infrastructure.net import client_kwargs
+
         async with httpx.AsyncClient(
-            headers=headers or {}, timeout=30, follow_redirects=True
+            # 回环目标直连（代理到不了 127.0.0.1，只会回 502）：v0.33
+            **client_kwargs(mpd_url, headers=headers or {}, timeout=30, follow_redirects=True)
         ) as client:
             resp = await client.get(mpd_url)
             if resp.status_code != 200:
@@ -240,6 +243,12 @@ def is_dead_reddit_media(url: str, permalink: str | None, source_id: str | None)
 
     v0.8.1 参考原项目 _invalid_collect_media：**permalink 本身是 v.redd.it**
     （RSS 视频帖 link 直接指向媒体而非评论区）→ 视为死（无详情页可解析）。
+
+    v0.33 明确边界：**「media_url 是帖子页」这类空壳不在这里丢弃**。本函数的语义
+    是「连元数据都拿不到、留着也没用」→ 直接 skip；而页面当媒体的空壳有标题、有
+    帖子页、有 source_id，按 D-205 的决定要**入库并隔离**（进异常区、继续参与
+    source_id 去重），丢弃反而丢掉这些信息与去重能力。空壳判据的唯一作者是
+    `pipeline/quality.shell_reason`，别在这里再写一份。
     """
     has_comments = "/comments/" in (permalink or "")
     if "v.redd.it" in (url or "") and not has_comments:

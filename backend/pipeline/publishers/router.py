@@ -154,7 +154,7 @@ class BilibiliPublisher(Publisher):
         if not tid:
             from backend.pipeline.category import assign_bili_tid
 
-            tid = assign_bili_tid(item.subreddit or "", item.item_type or "video_raw")
+            tid = assign_bili_tid(item.subreddit or "", item.item_type)
         if not tid:
             tid = getattr(ctx.settings, "pipeline_bili_default_tid", 0)
         if tid:

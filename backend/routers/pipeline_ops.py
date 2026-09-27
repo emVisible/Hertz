@@ -245,6 +245,17 @@ def _spawn_model_download(task_name: str, ensure_model) -> dict:
     return {"started": True}
 
 
+@router.get("/integrity")
+async def integrity_report() -> dict:
+    """数据体检报告（v0.33）：库里数据与判据是否一致，只报不改。
+
+    默认由 `integrity` 定时任务跑；这里给手动入口（设置页/我自己核验都用它）。
+    """
+    from backend.pipeline.integrity import integrity_report as build_report
+
+    return await build_report()
+
+
 @router.get("/translate-model/status")
 async def translate_model_status() -> dict:
     """本地翻译引擎就绪状态（依赖 + 模型文件）。

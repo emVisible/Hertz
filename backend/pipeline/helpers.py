@@ -139,7 +139,7 @@ def _auto_tid(item) -> int | None:
     try:
         from backend.pipeline.category import assign_bili_tid
 
-        return assign_bili_tid(item.subreddit or "", item.item_type or "video_raw")
+        return assign_bili_tid(item.subreddit or "", item.item_type)
     except Exception:  # noqa: BLE001 — 建议失败不影响序列化
         return None
 

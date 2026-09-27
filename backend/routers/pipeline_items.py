@@ -25,8 +25,13 @@ async def list_items(
     status: str | None = None,
     limit: int = Query(50, ge=1, le=500),
     source: str | None = None,
+    include_invalid: bool = False,
 ):
-    return await _pipe().list_items(status=status, limit=limit, source=source)
+    """条目列表。默认排除空壳（is_invalid，v0.33）——异常区走 /items/invalid；
+    需要一并看时显式传 include_invalid=true。"""
+    return await _pipe().list_items(
+        status=status, limit=limit, source=source, include_invalid=include_invalid
+    )
 
 
 @router.get("/items/counts")
@@ -169,6 +174,16 @@ class ArchiveBody(BaseModel):
 async def archived_items(limit: int = Query(200, ge=1, le=500)):
     """备用库：archived 条目列表（seq desc）。"""
     return await _pipe().archived_items(limit=limit)
+
+
+@router.get("/items/invalid")
+async def invalid_items(limit: int = Query(200, ge=1, le=500)):
+    """异常区「空壳/无效媒体」池（v0.33）：is_invalid 条目，含隔离原因。
+
+    这些条目停在 discovered 且 `archive()` 的终态白名单不收它们，所以必须有独立
+    入口——否则「从流水线里排除」就等于让它们静默消失。
+    """
+    return await _pipe().invalid_items(limit=limit)
 
 
 @router.post("/items/archive")

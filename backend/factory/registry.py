@@ -154,6 +154,14 @@ class ServiceRegistry:
             trigger="interval",
             minutes=1,
         )
+        # 数据体检（v0.33）：库里数据与判据不一致时机器先知道（只报不改）。
+        # 固定每 30 分钟 tick，实际间隔按运行时配置判断（0=关闭），改配置即时生效
+        self.scheduler.add_job(
+            "integrity",
+            lambda: self._timed("integrity", self._integrity_tick),
+            trigger="interval",
+            minutes=30,
+        )
         # DB 定时备份（v0.22 可见性补全）：每 24h pg_dump 滚动保留；
         # backup_enabled=false 或非 PG 后端时内部自查跳过
         if getattr(settings, "backup_enabled", True):
@@ -170,6 +178,35 @@ class ServiceRegistry:
         from backend.infrastructure.telemetry import timed_tick
 
         await timed_tick(name, coro_fn)
+
+    async def _integrity_tick(self) -> None:
+        """数据体检（v0.33）：按配置间隔节流；不一致由 integrity 内部单次告警。
+
+        只报不改是刻意的：自动改写数据必须显式跑脚本，否则巡检一旦判错就没有
+        回头路（体检发现的问题多半需要人看一眼原因分布再决定怎么处理）。
+        """
+        import time as _time
+
+        from backend.config import settings
+
+        interval_min = int(getattr(settings, "pipeline_integrity_minutes", 720) or 0)
+        if interval_min <= 0:
+            return  # 关闭常驻巡检（手动端点仍可用）
+        now = _time.time()
+        if now - getattr(self, "_last_integrity", 0.0) < interval_min * 60:
+            return
+        self._last_integrity = now
+        try:
+            from backend.pipeline.integrity import run_integrity_check
+
+            report = await run_integrity_check()
+            if not report["ok"]:
+                self.log.get().warning(
+                    "integrity: %s", ", ".join(report["failed"])
+                )
+        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+            self.log.get().exception("integrity tick failed")
+            raise
 
     async def _backup_tick(self) -> None:
         from backend.infrastructure.backup import run_backup

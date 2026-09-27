@@ -14,6 +14,7 @@ from backend.models.item import Item, ItemStatus
 from backend.models.pipeline import SourceState
 from backend.models.session import session_factory
 from backend.pipeline.base import Pipe, ProcessResult, StepContext
+from backend.pipeline.quality import stamp
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,11 @@ async def run_collect(
                 channel_key=channel_key,
                 error=None,
             )
+            # 质量闸（v0.33，D-205）：判据与打标只有 `quality` 一个作者。
+            # 空壳**仍然入库**（保住标题/帖子页/source_id 的去重价值），但打上
+            # is_invalid，由 counts()/列表/异常区决定它出现在哪里、由 engine._pending
+            # 决定它不进制作步骤。
+            stamp(item)
             session.add(item)
             existing.add(post.source_id)
             inserted += 1

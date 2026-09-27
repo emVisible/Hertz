@@ -124,6 +124,7 @@ export function ExecutionPage() {
           rescheduleExpired={pipeline.rescheduleExpired}
           setProduceOptions={pipeline.setProduceOptions}
           archivedItems={pipeline.archivedItems}
+          invalidItems={pipeline.invalidItems}
           archiveItems={pipeline.archiveItems}
           unarchiveItems={pipeline.unarchiveItems}
           purgeItems={pipeline.purgeItems}

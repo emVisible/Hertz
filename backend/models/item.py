@@ -77,6 +77,10 @@ class Item(BaseModel):
     score_reasons: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     # 低分标记（v0.2.0）：低于阈值不自动丢弃，进审核人工决定（参考原项目）
     is_lowscore: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 空壳标记（v0.33）：既无可下载媒体、也没有够长的正文 → 从可操作队列隔离，
+    # 进异常区专属池。判据与原因码在 `pipeline/quality.py`（唯一作者）；不建索引
+    # 的理由写在 wave28 迁移里。
+    is_invalid: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Production artifacts (paths relative to data_dir)
     raw_path: Mapped[str | None] = mapped_column(Text, nullable=True)

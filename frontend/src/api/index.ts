@@ -17,7 +17,7 @@ export type {
   StudioEvent,
   WorkflowRun,
 } from './orchestration'
-export { pipelineApi } from './pipeline'
+export { pipelineApi, INVALID_POOL_LIMIT } from './pipeline'
 export type {
   ItemStatus,
   JobSummary,

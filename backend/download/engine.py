@@ -25,6 +25,7 @@ import aiofiles
 import httpx
 
 from backend.download.errors import HTTPStatusError, NoRangesError, SSRFBlockedError
+from backend.infrastructure.net import client_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,10 @@ class ChunkedDownloader:
         self.chunk_size = chunk_size
         self.max_workers = max_workers
         self.client = client or httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0), follow_redirects=True
+            # 回环/本站目标必须直连：代理到不了 127.0.0.1，只会回 502（v0.33）
+            **client_kwargs(
+                url, timeout=httpx.Timeout(30.0), follow_redirects=True
+            )
         )
         self.on_progress = on_progress
         self.url_checker = url_checker or is_safe_media_url

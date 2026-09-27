@@ -167,6 +167,9 @@ async def create_draft_item(body: dict) -> dict:
 
     async with session_factory() as session:
         item = Item(
+            # quality-gate: manual —— 工坊草稿是用户自己写的，写到一半的短正文不是
+            # 「采集空壳」，不该被隔离；因此这条 discovered 写入口显式不走 stamp。
+            # （守卫 tests/test_shell_items.py 要求每个 discovered 写入口都表明立场）
             status=ItemStatus.DISCOVERED,
             item_type="text_only",
             source="manual",
