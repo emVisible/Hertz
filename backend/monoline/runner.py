@@ -15,9 +15,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-from . import llm_plan as _llm_plan
-from .display_text import tidy_slots as _tidy_slots
 from .hf import HF, _lint_summary
+
+# 模块级导入是测试的打桩位（tests/test_monoline_llm 用 monkeypatch 换 suggest）
+from .llm_plan import suggest
 from .store import MonolineStore
 from .timings import Timings
 from .workspace import Workspace
@@ -577,7 +578,7 @@ async def _breakout_long_run(ai, beats: list[str], scenes: list[dict], *, model:
     落盘用 _clean_slots + tidy_slots 全套守卫，与 upgrade() 同口径。
     """
     from .display_text import tidy_slots
-    from .llm_plan import _clean_slots, suggest
+    from .llm_plan import _clean_slots
 
     best: list[int] = []
     cur: list[int] = []

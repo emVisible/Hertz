@@ -131,9 +131,9 @@ class _SuggestAI:
 
 
 async def test_breakout_upgrades_mid_of_long_run(tmp_path, monkeypatch) -> None:
-    from backend.monoline import runner as R
+    from backend.monoline import runner as mono
 
-    monkeypatch.setattr(R, "suggest", _fake_suggest_changed())
+    monkeypatch.setattr(mono, "suggest", _fake_suggest_changed())
     beats = [f"第{i}拍纯文字" for i in range(5)]
     scenes = [{"i": i, "kind": "statement", "source": "rules", "slots": {}} for i in range(5)]
     logged: list[str] = []
@@ -141,18 +141,18 @@ async def test_breakout_upgrades_mid_of_long_run(tmp_path, monkeypatch) -> None:
     async def _log(msg: str, **kw) -> None:
         logged.append(msg)
 
-    mid = await R._breakout_long_run(object(), beats, scenes, model="m", log=_log)
+    mid = await mono._breakout_long_run(object(), beats, scenes, model="m", log=_log)
     assert mid == 2
     assert scenes[2]["kind"] == "quote" and scenes[2]["source"] == "llm:breakout"
     assert any("破格" in m for m in logged)
 
 
 async def test_breakout_skips_short_run() -> None:
-    from backend.monoline import runner as R
+    from backend.monoline import runner as mono
 
     beats = ["a", "b", "c"]
     scenes = [{"i": i, "kind": "statement", "source": "rules", "slots": {}} for i in range(3)]
-    assert await R._breakout_long_run(object(), beats, scenes, model="m") is None
+    assert await mono._breakout_long_run(object(), beats, scenes, model="m") is None
 
 
 def _fake_suggest_changed():
