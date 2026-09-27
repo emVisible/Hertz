@@ -25,10 +25,12 @@ class ComfyUIProvider:
         self.output_dir = output_dir
         self.poll_interval = poll_interval
         self.timeout = timeout
+        from backend.infrastructure.net import client_kwargs
+
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, read=120.0),
-            # 本地服务直连：绕过 HTTP_PROXY 环境变量（同 openai_compat 注释）。
-            trust_env=False,
+            # 本地服务（默认 127.0.0.1:8188）必须直连：代理到不了回环地址，
+            # Clash 在时只会回 502；判据在 infrastructure/net。
+            **client_kwargs(self.base_url, timeout=httpx.Timeout(30.0, read=120.0)),
         )
 
     def _build_workflow(

@@ -47,14 +47,16 @@ class OpenAICompatProvider:
         self.model = model
         self.max_retries = max_retries
         self.last_usage: dict | None = None  # v0.5 E：流式 usage 探测（成本估算）
+        from backend.infrastructure.net import client_kwargs
+
+        base = base_url.rstrip("/")
         self._client = httpx.AsyncClient(
-            base_url=base_url.rstrip("/"),
+            base_url=base,
             headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
-            timeout=httpx.Timeout(30.0, read=180.0),
-            # 服务端直连：绝不读 HTTP_PROXY/HTTPS_PROXY 环境变量——
-            # 本地 ollama/comfyui 经代理转一圈极易 502（实测 Clash 下必现），
-            # 远端 API 走直连同样可预期（用户另有代理需求再显式配置）。
-            trust_env=False,
+            # 本地 Provider（Ollama/ComfyUI/xinference 常在 127.0.0.1）必须直连：
+            # 代理到不了回环地址，Clash 在时只会回 502；判据在 infrastructure/net。
+            # 远端主机则正常跟随环境/系统代理（v0.33 收口后有意的行为变化）。
+            **client_kwargs(base, timeout=httpx.Timeout(30.0, read=180.0)),
         )
 
     async def chat_stream(

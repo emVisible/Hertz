@@ -12,7 +12,6 @@ import random
 import re
 import time
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -101,16 +100,14 @@ def _parse_channel(channel: str) -> tuple[str, str]:
 
 
 def _system_proxy() -> str | None:
-    """macOS 系统代理（httpx 只认环境变量，不读系统网络设置）。
+    """系统代理发现已收进 infrastructure/net（唯一作者）——此处只留转发。
 
-    墙内访问 Reddit 时用户通常在系统设置里配了代理；这里把
-    urllib 解析出的系统代理喂给 httpx，无代理则返回 None。
+    routers/pipeline_ops 与本模块的调用方都认这个名字，签名保持不变；
+    macOS 系统设置里的代理不在环境变量里，判据与探测都在 net.system_proxy。
     """
-    try:
-        proxies = urllib.request.getproxies()
-    except Exception:  # noqa: BLE001 — proxy discovery is best-effort
-        return None
-    return proxies.get("https") or proxies.get("http") or None
+    from backend.infrastructure.net import system_proxy
+
+    return system_proxy()
 
 
 def _b64(data: bytes) -> bytes:

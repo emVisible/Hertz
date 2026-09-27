@@ -76,14 +76,9 @@ async def resolve_direct_video(
     token = await ensure_reddit_token()
     if not token:
         return None
-    proxy = None
-    try:
-        import urllib.request
+    from backend.infrastructure.net import system_proxy
 
-        proxies = urllib.request.getproxies()
-        proxy = proxies.get("https") or proxies.get("http") or None
-    except Exception:  # noqa: BLE001 — 代理发现 best-effort
-        proxy = None
+    proxy = system_proxy()
 
     owns_client = client is None
     if client is None:

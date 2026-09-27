@@ -29,3 +29,36 @@ def test_client_kwargs_only_disables_trust_env_for_loopback() -> None:
     # 其余参数原样透传（这里不重新发明 httpx 的构造签名）
     kw = client_kwargs("http://127.0.0.1:9/x.mp4", timeout=30, follow_redirects=True)
     assert kw["timeout"] == 30 and kw["follow_redirects"] is True
+
+
+def test_system_proxy_returns_usable_url(monkeypatch) -> None:
+    import urllib.request
+
+    from backend.infrastructure.net import system_proxy
+
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: {"http": "http://127.0.0.1:7897"})
+    assert system_proxy() == "http://127.0.0.1:7897"
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: {})
+    assert system_proxy() is None
+
+
+def test_system_proxies_is_the_full_table_author(monkeypatch) -> None:
+    """全量表（infra/hf 诊断要的就是这个）同样只认按属性打桩的调用形态。"""
+    import urllib.request
+
+    from backend.infrastructure.net import system_proxies
+
+    monkeypatch.setattr(
+        urllib.request, "getproxies", lambda: {"https": "http://p:1", "all": "http://a:2"}
+    )
+    assert system_proxies() == {"https": "http://p:1", "all": "http://a:2"}
+    # https 优先由 system_proxy 导出（不是 all/other）
+    from backend.infrastructure.net import system_proxy
+
+    assert system_proxy() == "http://p:1"
+
+
+def test_remote_provider_still_follows_env_proxy() -> None:
+    """本地直连不等于「所有 Provider 都不走代理」——远端主机必须照旧。"""
+    assert client_kwargs("http://127.0.0.1:11434/v1")["trust_env"] is False
+    assert client_kwargs("https://comfyui.example.com:8188")["trust_env"] is True

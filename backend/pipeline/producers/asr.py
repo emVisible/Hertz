@@ -334,6 +334,8 @@ async def transcribe_with_xinference(media_path: Path, out_srt: Path) -> Path | 
     """xinference STT 服务（OpenAI 兼容 /v1/audio/transcriptions multipart）。"""
     import httpx
 
+    from backend.infrastructure.net import client_kwargs
+
     if not xinference_configured():
         return None
     url = f"{settings.xinference_stt_base_url.rstrip('/')}/audio/transcriptions"
@@ -343,8 +345,11 @@ async def transcribe_with_xinference(media_path: Path, out_srt: Path) -> Path | 
     data = {"model": settings.xinference_stt_model_id}
     try:
         audio = await asyncio.to_thread(media_path.read_bytes)
-        # xinference 是本地服务（默认 127.0.0.1:9997）——绕过环境代理，同 openai_compat。
-        async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
+        # xinference 是本地服务（默认 127.0.0.1:9997）——必须直连：代理到不了
+        # 回环地址，Clash 在时只会回 502；判据在 infrastructure/net。
+        async with httpx.AsyncClient(
+            **client_kwargs(settings.xinference_stt_base_url, timeout=120.0)
+        ) as client:
             resp = await client.post(
                 url,
                 headers=headers,

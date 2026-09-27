@@ -93,10 +93,10 @@ def _reason(exc: BaseException) -> str:
             msg = str(cause).strip() or type(cause).__name__
     if name in {"ConnectError", "ConnectTimeout", "ProxyError"}:
         try:
-            import urllib.request
+            from backend.infrastructure.net import system_proxies
 
-            prox = urllib.request.getproxies()
-        except Exception:  # noqa: BLE001 — 代理探测失败不该盖住真实原因
+            prox = system_proxies()
+        except Exception:  # noqa: BLE001 — 探测失败不该盖住真实原因
             prox = {}
         detail = "、".join(f"{k}→{v}" for k, v in sorted(prox.items())) or "直连（未设代理）"
         msg = f"{msg}；代理：{detail}" if msg else f"连不上，代理：{detail}"

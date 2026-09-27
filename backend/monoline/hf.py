@@ -222,12 +222,17 @@ class HF:
         """二期预留：常驻 sidecar 渲染。CLI-first 阶段默认不调用。"""
         import httpx
 
+        from backend.infrastructure.net import client_kwargs
+
         payload = {"projectDir": str(project_dir), "output": str(out_path), "fps": fps,
                    "quality": self.lint_quality(quality), "format": fmt,
                    "workers": RENDER_WORKERS}
         try:
+            # sidecar 在本机：必须直连——代理到不了回环地址，Clash 在时只会回
+            # 502；判据在 infrastructure/net。
             async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(self.timeout, connect=5), trust_env=False) as client:
+                    **client_kwargs(sidecar_url.rstrip("/"),
+                                    timeout=httpx.Timeout(self.timeout, connect=5))) as client:
                 resp = await client.post(f"{sidecar_url.rstrip('/')}/render", json=payload)
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
             raise SidecarUnavailableError(str(e)) from e

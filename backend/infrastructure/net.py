@@ -39,3 +39,26 @@ def client_kwargs(url: str, **kwargs) -> dict:
     回环地址关掉 `trust_env`（代理到不了你的本机，留着只会换来 502）。"""
     kwargs.setdefault("trust_env", not is_loopback_url(url))
     return kwargs
+
+
+def system_proxies() -> dict[str, str]:
+    """系统/环境代理全表（唯一发现入口）。
+
+    macOS 的代理设置不在环境变量里，`urllib.request.getproxies()` 会去读
+    SystemConfiguration；Reddit 采集、签名直链与 infra/hf 的失败诊断此前各写
+    了一份这段逻辑，于是「谁走代理」这件事有三个作者（D-205 同类形状）。
+    探测失败一律按无代理处理——这是诊断辅助，不许反手把调用方崩掉。
+    """
+    try:
+        import urllib.request
+
+        # 必须是「模块属性查找」形态（测试按属性打桩 urllib.request.getproxies）
+        return dict(urllib.request.getproxies())
+    except Exception:  # noqa: BLE001 — 探测失败按无代理处理，不让采集/下载崩
+        return {}
+
+
+def system_proxy() -> str | None:
+    """最常被用到的那一条：https 优先、http 其次的代理 URL（自 system_proxies）。"""
+    proxies = system_proxies()
+    return proxies.get("https") or proxies.get("http") or None
