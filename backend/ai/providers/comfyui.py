@@ -25,7 +25,11 @@ class ComfyUIProvider:
         self.output_dir = output_dir
         self.poll_interval = poll_interval
         self.timeout = timeout
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0))
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, read=120.0),
+            # 本地服务直连：绕过 HTTP_PROXY 环境变量（同 openai_compat 注释）。
+            trust_env=False,
+        )
 
     def _build_workflow(
         self,

@@ -343,7 +343,8 @@ async def transcribe_with_xinference(media_path: Path, out_srt: Path) -> Path | 
     data = {"model": settings.xinference_stt_model_id}
     try:
         audio = await asyncio.to_thread(media_path.read_bytes)
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        # xinference 是本地服务（默认 127.0.0.1:9997）——绕过环境代理，同 openai_compat。
+        async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
             resp = await client.post(
                 url,
                 headers=headers,
