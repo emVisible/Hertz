@@ -1,0 +1,8 @@
+{#- V49 split: a two-column text slide — the lead phrase holds the left rail, the rest of
+    the sentence is body copy on the right. Exists because a deck that answers every beat
+    with one centred line reads as generated; this is the content-free alternative the
+    rotation pass falls back to when a beat has no quote and no key:value pairs. -#}
+<div class="inner k-split">
+  <div class="sp-lead" style="font-size:{{ headline_px(scene.slots.lead, base=82, min_px=56, ref_chars=7, max_lines=2) }}px">{{ scene.slots.lead }}</div>
+  <div class="sp-body">{{ detonate(scene.slots.body or seg.text) }}</div>
+</div>

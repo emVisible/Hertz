@@ -1,0 +1,13 @@
+<div class="inner k-cards">
+  <div class="c-head">
+    <span class="c-name">{{ scene.slots.title }}</span>
+    {%- if scene.slots.tagline %}<span class="c-tag">{{ scene.slots.tagline }}</span>{% endif %}
+  </div>
+  {%- if scene.slots.rows %}
+  <div class="rows">
+    {%- for r in scene.slots.rows %}
+    <div class="row"><span class="k">{{ r.k }}</span><span class="v">{{ r.v }}</span></div>
+    {%- endfor %}
+  </div>
+  {%- endif %}
+</div>

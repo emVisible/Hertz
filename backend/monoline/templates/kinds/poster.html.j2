@@ -1,0 +1,12 @@
+{#- V43 poster: a document card that quotes someone and highlights the clause being
+    spoken. The tab labels the artefact, <mark> carries the highlighter stroke, and the
+    em-dash line owns the attribution — the three things a plain quote slide lacks. -#}
+<div class="inner k-poster">
+  <div class="p-card">
+    {%- if scene.slots.tab %}<div class="p-tab">{{ scene.slots.tab }}</div>{% endif %}
+    <div class="p-body">{{ highlight(detonate(scene.slots.body or scene.slots.q or seg.text), scene.slots.hl) | safe }}</div>
+    {%- if scene.slots.by or scene.slots.attr %}
+    <div class="p-by"><span class="p-dash" aria-hidden="true"></span>{{ scene.slots.by or scene.slots.attr }}</div>
+    {%- endif %}
+  </div>
+</div>

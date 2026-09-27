@@ -1,0 +1,11 @@
+<div class="inner k-flow">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  <div class="chain">
+    {%- for nd in scene.slots.nodes %}
+    {%- if not loop.first %}
+    <svg class="link" viewBox="0 0 46 16" aria-hidden="true"><path class="lk-shaft" d="M2 8h30"/><path class="lk-head" d="M31 1.5 45 8 31 14.5Z"/></svg>
+    {%- endif %}
+    <span class="node{% if loop.first %} lead{% endif %}">{{ nd }}</span>
+    {%- endfor %}
+  </div>
+</div>

@@ -1,0 +1,7 @@
+<div class="inner k-image">
+  {%- if scene.slots.get("image") %}
+  <div class="shot{{ ' tone-color' if scene.slots.get('image_tone') == 'color' else '' }}"><img src="{{ scene.slots.get('image') }}" alt=""></div>
+  {%- endif %}
+  {%- set hl = scene.slots.headline or scene.slots.image_caption %}
+  {%- if hl %}<div class="headline" style="font-size:calc({{ headline_px(hl, base=88, min_px=44, ref_chars=18) }}px * var(--hl-scale,1))">{{ hl }}</div>{% endif %}
+</div>

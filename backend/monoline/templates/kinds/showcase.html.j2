@@ -1,0 +1,23 @@
+{#- V44 showcase: a row of image cards, each with its own asset, name and note.
+    Distinct from cards (text tiles) and image (one full-bleed shot): this is the
+    "three screenshots side by side" beat used to compare things you can see. -#}
+{%- set wide = aspect != "portrait" %}
+{%- set rows = scene.slots.rows[:3 if not wide else 4] %}
+<div class="inner k-showcase">
+  {%- if scene.slots.title %}<div class="sc-title">{{ scene.slots.title }}</div>{% endif %}
+  <div class="sc-row{{ '' if wide else ' stack' }}">
+    {%- for r in rows %}
+    <figure class="sc-card">
+      {%- if r.img %}
+      <div class="shot{{ ' tone-color' if scene.slots.get('image_tone') == 'color' else '' }}"><img src="{{ r.img }}" alt=""></div>
+      {%- else %}
+      <div class="sc-ph">未配图</div>
+      {%- endif %}
+      <figcaption{% if not r.k and not r.v %} class="empty"{% endif %}>
+        <span class="sc-name">{{ r.k }}</span>
+        {%- if r.v %}<span class="sc-note">{{ r.v }}</span>{% endif %}
+      </figcaption>
+    </figure>
+    {%- endfor %}
+  </div>
+</div>

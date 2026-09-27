@@ -72,3 +72,19 @@ async def test_image_route_delegates() -> None:
     router = AIRouter(llm=None, image=FakeImage(), tts=None)
     result = await router.generate_image("a cat")
     assert result.path == "out.png"
+
+
+@pytest.mark.asyncio
+async def test_title_tidies_edge_punctuation() -> None:
+    """Phase 4.2：AI 标题/描述过 display_text.tidy（首尾冗余标点清理，句中保留）。"""
+    llm = FakeLLM(
+        ['{"title": "震惊！三句话讲透AI。。。", "tags": ["a"],'
+         ' "description": "句中，保留。尾巴。。。",'
+         ' "alternatives": ["备选。。。", "震惊！三句话讲透AI。。。"]}']
+    )
+    router = AIRouter(llm=llm, image=None, tts=None)
+    result = await router.title_and_tags(script="正文", content="c")
+    assert result.title == "震惊！三句话讲透AI"
+    assert result.description == "句中，保留。尾巴"
+    # 去重用 tidy 后标题比较：与主标题相同的备选被剔除
+    assert result.alternatives == ["备选"]

@@ -19,6 +19,7 @@ from backend.factory.scheduler import ScheduleManager
 from backend.infrastructure.events import EventHub
 from backend.infrastructure.logging import LogManager, log_manager
 from backend.infrastructure.storage import FileStore, file_store
+from backend.monoline.service import MonolineService
 from backend.orchestration.brief_groups import BriefGroupService
 from backend.orchestration.briefs import BriefService
 from backend.orchestration.buffs import BuffService
@@ -80,6 +81,7 @@ class ServiceRegistry:
         self.plans = PlanService()
         self.phases = PhasesService()
         self.studio = StudioService(files=file_store, hub=self.events)
+        self.monoline = MonolineService(files=file_store, hub=self.events)
         self.pipeline = PipelineService(
             hub=self.events,
             engine=StepEngine(
@@ -279,7 +281,8 @@ class ServiceRegistry:
     async def shutdown(self) -> None:
         # Cancel in-flight background work before releasing resources
         # (AXIOM §4.2: fail fast, leave no zombie tasks writing to disk).
-        pending = [self.studio._task, self.pipeline._task, *self.download.pool._tasks.values()]  # noqa: SLF001
+        pending = [self.studio._task, self.pipeline._task, self.monoline._task,  # noqa: SLF001
+                   *self.download.pool._tasks.values()]
         for task in pending:
             if task is not None and not task.done():
                 task.cancel()

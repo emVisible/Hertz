@@ -1,0 +1,16 @@
+<div class="inner k-funnel">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  {%- set rows = scene.slots.stages[:5] %}
+  {%- set ws = funnel_widths(rows | map(attribute='v') | list) %}
+  {#- V37: the stage worth naming is where the proportion collapsed, not the widest bar -#}
+  {%- set leak = max_drop(rows | map(attribute='v') | list) %}
+  <div class="fbody">
+    {%- for r in rows %}
+    <div class="frow">
+      <span class="fk">{{ r.k }}</span>
+      <span class="ftrack"><span class="fbar" style="width:{{ ws[loop.index0] }}%"></span></span>
+      <span class="fv">{{ r.v }}{% if loop.index0 == leak %}<span class="vtag">流失最大</span>{% endif %}</span>
+    </div>
+    {%- endfor %}
+  </div>
+</div>

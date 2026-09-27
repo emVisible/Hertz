@@ -1,0 +1,18 @@
+<div class="inner k-statement v-{{ scene.slots.variant or 'hero' }}">
+  {%- set raw = scene.slots.headline or seg.text %}
+  {#- boundaries come from the RAW line, glyphs from the cleaned one: detonating first would
+       shorten "在漆黑的深海里，" to 7 chars, under kinetic_chunks' floor, and silently cost
+       this beat its reveal animation — the punctuation policy must not buy cleanliness with motion. #}
+  {%- set hl = detonate(raw) %}
+  {%- set kc = kinetic_chunks(raw) %}
+  {%- if scene.slots.eyebrow %}<div class="eyebrow">{{ scene.slots.eyebrow }}</div>{% endif %}
+  <span class="top-rule" aria-hidden="true"></span>
+  {%- set cont = ends_open(seg.text) %}
+  {%- set hpx = headline_px(hl, base=72 if cont else 116, min_px=52, ref_chars=14, max_lines=2) %}
+  {%- if kc %}
+  <div class="headline kinetic{{ ' cont' if cont }}" style="font-size:calc({{ hpx }}px * var(--hl-scale,1))">{%- for c in kc %}{%- set cg = detonate(c) %}{% if cg %}<span class="ch"><i>{{ cg }}</i></span>{% endif %}{%- endfor %}</div>
+  {%- else %}
+  <div class="headline{{ ' cont' if cont }}" style="font-size:calc({{ hpx }}px * var(--hl-scale,1))">{{ hl }}</div>
+  {%- endif %}
+  {%- if scene.slots.sub %}<div class="sub">{{ scene.slots.sub }}</div>{% endif %}
+</div>

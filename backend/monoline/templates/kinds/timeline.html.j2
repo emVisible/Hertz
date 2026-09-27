@@ -1,0 +1,16 @@
+{#- V31d: timeline — dated milestones on a rail. The rail is one element that draws
+    in; each tick is a dot + the date + its event. Last tick is the accent one, so the
+    eye ends on "where we are now". -#}
+<div class="inner k-timeline">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  <div class="tl">
+    <span class="tl-rail"></span>
+    {%- for r in scene.slots.rows %}
+    <div class="tl-p{% if loop.last %} now{% endif %}">
+      <span class="tl-dot"></span>
+      <span class="tl-t">{{ r.k }}</span>
+      {%- if r.v %}<span class="tl-e">{{ r.v }}</span>{% endif %}
+    </div>
+    {%- endfor %}
+  </div>
+</div>

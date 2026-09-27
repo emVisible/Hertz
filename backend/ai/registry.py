@@ -50,7 +50,7 @@ class ProviderRegistry:
             existing_keys = set(
                 (await session.execute(select(AIProvider.key))).scalars().all()
             )
-            for key in ("comfyui", "edge_tts"):
+            for key in ("comfyui", "edge_tts", "kokoro"):
                 if key in existing_keys:
                     continue
                 tpl = TEMPLATE_INDEX[key]

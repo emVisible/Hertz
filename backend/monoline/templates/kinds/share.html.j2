@@ -1,0 +1,13 @@
+{#- V31e: part-of-whole. The ring geometry comes from donut(); the legend swatches use
+    the same four tones, so a reader can map label → arc without guessing. -#}
+<div class="inner k-share">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  <div class="srow">
+    {{ donut(scene.slots.rows | map(attribute='v') | list) | safe }}
+    <ul class="legend">
+      {%- for r in scene.slots.rows %}
+      <li><span class="sw s{{ loop.index }}"></span><span class="lk">{{ r.k }}</span><span class="lv">{{ r.v }}</span></li>
+      {%- endfor %}
+    </ul>
+  </div>
+</div>

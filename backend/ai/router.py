@@ -417,13 +417,19 @@ class TaskRouter:
             data = self._extract_json(text)
             if data is None:
                 return TitleResult(title=script[:40], tags=[], description="")
-            alts = [str(a).strip()[:80] for a in (data.get("alternatives") or [])]
+            # Phase 4.2 地基回哺：AI 标题/描述过 monoline display_text.tidy——
+            # 首尾冗余标点清理（句中保留），上屏/发布标题单一 owner。
+            from backend.monoline.display_text import tidy as _tidy
+
+            alts = [_tidy(a)[:80] for a in (data.get("alternatives") or [])]
+            alts = [str(a).strip() for a in alts]
+            title = _tidy(str(data.get("title", "")))[:80]
             return TitleResult(
-                title=str(data.get("title", ""))[:80],
+                title=title,
                 tags=[str(t) for t in (data.get("tags") or [])][:6],
-                description=str(data.get("description", "")),
+                description=_tidy(str(data.get("description", ""))),
                 # v0.15 标题 N 选 1：去重去空、剔除与主标题相同者，最多 3 个
-                alternatives=[a for a in alts if a and a != str(data.get("title", ""))][:3],
+                alternatives=[a for a in alts if a and a != title][:3],
             )
         except Exception:  # noqa: BLE001 — 兜底标题
             return TitleResult(title=script[:40], tags=[], description="")
@@ -464,16 +470,23 @@ class TaskRouter:
             await provider.aclose()
 
     async def synthesize(self, text: str, voice: str = "", rate: str = "") -> bytes:
-        """语音合成：从注册表解析 tts 角色（edge_tts），模型 key 即音色。
+        """语音合成：从注册表解析 tts 角色，模型 key 即音色，protocol 决定连接器。
+        edge_tts（远端免费）/ kokoro（本地 ONNX，中文声调正确，monoline 融合）。
         v0.8.9：rate 透传（pipeline_tts_rate，对齐原项目 tts_rate）。"""
         if self._tts is not None:
             return await self._tts.synthesize(text, voice)  # 测试兜底
         resolved = await self._registry.resolve_role("tts")
         if resolved is None:
             raise RuntimeError("TTS provider not configured")
-        from backend.ai.providers.edge_tts import EdgeTTSProvider
+        protocol = resolved.get("protocol") or "edge_tts"
+        if protocol == "kokoro":
+            from backend.ai.providers.kokoro import KokoroProvider
 
-        provider = EdgeTTSProvider()
+            provider = KokoroProvider()
+        else:
+            from backend.ai.providers.edge_tts import EdgeTTSProvider
+
+            provider = EdgeTTSProvider()
         try:
             from backend.config import settings
 

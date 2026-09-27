@@ -1,0 +1,17 @@
+{#- V31f: 2×2 quadrant grid. Axis labels are rendered only when the beat named them —
+    an invented axis would claim a dimension the text never stated. -#}
+<div class="inner k-matrix">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  <div class="mgrid-wrap">
+    {%- if scene.slots.y_axis %}<span class="m-axis m-yaxis">{{ scene.slots.y_axis }}</span>{% endif %}
+    <div class="mgrid">
+      {%- for c in scene.slots.cells %}
+      <div class="mcell">
+        <span class="m-q">{{ '%02d' % loop.index }}</span>
+        <span class="m-t">{{ c }}</span>
+      </div>
+      {%- endfor %}
+    </div>
+  </div>
+  {%- if scene.slots.x_axis %}<div class="m-axis m-xaxis">{{ scene.slots.x_axis }}</div>{% endif %}
+</div>

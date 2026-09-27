@@ -1,0 +1,14 @@
+GSAP 3.14.2 — bundled in backend/vendor/gsap.min.js
+
+Copyright 2025, GreenSock. All rights reserved.
+Subject to the terms of the GSAP Standard License:
+https://gsap.com/standard-license
+
+Notes for Monoline:
+- GSAP is the default animation runtime of HyperFrames (Apache 2.0), which this
+  product renders through. Compositions reference GSAP; we vendor it locally
+  (instead of the CDN default) purely for offline + deterministic rendering.
+- The Standard License permits use in this product (rendering the operator's own
+  content). This file is NOT an MIT claim — see the license URL for the exact,
+  possibly-updated terms. Re-verify before redistributing the tool to third
+  parties or shipping it as a paid hosted service.

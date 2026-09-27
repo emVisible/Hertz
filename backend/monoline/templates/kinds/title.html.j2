@@ -1,0 +1,6 @@
+<div class="inner k-title">
+  {%- set hl = detonate(scene.slots.headline or seg.text) %}
+  {%- if scene.slots.eyebrow %}<div class="eyebrow">{{ scene.slots.eyebrow }}</div>{% endif %}
+  <div class="headline" style="font-size:calc({{ headline_px(hl, base=190, min_px=84, ref_chars=10) }}px * var(--hl-scale,1))">{{ hl }}</div>
+  {%- if scene.slots.sub %}<div class="sub">{{ scene.slots.sub }}</div>{% endif %}
+</div>

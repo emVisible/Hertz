@@ -1,0 +1,12 @@
+{#- V35b: the enumeration cap went 5→8 so a seven-step chain stops losing items, which
+    pushed the last row under the caption band. Row height is solved here at compose time
+    (never measured in the renderer) against a fixed 546px budget — six rows at the old
+    46/18 rhythm — so more items read denser instead of taller. -#}
+{%- set n = scene.slots['items'] | length %}
+{%- set fs = [46, (276 / n) | int] | min %}
+<div class="inner k-list" style="--li-fs: {{ fs }}px; --li-pad: {{ [18, (fs * 0.39) | int] | min }}px">
+  {%- if scene.slots.title %}<div class="l-title">{{ scene.slots.title }}</div>{% endif %}
+  <ul class="items">
+    {%- for it in scene.slots['items'] %}<li class="item">{{ it }}</li>{% endfor %}
+  </ul>
+</div>

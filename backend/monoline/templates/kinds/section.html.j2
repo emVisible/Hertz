@@ -1,0 +1,10 @@
+<div class="inner k-section">
+  {%- set st = scene.slots.title or scene.slots.headline %}
+  {%- set kc = kinetic_chunks(st) %}
+  {%- if scene.slots.index %}<div class="s-index">{{ scene.slots.index }}</div>{% endif %}
+  {%- if kc %}
+  <div class="s-title kinetic">{%- for c in kc %}<span class="ch"><i>{{ c }}</i></span>{%- endfor %}</div>
+  {%- else %}
+  <div class="s-title">{{ st }}</div>
+  {%- endif %}
+</div>

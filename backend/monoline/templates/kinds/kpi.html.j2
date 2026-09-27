@@ -1,0 +1,13 @@
+{#- V31d: KPI cards — headline metrics that are NOT comparable (120 万 vs 45%).
+    Each card owns its unit, so nothing implies a ranking between them. -#}
+<div class="inner k-kpi">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  <div class="kcards">
+    {%- for r in scene.slots.rows %}
+    <div class="kcard">
+      <div class="kv">{{ r.v }}</div>
+      <div class="kk">{{ r.k }}</div>
+    </div>
+    {%- endfor %}
+  </div>
+</div>

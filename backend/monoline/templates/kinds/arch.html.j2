@@ -1,0 +1,12 @@
+<div class="inner k-arch">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  {%- set layers = scene.slots.layers[:5] %}
+  {%- set ws = stack_widths(layers | length) %}
+  <div class="stack">
+    {%- for ly in layers %}
+    <div class="layer{% if loop.first %} top{% endif %}" style="width:{{ ws[loop.index0] }}%">
+      <span class="l-name">{{ ly }}</span><span class="l-tag">L{{ layers | length - loop.index0 }}</span>
+    </div>
+    {%- endfor %}
+  </div>
+</div>

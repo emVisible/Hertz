@@ -15,6 +15,18 @@ from backend.models.channel import Channel
 from backend.models.crew import Crew
 from backend.models.download import DownloadStatus, DownloadTask, Project
 from backend.models.item import Item, ItemStatus, ItemType
+from backend.models.monoline import (
+    MonolineArtifact,
+    MonolineBrand,
+    MonolineEvent,
+    MonolineJob,
+    MonolineJobStage,
+    MonolineJobStatus,
+    MonolinePreset,
+    MonolineScenePlan,
+    MonolineSegment,
+    MonolineStageStatus,
+)
 from backend.models.phase import PhaseStore
 from backend.models.pipeline import ChannelInsight, SourceState
 from backend.models.plan import (
@@ -50,6 +62,16 @@ __all__ = [
     "TelegramNotification",
     "ModelCapability",
     "ModelRole",
+    "MonolineArtifact",
+    "MonolineBrand",
+    "MonolineEvent",
+    "MonolineJob",
+    "MonolineJobStage",
+    "MonolineJobStatus",
+    "MonolinePreset",
+    "MonolineScenePlan",
+    "MonolineSegment",
+    "MonolineStageStatus",
     "PhaseStore",
     "PhaseRun",
     "PhaseRunStatus",

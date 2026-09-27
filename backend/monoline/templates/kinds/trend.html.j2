@@ -1,0 +1,22 @@
+{#- V31e: a run of numbers reads as one line. The newest value is the hero, the line
+    gives it context, and the authored values stay visible underneath so nothing is
+    implied that the text didn't say (no invented percentage change). -#}
+<div class="inner k-trend">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  <div class="tv">{{ scene.slots.series[-1] }}</div>
+  {#- V36: the annotation a designed slide makes and a generated one omits. Percentages
+      are the peak's own coordinates in the sparkline's viewBox, so the callout sits on
+      the point no matter how the plot is scaled. -#}
+  {%- set mk = peak_marker(scene.slots.series, w=820, h=200) %}
+  <div class="plot">
+    {{ sparkline(scene.slots.series, w=820, h=200) | safe }}
+    {%- if mk %}
+    <div class="callout" style="left: {{ (mk.x / 8.2) | round(2) }}%; top: calc({{ (mk.y / 2) | round(2) }}% + 20px)">
+      <span class="cl-v">{{ mk.value }}</span><span class="cl-l">峰值</span>
+    </div>
+    {%- endif %}
+  </div>
+  <div class="tlabels">
+    {%- for v in scene.slots.series %}<span>{{ v }}</span>{% endfor %}
+  </div>
+</div>

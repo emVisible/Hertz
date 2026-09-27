@@ -1,0 +1,11 @@
+<div class="inner k-steps">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  <div class="steplist">
+    <div class="rail"><i class="rail-fill"></i></div>
+    <ol class="steps">
+      {%- for st in scene.slots.steps %}
+      <li class="step"><span class="node"><span class="n-i">{{ loop.index }}</span><span class="txt">{{ st }}</span></span></li>
+      {%- endfor %}
+    </ol>
+  </div>
+</div>

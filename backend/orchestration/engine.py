@@ -50,6 +50,12 @@ class PhaseResult:
     duration_ms: int = 0
     error: str = ""
     output_file: str = ""  # relative path inside the run dir, "" = none
+    # Phase 4.4 地基回哺（monoline input_hash 思想）：本阶段 LLM 输入指纹——
+    # messages 全量 + 模型选择 + 超参。持久化进 phase_runs.output_json，供成本归因
+    # （相同输入重复跑了几次一目了然）与调试。注意：Hertz 每次运行是新 run_dir 且
+    # LLM 非确定性，故只做同 run 内防重放，不做跨 run 自动复用（语义见 _run_agent）。
+    input_hash: str = ""
+    reused: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -59,7 +65,27 @@ class PhaseResult:
             "duration_ms": self.duration_ms,
             "error": self.error,
             "output_file": self.output_file,
+            "input_hash": self.input_hash,
+            "reused": self.reused,
         }
+
+
+def phase_input_hash(messages, model_key: str | None) -> str:
+    """LLM 输入指纹：消息全量（topic/brief/prior/模板/buff/depth/参考已 baked-in）
+    + 模型选择 + 温度/长度。任一输入变化 → hash 变化 → 不可复用。"""
+    import hashlib
+    import json
+
+    payload = {
+        "messages": [
+            {"role": m.role, "content": m.content}
+            for m in messages
+        ],
+        "model": model_key or "",
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:16]
 
 
 @dataclass
@@ -190,7 +216,7 @@ class PhaseEngine:
             try:
                 if phase.phase_type == "agent":
                     await self._run_agent(
-                        phase.key, phase, run_dir, topic, brief_excerpt,
+                        run, phase.key, phase, run_dir, topic, brief_excerpt,
                         agents, index, total, result,
                     )
                     if phase.key == "visual_director":
@@ -323,6 +349,7 @@ class PhaseEngine:
 
     async def _run_agent(
         self,
+        run,
         key: str,
         phase,
         run_dir: Path,
@@ -370,6 +397,17 @@ class PhaseEngine:
             depth=self._depth_effect,  # 已解析的指令文本（空 = 不注入）
             reference=reference_text,
         )
+        # Phase 4.4：同 run 内防重放——产物文件已存在且指纹一致（同一 run 内重复进入
+        # 本阶段，如 package 兜底重入）则跳过 LLM 调用。跨 run 不自动复用：新 run_dir
+        # + 非确定 LLM 下静默复用会偷换"重新跑一次"的语义（见模块决策记录）。
+        result.input_hash = phase_input_hash(messages, configured_model or None)
+        existing = await self.files.safe_read(run_dir / f"{key}.md")
+        same_inputs = await self._phase_hash_matches(run, key, result.input_hash)
+        if existing and len(existing) > 0 and same_inputs:
+            result.output_file = f"{key}.md"
+            result.reused = True
+            self._emit("log", None, message=f"[{key}] 输入未变，复用本轮已产出（省一次 LLM 调用）")
+            return
         text = ""
         # Declared retries must have an executor: transient LLM failures get
         # a couple of exponential-backoff attempts before the phase fails
@@ -670,6 +708,21 @@ class PhaseEngine:
         produced = sorted(p.name for p in run_dir.iterdir() if p.is_file() and p.suffix == ".md")
         return "# 产出清单\n\n" + "\n".join(f"- {name}" for name in produced) + "\n"
 
+    async def _phase_hash_matches(self, run, key: str, ihash: str) -> bool:
+        """同 run 内指纹比对：phase_runs.output_json.input_hash 一致即命中。"""
+        try:
+            async with session_factory() as session:
+                row = await session.execute(
+                    select(PhaseRun).where(PhaseRun.run_id == run.id, PhaseRun.phase_key == key)
+                )
+                pr = row.scalar_one_or_none()
+                if pr is None or not pr.output_json:
+                    return False
+                return pr.output_json.get("input_hash") == ihash
+        except Exception:  # noqa: BLE001 — 比对失败按未命中（宁可多烧一次）
+            logger.exception("phase hash lookup failed for %s", key)
+            return False
+
     async def _save_phase(self, run_id: UUID, key: str, result: PhaseResult) -> None:
         try:
             async with session_factory() as session:
@@ -682,7 +735,13 @@ class PhaseEngine:
                 pr.status = result.status
                 pr.duration_ms = result.duration_ms
                 pr.error = result.error or None
-                pr.output_json = {"output_file": result.output_file} if result.output_file else None
+                # input_hash 随产物声明一起落库（Phase 4.4；None 键不污染旧行）
+                out = {"output_file": result.output_file} if result.output_file else {}
+                if result.input_hash:
+                    out["input_hash"] = result.input_hash
+                if result.reused:
+                    out["reused"] = True
+                pr.output_json = out or None
                 await session.merge(pr)
                 await session.commit()
         except Exception:  # noqa: BLE001 — DB persistence must never kill the run

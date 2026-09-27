@@ -1,0 +1,5 @@
+<div class="inner k-quote v-{{ scene.slots.variant or 'hero' }}">
+  {# the card is already identified by its layout and rule; literal “” would be punctuation on screen #}
+  <div class="q">{{ detonate(scene.slots.q or scene.slots.headline) }}</div>
+  {%- if scene.slots.attr %}<div class="attr">{{ detonate(scene.slots.attr) }}</div>{% endif %}
+</div>

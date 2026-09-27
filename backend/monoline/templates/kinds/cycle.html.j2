@@ -1,0 +1,26 @@
+{#- Ring geometry is computed at compose time in normalized view units (see viz.polar);
+    the nodes sit on the same anchors the arcs are drawn to. -#}
+{%- set nodes = scene.slots.nodes[:6] %}
+{%- set n = nodes | length %}
+{%- set r = 33 %}
+<div class="inner k-cycle">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  <div class="ringmap">
+    <svg class="arcs" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      {%- for nd in nodes %}
+      {%- set a0 = -90 + (loop.index0 * 360 / n) + (360 / n) * 0.20 %}
+      {%- set a1 = -90 + (loop.index0 * 360 / n) + (360 / n) * 0.80 %}
+      {%- set p0 = polar(50, 50, r, a0) %}
+      {%- set p1 = polar(50, 50, r, a1) %}
+      <path class="arc" vector-effect="non-scaling-stroke" d="M{{ p0[0] }} {{ p0[1] }} A{{ r }} {{ r }} 0 0 1 {{ p1[0] }} {{ p1[1] }}" />
+      {%- set tip = polar(50, 50, r, a1) %}
+      <circle class="arc-tip" cx="{{ tip[0] }}" cy="{{ tip[1] }}" r="1.6" />
+      {%- endfor %}
+    </svg>
+    <span class="hub-mark" aria-hidden="true">{{ n }}</span>
+    {%- for nd in nodes %}
+    {%- set pt = polar(50, 50, 43, -90 + (loop.index0 * 360 / n)) %}
+    <span class="pos" style="left:{{ pt[0] }}%; top:{{ pt[1] }}%"><span class="node">{{ nd }}</span></span>
+    {%- endfor %}
+  </div>
+</div>

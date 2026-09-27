@@ -1,0 +1,23 @@
+{#- V31d: a comparison of unrelated metrics as bars. Unlike a table row (a hairline
+    under text) the bar IS the message here, so it gets a track, a rank-tinted fill
+    and the value at its tip. Widths come from row_bars — normalized to the max, so
+    the shape is the ranking. -#}
+<div class="inner k-bars">
+  {%- if scene.slots.title %}<div class="d-title">{{ scene.slots.title }}</div>{% endif %}
+  {%- set vals = scene.slots.rows | map(attribute='v') | list %}
+  {%- set widths = row_bars(vals) %}
+  {#- V37: the accent row used to be whichever row came first, which asserted a winner
+      the data never named. It now follows the actual maximum, and stays silent on a tie. -#}
+  {%- set top = argmax(vals) %}
+  <div class="brows">
+    {%- for r in scene.slots.rows %}
+    {%- set p = widths[loop.index0] %}
+    <div class="brow{% if loop.index0 == top %} is-top{% endif %}">
+      <span class="bk">{{ r.k }}</span>
+      <span class="btrack"><span class="bfill{% if loop.index0 == top %} top{% endif %}"
+              {% if p is not none %}style="width:{{ p }}%"{% else %}style="width:0"{% endif %}></span></span>
+      <span class="bv">{{ r.v }}{% if loop.index0 == top %}<span class="vtag">最高</span>{% endif %}</span>
+    </div>
+    {%- endfor %}
+  </div>
+</div>

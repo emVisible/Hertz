@@ -1,0 +1,38 @@
+{
+  "id": "mono-paper",
+  "label": "Mono Paper (light)",
+  "mode": "light",
+  "tokens": {
+    "color": {
+      "paper": "#F4F4F5",
+      "surface": "#ECECEE",
+      "elev": "#E2E2E5",
+      "hairline": "#D4D4D8",
+      "ink": "#0B0B0C",
+      "ink_muted": "#5A5A62",
+      "ink_faint": "#A0A0A8",
+      "accent": "#1F1F22",
+      "accent_ink": "#F4F4F5"
+    },
+    "type": {
+      "family": "ExplainerCJK",
+      "family_latin": "MonolineUI",
+      "scale_ratio": 1.25,
+      "roles": { "eyebrow": 30, "body": 40, "sub": 44, "label": 52, "h2": 88, "h1": 150, "display": 230 },
+      "tracking": { "eyebrow": "0.45em", "display": "-0.035em" },
+      "leading": { "display": 0.92, "body": 1.55 }
+    },
+    "space": { "unit": 8, "gutter_x": 128, "gutter_y": 96, "caption_bottom": 112, "caption_max_w": 1520 },
+    "motion": {
+      "ease_enter": "power3.out",
+      "ease_exit": "power2.inOut",
+      "ease_micro": "power1.out",
+      "in": { "opacity": 0, "y": 28 },
+      "in_caption": { "opacity": 0, "y": 16 },
+      "durations": { "enter": 0.5, "enter_caption": 0.35, "hold_min": 1.2, "exit": 0.34, "crossfade": 0.0 },
+      "stagger": 0.06,
+      "max_stagger_total": 0.42
+    },
+    "rules": { "caption_plate": "hairline", "scene_border": "none", "grain": "none", "bg": "flat_wash" }
+  }
+}

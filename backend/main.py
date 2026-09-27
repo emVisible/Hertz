@@ -105,6 +105,12 @@ async def lifespan(_: FastAPI):
     _t3 = time.perf_counter()
     registry.scheduler.start()
     _t4 = time.perf_counter()
+    try:
+        resumed = await registry.monoline.reconcile()
+        if resumed:
+            log_manager.get().info("monoline reconcile parked %d job(s)", len(resumed))
+    except Exception:  # noqa: BLE001 — 启动不因融合域愈合失败而中断
+        log_manager.get().exception("monoline reconcile failed (best effort)")
     # v0.21：固化包冷启动归因打点（>30s 环节定位用）
     log_manager.get().info(
         "[startup-timing] registry %.2fs / deps %.2fs / heal %.2fs / scheduler %.2fs / total %.2fs",

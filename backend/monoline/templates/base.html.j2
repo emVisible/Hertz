@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width={{ canvas.width }}, height={{ canvas.height }}" />
+    <title>{% if brand.label %}{{ brand.label }} — {% endif %}{{ title }}</title>
+    <script src="vendor/gsap.min.js"></script>
+    {%- if math %}
+    <!-- LaTeX ships only for a beat that carries a formula: vendored, offline, no CDN -->
+    <link rel="stylesheet" href="vendor/katex/katex.min.css" />
+    <script src="vendor/katex/katex.min.js"></script>
+    <script src="vendor/katex/auto-render.min.js"></script>
+    {%- endif %}
+    <style>
+      @font-face {
+        font-family: "ExplainerCJK";
+        src: url("fonts/cjk.woff2") format("woff2");
+        font-weight: 100 900;
+        font-display: block;
+      }
+      :root {
+        --paper: {{ theme.color.paper }};
+        --surface: {{ theme.color.surface }};
+        --hairline: {{ theme.color.hairline }};
+        --ink: {{ theme.color.ink }};
+        --ink-muted: {{ theme.color.ink_muted }};
+        --ink-faint: {{ theme.color.ink_faint }};
+        --accent: {{ theme.color.accent }};
+        --accent-ink: {{ theme.color.accent_ink }};
+        --gutter-x: {{ theme.space.gutter_x }}px;
+        --gutter-y: {{ theme.space.gutter_y }}px;
+        --caption-bottom: {{ theme.space.caption_bottom }}px;
+        --caption-max-w: {{ theme.space.caption_max_w }}px;
+        --scene-scale: 1;
+        {#- the wash is accent-tinted: on a dark paper that reads as light, on a light
+            paper the same alpha reads as a grey smudge, so the strength follows mode -#}
+        --wash-1: color-mix(in oklab, var(--accent) {{ "16%" if theme.mode == "dark" else "6%" }}, transparent);
+        --wash-2: color-mix(in oklab, var(--accent) {{ "13%" if theme.mode == "dark" else "5%" }}, transparent);
+        --wash-3: color-mix(in oklab, var(--ink) {{ "9%" if theme.mode == "dark" else "4%" }}, transparent);
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: {{ canvas.width }}px; height: {{ canvas.height }}px; overflow: hidden; background: var(--paper); }
+      #root {
+        position: relative; width: 100%; height: 100%; overflow: hidden;
+        font-family: "ExplainerCJK", sans-serif; color: var(--ink);
+      }
+      #bg { position: absolute; inset: 0; z-index: 0; background:
+        radial-gradient(130% 100% at 82% -8%, color-mix(in oklab, var(--accent) 12%, transparent) 0%, transparent 46%),
+        radial-gradient(100% 90% at 6% 108%, color-mix(in oklab, var(--ink) 7%, transparent) 0%, transparent 52%),
+        linear-gradient(180deg, var(--paper), var(--surface)); }
+      #glow { position: absolute; left: 12%; top: 6%; width: 54%; height: 58%; z-index: 0; pointer-events: none;
+        background: radial-gradient(circle at 50% 50%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 62%);
+        filter: blur(64px); opacity: 0.85; }
+      /* ── V31b graphic kit ── three static layers that separate a "designed deck"
+         from a text file on a coloured background. All CSS, theme-var driven,
+         zero motion (so nothing can desync from the render sampler). */
+      /* grain: a dot texture the gradients can sit on. Masked toward the top-left
+         so it reads as material in the corner, not wallpaper over the copy. */
+      #grain { position: absolute; inset: 0; z-index: 1; pointer-events: none;
+        background-image: radial-gradient(circle at center,
+          color-mix(in oklab, var(--ink) 13%, transparent) 1.1px, transparent 1.5px);
+        background-size: 26px 26px;
+        -webkit-mask-image: radial-gradient(115% 95% at 8% 4%, #000 12%, transparent 62%);
+        mask-image: radial-gradient(115% 95% at 8% 4%, #000 12%, transparent 62%); }
+      /* ticks: crop marks at the safe-area corners — the printer's cue that the
+         frame was composed, not filled. */
+      #ticks { position: absolute; z-index: 2; pointer-events: none;
+        top: calc(var(--gutter-y) * 0.62); bottom: calc(var(--gutter-y) * 0.62);
+        left: calc(var(--gutter-x) * 0.62); right: calc(var(--gutter-x) * 0.62); }
+      #ticks i { position: absolute; width: 38px; height: 38px;
+        border: 2px solid color-mix(in oklab, var(--ink) 20%, transparent); }
+      #ticks i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+      #ticks i:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+      #ticks i:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+      #ticks i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+      /* folio: scene ordinal, the page number of a slide deck */
+      .folio { position: absolute; right: var(--gutter-x); bottom: calc(var(--caption-bottom) * 0.42);
+        z-index: 38; display: flex; align-items: baseline; gap: 8px;
+        font-size: 22px; font-weight: 600; letter-spacing: 0.06em; color: var(--ink-faint);
+        font-variant-numeric: tabular-nums; }
+      .folio .f-now { color: var(--accent); font-size: 30px; font-weight: 800; }
+      .folio .f-sep { opacity: 0.55; }
+      body[data-aspect="portrait"] .folio { font-size: 26px; }
+      body[data-aspect="portrait"] .folio .f-now { font-size: 34px; }
+      /* running section head — top right, away from the brand lock-up (top left), the
+         folio (bottom right) and the caption band, so the three never collide */
+      .sec-tag { position: absolute; top: 60px; right: var(--gutter-x); z-index: 40;
+        font-size: 21px; letter-spacing: .16em; color: var(--ink-muted); }
+      body[data-aspect="portrait"] .sec-tag { top: 64px; right: calc(var(--gutter-x) * 0.8); font-size: 19px; }
+      {%- if math %}
+      /* KaTeX defaults: red on a parse error, and 1em margins on display blocks. Neither
+         belongs in a monochrome slide — an unparseable formula must fall back to its own
+         source text in the scene's ink colour, and stay where the layout put it. */
+      .katex .katex-error { color: inherit !important; }
+      .katex-display { margin: 0; text-align: inherit; }
+      {%- endif %}
+      /* icon plate: a bare glyph reads as an orphan; the same glyph in a soft
+         accent ring reads as an intentional mark. */
+      .scene-icon { display: flex; align-items: center; justify-content: center;
+        width: 188px; height: 188px; border-radius: 999px;
+        background: radial-gradient(circle at 50% 42%,
+          color-mix(in oklab, var(--accent) 17%, transparent), transparent 68%);
+        border: 1px solid color-mix(in oklab, var(--accent) 26%, transparent); }
+      /* eyebrow as a badge: hairline pill + accent dot (bold keeps the filled bar) */
+      .eyebrow { display: inline-flex; align-items: center; gap: 14px; }
+      .eyebrow::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 999px;
+        background: var(--accent); }
+      body[data-layout="bold"] .eyebrow::before { background: var(--accent-ink); }
+      #brand { position: absolute; top: 56px; left: var(--gutter-x); z-index: 40;
+        display: flex; align-items: center; gap: 14px;
+        font-size: 26px; letter-spacing: 0.02em; color: var(--ink-muted); font-weight: 600; }
+      #brand .a { color: var(--accent); }
+      #brand .brand-logo { height: 40px; width: auto; max-width: 200px; object-fit: contain; display: block; }
+      #progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; z-index: 45;
+        background: color-mix(in oklab, var(--hairline) 70%, transparent); }
+      #progress-fill { display: block; height: 100%; width: 100%; background: var(--accent);
+        transform: scaleX(0); transform-origin: left center; }
+      .scene { position: absolute; inset: 0; }
+      .scene .wash { position: absolute; inset: 0; pointer-events: none; }
+      .scene .wash.w1 { background: radial-gradient(58% 46% at 84% 12%,
+        var(--wash-1), transparent 62%); }
+      .scene .wash.w2 { background: radial-gradient(64% 52% at 8% 94%,
+        var(--wash-2), transparent 64%); }
+      .scene .wash.w3 { background: radial-gradient(56% 56% at 50% 46%,
+        var(--wash-3), transparent 70%); }
+      .frame { position: absolute; inset: 0; display: flex;
+        align-items: center; justify-content: center; transform: scale(var(--scene-scale)); transform-origin: center;
+        padding: var(--gutter-y) var(--gutter-x) calc(var(--caption-bottom) + 80px); }
+      .sbody { display: flex; flex-direction: column; align-items: center; gap: 28px; max-width: min(1400px, 100%); }
+      .accent-rule { display: block; width: 128px; height: 4px; border-radius: 2px; background: var(--accent);
+        transform: scaleX(0); transform-origin: center; margin-top: 4px; }
+      /* editorial variant: left-aligned column (breaks the all-centered "text-flow" feel) */
+      .sbody--ed { align-items: flex-start; }
+      .sbody--ed .inner { text-align: left; }
+      .sbody--ed .accent-rule { align-self: flex-start; transform-origin: left center; }
+      .sbody > .inner { text-align: center; max-width: 100%; }
+      .scene-icon { color: var(--accent); line-height: 0; }
+      .scene-icon svg { width: 118px; height: 118px; }
+      /* V33: image treatment. An uploaded photo is the only element that ignores the
+         brand language — it brings its own colours, its own contrast, no depth. Every
+         shot is normalised (monochrome + one accent wash), framed (hairline + radius +
+         shadow) and given a slow deterministic drift. `image_tone: color` opts out.
+         The shadow is a fixed dark, never var(--ink): on the dark theme ink is near
+         white and the drop shadow bloomed into a glowing halo around the frame. */
+      .shot { position: relative; overflow: hidden; line-height: 0; border-radius: 16px;
+        border: 1px solid var(--hairline);
+        box-shadow: 0 30px 60px -34px rgb(0 0 0 / .62); }
+      /* Portrait/square lift the whole frame by --scene-scale (1.24 / 1.12) so text
+         reads at phone size. A shot capped at 94vw gets lifted with it and runs off the
+         canvas, so its box is divided back out — 94vw means 94% of the canvas in every
+         aspect, not 94% of the design space. */
+      .shot img { display: block; object-fit: contain;
+        max-width: calc(min(1400px, 94vw) / var(--scene-scale));
+        max-height: calc(72vh / var(--scene-scale));
+        filter: grayscale(1) contrast(1.06) brightness(1.02); }
+      .shot::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+        background: linear-gradient(152deg, var(--wash-1), transparent 58%);
+        mix-blend-mode: soft-light; }
+      .shot.tone-color img { filter: none; }
+      .shot.tone-color::after { display: none; }
+      .scene-media { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+      .scene-media .shot { border-radius: 14px; }
+      .scene-media .shot img { max-width: calc(min(1080px, 90vw) / var(--scene-scale));
+        max-height: calc(44vh / var(--scene-scale)); }
+      .scene-media .mcap { font-size: 26px; color: var(--ink-muted); }
+      .k-image { display: flex; flex-direction: column; align-items: center; gap: 26px; }
+      /* 72vh + an 88px headline overflowed the frame's caption reserve and the headline
+         landed on top of the caption pill. The full-bleed shot leaves that room. */
+      .k-image .shot img { max-height: calc(54vh / var(--scene-scale)); }
+      .cap { position: absolute; left: 0; right: 0; bottom: var(--caption-bottom); z-index: 30;
+        display: flex; justify-content: center; }
+      .cap > .inner { opacity: 0; max-width: var(--caption-max-w); text-align: center;
+        font-size: 40px; line-height: 1.5; color: var(--ink);
+        background: color-mix(in oklab, var(--paper) 70%, transparent);
+        border: 1px solid var(--hairline); padding: 18px 40px; border-radius: 10px; }
+
+      /* V35: display type must not leave an orphan. Measured on a real 14-beat job: the
+         200px title broke 「剪｜辑」 across two lines and three statement headlines hung a
+         2-3 character tail under themselves. Balance evens the lines instead. */
+      .headline, .s-title, .term, .q, .d-title, .cap > .inner { text-wrap: balance; }
+
+      /* kind: title */
+      .k-title .eyebrow { font-size: 30px; letter-spacing: 0.45em; color: var(--ink-muted); text-transform: uppercase; }
+      .k-title .headline { font-size: 200px; font-weight: 800; letter-spacing: -0.035em; line-height: 0.95; margin: 12px 0; }
+      .k-title .sub { font-size: 44px; color: var(--ink-muted); }
+      /* kind: statement */
+      .k-statement .eyebrow { font-size: 28px; letter-spacing: 0.3em; color: var(--ink-faint); text-transform: uppercase; }
+      .k-statement .headline { font-size: 120px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+      .k-statement .headline .accent { color: var(--accent); }
+      /* V52b: per-chunk masks for the kinetic reveal. The padding grows the clipping box so
+         glyph tops/bottoms survive line-height:1.1; the negative margin puts the layout back
+         where it was, so a kinetic headline occupies identical geometry to a plain one. */
+      .headline.kinetic .ch, .s-title.kinetic .ch { display:inline-block; overflow:hidden; vertical-align:top;
+        padding:0.12em 0; margin:-0.12em 0; }
+      .headline.kinetic .ch > i, .s-title.kinetic .ch > i { display:inline-block; font-style:normal; }
+      /* V38: a hairline over the headline turns a lone short line into a framed block —
+         structure, not ornament. Short headlines only: past ~16 chars the text already
+         fills two lines and the frame is not empty (measured median: 10 chars). */
+      .k-statement .top-rule { display: block; width: 100%; height: 1px; margin-bottom: 30px;
+        background: var(--hairline); transform-origin: left center; }
+      .k-statement .sub { font-size: 40px; color: var(--ink-muted); margin-top: 20px; }
+      /* V31g: 57% of real beats land as a plain statement, and the headline is short
+         (median 10 chars) with no number or quote to hang emphasis on — so the slide
+         needs a skeleton, not decoration. One accent rail frames every text scene,
+         the same way the crop marks frame the canvas. */
+      .k-statement, .k-section, .k-summary { position: relative; padding-left: 44px; }
+      .k-statement::before, .k-section::before, .k-summary::before {
+        content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 5px;
+        border-radius: 3px; background: linear-gradient(180deg, var(--accent),
+          color-mix(in oklab, var(--accent) 30%, transparent)); transform-origin: top center; }
+      body[data-aspect="portrait"] .k-statement, body[data-aspect="portrait"] .k-section,
+      body[data-aspect="portrait"] .k-summary { padding-left: 34px; }
+      /* kind: summary */
+      .k-summary .eyebrow { font-size: 30px; letter-spacing: 0.4em; color: var(--ink-muted); text-transform: uppercase; }
+      .k-summary .headline { font-size: 130px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; margin-top: 16px; }
+
+      /* V49 text treatments — the same sentence in three settings. rotation.py assigns
+         `variant` from the beat's position inside its own run, so two adjacent text
+         slides never repeat a layout. Signals can only re-shape ~1 beat in 6; this
+         carries the rest. hero = today (accent rail, centred), flush = full-bleed
+         manifesto column, frame = hairline card.
+         The width lives on `.sbody--flush`, not the inner: `.sbody` caps itself at 1400px
+         and centres, so releasing `.inner` alone moved the headline 44px (measured) — the
+         cap has to be lifted where it is set. */
+      .sbody--flush { max-width: 100%; align-items: stretch; }
+      .k-statement.v-flush, .k-summary.v-flush, .k-quote.v-flush { text-align: left; padding-left: 0; }
+      .k-statement.v-flush::before, .k-summary.v-flush::before { display: none; }
+      .k-statement.v-frame, .k-summary.v-frame, .k-quote.v-frame { padding: 52px 64px;
+        border: 1px solid var(--hairline); border-radius: 4px; background: var(--surface); }
+      .k-statement.v-frame::before, .k-summary.v-frame::before { display: none; }
+      .k-quote.v-frame { text-align: left; }
+
+      /* kind: poster — a quoted document card. The tab names the artefact, the <mark>
+         stroke is the highlighter, and the em-dash line carries attribution: three
+         affordances a plain quote slide does not have. */
+      .k-poster { width: 1240px; max-width: 100%; }
+      .k-poster .p-card { position: relative; padding: 58px 64px 48px; border-radius: 6px;
+        background: var(--surface); border: 1px solid var(--hairline);
+        box-shadow: 0 30px 60px -34px rgb(0 0 0 / .62); }
+      .k-poster .p-tab { position: absolute; top: -23px; left: 46px; padding: 9px 24px;
+        font-size: 21px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase;
+        color: var(--accent-ink); background: var(--accent); border-radius: 3px; }
+      .k-poster .p-body { font-size: 58px; line-height: 1.6; font-weight: 700; color: var(--ink);
+        text-align: left; text-wrap: balance; }
+      /* Marker, not censor bar: a light wash through the glyphs plus a denser band
+         along the bottom edge. A flat 42% ink box reads as redaction on paper themes. */
+      .k-poster .p-body mark { color: inherit; padding: 0 8px; border-radius: 2px;
+        background: linear-gradient(to top,
+          color-mix(in oklab, var(--accent) 34%, transparent) 0 16%,
+          color-mix(in oklab, var(--accent) 13%, transparent) 16% 100%); }
+      .k-poster .p-by { display: flex; align-items: center; gap: 18px; margin-top: 40px;
+        font-size: 27px; color: var(--ink-muted); }
+      .k-poster .p-dash { width: 58px; height: 2px; flex: none; background: var(--ink-faint); }
+
+      /* kind: showcase — a row of image cards (each card owns its asset).
+         The width must be a length, not 100%: `.sbody` centres its children, so a
+         percentage resolves against a shrink-to-fit box and each card collapses to
+         the natural width of its own PNG (measured: 66px on a 1920 canvas). */
+      .k-showcase { width: 1240px; max-width: 100%; }
+      .k-showcase .sc-title { font-size: 44px; font-weight: 700; color: var(--ink);
+        margin-bottom: 36px; text-align: left; }
+      .k-showcase .sc-row { display: flex; gap: 32px; align-items: flex-start; }
+      .k-showcase .sc-row.stack { flex-direction: column; gap: 26px; }
+      .k-showcase .sc-card { flex: 1 1 0; min-width: 0; margin: 0;
+        display: flex; flex-direction: column; gap: 16px; }
+      .k-showcase .shot { display: flex; align-items: center; justify-content: center;
+        height: 320px; background: var(--surface); border-radius: 14px; }
+      .k-showcase .sc-row.stack .shot { height: 380px; }
+      .k-showcase .shot img { max-width: 90%; max-height: 86%; }
+      .k-showcase .sc-ph { height: 320px; display: flex; align-items: center; justify-content: center;
+        border: 1px dashed var(--hairline); border-radius: 14px; color: var(--ink-faint); font-size: 22px; }
+      .k-showcase .sc-name { font-size: 30px; font-weight: 650; color: var(--ink); }
+      .k-showcase .sc-note { display: block; margin-top: 4px; font-size: 22px; line-height: 1.45;
+        color: var(--ink-muted); }
+      /* An outline-built showcase carries no per-image name; the caption then costs
+         16px of gap plus a line box for nothing. */
+      .k-showcase figcaption.empty { display: none; }
+
+      /* kind: split — two-column text slide, the rotation fallback when a beat carries
+         neither a quotation nor key:value pairs. Left rail holds, right rail explains. */
+      .k-split { display: grid; grid-template-columns: 0.86fr 1.14fr; gap: 0 48px;
+        align-items: start; width: 1400px; max-width: 100%; text-align: left; }
+      .k-split .sp-lead { font-weight: 800; line-height: 1.18; letter-spacing: -0.01em;
+        color: var(--ink); text-wrap: balance; }
+      .k-split .sp-body { padding-left: 48px; border-left: 1px solid var(--hairline);
+        font-size: 40px; line-height: 1.62; color: var(--ink-muted); }
+      body[data-aspect="portrait"] .k-split { grid-template-columns: 1fr; gap: 28px; }
+      body[data-aspect="portrait"] .k-split .sp-body { padding-left: 0; padding-top: 28px;
+        border-left: 0; border-top: 1px solid var(--hairline); }
+
+      /* kind: stat */
+      .k-statement .headline.cont { font-weight: 600; color: var(--ink-muted); }
+      .k-stat .value { font-size: calc(var(--hero-fs, 260px) * var(--stat-scale, 1)); font-weight: 800; letter-spacing: -0.04em; line-height: 1; color: var(--accent); }
+      .k-stat .ring-wrap { position: relative; width: 400px; height: 400px; }
+      .k-stat .ring { width: 100%; height: 100%; }
+      .k-stat .ring-track { stroke: var(--hairline); }
+      .k-stat .ring-fill { stroke: var(--accent); }
+      .k-stat .ring-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+      /* The number inside the ring must not be the same ink as the ring: at 108px accent green
+         it nearly touches the arc on both sides and reads as part of the chart. The ring carries
+         the accent; the figure reads as the slide's own text. */
+      .k-stat .value.in-ring { font-size: 108px; color: var(--ink); }
+      .k-stat .unit { font-size: 60px; color: var(--ink-muted); }
+      .k-stat .label { font-size: 44px; color: var(--ink); margin-top: 24px; }
+      /* ── V31c data-viz kit: delta chip, sparkline, donut ──
+         Monochrome by rule: direction reads from the arrow and the accent, never
+         from a red/green that would break the theme. */
+      .delta { display: inline-flex; align-items: center; gap: 12px; margin-top: 26px;
+        padding: 10px 24px; border: 1px solid var(--hairline); border-radius: 999px;
+        font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+      .delta svg { width: 26px; height: 26px; flex: none; fill: currentColor; }
+      .delta.up { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, var(--hairline)); }
+      .delta.down svg { transform: rotate(180deg); }
+      .delta.down { color: var(--ink-muted); }
+      .spark { display: block; width: 320px; max-width: 100%; height: auto; margin-top: 30px; }
+      .spark .sl-line { stroke: var(--accent); }
+      .spark .sl-dot { fill: var(--accent); }
+      .donut { display: block; width: 300px; max-width: 100%; height: auto; }
+      .donut .dn-track { stroke: var(--hairline); }
+      .donut .dn-1 { stroke: var(--accent); }
+      .donut .dn-2 { stroke: color-mix(in oklab, var(--ink) 62%, transparent); }
+      .donut .dn-3 { stroke: color-mix(in oklab, var(--ink) 34%, transparent); }
+      .donut .dn-4 { stroke: color-mix(in oklab, var(--ink) 18%, transparent); }
+      /* kind: table */
+      .k-table { width: 1120px; max-width: 100%; text-align: left; }
+      .k-table .t-title { font-size: 56px; font-weight: 700; margin-bottom: 28px; }
+      .k-table .row { padding: 20px 0; border-bottom: 1px solid var(--hairline); }
+      .k-table .rowline { display: flex; justify-content: space-between; align-items: baseline; }
+      .k-table .tbar { display: block; height: 8px; margin-top: 12px; border-radius: 4px; background: var(--accent); }
+      .k-table .row .k { font-size: 34px; color: var(--ink-muted); }
+      .k-table .row .v { font-size: 44px; font-weight: 700; color: var(--ink); }
+      /* kind: cards */
+      .k-cards { width: 1040px; max-width: 100%; padding: 56px 64px; border: 1px solid var(--hairline); border-radius: 20px;
+        background: var(--surface); text-align: left; }
+      .k-cards .c-head { display: flex; align-items: baseline; gap: 24px; margin-bottom: 32px; }
+      .k-cards .c-name { font-size: 88px; font-weight: 800; color: var(--accent); }
+      .k-cards .c-tag { font-size: 32px; color: var(--ink-muted); }
+      .k-cards .rows { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 48px; }
+      .k-cards .row { display: flex; justify-content: space-between; border-bottom: 1px solid var(--hairline); padding-bottom: 12px; }
+      .k-cards .row .k { font-size: 30px; color: var(--ink-muted); } .k-cards .row .v { font-size: 36px; font-weight: 700; }
+      /* kind: compare */
+      .k-compare { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 64px; max-width: 100%; }
+      .k-compare .col { text-align: center; padding: 44px 56px; border: 1px solid var(--hairline); border-radius: 18px; background: var(--surface); max-width: 100%; }
+      .k-compare .col.a { border-color: var(--accent); }
+      .k-compare .h { font-size: 80px; font-weight: 800; } .k-compare .col.a .h { color: var(--accent); }
+      .k-compare .d { font-size: 36px; color: var(--ink-muted); margin-top: 10px; }
+      .k-compare .pivot { font-size: 56px; font-weight: 800; color: var(--ink-faint); }
+      /* kind: quote */
+      .k-quote .q { font-size: 104px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+      .k-quote .attr { font-size: 36px; color: var(--ink-muted); margin-top: 28px; }
+      /* kind: definition */
+      .k-definition { text-align: left; width: 1200px; max-width: 100%; }
+      .k-definition .term { font-size: 84px; font-weight: 800; color: var(--accent); margin-bottom: 20px; }
+      .k-definition .gloss { font-size: 48px; line-height: 1.5; color: var(--ink); }
+      /* kind: list */
+      .k-list { text-align: left; width: 1120px; max-width: 100%; }
+      .k-list .l-title { font-size: 52px; font-weight: 700; margin-bottom: 24px; }
+      .k-list .items { list-style: none; }
+      .k-list .item { font-size: var(--li-fs, 46px); padding: var(--li-pad, 18px) 0;
+        border-bottom: 1px solid var(--hairline); color: var(--ink); }
+      .k-list .item::before { content: "— "; color: var(--accent); }
+      /* kind: section */
+      .k-section { text-align: left; }
+      .k-section .s-index { font-size: 168px; font-weight: 800; line-height: 0.82; letter-spacing: -0.03em;
+        color: var(--accent); font-variant-numeric: tabular-nums; }
+      .k-section .s-title { font-size: 108px; font-weight: 800; letter-spacing: -0.02em; margin-top: 14px; }
+      /* kind: note */
+      .k-note { display: flex; align-items: center; gap: 40px; text-align: left; }
+      .k-note .marker { width: 108px; height: 108px; border-radius: 999px; border: 2px solid var(--accent);
+        color: var(--accent); font-size: 76px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none; }
+      .k-note .body { font-size: 48px; line-height: 1.5; color: var(--ink); }
+
+      /* ── V27 base component: .node — the "button" atom every diagram is built from.
+         flow / radial / steps are all this same pill, wired together differently. ── */
+      .node { display: inline-flex; align-items: center; gap: 18px; padding: 22px 40px;
+        border: 1px solid var(--hairline); border-radius: 16px; background: var(--surface);
+        font-size: 44px; font-weight: 700; line-height: 1.15; color: var(--ink); white-space: nowrap;
+        box-shadow: 0 22px 44px -30px color-mix(in oklab, var(--ink) 55%, transparent); }
+      .node.lead { border-color: color-mix(in oklab, var(--accent) 55%, var(--hairline)); }
+      .node.hub { padding: 28px 48px; font-size: 50px; font-weight: 800; color: var(--accent-ink);
+        background: var(--accent); border-color: transparent; }
+      .node .n-i { display: flex; align-items: center; justify-content: center; flex: none;
+        width: 58px; height: 58px; border-radius: 999px; font-size: 30px; font-weight: 800;
+        color: var(--accent); background: color-mix(in oklab, var(--accent) 16%, transparent);
+        font-variant-numeric: tabular-nums; }
+      .d-title { font-size: 52px; font-weight: 700; color: var(--ink); }
+      /* kind: flow — nodes joined by drawn arrows, wraps to a second row when long */
+      .k-flow { width: 100%; }
+      .k-flow .d-title { margin-bottom: 36px; text-align: center; }
+      .k-flow .chain { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 26px 0; }
+      .k-flow .link { width: 46px; height: 16px; flex: none; margin: 0 12px; overflow: visible; }
+      .k-flow .lk-shaft { fill: none; stroke: var(--ink-muted); stroke-width: 2.5; stroke-linecap: round; }
+      .k-flow .lk-head { fill: var(--ink-muted); }
+      /* kind: radial — hub in the middle, branches on pre-computed anchors, spokes behind.
+         .k-radial needs a definite width: every child is absolutely positioned, so a
+         shrink-to-fit box collapses to 0 and all the left/top percentages land on one spot. */
+      .k-radial { width: 1360px; }
+      .k-radial .hubmap { position: relative; width: 100%; height: var(--map-h, 600px); }
+      .k-radial .spokes { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+      .k-radial .spoke { fill: none; stroke: color-mix(in oklab, var(--ink) 34%, transparent);
+        stroke-width: 2.5; stroke-linecap: round; }
+      .k-radial .pos { position: absolute; transform: translate(-50%, -50%); }
+      /* V45 screenshot nodes: a branch may carry the interface it names. The chip turns
+         into a card — image on top (cover, so the chip stays a uniform block), label below. */
+      .node.has-img { flex-direction: column; align-items: stretch; gap: 0; padding: 0;
+        overflow: hidden; }
+      .node.has-img .n-img { display: block; width: 268px; height: 152px; object-fit: cover;
+        border-bottom: 1px solid var(--hairline);
+        filter: grayscale(1) contrast(1.06) brightness(1.02); }
+      .node.has-img .n-t { padding: 14px 20px; font-size: 30px; line-height: 1.3; }
+      body[data-aspect="portrait"] .node.has-img .n-img { width: 224px; height: 132px; }
+      /* kind: steps — numbered pills on a rail that fills top→bottom */
+      .k-steps { width: 820px; }
+      .k-steps .d-title { margin-bottom: 34px; }
+      .k-steps .steplist { display: flex; align-items: stretch; gap: 36px; }
+      .k-steps .rail { position: relative; flex: none; width: 4px; margin: 22px 0 22px 27px;
+        border-radius: 2px; background: var(--hairline); }
+      .k-steps .rail-fill { position: absolute; inset: 0; display: block; border-radius: 2px;
+        background: var(--accent); transform-origin: top center; }
+      .k-steps .steps { list-style: none; display: flex; flex-direction: column; align-items: stretch; gap: 24px; width: 100%; }
+      .k-steps .step .node { width: 100%; }
+
+      /* kind: arch — a stack, widest at the foundation, top layer carries the accent */
+      .k-arch { width: 1000px; }
+      .k-arch .stack { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+      .k-arch .layer { display: flex; align-items: center; justify-content: space-between; gap: 24px;
+        padding: 24px 34px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface);
+        font-size: 44px; font-weight: 700; color: var(--ink);
+        box-shadow: 0 22px 44px -30px color-mix(in oklab, var(--ink) 55%, transparent); }
+      .k-arch .layer.top { border-color: color-mix(in oklab, var(--accent) 55%, var(--hairline)); }
+      .k-arch .l-tag { font-size: 24px; font-weight: 700; letter-spacing: 0.08em; color: var(--ink-faint); }
+      .k-arch .layer.top .l-tag { color: var(--accent); }
+      /* kind: cycle — nodes on a ring, arcs between them, count ghosted in the middle */
+      .k-cycle { width: 1040px; }
+      .k-cycle .ringmap { position: relative; width: 100%; height: var(--ring-h, 700px); }
+      .k-cycle .arcs { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+      .k-cycle .arc { fill: none; stroke: color-mix(in oklab, var(--ink) 34%, transparent);
+        stroke-width: 2.5; stroke-linecap: round; }
+      .k-cycle .arc-tip { fill: var(--accent); }
+      .k-cycle .hub-mark { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        font-size: 130px; font-weight: 800; color: color-mix(in oklab, var(--ink) 13%, transparent);
+        font-variant-numeric: tabular-nums; }
+      .k-cycle .pos { position: absolute; transform: translate(-50%, -50%); }
+      .k-cycle .node { font-size: 38px; padding: 18px 30px; }
+      /* kind: funnel — bars shrink stage by stage, the entry stage is the accent one */
+      .k-funnel { width: 1160px; max-width: 100%; }
+      .k-funnel .fbody { display: flex; flex-direction: column; gap: 18px; }
+      /* V37: label, track, value in their own columns. The stage name used to be painted
+         inside the bar, which forced a 200px min-width and a 26% floor — a steep chain
+         rendered as four identical bars. Widths are now the stage's real share. */
+      .k-funnel .frow { display: grid; grid-template-columns: 190px 1fr 250px;
+        align-items: center; gap: 22px; width: 100%; }
+      .k-funnel .fk { font-size: 34px; font-weight: 600; text-align: right; color: var(--ink); }
+      .k-funnel .ftrack { display: block; height: 64px; border-radius: 10px; overflow: hidden;
+        background: color-mix(in oklab, var(--ink) 8%, transparent); }
+      .k-funnel .fbar { display: block; height: 100%; border-radius: 10px;
+        background: color-mix(in oklab, var(--accent) 38%, transparent); }
+      .k-funnel .frow:first-child .fbar { background: var(--accent); }
+      .k-funnel .fv { font-size: 32px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+      /* kind: bars — unrelated metrics compared by length; the leader carries the accent */
+      .k-bars { width: 1240px; max-width: 100%; }
+      .k-bars .d-title { margin-bottom: 42px; text-align: left; }
+      .k-bars .brows { display: flex; flex-direction: column; gap: 26px; }
+      .k-bars .brow { display: grid; grid-template-columns: 250px 1fr 170px; align-items: center; gap: 26px; }
+      .k-bars .bk { font-size: 40px; font-weight: 600; color: var(--ink); text-align: right; }
+      .k-bars .btrack { display: block; height: 36px; border-radius: 8px; overflow: hidden;
+        background: color-mix(in oklab, var(--ink) 9%, transparent); }
+      .k-bars .bfill { display: block; height: 100%; border-radius: 8px;
+        background: color-mix(in oklab, var(--ink) 42%, transparent); }
+      .k-bars .bfill.top { background: var(--accent); }
+      .k-bars .bv { font-size: 40px; font-weight: 700; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+      .k-bars .brow.is-top .bv { color: var(--ink); }
+      /* V37: one shared chip for "the number worth naming" — the same device as the
+         trend callout, on the charts that have no line to hang a dot on. */
+      .vtag { display: inline-block; margin-left: 12px; padding: 2px 12px; border-radius: 999px;
+        font-size: 20px; font-weight: 600; letter-spacing: 0.12em; vertical-align: 0.14em;
+        color: var(--accent); border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent); }
+      /* kind: kpi — metrics that don't share a scale get separate cards */
+      .k-kpi { width: 1280px; max-width: 100%; }
+      .k-kpi .d-title { margin-bottom: 44px; text-align: center; }
+      .k-kpi .kcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 26px; }
+      .k-kpi .kcard { display: flex; flex-direction: column; align-items: center; gap: 16px;
+        padding: 44px 30px; border: 1px solid var(--hairline); border-radius: 18px; background: var(--surface);
+        box-shadow: 0 24px 46px -32px color-mix(in oklab, var(--ink) 60%, transparent); }
+      .k-kpi .kv { font-size: 86px; font-weight: 800; line-height: 1; letter-spacing: -0.02em;
+        color: var(--accent); font-variant-numeric: tabular-nums; }
+      .k-kpi .kk { font-size: 32px; color: var(--ink-muted); }
+      /* kind: timeline — dated milestones on one rail; the last tick is the accent one */
+      .k-timeline { width: 1360px; max-width: 100%; }
+      .k-timeline .d-title { margin-bottom: 60px; text-align: center; }
+      .k-timeline .tl { position: relative; display: flex; align-items: flex-start; gap: 18px; padding-top: 6px; }
+      .k-timeline .tl-rail { position: absolute; left: 0; right: 0; top: 26px; height: 3px; border-radius: 2px;
+        background: linear-gradient(90deg, color-mix(in oklab, var(--ink) 26%, transparent), var(--accent)); }
+      .k-timeline .tl-p { position: relative; z-index: 1; flex: 1 1 0; min-width: 0;
+        display: flex; flex-direction: column; align-items: center; gap: 12px; }
+      .k-timeline .tl-dot { width: 16px; height: 16px; border-radius: 999px; background: var(--paper);
+        border: 3px solid color-mix(in oklab, var(--ink) 62%, transparent); }
+      .k-timeline .tl-p.now .tl-dot { background: var(--accent); border-color: var(--accent); }
+      .k-timeline .tl-t { font-size: 34px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+      .k-timeline .tl-p.now .tl-t { color: var(--accent); }
+      .k-timeline .tl-e { font-size: 26px; line-height: 1.35; color: var(--ink-muted); text-align: center; max-width: 230px; }
+      /* kind: share — ring + legend in the same four tones */
+      .k-share { width: 1180px; max-width: 100%; }
+      .k-share .d-title { margin-bottom: 44px; text-align: center; }
+      .k-share .srow { display: flex; align-items: center; justify-content: center; gap: 72px; }
+      .k-share .donut { width: 380px; flex: none; }
+      .k-share .legend { list-style: none; display: flex; flex-direction: column; gap: 22px; }
+      .k-share .legend li { display: flex; align-items: center; gap: 18px; font-size: 40px; color: var(--ink); }
+      .k-share .sw { width: 22px; height: 22px; border-radius: 6px; flex: none; }
+      .k-share .sw.s1 { background: var(--accent); }
+      .k-share .sw.s2 { background: color-mix(in oklab, var(--ink) 62%, transparent); }
+      .k-share .sw.s3 { background: color-mix(in oklab, var(--ink) 34%, transparent); }
+      .k-share .sw.s4 { background: color-mix(in oklab, var(--ink) 18%, transparent); }
+      .k-share .lk { flex: 1; }
+      .k-share .lv { font-weight: 700; font-variant-numeric: tabular-nums; }
+      /* kind: trend — newest value is the hero, the line is its context */
+      .k-trend { width: 900px; max-width: 100%; align-items: center; display: flex; flex-direction: column; gap: 8px; }
+      .k-trend .d-title { text-align: center; margin-bottom: 12px; }
+      .k-trend .tv { font-size: 150px; font-weight: 800; line-height: 1.05; letter-spacing: -0.03em;
+        color: var(--accent); font-variant-numeric: tabular-nums; }
+      .k-trend .spark { width: 820px; max-width: 100%; height: auto; margin-top: 6px; }
+      .k-trend .spark .sl-line { stroke-width: 4; }
+      /* V36: the peak is by definition the topmost point, so the callout goes under it,
+         into the band the line has already vacated, with a dot marking the point itself. */
+      .k-trend .plot { position: relative; }
+      .k-trend .callout { position: absolute; transform: translateX(-50%);
+        display: flex; align-items: baseline; gap: 10px; white-space: nowrap;
+        padding: 2px 12px; border-radius: 8px;
+        background: color-mix(in oklab, var(--paper) 78%, transparent); }
+      .k-trend .callout::before { content: ""; position: absolute; left: 50%; top: -18px;
+        margin-left: -3.5px; width: 7px; height: 7px; border-radius: 999px; background: var(--accent); }
+      .k-trend .cl-v { font-size: 32px; font-weight: 700; color: var(--accent); }
+      .k-trend .cl-l { font-size: 21px; letter-spacing: 0.16em; color: var(--ink-faint); }
+      .k-trend .tlabels { display: flex; justify-content: space-between; width: 820px; max-width: 100%;
+        margin-top: 10px; font-size: 26px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+      /* kind: matrix — four quadrants, equal weight; the ordinal is a position marker */
+      .k-matrix { width: 1180px; max-width: 100%; }
+      .k-matrix .d-title { text-align: center; margin-bottom: 40px; }
+      .k-matrix .mgrid-wrap { display: flex; align-items: stretch; gap: 22px; }
+      .k-matrix .mgrid { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      .k-matrix .mcell { position: relative; display: flex; flex-direction: column; gap: 14px;
+        min-height: 210px; padding: 30px 34px; border: 1px solid var(--hairline); border-radius: 16px;
+        background: color-mix(in oklab, var(--ink) 4%, transparent); }
+      .k-matrix .m-q { font-size: 26px; font-weight: 800; letter-spacing: 0.06em; color: var(--accent);
+        font-variant-numeric: tabular-nums; }
+      .k-matrix .m-t { font-size: 46px; font-weight: 700; line-height: 1.25; color: var(--ink); }
+      .k-matrix .m-axis { font-size: 28px; font-weight: 600; letter-spacing: 0.08em; color: var(--ink-muted); }
+      .k-matrix .m-yaxis { writing-mode: vertical-rl; text-orientation: mixed;
+        display: flex; align-items: center; justify-content: space-between; }
+      .k-matrix .m-xaxis { margin-top: 18px; text-align: center; }
+      /* aspect-aware: fill the tall/narrow frame instead of letterboxing a 16:9 slide */
+      body[data-aspect="portrait"] { --scene-scale: 1.24; }
+      body[data-aspect="square"] { --scene-scale: 1.12; }
+      body[data-aspect="portrait"] #brand { top: 60px; left: calc(var(--gutter-x) * 0.8); font-size: 30px; }
+      body[data-aspect="portrait"] .cap > .inner { font-size: 44px; max-width: 88%; padding: 16px 30px; }
+      body[data-aspect="square"] .cap > .inner { font-size: 40px; max-width: 90%; }
+      /* diagrams are the widest scenes we build — scale the atom down with the frame */
+      body[data-aspect="portrait"] .node { font-size: 38px; padding: 18px 28px; gap: 14px; }
+      body[data-aspect="portrait"] .node.hub { font-size: 42px; padding: 22px 34px; }
+      body[data-aspect="portrait"] .node .n-i { width: 50px; height: 50px; font-size: 26px; }
+      body[data-aspect="portrait"] .d-title { font-size: 46px; }
+      body[data-aspect="portrait"] .k-radial .hubmap { --map-h: 900px; }
+      body[data-aspect="portrait"] .k-flow .link { width: 34px; margin: 0 6px; }
+      body[data-aspect="portrait"] .k-bars { width: 100%; }
+      body[data-aspect="portrait"] .k-bars .brow { grid-template-columns: 150px 1fr 120px; gap: 16px; }
+      body[data-aspect="portrait"] .k-bars .bk, body[data-aspect="portrait"] .k-bars .bv { font-size: 32px; }
+      body[data-aspect="portrait"] .k-bars .btrack { height: 30px; }
+      body[data-aspect="portrait"] .k-kpi .kcard { padding: 34px 22px; }
+      /* portrait: narrow the min track so 3 cards share one row instead of 2 + orphan */
+      body[data-aspect="portrait"] .k-kpi .kcards { grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 18px; }
+      body[data-aspect="portrait"] .k-kpi .kv { font-size: 58px; }
+      body[data-aspect="portrait"] .k-kpi .kk { font-size: 26px; }
+      /* portrait: the rail runs top→bottom and each milestone reads as a row */
+      body[data-aspect="portrait"] .k-timeline { width: 100%; }
+      body[data-aspect="portrait"] .k-timeline .tl { flex-direction: column; align-items: stretch; gap: 34px; padding-top: 0; }
+      body[data-aspect="portrait"] .k-timeline .tl-rail { left: 9px; right: auto; top: 4px; bottom: 4px;
+        width: 3px; height: auto; background: linear-gradient(180deg, color-mix(in oklab, var(--ink) 26%, transparent), var(--accent)); }
+      body[data-aspect="portrait"] .k-timeline .tl-p { flex-direction: row; align-items: flex-start; gap: 22px; }
+      body[data-aspect="portrait"] .k-timeline .tl-dot { margin-top: 8px; flex: none; }
+      body[data-aspect="portrait"] .k-timeline .tl-e { text-align: left; max-width: none; }
+      body[data-aspect="portrait"] .k-share { width: 100%; }
+      body[data-aspect="portrait"] .k-share .srow { flex-direction: column; gap: 44px; }
+      body[data-aspect="portrait"] .k-share .donut { width: 420px; }
+      body[data-aspect="portrait"] .k-share .legend { width: 460px; max-width: 100%; }
+      body[data-aspect="portrait"] .k-trend { width: 100%; }
+      body[data-aspect="portrait"] .k-trend .tv { font-size: 128px; }
+      body[data-aspect="portrait"] .k-trend .spark, body[data-aspect="portrait"] .k-trend .tlabels { width: 660px; }
+      body[data-aspect="portrait"] .k-matrix { width: 100%; }
+      body[data-aspect="portrait"] .k-matrix .mcell { min-height: 168px; padding: 24px 26px; }
+      body[data-aspect="portrait"] .k-matrix .m-t { font-size: 38px; }
+
+      /* ── V11 layout presets — whole-deck composition style ── */
+      /* editorial: magazine-style left-aligned column (breaks the centered "text-flow" feel) */
+      body[data-layout="editorial"] .frame { justify-content: flex-start; }
+      body[data-layout="editorial"] .sbody { align-items: flex-start; }
+      body[data-layout="editorial"] .sbody > .inner,
+      body[data-layout="editorial"] .inner { text-align: left; }
+      body[data-layout="editorial"] .accent-rule { align-self: flex-start; transform-origin: left center; }
+      body[data-layout="editorial"] .scene-media,
+      body[data-layout="editorial"] .k-image { align-items: flex-start; }
+      body[data-layout="editorial"] #glow { left: auto; right: -10%; }
+      /* editorial caption: lower-third, left-aligned with the content column */
+      body[data-layout="editorial"] .cap { justify-content: flex-start; padding-left: var(--gutter-x); }
+      body[data-layout="editorial"] .cap > .inner { text-align: left; border-radius: 4px 14px 14px 4px;
+        border-left: 4px solid var(--accent); }
+      /* bold: accent-filled eyebrow, larger hero type (via --hl-scale so the
+         adaptive overflow guard still shrinks long headlines), heavier rule */
+      body[data-layout="bold"] { --hl-scale: 1.16; }
+      body[data-layout="bold"] .eyebrow { color: var(--accent-ink); background: var(--accent);
+        padding: 8px 22px; border-radius: 999px; letter-spacing: 0.22em; text-transform: uppercase; }
+      body[data-layout="bold"] .headline { font-weight: 900; }
+      body[data-layout="bold"] .k-quote .q { font-size: 120px; font-weight: 800; }
+      body[data-layout="bold"] .k-definition .term { font-size: 96px; }
+      body[data-layout="bold"] .k-section .s-title { font-size: 122px; }
+      body[data-layout="bold"] .accent-rule { width: 200px; height: 10px; border-radius: 5px; }
+      body[data-layout="bold"] #glow { opacity: 1; }
+      /* bold caption: heavier, accent-bar lower-third chip with stronger contrast */
+      body[data-layout="bold"] .cap > .inner { font-weight: 700; border: none;
+        border-left: 8px solid var(--accent); border-radius: 4px;
+        background: color-mix(in oklab, var(--paper) 88%, transparent); }
+      /* V27 diagrams inherit the deck's layout preset */
+      body[data-layout="editorial"] .k-flow .d-title,
+      body[data-layout="editorial"] .k-steps .d-title { text-align: left; }
+      body[data-layout="editorial"] .k-flow .chain { justify-content: flex-start; }
+      body[data-layout="bold"] .node { border-width: 2px; font-weight: 800; }
+      body[data-layout="bold"] .d-title { font-size: 62px; font-weight: 900; }
+      body[data-layout="bold"] .k-radial .spoke { stroke: color-mix(in oklab, var(--ink) 55%, transparent); }
+      body[data-layout="bold"] .k-flow .lk-shaft { stroke: var(--ink-muted); stroke-width: 3.5; }
+      body[data-layout="bold"] .k-flow .lk-head { fill: var(--ink-muted); }
+    </style>
+  </head>
+  <body data-aspect="{{ aspect }}" data-layout="{{ layout }}">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{{ total }}"
+         data-width="{{ canvas.width }}" data-height="{{ canvas.height }}">
+      <div id="bg"></div>
+      <div id="glow" aria-hidden="true"></div>
+      <div id="grain" aria-hidden="true"></div>
+      <div id="ticks" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      {% if brand.label or brand.logo %}<div id="brand">{% if brand.logo %}<img class="brand-logo" src="{{ brand.logo }}" alt="">{% endif %}{% if brand.label %}<span class="a">{{ brand.label }}</span>{% endif %}</div>{% endif %}      <div id="progress"><span id="progress-fill"></span></div>
+      <audio id="vo" src="{{ vo_src }}" data-start="0" data-duration="{{ total }}"></audio>
+
+      {%- for seg in segments %}
+      {%- set scene = scenes[seg.i] %}
+      {# caption shows the full narration UNLESS the slide already renders that exact sentence #}
+      {%- set show_cap = captions.mode != "none" and not scene.slots.get("verbatim") %}
+      {# scenes are plain (non-clip) divs; the ROOT is the only timed clip. GSAP drives #}
+      {# visibility so adjacent scenes can cross-dissolve (overlap) at each boundary. #}
+      <section id="scene-{{ seg.i }}" class="scene" style="z-index:{{ seg.i + 1 }}; opacity:{{ 1 if seg.i == 0 else 0 }};">
+        {#- V32: per-scene light. One fixed global glow made every slide carry an
+            identical background, so a run of text beats read as the same frame; the
+            wash cycles by scene index and drifts across the cross-dissolve. -#}
+        <span class="wash w{{ (seg.i % 3) + 1 }}" aria-hidden="true"></span>
+        <div class="frame"><div class="sbody{{ ' sbody--ed' if scene.kind in ['statement', 'section'] }}{{ ' sbody--' + scene.slots.variant if scene.slots.get('variant') }}">
+          {%- if scene.slots.get("icon") and scene.kind not in ['flow', 'radial', 'steps', 'arch', 'cycle', 'funnel'] %}<div class="scene-icon">{{ icon_svg(scene.slots.get("icon")) | safe }}</div>{% endif %}
+          {%- if scene.kind != "image" and scene.slots.get("image") %}<div class="scene-media"><div class="shot{{ ' tone-color' if scene.slots.get('image_tone') == 'color' else '' }}"><img src="{{ scene.slots.get('image') }}" alt=""></div>{% if scene.slots.get("image_caption") %}<span class="mcap">{{ scene.slots.get("image_caption") }}</span>{% endif %}</div>{% endif %}
+          {% include "kinds/" + scene.kind + ".html.j2" %}
+          {%- if scene.kind in ["title", "statement", "summary", "section", "definition", "quote", "note"] %}<span class="accent-rule"></span>{% endif %}
+        </div></div>
+        {% if folio %}<div class="folio"><span class="f-now">{{ '%02d' % (seg.i + 1) }}</span><span class="f-sep">/</span><span>{{ '%02d' % (segments | length) }}</span></div>{% endif %}
+        {%- if sections and scene.section %}<div class="sec-tag">{{ scene.section }}</div>{% endif %}
+        {%- if show_cap %}
+        <div class="cap"><div class="inner">{{ detonate(seg.text) }}</div></div>
+        {%- endif %}
+      </section>
+      {%- endfor %}
+    </div>
+    {%- if math %}
+    <script>
+      // before the timeline is built, so GSAP resolves its targets against the final DOM.
+      // `$…$` is NOT in auto-render's default delimiter set (it ships without it so a
+      // dollar amount never becomes a formula), so it has to be named here.
+      renderMathInElement(document.body, {
+        delimiters: [
+          { left: "$$", right: "$$", display: true },
+          { left: "$", right: "$", display: false }
+        ],
+        throwOnError: false
+      });
+    </script>
+    {%- endif %}
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      {%- set enter = theme.motion.durations.enter %}
+      {%- set eease = theme.motion.ease_enter %}
+      {%- set capenter = theme.motion.durations.enter_caption %}
+      {%- set blur = 12 %}
+      {%- set tdur = 0.5 %}
+      {%- for seg in segments %}
+      {%- set scene = scenes[seg.i] %}
+      {%- set show_cap = captions.mode != "none" and not scene.slots.get("verbatim") %}
+      {# entrance of the slide content (and its caption) at the scene's start #}
+      {# entrance: stagger the scene's icon / media / secondary content (icon→eyebrow→sub→rows…).
+         Data kinds slide in from the left (x) to match their horizontal push transition;
+         narrative kinds rise (y). Steady state is identical either way (both end at 0). #}
+      {%- set data_kind = scene.kind in ['stat','list','table','cards','compare','bars'] %}
+      {%- set diagram = scene.kind in ['flow','radial','steps','arch','cycle','funnel'] %}
+      {#- V34: item reveals are spread across the scene's own dwell instead of a fixed
+          0.1s gap. A 1.6s beat must still snap; an 8s narration beat that finishes its
+          layout in 0.5s then holds a dead frame for 7.5s — that hold is what reads as
+          "auto-generated". Bounded by dur-1.15 so the last item still settles before
+          the scene transitions out (0.28 lead-in + 0.7 tween), and by 2.6s so a long
+          chapter beat doesn't crawl. -#}
+      {%- set sd = [[0.22, [seg.dur * 0.34, seg.dur - 1.15] | min] | max, 2.6] | min | round(3) %}
+      {#- V56: the seam is a 0.75s blur+opacity crossfade (measured: the scene is 28% opaque and
+          still blurred 13px at +0.25s, legible only at +0.75s), while content used to start at
+          +0.0…0.06s — so roughly half of every entrance ran where the viewer could not see it,
+          and the headline arrived already half-wiped.  Builds now start once the slide is up;
+          short beats keep a tight lead-in so the reveal still settles before the exit. -#}
+      {%- set e0 = 0.34 if seg.dur >= 3.0 else 0.16 %}
+      {%- if diagram %}
+      {#- V27 diagrams assemble themselves: title drops, then pills pop in reading order
+          while their connectors surface one beat behind the node they lead to. -#}
+      tl.fromTo("#scene-{{ seg.i }} .d-title", { opacity: 0, y: -20 },
+        { opacity: 1, y: 0, duration: {{ enter }}, ease: "{{ eease }}" }, {{ seg.start }});
+      tl.fromTo("#scene-{{ seg.i }} .node", { opacity: 0, scale: 0.82 },
+        { opacity: 1, scale: 1, duration: 0.52, ease: "{{ eease }}", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.12)|round(3) }});
+      tl.fromTo("#scene-{{ seg.i }} .link, #scene-{{ seg.i }} .spoke", { opacity: 0 },
+        { opacity: 1, duration: 0.34, ease: "power1.out", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.26)|round(3) }});
+      {%- if scene.kind == 'arch' %}
+      {#- bottom-up: the foundation arrives first, the accent layer last -#}
+      tl.fromTo("#scene-{{ seg.i }} .layer", { opacity: 0, y: 30 },
+        { opacity: 1, y: 0, duration: {{ enter }}, ease: "{{ eease }}", stagger: { amount: {{ sd }}, from: "end" } }, {{ (seg.start + 0.1)|round(3) }});
+      {%- elif scene.kind == 'funnel' %}
+      tl.fromTo("#scene-{{ seg.i }} .fbar", { opacity: 0, scaleX: 0 },
+        { opacity: 1, scaleX: 1, duration: 0.5, ease: "power2.out", transformOrigin: "left center", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.12)|round(3) }});
+      tl.fromTo("#scene-{{ seg.i }} .fv", { opacity: 0, x: -14 },
+        { opacity: 1, x: 0, duration: 0.34, ease: "power2.out", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.34)|round(3) }});
+      {%- elif scene.kind == 'cycle' %}
+      tl.fromTo("#scene-{{ seg.i }} .hub-mark", { opacity: 0, scale: 0.7 },
+        { opacity: 1, scale: 1, duration: 0.6, ease: "{{ eease }}" }, {{ (seg.start + e0)|round(3) }});
+      tl.fromTo("#scene-{{ seg.i }} .arc, #scene-{{ seg.i }} .arc-tip", { opacity: 0 },
+        { opacity: 1, duration: 0.4, ease: "power1.out", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.55)|round(3) }});
+      {%- endif %}
+      tl.fromTo("#scene-{{ seg.i }} .rail-fill", { scaleY: 0 },
+        { scaleY: 1, duration: {{ (0.16 * (scene.slots.steps | length) + 0.42) | round(3) if scene.slots.steps else 0.6 }}, ease: "power1.inOut", transformOrigin: "top center" }, {{ (seg.start + 0.2)|round(3) }});
+      {%- else %}
+      tl.fromTo("#scene-{{ seg.i }} .scene-icon, #scene-{{ seg.i }} .scene-media, #scene-{{ seg.i }} .inner > *:not(.headline,.s-title,.term,.q,.rows)",
+        { opacity: 0, {% if data_kind %}x: -30{% else %}y: 24{% endif %} },
+        { opacity: 1, {% if data_kind %}x: 0{% else %}y: 0{% endif %}, duration: {{ enter }}, ease: "{{ eease }}", stagger: 0.09 }, {{ (seg.start + e0)|round(3) }});
+      {%- endif %}
+      {# V16 row-by-row reveal for table/cards (their rows are nested in .rows, so the block
+         entrance above excludes .rows and each row staggers in from the left instead). #}
+      {%- if scene.kind in ['table','cards','bars'] %}
+      tl.fromTo("#scene-{{ seg.i }} .row, #scene-{{ seg.i }} .brow", { opacity: 0, x: -24 },
+        { opacity: 1, x: 0, duration: {{ enter }}, ease: "{{ eease }}", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.12)|round(3) }});
+      {%- endif %}
+      {#- V31d: kpi cards pop in reading order; the timeline rail draws, then its
+          ticks land on it. Rail scales along the axis the layout actually uses. -#}
+      {%- if scene.kind == 'kpi' %}
+      tl.fromTo("#scene-{{ seg.i }} .kcard", { opacity: 0, y: 18, scale: 0.94 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: "{{ eease }}", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.16)|round(3) }});
+      {%- elif scene.kind == 'timeline' %}
+      tl.from("#scene-{{ seg.i }} .tl-rail", { {% if aspect == 'portrait' %}scaleY: 0{% else %}scaleX: 0{% endif %}, duration: 0.8, ease: "power1.inOut" }, {{ (seg.start + 0.1)|round(3) }});
+      tl.fromTo("#scene-{{ seg.i }} .tl-p", { opacity: 0, y: 16 },
+        { opacity: 1, y: 0, duration: {{ enter }}, ease: "{{ eease }}", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.26)|round(3) }});
+      {%- elif scene.kind == 'trend' %}
+      {#- the line wipes in left→right like the hero text, so the series reads as being
+          drawn rather than fading into place -#}
+      tl.fromTo("#scene-{{ seg.i }} .spark", { clipPath: "inset(0 100% 0 0)", opacity: 0.001 },
+        { clipPath: "inset(0 0% 0 0)", opacity: 1, duration: 0.9, ease: "{{ eease }}" }, {{ (seg.start + 0.22)|round(3) }});
+      tl.fromTo("#scene-{{ seg.i }} .tlabels > *", { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: 0.34, ease: "power2.out", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.5)|round(3) }});
+      {%- elif scene.kind == 'matrix' %}
+      tl.fromTo("#scene-{{ seg.i }} .mcell", { opacity: 0, scale: 0.94 },
+        { opacity: 1, scale: 1, duration: 0.46, ease: "power2.out", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.16)|round(3) }});
+      tl.fromTo("#scene-{{ seg.i }} .m-axis", { opacity: 0 },
+        { opacity: 1, duration: 0.4, ease: "power1.out" }, {{ (seg.start + 0.5)|round(3) }});
+      {%- elif scene.kind == 'share' %}
+      tl.fromTo("#scene-{{ seg.i }} .donut", { opacity: 0, scale: 0.86 },
+        { opacity: 1, scale: 1, duration: 0.62, ease: "{{ eease }}", transformOrigin: "center" }, {{ (seg.start + 0.12)|round(3) }});
+      tl.fromTo("#scene-{{ seg.i }} .legend li", { opacity: 0, x: -22 },
+        { opacity: 1, x: 0, duration: {{ enter }}, ease: "{{ eease }}", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.3)|round(3) }});
+      {%- endif %}
+      {# V9-3 kinetic headline: the display text wipes in left→right (clip-path) + settles,
+         a distinct signature motion for the focal line vs the fade/rise of secondary content. #}
+      tl.fromTo("#scene-{{ seg.i }} .headline:not(.kinetic), #scene-{{ seg.i }} .s-title:not(.kinetic), #scene-{{ seg.i }} .term, #scene-{{ seg.i }} .q",
+        { clipPath: "inset(-12% 100% -12% 0)", opacity: 0.001 },
+        { clipPath: "inset(-12% 0% -12% 0)", opacity: 1, duration: {{ (enter + 0.28)|round(3) }}, ease: "{{ eease }}" }, {{ (seg.start + e0)|round(3) }});
+      {#- V52b kinetic typography: a `.kinetic` headline rises out of per-chunk masks, the
+          chunks spread across the beat's own dwell (same `sd` budget as item reveals), so the
+          text arrives roughly as fast as the narration reads it. One signature motion per
+          element — the wipe above is skipped for these, or the two fight. The mask box gets
+          0.12em of padding with a matching negative margin: line-height 1.1 clips glyph tops
+          otherwise (the same reason the wipe uses inset(-12%)). -#}
+      tl.fromTo("#scene-{{ seg.i }} .headline.kinetic .ch > i, #scene-{{ seg.i }} .s-title.kinetic .ch > i", { yPercent: 118, opacity: 0.001 },
+        { yPercent: 0, opacity: 1, duration: 0.46, ease: "{{ eease }}", stagger: { amount: {{ sd }} } }, {{ (seg.start + e0)|round(3) }});
+      {# V9-4 accent rule draws in under the hero (signature PPT flourish), transform-only #}
+      tl.fromTo("#scene-{{ seg.i }} .top-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "{{ eease }}" }, {{ (seg.start + 0.24)|round(3) }});
+      tl.fromTo("#scene-{{ seg.i }} .accent-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.55, ease: "{{ eease }}" }, {{ (seg.start + 0.42)|round(3) }});
+      {# V9-5 data-viz draw-in: ring strokes in from empty, table bars grow left→right.
+         stroke/scaleX only → deterministic; .from() reads each element's authored end value. #}
+      tl.from("#scene-{{ seg.i }} .ring-fill", { strokeDashoffset: 263.894, duration: 0.9, ease: "power2.out" }, {{ (seg.start + 0.2)|round(3) }});
+      tl.from("#scene-{{ seg.i }} .tbar, #scene-{{ seg.i }} .bfill", { scaleX: 0, transformOrigin: "left center", duration: 0.7, ease: "power2.out", stagger: { amount: {{ sd }} } }, {{ (seg.start + 0.28)|round(3) }});
+      {#- V33 Ken Burns: the shot drifts for as long as the scene is on screen, so a
+          still image is never a dead rectangle. Scale-only — it overflows the .shot box
+          and is clipped, so it stays inside the transform allowlist. -#}
+      {%- if scene.slots.get("image") %}
+      {%- set kb = (seg.dur - 0.5) | round(3) %}
+      {%- if kb > 0.6 %}
+      tl.fromTo("#scene-{{ seg.i }} .shot img", { scale: 1.02 },
+        { scale: 1.075, duration: {{ kb }}, ease: "none" }, {{ (seg.start + 0.2)|round(3) }});
+      {%- endif %}
+      {%- endif %}
+      {%- if show_cap %}
+      tl.fromTo("#scene-{{ seg.i }} .cap > .inner", { opacity: 0, y: 16 },
+        { opacity: 1, y: 0, duration: {{ capenter }}, ease: "power2.out" }, {{ seg.start }});
+      {%- endif %}
+      {#- transitions graded by narrative role (incoming kind): one primary + 2 accents #}
+      {%- if not loop.first %}
+      {%- set T = seg.start %}
+      {%- if scene.kind == 'section' %}
+      {#- topic change → slide + dissolve (motion signal, softened so large centered text doesn't collide) #}
+      tl.to("#scene-{{ seg.i - 1 }}", { yPercent: -60, opacity: 0, duration: 0.5, ease: "power3.inOut" }, {{ T }});
+      tl.fromTo("#scene-{{ seg.i }}", { yPercent: 60, opacity: 0 },
+        { yPercent: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, {{ T }});
+      {%- elif scene.kind == 'summary' %}
+      {#- wind-down / outro → slow, gentle blur crossfade #}
+      tl.to("#scene-{{ seg.i - 1 }}", { filter: "blur(18px)", opacity: 0, duration: 0.7, ease: "sine.inOut" }, {{ T }});
+      tl.fromTo("#scene-{{ seg.i }}", { filter: "blur(18px)", opacity: 0 },
+        { filter: "blur(0px)", opacity: 1, duration: 0.7, ease: "sine.inOut" }, {{ T }});
+      {%- elif scene.kind in ['stat', 'list', 'table', 'cards', 'compare', 'flow', 'radial', 'steps', 'arch', 'cycle', 'funnel'] %}
+      {#- data/structured → directional push (parallax slide + fade), distinct from the narrative blur #}
+      tl.to("#scene-{{ seg.i - 1 }}", { xPercent: -16, opacity: 0, duration: {{ tdur }}, ease: "power2.inOut" }, {{ T }});
+      tl.fromTo("#scene-{{ seg.i }}", { xPercent: 16, opacity: 0 },
+        { xPercent: 0, opacity: 1, duration: {{ tdur }}, ease: "power2.out" }, {{ T }});
+      {%- else %}
+      {#- primary → blur crossfade (this continues) #}
+      tl.to("#scene-{{ seg.i - 1 }}", { filter: "blur({{ blur }}px)", opacity: 0, duration: {{ tdur }}, ease: "power2.inOut" }, {{ T }});
+      tl.fromTo("#scene-{{ seg.i }}", { filter: "blur({{ blur }}px)", opacity: 0 },
+        { filter: "blur(0px)", opacity: 1, duration: {{ tdur }}, ease: "power2.inOut" }, {{ T }});
+      {%- endif %}
+      {%- endif %}
+      {%- endfor %}
+      {#- final scene fades to black at the very end (the only allowed exit) #}
+      {%- set last = segments | length - 1 %}
+      {%- if last >= 0 %}
+      tl.to("#scene-{{ last }}", { opacity: 0, duration: 0.6, ease: "power2.in" }, {{ (total - 0.6)|round(3) }});
+      {%- endif %}
+      {#- global timeline progress: one linear fill across the whole video #}
+      tl.fromTo("#progress-fill", { scaleX: 0 }, { scaleX: 1, duration: {{ total }}, ease: "none" }, 0);
+      {#- V9-7 ambient life: the accent glow drifts slowly across the whole video #}
+      tl.to("#glow", { xPercent: 26, yPercent: -20, duration: {{ total }}, ease: "sine.inOut" }, 0);
+      {#- V15 kinetic count-up: stat numbers roll 0→target via a proxy tween. Runs during
+          timeline build (sync, not async); deterministic because seek recomputes progress. #}
+      document.querySelectorAll(".cu").forEach(function (el) {
+        var to = parseFloat(el.dataset.to), dec = parseInt(el.dataset.dec || "0", 10);
+        var st = parseFloat(el.dataset.start || "0");
+        var o = { v: 0 };
+        tl.to(o, { v: to, duration: 1.0, ease: "power2.out",
+          onUpdate: function () { el.textContent = o.v.toFixed(dec); } }, st + 0.25);
+      });
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

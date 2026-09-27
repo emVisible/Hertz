@@ -18,7 +18,7 @@ class ProviderTemplate:
     desc: str
     # 需要 API key？False 的（本地推理）不强制 key
     needs_key: bool = True
-    # 协议：openai_compat（默认）| comfyui | edge_tts（决定 TaskRouter 用哪个连接器）
+    # 协议：openai_compat（默认）| comfyui | edge_tts | kokoro（决定 TaskRouter 用哪个连接器）
     protocol: str = "openai_compat"
     # 出厂模型（仅系统连接器有；OpenAI 兼容类一律从远程拉取，此处为空）
     models: tuple[tuple[str, str, str], ...] = field(default_factory=tuple)
@@ -73,6 +73,24 @@ PROVIDER_TEMPLATES: tuple[ProviderTemplate, ...] = (
             ("tts", "zh-CN-YunxiNeural", "中文男声·云希"),
             ("tts", "en-US-AriaNeural", "English · Aria"),
             ("tts", "en-US-GuyNeural", "English · Guy"),
+        ),
+    ),
+    ProviderTemplate(
+        key="kokoro",
+        name="Kokoro（本地 · 中文声调正确）",
+        base_url="",
+        desc="本地 ONNX 合成，中文声调正确（monoline 融合），权重在 data/models/kokoro",
+        needs_key=False,
+        protocol="kokoro",
+        models=(
+            ("tts", "zf_xiaoxiao", "中文女声·晓晓"),
+            ("tts", "zf_xiaoyi", "中文女声·晓伊"),
+            ("tts", "zf_xiaoni", "中文女声·晓妮"),
+            ("tts", "zf_xiaobei", "中文女声·小北"),
+            ("tts", "zm_yunyang", "中文男声·云扬"),
+            ("tts", "zm_yunjian", "中文男声·云健"),
+            ("tts", "zm_yunxi", "中文男声·云希"),
+            ("tts", "zm_yunxia", "中文男声·云夏"),
         ),
     ),
 )

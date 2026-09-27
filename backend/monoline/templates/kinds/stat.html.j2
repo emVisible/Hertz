@@ -1,0 +1,30 @@
+<div class="inner k-stat">
+  {%- set val = scene.slots.value or scene.slots.headline %}
+  {%- set cu = count_up(val) %}
+  {%- set p = pct(val) %}
+  {%- macro vnum() %}
+    {%- if cu %}{{ cu.prefix }}<span class="cu" data-to="{{ cu.num }}" data-dec="{{ cu.dec }}" data-start="{{ seg.start }}">{{ cu.num }}</span>{{ cu.suffix }}
+    {%- else %}{{ val }}{%- endif %}
+  {%- endmacro %}
+  {%- if p is not none %}
+  <div class="ring-wrap">
+    {{ ring(p) | safe }}
+    <div class="ring-center"><span class="value in-ring">{{ vnum() }}</span></div>
+  </div>
+  {%- else %}
+  {#- the number is painted once and cannot wrap: fit it to the content column (gutter to gutter,
+      capped by .sbody's 1400px) instead of letting 6+ digits bleed past the margin. -#}
+  {%- set avail = [1400, canvas.width - 2 * theme.space.gutter_x] | min %}
+  <div class="value" style="--hero-fs: {{ hero_px(val, base=260, min_px=140, avail_px=avail) }}px">{{ vnum() }}</div>
+  {%- endif %}
+  {%- if scene.slots.unit %}<div class="unit">{{ scene.slots.unit }}</div>{% endif %}
+  {%- if scene.slots.label %}<div class="label">{{ scene.slots.label }}</div>{% endif %}
+  {#- V31c: a change figure gets an arrow chip, a number series gets a trend line.
+      Both stay silent when the text carries no direction / fewer than 2 numbers. -#}
+  {%- set d = delta(scene.slots.delta) or delta(scene.slots.label) %}
+  {%- if d %}
+  <div class="delta {{ d.dir }}"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 L11 10.5 L1 10.5 Z"/></svg>
+    <span>{{ d.sign }}{{ d.num }}{{ d.suffix }}</span></div>
+  {%- endif %}
+  {%- if scene.slots.trend %}{{ sparkline(scene.slots.trend) | safe }}{% endif %}
+</div>

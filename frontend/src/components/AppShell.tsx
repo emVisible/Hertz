@@ -11,12 +11,13 @@ import { ActivityPanel } from './ActivityPanel'
 import { OnboardingModal } from './OnboardingModal'
 import { useThemeStore } from '../stores/theme'
 import { useExecutionStore } from '../stores/execution'
-import { pipelineApi } from '../api'
+import { pipelineApi, monolineApi } from '../api'
 import { PageTransition } from '../components/PageTransition'
 import { AssetsPage } from '../pages/assets/AssetsPage'
 import { DashboardPage } from '../pages/dashboard/DashboardPage'
 import { PlansPage } from '../pages/plans/PlansPage'
 import { ExecutionPage } from '../pages/execution/ExecutionPage'
+import { MonolinePage } from '../pages/monoline/MonolinePage'
 import { CanvasPage } from '../pages/canvas/CanvasPage'
 import { SettingsPage } from '../pages/settings/SettingsPage'
 import { CostPage } from '../pages/cost/CostPage'
@@ -52,13 +53,20 @@ export function AppShell() {
     refetchInterval: 5000,
   })
   const pipelineRunning = pipelineStatus?.running ?? false
-  const anyRunning = studioRunning || pipelineRunning
+  const { data: monolineStatus } = useQuery({
+    queryKey: ['monoline-status'],
+    queryFn: monolineApi.status,
+    refetchInterval: 5000,
+  })
+  const monolineRunning = monolineStatus?.running ?? false
+  const anyRunning = studioRunning || pipelineRunning || monolineRunning
 
   const navItems: NavItem[] = [
     // 看板（v0.12 置顶）：系统评估首页——漏斗/趋势/产能/健康 一屏总览
     { to: '/dashboard', icon: 'whisper', label: t('nav.dashboard'), group: 'produce' },
     // 生产
     { to: '/execution', icon: 'console', label: t('nav.execution'), group: 'produce' },
+    { to: '/monoline', icon: 'play', label: t('nav.monoline'), group: 'produce' },
     { to: '/plans', icon: 'plans', label: t('nav.plans'), group: 'produce' },
     // 素材（唯一出口：下载/资源/文档）
     { to: '/assets', icon: 'box', label: t('nav.assets'), group: 'assets' },
@@ -87,13 +95,19 @@ export function AppShell() {
             <button
               type="button"
               onClick={() =>
-                navigate(pipelineRunning ? '/execution?mode=pipeline' : '/execution?mode=studio')
+                navigate(
+                  monolineRunning
+                    ? '/monoline'
+                    : pipelineRunning
+                      ? '/execution?mode=pipeline'
+                      : '/execution?mode=studio',
+                )
               }
               title={t('execution.jumpToRunning')}
               className="ml-3 flex shrink-0 items-center gap-1.5 border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-text-primary transition-colors hover:border-primary hover:text-primary"
             >
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-              {pipelineRunning ? t('execution.modePipeline') : t('execution.modeStudio')}
+              {monolineRunning ? t('nav.monoline') : pipelineRunning ? t('execution.modePipeline') : t('execution.modeStudio')}
               · {t('execution.running')}
             </button>
           )}
@@ -113,6 +127,7 @@ export function AppShell() {
           <PageTransition>
             <Routes>
               <Route path="/execution" element={<ExecutionPage />} />
+              <Route path="/monoline" element={<MonolinePage />} />
               <Route path="/studio" element={<Navigate to="/execution?mode=studio" replace />} />
               <Route path="/console" element={<Navigate to="/execution?mode=pipeline" replace />} />
               {/* v0.12：发布队列并入执行页第三 tab（队列也是执行域） */}

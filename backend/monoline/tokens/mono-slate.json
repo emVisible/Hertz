@@ -1,0 +1,38 @@
+{
+  "id": "mono-slate",
+  "label": "Mono Slate",
+  "mode": "dark",
+  "tokens": {
+    "color": {
+      "paper": "#0E1116",
+      "surface": "#151A21",
+      "elev": "#1B222B",
+      "hairline": "#28303B",
+      "ink": "#E7ECF2",
+      "ink_muted": "#8A97A6",
+      "ink_faint": "#4A5561",
+      "accent": "#9DB8C9",
+      "accent_ink": "#0E1116"
+    },
+    "type": {
+      "family": "ExplainerCJK",
+      "family_latin": "MonolineUI",
+      "scale_ratio": 1.25,
+      "roles": { "eyebrow": 30, "body": 40, "sub": 44, "label": 52, "h1": 150, "h2": 88, "display": 230 },
+      "tracking": { "eyebrow": "0.45em", "display": "-0.035em" },
+      "leading": { "display": 0.92, "body": 1.55 }
+    },
+    "space": { "unit": 8, "gutter_x": 128, "gutter_y": 96, "caption_bottom": 112, "caption_max_w": 1520 },
+    "motion": {
+      "ease_enter": "power3.out",
+      "ease_exit": "power2.inOut",
+      "ease_micro": "power1.out",
+      "in": { "opacity": 0, "y": 28 },
+      "in_caption": { "opacity": 0, "y": 16 },
+      "durations": { "enter": 0.5, "enter_caption": 0.35, "hold_min": 1.2, "exit": 0.34, "crossfade": 0.0 },
+      "stagger": 0.06,
+      "max_stagger_total": 0.42
+    },
+    "rules": { "caption_plate": "hairline", "scene_border": "none", "grain": "none", "bg": "flat_wash" }
+  }
+}

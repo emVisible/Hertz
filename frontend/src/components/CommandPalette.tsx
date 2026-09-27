@@ -15,7 +15,7 @@ interface CommandItem {
   group: string
   label: string
   hint?: string
-  icon?: 'studio' | 'plans' | 'config' | 'canvas' | 'console' | 'box' | 'search'
+  icon?: 'studio' | 'plans' | 'config' | 'canvas' | 'console' | 'box' | 'search' | 'play'
   run: () => void
 }
 
@@ -112,6 +112,17 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         icon: 'console',
         run: () => {
           navigate('/execution?mode=pipeline')
+          onClose()
+        },
+      })
+      out.push({
+        id: 'action:monoline',
+        group: t('command.actions'),
+        label: t('command.openMonoline'),
+        hint: t('command.openMonolineHint'),
+        icon: 'play',
+        run: () => {
+          navigate('/monoline')
           onClose()
         },
       })

@@ -1,0 +1,13 @@
+<div class="inner k-table">
+  {%- if scene.slots.title %}<div class="t-title">{{ scene.slots.title }}</div>{% endif %}
+  {%- set bars = row_bars(scene.slots.rows | map(attribute='v') | list) %}
+  <div class="rows">
+    {%- for r in scene.slots.rows %}
+    {%- set p = bars[loop.index0] %}
+    <div class="row">
+      <div class="rowline"><span class="k">{{ r.k }}</span><span class="v">{{ r.v }}</span></div>
+      {%- if p is not none %}<span class="tbar" style="width:{{ p }}%"></span>{% endif %}
+    </div>
+    {%- endfor %}
+  </div>
+</div>

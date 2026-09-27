@@ -1,0 +1,66 @@
+{#- Branch anchors are computed HERE, at compose time, in normalized 0-100 view units.
+    Tween-time DOM measurement desyncs under the parallel renderer, so the spoke ends and
+    the node positions must come from one set of numbers — hence namespace-built rows. -#}
+{%- set wide = aspect != "portrait" %}
+{#- node_imgs is an optional overlay aligned by index: the planner and the LLM upgrade
+    both emit plain string nodes, so a screenshot can only ever be added by hand. -#}
+{%- set imgs = scene.slots.node_imgs or [] %}
+{%- set nimg = namespace(any=false) %}
+{%- for nd in scene.slots.nodes %}{%- if imgs[loop.index0] %}{%- set nimg.any = true %}{%- endif %}{%- endfor %}
+{#- An image chip is ~210px tall against a text chip's ~90px, so it needs both a wider
+    row pitch and a hard node cap — 5 branches with screenshots collide on a 600px map. -#}
+{%- if nimg.any %}{%- set cap = 4 if wide else 3 %}{%- else %}{%- set cap = 5 if wide else 4 %}{%- endif %}
+{%- set nodes = scene.slots.nodes[:cap] %}
+{%- set pitch_img = 44 if wide else 27 %}
+{%- macro body(nd, i) -%}
+  {%- set im = imgs[i] or "" -%}
+  <span class="node{% if im %} has-img{% endif %}">
+    {%- if im %}<img class="n-img" src="{{ im }}" alt="">{% endif -%}
+    <span class="n-t">{{ nd }}</span>
+  </span>
+{%- endmacro -%}
+{%- set hub_y = 13 %}
+{%- set ns = namespace(rows=[]) %}
+{%- if wide %}
+  {%- set nl = (nodes | length + 1) // 2 %}
+  {%- set nr = nodes | length - nl %}
+  {%- for nd in nodes[:nl] %}
+    {%- set y = 50 + (loop.index0 - (nl - 1) / 2) * (pitch_img if nimg.any else (36 if nl <= 2 else 26)) %}
+    {%- set ns.rows = ns.rows + [{"t": nd, "i": loop.index0, "x": 18, "y": y, "hub": false}] %}
+  {%- endfor %}
+  {%- for nd in nodes[nl:] %}
+    {%- set y = 50 + (loop.index0 - (nr - 1) / 2) * (pitch_img if nimg.any else (36 if nr <= 2 else 26)) %}
+    {%- set ns.rows = ns.rows + [{"t": nd, "i": loop.index0 + nl, "x": 82, "y": y, "hub": false}] %}
+  {%- endfor %}
+{%- else %}
+  {#- 9:16 has no horizontal room for two columns: fan the branches down the page instead. -#}
+  {%- set pitch = pitch_img if nimg.any else (48 / ((nodes | length) - 1) if (nodes | length) > 1 else 0) %}
+  {%- for nd in nodes %}
+    {%- set x = 50 + (16 if loop.index0 % 2 == 0 else -16) %}
+    {%- set y = 33 + loop.index0 * pitch %}
+    {%- set ns.rows = ns.rows + [{"t": nd, "i": loop.index0, "x": x, "y": y, "hub": true}] %}
+  {%- endfor %}
+{%- endif %}
+<div class="inner k-radial">
+  <div class="hubmap">
+    <svg class="spokes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      {%- for r in ns.rows %}
+      {%- if r.hub %}
+      <path class="spoke" vector-effect="non-scaling-stroke"
+            d="M{{ ((50 + r.x) / 2) | round(1) }} {{ hub_y }} Q {{ ((50 + r.x) / 2) | round(1) }} {{ (hub_y + (r.y - hub_y) * 0.55) | round(1) }} {{ r.x }} {{ r.y | round(1) }}" />
+      {%- else %}
+      <path class="spoke" vector-effect="non-scaling-stroke"
+            d="M50 50 Q {{ ((50 + r.x) / 2) | round(1) }} {{ (50 + (r.y - 50) * 0.28) | round(1) }} {{ r.x }} {{ r.y | round(1) }}" />
+      {%- endif %}
+      {%- endfor %}
+    </svg>
+    {%- if not ns.rows[0].hub %}
+    <span class="pos" style="left:50%; top:50%"><span class="node hub">{{ scene.slots.hub }}</span></span>
+    {%- else %}
+    <span class="pos" style="left:50%; top:{{ hub_y }}%"><span class="node hub">{{ scene.slots.hub }}</span></span>
+    {%- endif %}
+    {%- for r in ns.rows %}
+    <span class="pos" style="left:{{ r.x }}%; top:{{ r.y | round(1) }}%">{{ body(r.t, r.i) }}</span>
+    {%- endfor %}
+  </div>
+</div>
