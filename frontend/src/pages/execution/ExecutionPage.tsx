@@ -94,6 +94,9 @@ export function ExecutionPage() {
           counts={pipeline.counts}
           stageError={pipeline.stageError}
           refetchStage={pipeline.refetchStage}
+          preFilters={pipeline.preFilters}
+          discoveredFacets={pipeline.discoveredFacets}
+          setPreFilters={pipeline.setPreFilters}
           stageDiscovered={pipeline.stageDiscovered}
           stageDownloaded={pipeline.stageDownloaded}
           stageScored={pipeline.stageScored}

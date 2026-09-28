@@ -3,6 +3,7 @@
  *  tab 组件不自治取数，全部经主壳 props 下发，避免与 ActivityPanel 状态分裂。 */
 
 import type { PipelineItem } from '../../../api'
+import type { PreFilterPatch } from '../../../hooks/usePipelineData'
 import type { usePipelineExecution } from '../../../hooks/usePipelineExecution'
 
 export interface PipelineViewProps {
@@ -14,6 +15,12 @@ export interface PipelineViewProps {
   stageError: boolean
   refetchStage: () => void
   stageDiscovered: ReturnType<typeof usePipelineExecution>['stageDiscovered']
+  /** 未评分三轴（v0.34 A）：读模型 + 分面 + 写轴入口。
+   *  轴必须进请求（服务端筛：limit 500 < discovered 活口 2659），
+   *  分面的 total/hit 是两个数——界面才分得清「筛没了」与「本来就没有」。 */
+  preFilters: ReturnType<typeof usePipelineExecution>['preFilters']
+  discoveredFacets?: ReturnType<typeof usePipelineExecution>['discoveredFacets']
+  setPreFilters: (patch: PreFilterPatch) => void
   stageDownloaded: ReturnType<typeof usePipelineExecution>['stageDownloaded']
   stageScored: ReturnType<typeof usePipelineExecution>['stageScored']
   stageQueued: ReturnType<typeof usePipelineExecution>['stageQueued']
