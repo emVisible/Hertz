@@ -222,17 +222,25 @@ def _check_telegram_cfg() -> dict:
     }
 
 
-def reddit_credentials_configured() -> bool:
+def reddit_credentials_configured(
+    client_id: object | None = None, client_secret: object | None = None
+) -> bool:
     """Reddit OAuth 凭证齐不齐——**这条判据的唯一作者**。
 
-    id 与 secret 必须都非空才谈得上签名直链（只填一半，OAuth 换 token 会 401）。
-    能力矩阵条目与 `GET /api/pipeline/reddit-auth/status` 都读这里：判据在第二处
-    重写就会漂移成「矩阵说 ok、端点说没配」。
+    id 与 secret 必须都非空才谈得上签名直链（只填一半，OAuth 换 token 会 401）；
+    粘进来的空格不算数，所以判的是 `strip()` 后的非空。
+
+    缺省读 settings 的两个字段；已经自己持有值的调用方把值递进来——**读值不等于
+    数判据**，采集侧换 Basic 头本来就要用这两个值，但「配没配」这个判断全仓只有
+    下面这一行。三个消费者：能力矩阵条目 `_check_reddit_auth()`、
+    `GET /api/pipeline/reddit-auth/status`、采集侧 `ensure_reddit_token()`。
+    判据在第二处重写迟早漂移成「矩阵说 ok、端点说没配、采集照样发 OAuth 拿 401」。
     """
-    return bool(
-        str(getattr(settings, "pipeline_reddit_client_id", "") or "").strip()
-        and str(getattr(settings, "pipeline_reddit_client_secret", "") or "").strip()
-    )
+    if client_id is None:
+        client_id = getattr(settings, "pipeline_reddit_client_id", "")
+    if client_secret is None:
+        client_secret = getattr(settings, "pipeline_reddit_client_secret", "")
+    return bool(str(client_id or "").strip() and str(client_secret or "").strip())
 
 
 def _check_reddit_auth() -> dict:
@@ -243,13 +251,14 @@ def _check_reddit_auth() -> dict:
     正是 D-190 要消灭的静默形状。它是可选能力（匿名通道可用），故只报不阻断。
     """
     if reddit_credentials_configured():
-        return {"status": "ok", "detail": "签名直链兜底已启用"}
+        # 这是一次配置读，不是可用性证明——「填对了没」只有真取过 token 才知道，
+        # 所以 ok 文案只说已配置，把「能不能用」交给 probe 端点（见 reddit-auth/status）。
+        return {"status": "ok", "detail": "已配置（可用 reddit-auth/status?probe=true 验证）"}
     return {
         "status": "off",
         "detail": "未配置凭证：v.redd.it 被 CDN 403 时无签名直链可用",
         "install_hint": "设置 → 流水线 → Reddit 采集（建 script 应用后填 client id/secret）",
     }
-
 
 
 # ── 新增可选能力四件套（D-190 约定，防静默降级复发）──────────────

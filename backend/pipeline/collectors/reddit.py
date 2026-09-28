@@ -132,10 +132,16 @@ async def ensure_reddit_token() -> str | None:
     """OAuth 凭证（设置页配置）→ Bearer token；未配置返回 None（走匿名通道）。
 
     采集与下载（v0.3.7 签名直链）共用：模块级缓存 + 失效重取。
+    「配没配」问 `deps.reddit_credentials_configured()`（这条判据的唯一作者，
+    collectors→infrastructure 是既有方向，见 `_system_proxy`）——在这里把两个字段
+    自己 `and` 一遍就是第二个作者：空格串它照放（随后 401），能力矩阵却报 off，
+    同一件事两种说法。
     """
+    from backend.infrastructure.deps import reddit_credentials_configured
+
     client_id = settings.pipeline_reddit_client_id
     client_secret = settings.pipeline_reddit_client_secret
-    if not (client_id and client_secret):
+    if not reddit_credentials_configured(client_id, client_secret):
         return None
     if _token_holder["token"]:
         return _token_holder["token"]

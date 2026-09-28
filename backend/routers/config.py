@@ -5,10 +5,14 @@ returned masked; writing it is allowed (single-user desktop, stored in the
 local data/runtime.yaml) but reading it back is impossible.
 """
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.config import runtime_config, settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -155,5 +159,16 @@ async def update_config(req: ConfigUpdate) -> dict:
     merged = runtime_config.load()
     merged.update(req.overrides)
     runtime_config.save(merged)
+    if any(str(key).startswith("pipeline_reddit_client_") for key in req.overrides):
+        # 保存凭证是这次操作的前一半，能力矩阵（reddit_auth 条目）是后一半，得互相看见。
+        # DepsCard 读的是 deps 缓存，而这条目是纯配置读（不探测、不联网）——不刷新的话
+        # 「刚填完」要等到下次重启/手动重测才算数（同 _spawn_model_download 下载完成后
+        # 刷缓存那个先例）。刷新失败不影响已落盘的配置，只降级成「矩阵暂时陈旧」。
+        from backend.infrastructure.deps import refresh_dependencies
+
+        try:
+            await refresh_dependencies()
+        except Exception as exc:  # noqa: BLE001 — 配置已存，缓存随后由启动/手动重测补上
+            logger.warning("deps refresh after reddit credential save failed: %s", exc)
     return {"applied": {k: v for k, v in req.overrides.items()}}
 

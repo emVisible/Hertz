@@ -79,23 +79,40 @@ async def _verify_reddit_channel(cookie: str | None) -> dict:
 async def reddit_auth_status(probe: bool = False) -> dict:
     """Reddit OAuth 凭证状态：是否已配 + 可选的 token 真取（probe=true 才联网）。
 
-    默认不联网——设置页每次渲染都打这里，顺手 probe 会被 Reddit 限流；用户填完
-    凭证自己点一次验证。`configured` 读 `deps.reddit_credentials_configured()`
-    （判据唯一作者，别在这里再数一遍字段）；「能不能真取到 token」仍由
-    `ensure_reddit_token()` 回答，端点只做搬运。
+    默认不联网，且目前**没有前端调用方**（`grep -rn reddit-auth frontend/src` 为空）：
+    这是给用户/脚本手动核验「凭证填对没」留的入口，Task 5 才接进界面。「不自动联网」
+    这条先钉住，是为了它一旦被接进渲染路径也不会每次渲染都打 Reddit 被限流。
+
+    `configured` 现问 `deps.reddit_credentials_configured()`（判据唯一作者）：不在这里
+    再数一遍字段，也不读缓存矩阵——缓存是「上次重测时」的事实，这个端点答的是现在。
+    `probe=true` 必须先失效缓存再取：`ensure_reddit_token` 命中模块级缓存就直接返回，
+    而保存凭证不会失效它——否则改完（甚至清空）凭证来 probe，拿到的是改动前那次成功
+    留下的 token，把「验一验」变成报一个假 ok。采集主路径的缓存语义不变：这里只做一次
+    与 401 后同类的失效。
     """
     from backend.infrastructure.deps import reddit_credentials_configured
-    from backend.pipeline.collectors.reddit import ensure_reddit_token
+    from backend.pipeline.collectors.reddit import (
+        ensure_reddit_token,
+        invalidate_reddit_token,
+    )
 
     configured = reddit_credentials_configured()
     hint = "" if configured else "在 reddit.com/prefs/apps 建 script 应用后填进设置"
     token_ok: bool | None = None
     if configured and probe:
+        invalidate_reddit_token()  # probe 要回答的是「现在这对凭证」，不是缓存
         try:
             token_ok = bool(await ensure_reddit_token())
         except Exception as exc:  # noqa: BLE001 — 取不到 token 是答案不是崩溃，退成 false
             token_ok = False
-            hint = f"取 token 失败：{exc}"
+            # 前端可见的 hint 只报异常类型名（同 `_verify_reddit_channel`）：现在的异常
+            # 文本不含 secret，但回显 str(exc) 的宽度由异常作者决定——哪天有人把响应体
+            # 塞进异常，这里就等于开了条外泄通道。完整原因进日志。
+            logger.info("reddit-auth probe failed: %s", exc)
+            hint = (
+                f"取 token 失败（{exc.__class__.__name__}）——"
+                "请核对设置页的 client_id/client_secret 是否属于同一个 script 应用"
+            )
     return {"configured": configured, "token_ok": token_ok, "hint": hint}
 
 
