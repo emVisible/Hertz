@@ -35,8 +35,8 @@
 
 > **2026-09-28 一页状态（给明早读这里的你）**
 >
-> - **v0.33.0 内容已全绿待发**：`ruff` 0、全量 pytest **521 passed**、`tsc` 0、`vitest` 12 文件 0。版本五处已对齐、CHANGELOG 已写（34 提交 + 四条如实遗留）。`verify.sh` 正在复跑（源码门禁），`release-check.sh`（产物门禁）**未跑**。**tag 与 push 都没执行，等你授权**。续接：`cd /Users/young/Code/Hertz && grep -E "ALL GATES PASSED|GATE_EXIT" /tmp/v033_verify.log` 两个都要出现，再提交这 9 个发版文件（当前未暂存，勿 `git add -A`——A 切片正在同一棵树里写别的文件）。
-> - **A（未评分情感/质量筛选）实施中**：简报 `task-A-brief.md`，分母已核（情感 747 条 / 高质量 252 条 / **`text_only` 0 条**）。
+> - **v0.33.0 发版准备已提交 `4d4f050`**：`./scripts/verify.sh` **GATE_EXIT=0 且日志含 `ALL GATES PASSED`**（全量 pytest 521 passed、ruff 0、tsc 0、vitest 12 文件），版本五处 `0.33.0`、CHANGELOG `[v0.33.0]`（34 提交 + 四条如实遗留）、D-205 撞号已改为 D-212。**`release-check.sh`（产物门禁）未跑，tag 与 push 未执行，等你授权**；`origin/main` 落后 9 个提交。
+> - **A（未评分情感/质量筛选）后端已完成但未提交**：11 个文件留在工作树（归属逐名记在 `.superpowers/sdd/2026-09-27-v033-release-runway/progress.md`，勿 `git add -A`、勿 revert）。controller 亲验：`ruff` 0、新测试 **25 passed**、`tsc` 0、`vitest` **13 文件**（基线 12）。全量 pytest 在后台 `/tmp/park_full.log`（看尾部 `FULL_EXIT=` 与 passed≈546）。**按「绿了才提交」的规矩，我没在全量结果出来之前提交。** 前端 UI 一行未动 ⇒ 你的 vite 不会加载半截代码。**下一步**：全量绿 → 提交这批（首行 `feat(pipeline): 未评分区主题/质量/缺值三轴服务端筛选（后端与请求映射；UI 接线待续）`，正文必须写明界面还不能点）→ 再做 UI 接线（`PreReviewTab` 筛选条 + store 默认值 + i18n 双语键）。**读数三条，全是实测**：① 情感活口 **747 / 2659 = 28.1%**，其中**带媒体 747（100%）、`text_only` 0** —— 「筛到 0 条情感文字」是真的 0，不是筛选坏了；② **17.2% 的活口 `upvote_ratio == 0`**（采集器缺省值 = 没取到，不是 0 分赞），A 已把它做成可选/可数的 `QUALITY_UNFILLED` 一档而不是静默排除；③ 界面 limit 只有 500 而活口 2659，筛选必须服务端做，否则「没有情感内容」永远是可疑结论。全库分母：标准档 **749 = 28.2%**，严格档 **440 = 16.5%**。
 > - **最大的一条不是界面问题，是供给**：`items.selftext` 全库 **0/5281**。隔离池 2196 条里 **2013 条（91.7%）就是情感**、1982 条来自文字为主子版；未隔离的同子版只剩 6 条。也就是说你要做的情感**文字**垂直，现在弹药是 6 条而不是 1982 条——差的那 1976 条缺的只是正文，且 2196 条**全部带 `source_id`，可回填**。修复面 = C 切片（`task-C-brief.md`，C-code 不需要网络，C-run 需要）。
 > - **等你的三个点头**：① 授权 push + 打 tag `v0.33.0`（或先跑 `release-check.sh` 再授）；② C-code 是否插到 B 之前（我推荐是——否则 B 的候补池是空的）；③ B 的 spec（`docs/SPEC_V034_BOARD.md`）里完成度语义用真实已发布数、不用手勾 checkbox，这条认不认。
 > - 顺带留了一条我自己的错：修 I3 时发现 `monkeypatch` 撤销会把旧值写成配置代理的实例属性，从此遮蔽 `runtime.yaml` 的 read-through（详见 CHANGELOG 遗留第 4 条）——真正的修法在 `backend/config.py` 的代理形状，属独立切片。

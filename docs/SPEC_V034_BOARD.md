@@ -104,6 +104,21 @@
 - 后端 `GET /api/pipeline/calendar` 随视图删除（唯一调用方是 `CalendarView.tsx:66`）；`GET /publish/queue` 与 `POST /items/{id}/queue` **保留**，它们是 `auto_publish` 这条被配置开关的能力唯一读写口。`reschedule_expired`（进审核页自动触发）与 `next_schedule_slot` 机制**一律不动**。
 - i18n：`console.calendar*` / `console.queueView` 等键随组件删除，不留孤儿键。**注意**：本仓没有任何门禁校验 i18n 键（已核：`grep -rn "i18n|zh.json|orphan" tests/*.py` 与 `grep -rln "zh.json|en.json" frontend/src --include="*.test.ts*"` 均零命中），所以这条靠实施时人工核对 + 补一条 vitest（`zh.json` 与 `en.json` 键集相等，且被删键不再被任何 `.tsx` 引用）。
 
+### 4.4b 界面形状修订（2026-09-28 实测后；**本小节覆盖 §4.4 的 tab 部分**）
+
+§4.4 原稿写「新增一级看板（默认）」——那是**没数过现有 tab 就下的结论**。实测：流水线页已经有 **6 个内层 tab**，唯一作者是 `frontend/src/pages/execution/pipeline/shared.tsx:75-85` 的 `PIPELINE_TABS`（运行 / 工坊 / 预处理 / 审核 / 发布 / 异常，每项带 `countKeys`）。再加一个就变 7 个 tab：**恰好在你抱怨「结构没用」的地方加东西**，方向反了。
+
+修订成 **tab 数 6→6 的真融合**：
+
+- **看板替换 `postReview`，不是加在旁边。** 依据：发布 tab 的实际内容就是两张列表 —— `stageApproved`（发布操作，`PublishCard`）与 `stagePublished`（发布历史），而这两张列表正是看板的「待发布」与「今日已发」两列。**复用同一批卡片组件**，搬过去而不是复制一份，所以不产生第二套发布入口。
+- 发布 tab 顶部那条 `publishStatus` 警示（noop / B 站 cookie 缺失，`PostReviewTab.tsx:76-104`）跟着搬进「待发布」列的列头，不留孤儿告警。
+- 看板五列：`今日待办` → `在制`(downloaded/scored) → `待审`(queued) → `待发布`(approved) → `今日已发`。异常区仍留在 `exceptions` tab，看板不承载（§二 非目标不变）。
+- 顶栏：今日目标多行文字 + 「已发 N / 捞入 M」（§4.3 的真实数，不手勾）。
+- `PIPELINE_TABS` 里把 `postReview` 一项换成 `{ id: 'board', labelKey: ..., countKeys: ['approved','published'] }`，位置放**第 2 位**（`run` 之后）——没放最前，因为「运行/采集运维」是你每天第一眼要看的东西；顺序若要调，改这一行就够。默认 tab 改 `board`，作者仍是 `stores/execution.ts` 的初始 state。
+- 删除清单因此增加一个：`PostReviewTab.tsx`（职能被看板接管）。`CalendarView.tsx` / `calendar.ts` + 测试 / `QueueView.tsx` 照旧删。
+
+其余一律不变：撤界面不撤字段、`PublishCard` 保留可编辑 `ScheduleField`（§4.4 已纠正）、删「入队」按钮、`GET /calendar` 随视图删、`publish/queue` 与 `items/{id}/queue` 保留。
+
 ### 4.5 边界与失败处理
 
 | 情况 | 行为 |
