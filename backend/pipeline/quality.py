@@ -30,6 +30,38 @@ REDDIT_PAGE_HOSTS = frozenset({
 #: 文字产线的最低正文长度（此前在 collectors/reddit.py 里裸写 50，挪到此处成唯一作者）
 MIN_STORY_CHARS = 50
 
+#: 质量档阈值（v0.34 A 未评分区筛选）：reddit_score 与 upvote_ratio 双门槛同时满足。
+#: 阈值**只**写在这一份 dict 里——SQL 条件由 `service_queries.axis_filters()` 读它
+#: 构造，前端展示档位名即可。别处再抄一遍数字，就会出现「改了筛选没改判据」。
+#: standard 档与存量口径一致（实测「高质量档 reddit_score≥500 且 upvote_ratio≥0.90」
+#: 在 747 条情感活口里命中 252 条），loose/strict 是它的两侧延伸。
+QUALITY_TIERS: dict[str, dict[str, float]] = {
+    "loose": {"min_score": 100, "min_ratio": 0.80},
+    "standard": {"min_score": 500, "min_ratio": 0.90},
+    "strict": {"min_score": 1500, "min_ratio": 0.94},
+}
+
+#: 「分数没采到」哨兵值：Reddit 采集没返回 score/ratio 时，两个字段都落 0
+#: （`RawPost` 的默认值就是 0，不是「1 分都没有」）。缺值 ≠ 低质量。
+MISSING_METRIC_VALUE = 0
+
+#: 第四档档名（v0.34 A）：两字段同时为 `MISSING_METRIC_VALUE` 的条目走这一档。
+#:
+#: 为什么必须有这一档（实测 2026-09-28 dev 库，未评分活口 2659 条）：其中
+#: **458 条（17.2%）`reddit_score` 与 `upvote_ratio` 一起为 0**，情感 747 条里占 42 条。
+#: 双门槛把它们挡在 loose/standard/strict 之外，于是界面报「情感 747 里标准档 252」
+#: 会被读成「另外 495 条是低质量」——那是误导：那 42 条**无从判断**。
+#: 所以缺值必须能单独筛、能单独数（`items_facets` 的 `unfilled`），而不是静默消失。
+#:
+#: 已知的第三格（诚实起见此条不许被省略）：`reddit_score=0` 但 `upvote_ratio>0`
+#: 的条目（活口里另有 312 条，情感里 71 条）**既不进任何阈值档、也不算缺值档**——
+#: 它有 ratio 没分数，分不清「真 0 分」和「只缺一个字段」。所以
+#: 「三档 + 缺值档 = 全量」今天**不成立**（实测 loose 1255 + 缺值 458 = 1713，
+#: 距 2659 还差 946 条），界面不许那样宣称；补齐要靠采集侧把两个字段一起写全
+#: （不在本片范围）。
+QUALITY_UNFILLED = "unfilled"
+
+
 #: 隔离原因码（进 items.error_class；人可读解释进 items.error）
 INVALID_REASON = "invalid_media"
 

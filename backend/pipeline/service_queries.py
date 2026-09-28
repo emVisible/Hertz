@@ -8,12 +8,19 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, not_, select
 
 from backend.models.item import Item, ItemStatus
 from backend.models.pipeline import SourceState
 from backend.models.session import session_factory
 from backend.models.system import JobRun
+from backend.pipeline.category import theme_subreddits
+from backend.pipeline.quality import (
+    MIN_STORY_CHARS,
+    MISSING_METRIC_VALUE,
+    QUALITY_TIERS,
+    QUALITY_UNFILLED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,18 +41,63 @@ def operational_filters(*, include_archived: bool, include_invalid: bool) -> lis
     return conditions
 
 
+def axis_filters(*, theme: str | None, quality: str | None, has_text: bool | None) -> list:
+    """三条筛选轴的统一条件构造（v0.34 A）：主题轴 / 质量轴 / 正文有无轴。
+
+    与 `operational_filters()` 同一套纪律：`list_items()` 与 `items_facets()` 共用
+    这一份，谁也不许自己再拼一次 WHERE。分开写两遍就会漂成「列表里少了两条、
+    数字还是老样子」——而 facets 存在的意义正是给用户报「命中 X / 全量 Y」。
+
+    阈值/名单不在这里：成员名单查 `category.THEME_SUBREDDITS`，质量阈值、缺值哨兵
+    与正文门槛查 `quality.QUALITY_TIERS` / `QUALITY_UNFILLED` / `MISSING_METRIC_VALUE`
+    / `MIN_STORY_CHARS`，此处只负责把它们拼成条件。
+    未知 theme / quality 在查表处抛 ValueError——「名单没配」不能伪装成
+    「今天没有情感内容」（空集就是那种伪装）。
+    """
+    conditions: list = []
+    if theme is not None:
+        conditions.append(Item.subreddit.in_(sorted(theme_subreddits(theme))))
+    if quality is not None:
+        if quality == QUALITY_UNFILLED:
+            # 「分数没采到」单独成一档：两个字段一起为 0 是采集缺字段，不是低质量
+            # （实测占未评分活口 17.2%）。让它们被三档静默排除就会把「无从判断」
+            # 伪装成「质量不行」，见 quality.QUALITY_UNFILLED 的注释。
+            conditions.append(Item.reddit_score == MISSING_METRIC_VALUE)
+            conditions.append(Item.upvote_ratio == MISSING_METRIC_VALUE)
+        else:
+            tier = QUALITY_TIERS.get(quality)
+            if tier is None:
+                raise ValueError(
+                    f"unknown quality tier '{quality}'"
+                    f"（可选：{sorted(QUALITY_TIERS) + [QUALITY_UNFILLED]}）"
+                )
+            conditions.append(Item.reddit_score >= tier["min_score"])
+            conditions.append(Item.upvote_ratio >= tier["min_ratio"])
+    if has_text is not None:
+        # selftext 为 NULL 的绝大多数存量条目算「无正文」：coalesce 之后
+        # length('')=0，两档互补且不重叠，with+without 恒等于分母。
+        enough = func.length(func.coalesce(Item.selftext, "")) >= MIN_STORY_CHARS
+        conditions.append(enough if has_text else not_(enough))
+    return conditions
+
+
+
+
 class QueriesMixin:
     # ---------- queries ----------
 
     async def list_items(
         self, status: str | None = None, limit: int = 50, source: str | None = None,
         include_archived: bool = False, include_invalid: bool = False,
+        theme: str | None = None, quality: str | None = None, has_text: bool | None = None,
     ) -> list[dict]:
         """条目列表；status 支持逗号分隔多状态（wave13：前端单查询聚合阶段队列）。
         排序：入库序号 seq desc（v0.3.1——同批 created_at 相同，seq 才是真实先后）。
         v0.5 A：QUEUED 条目标注相似内容（phash 汉明 ≤5，排除同 source_id 同源）。
         wave10：默认排除 archived（备用库用独立 archived_items 查询）。
-        v0.33：默认排除 is_invalid（空壳只出现在异常区，不再冒充可操作数据）。"""
+        v0.33：默认排除 is_invalid（空壳只出现在异常区，不再冒充可操作数据）。
+        v0.34 A：三条筛选轴 theme/quality/has_text（服务端筛，见 `axis_filters`）。
+        未知 theme/quality → ValueError（调用方映射成 422，不静默给空列表）。"""
         statuses = [s.strip() for s in (status or "").split(",") if s.strip()] or None
         async with session_factory() as session:
             order = Item.seq.desc().nulls_last()
@@ -57,6 +109,9 @@ class QueriesMixin:
                 conditions.append(Item.status.in_(statuses))
             if source:
                 conditions.append(Item.source == source)
+            # 轴条件走 axis_filters（与 items_facets 同一份）；即便其余条件为空也要
+            # 先求值一次——未知 theme 必须在这里就抛，而不是等结果集。
+            conditions.extend(axis_filters(theme=theme, quality=quality, has_text=has_text))
             if conditions:
                 stmt = select(Item).where(*conditions).order_by(order).limit(limit)
             result = await session.execute(stmt)
@@ -67,6 +122,70 @@ class QueriesMixin:
                 if entry["id"] in similar:
                     entry["similar"] = similar[entry["id"]]
             return serialized
+
+    async def items_facets(
+        self, status: str | None = None, source: str | None = None,
+        include_archived: bool = False, include_invalid: bool = False,
+        theme: str | None = None, quality: str | None = None, has_text: bool | None = None,
+    ) -> dict:
+        """分面计数（v0.34 A）：给界面报「命中 X / 共 Y」和各轴的水位。
+
+        **total 与 hit 必须是两个数**：total 是不加任何筛选轴的分母，hit 是加满
+        当前轴之后的结果。把筛后当全量是这个仓库被坑过的形状（用户以为数据变少了）。
+        `by_quality` 保持 theme/has_text 生效、逐档换阈值；`with_text`/`without_text`
+        保持 theme/quality 生效、逐档换正文条件——两档并起来就是其余轴选定后的池子，
+        所以「无正文」能被数出来，而不是被筛选悄悄滤掉。
+        `unfilled` 同样保持 theme/has_text 生效，数的是「分数没采到」那一档。
+        注意：**三档 + 缺值档 ≠ 全量**（实测 loose 1255 + unfilled 458 = 1713，
+        分母 2659）——剩下的里有 312 条只有 ratio 没有 score，两不沾。界面不许把
+        这几格说成互补划分，理由见 `quality.QUALITY_UNFILLED` 注释。
+
+        条件全部走 `axis_filters()` + `operational_filters()`：这里不许出现第二套 WHERE。
+        """
+
+        statuses = [s.strip() for s in (status or "").split(",") if s.strip()] or None
+        base = operational_filters(
+            include_archived=include_archived, include_invalid=include_invalid
+        )
+        if statuses:
+            base.append(Item.status.in_(statuses))
+        if source:
+            base.append(Item.source == source)
+
+        async with session_factory() as session:
+
+            async def _count(extra: list) -> int:
+                stmt = (
+                    select(func.count())
+                    .select_from(Item)
+                    .where(*base, *extra)
+                )
+                return int((await session.execute(stmt)).scalar_one())
+
+            hit = await _count(axis_filters(theme=theme, quality=quality, has_text=has_text))
+            by_quality = {
+                tier: await _count(
+                    axis_filters(theme=theme, quality=tier, has_text=has_text)
+                )
+                for tier in QUALITY_TIERS
+            }
+            with_text = await _count(axis_filters(theme=theme, quality=quality, has_text=True))
+            without_text = await _count(axis_filters(theme=theme, quality=quality, has_text=False))
+            # 缺值单列（v0.34 A）：不报这一格，「标准档 252」就会被读成
+            # 「其余都是低质量」，而那 17.2% 其实是采集没拿到分数（无从判断）。
+            unfilled = await _count(
+                axis_filters(theme=theme, quality=QUALITY_UNFILLED, has_text=has_text)
+            )
+            return {
+                "total": await _count([]),
+                "hit": hit,
+                "by_quality": by_quality,
+                "with_text": with_text,
+                "without_text": without_text,
+                "unfilled": unfilled,
+            }
+
+
 
     async def _similar_map(self, items: list[Item], session) -> dict[str, dict]:
         """审核相似提示（v0.5 A）：对 QUEUED 条目批量 phash 比对。

@@ -1,9 +1,30 @@
 /** Execution-domain (content pipeline) API types + calls. */
 
 import { api, API_BASE } from './client'
+import {
+  DEFAULT_PRE_FILTERS,
+  facetsQuery,
+  itemsQuery,
+  type PreReviewFilters,
+} from '../core/preReviewFilter'
 
 /** 空壳池一次取多少条（异常区标题靠它判断数字是不是被截断） */
 export const INVALID_POOL_LIMIT = 200
+
+/** 分面计数（v0.34 A）：total 是不加轴的全量分母，hit 是加满当前轴之后的数——
+ *  两个数分开给，界面才分得清「筛没了」和「本来就没有」。
+ *  `unfilled` 是「分数没采到」那一档的计数（缺值单列，不混进低质量）。
+ *  注意三档 + unfilled **不等于** total（还有一格只有 ratio 没 score），界面
+ *  不许把它们说成互补划分。 */
+export interface ItemFacets {
+  total: number
+  hit: number
+  by_quality: { loose: number; standard: number; strict: number }
+  with_text: number
+  without_text: number
+  unfilled: number
+}
+
 
 export type ItemStatus =
   | 'discovered'
@@ -208,10 +229,13 @@ export const pipelineApi = {
       noop: boolean
     }>('/api/pipeline/publish/status'),
   steps: () => api.get<{ steps: string[] }>('/api/pipeline/steps'),
-  items: (status?: string, limit = 50) =>
-    api.get<PipelineItem[]>(
-      `/api/pipeline/items?limit=${limit}${status ? `&status=${status}` : ''}`,
-    ),
+  /** 条目列表。v0.34 A：三轴筛选走 query（服务端筛——limit 500 < 活口 2659，
+   *  客户端筛只能看到最新 500 条，会得出「没有情感内容」的假结论）。 */
+  items: (status?: string, limit = 50, filters: PreReviewFilters = DEFAULT_PRE_FILTERS) =>
+    api.get<PipelineItem[]>(`/api/pipeline/items?${itemsQuery(status, limit, filters)}`),
+  /** 分面计数（v0.34 A）：与列表同一批轴参数，缺省不带 limit。 */
+  itemFacets: (status?: string, filters: PreReviewFilters = DEFAULT_PRE_FILTERS) =>
+    api.get<ItemFacets>(`/api/pipeline/items/facets?${facetsQuery(status, filters)}`),
   counts: () => api.get<Record<string, number>>('/api/pipeline/items/counts'),
   /** 采集运维状态（v0.8.2）：运行中/上次结果/下次自动/间隔 */
   collectStatus: () =>

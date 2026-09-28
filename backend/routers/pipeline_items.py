@@ -26,17 +26,54 @@ async def list_items(
     limit: int = Query(50, ge=1, le=500),
     source: str | None = None,
     include_invalid: bool = False,
+    theme: str | None = None,
+    quality: str | None = None,
+    has_text: bool | None = None,
 ):
     """条目列表。默认排除空壳（is_invalid，v0.33）——异常区走 /items/invalid；
-    需要一并看时显式传 include_invalid=true。"""
-    return await _pipe().list_items(
-        status=status, limit=limit, source=source, include_invalid=include_invalid
-    )
+    需要一并看时显式传 include_invalid=true。
+
+    v0.34 A 筛选轴（服务端筛）：theme=sentiment / quality=loose|standard|strict /
+    has_text=true|false（缺省 = 不加该条条件）。非法 theme/quality → 422，
+    不吞成「今天一条都没有」。"""
+    try:
+        return await _pipe().list_items(
+            status=status, limit=limit, source=source, include_invalid=include_invalid,
+            theme=theme or None, quality=quality or None, has_text=has_text,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/items/facets")
+async def items_facets(
+    status: str | None = None,
+    source: str | None = None,
+    include_invalid: bool = False,
+    theme: str | None = None,
+    quality: str | None = None,
+    has_text: bool | None = None,
+):
+    """分面计数（v0.34 A）：`{total, hit, by_quality, with_text, without_text}`。
+
+    total = 不加轴的分母，hit = 加满当前轴——界面「命中 X / 共 Y」用这两个数，
+    合成一个数就会让用户分不清「筛没了」和「本来就没有」。
+    with_text/without_text 让「无正文」成为可数出来的一档，而不是被筛选悄悄滤掉
+    （情感池现状：747 条全部无正文，见 docs/ROADMAP.md 在飞段）。
+    """
+    try:
+        return await _pipe().items_facets(
+            status=status, source=source, include_invalid=include_invalid,
+            theme=theme or None, quality=quality or None, has_text=has_text,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/items/counts")
 async def counts():
     return await _pipe().counts()
+
 
 
 # ---------- Reddit Cookie（v0.8.1，参考原项目：OAuth 个人拿不到→登录 Cookie） ----------

@@ -173,6 +173,7 @@
 `POST /api/pipeline/items/batch`
 `POST /api/pipeline/items/batch/queue`
 `GET /api/pipeline/items/counts`
+`GET /api/pipeline/items/facets`
 `GET /api/pipeline/items/invalid`
 `POST /api/pipeline/items/priority`
 `POST /api/pipeline/items/purge`
