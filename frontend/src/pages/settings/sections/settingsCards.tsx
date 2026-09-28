@@ -109,11 +109,11 @@ export function DepsCard() {
     ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', biliup: 'biliup',
     'yt-dlp': 'yt-dlp', 'edge-tts': 'edge-tts', font: '字幕字体',
     local_mt: '本地翻译', whisper_model: 'Whisper 模型',
-    llm: 'LLM', telegram: 'Telegram',
+    llm: 'LLM', telegram: 'Telegram', reddit_auth: 'Reddit 凭证',
   }
   const rows = [
     'ffmpeg', 'ffprobe', 'biliup', 'yt-dlp', 'edge-tts', 'font',
-    'local_mt', 'whisper_model', 'llm', 'telegram',
+    'local_mt', 'whisper_model', 'llm', 'telegram', 'reddit_auth',
   ]
   const ff = data?.ffmpeg as { status?: string; libass?: boolean; version?: string } | undefined
 

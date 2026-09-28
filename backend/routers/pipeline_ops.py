@@ -1,4 +1,4 @@
-"""运维域：任务历史/采集源/失败分类/排期/模板/Reddit cookie。
+"""运维域：任务历史/采集源/失败分类/排期/模板/Reddit cookie 与 OAuth 凭证状态。
 
 v0.8.9 AXIOM 2.1 路由域拆分：原 pipeline.py 30+ 端点 7 域挤一文件，
 按用户可感知域拆出；路径与语义不变（pipeline_ops.router 由 pipeline 聚合 include）。
@@ -73,6 +73,30 @@ async def _verify_reddit_channel(cookie: str | None) -> dict:
             return {"code": resp.status_code, "ok": resp.status_code == 200}
     except httpx.HTTPError as exc:
         return {"ok": False, "error": exc.__class__.__name__}
+
+
+@router.get("/reddit-auth/status")
+async def reddit_auth_status(probe: bool = False) -> dict:
+    """Reddit OAuth 凭证状态：是否已配 + 可选的 token 真取（probe=true 才联网）。
+
+    默认不联网——设置页每次渲染都打这里，顺手 probe 会被 Reddit 限流；用户填完
+    凭证自己点一次验证。`configured` 读 `deps.reddit_credentials_configured()`
+    （判据唯一作者，别在这里再数一遍字段）；「能不能真取到 token」仍由
+    `ensure_reddit_token()` 回答，端点只做搬运。
+    """
+    from backend.infrastructure.deps import reddit_credentials_configured
+    from backend.pipeline.collectors.reddit import ensure_reddit_token
+
+    configured = reddit_credentials_configured()
+    hint = "" if configured else "在 reddit.com/prefs/apps 建 script 应用后填进设置"
+    token_ok: bool | None = None
+    if configured and probe:
+        try:
+            token_ok = bool(await ensure_reddit_token())
+        except Exception as exc:  # noqa: BLE001 — 取不到 token 是答案不是崩溃，退成 false
+            token_ok = False
+            hint = f"取 token 失败：{exc}"
+    return {"configured": configured, "token_ok": token_ok, "hint": hint}
 
 
 @router.get("/collect/status")

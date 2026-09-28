@@ -203,6 +203,7 @@
 `PUT /api/pipeline/produce-templates/{template_id}`
 `GET /api/pipeline/publish/queue`
 `GET /api/pipeline/publish/status`
+`GET /api/pipeline/reddit-auth/status`
 `POST /api/pipeline/reddit-cookie/export`
 `GET /api/pipeline/reddit-cookie/status`
 `POST /api/pipeline/reschedule-expired`

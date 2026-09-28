@@ -222,12 +222,43 @@ def _check_telegram_cfg() -> dict:
     }
 
 
+def reddit_credentials_configured() -> bool:
+    """Reddit OAuth 凭证齐不齐——**这条判据的唯一作者**。
+
+    id 与 secret 必须都非空才谈得上签名直链（只填一半，OAuth 换 token 会 401）。
+    能力矩阵条目与 `GET /api/pipeline/reddit-auth/status` 都读这里：判据在第二处
+    重写就会漂移成「矩阵说 ok、端点说没配」。
+    """
+    return bool(
+        str(getattr(settings, "pipeline_reddit_client_id", "") or "").strip()
+        and str(getattr(settings, "pipeline_reddit_client_secret", "") or "").strip()
+    )
+
+
+def _check_reddit_auth() -> dict:
+    """Reddit OAuth 凭证（决定 v.redd.it 被 403 时能否走签名直链）。
+
+    为什么单列一条：`ensure_reddit_token()` 未配置时直接返回 None，签名直链兜底
+    「从未生效」这件事在界面上完全不可见——用户体感只是「下载偶尔失败」，
+    正是 D-190 要消灭的静默形状。它是可选能力（匿名通道可用），故只报不阻断。
+    """
+    if reddit_credentials_configured():
+        return {"status": "ok", "detail": "签名直链兜底已启用"}
+    return {
+        "status": "off",
+        "detail": "未配置凭证：v.redd.it 被 CDN 403 时无签名直链可用",
+        "install_hint": "设置 → 流水线 → Reddit 采集（建 script 应用后填 client id/secret）",
+    }
+
+
 
 # ── 新增可选能力四件套（D-190 约定，防静默降级复发）──────────────
 # 1. pyproject 可选依赖组或主依赖（轻量核心能力直接进主依赖）
 # 2. 本文件注册检查条目（结构 {status, detail?, install_hint?}，
 #    status ∈ ok / missing / pending / off / error）
 # 3. preflight.plan_capability_checks 映射生产方式 → 阻断/警告
+#    （仅制作期能力；plan_capability_checks 的入参是 produce 开关，
+#     采集/下载期能力如 telegram、reddit_auth 无处可映射=不阻断，只报）
 # 4. DepsCard LABELS 加显示名
 # 缺任何一件 = 下一个「制作到一半才发现」事故。
 # ──────────────────────────────────────────────────────────────
@@ -258,6 +289,7 @@ async def check_dependencies() -> dict:
         "whisper_model": _check_whisper_model(),
         "llm": await _check_llm_registry(),
         "telegram": _check_telegram_cfg(),
+        "reddit_auth": _check_reddit_auth(),
     }
 
 
