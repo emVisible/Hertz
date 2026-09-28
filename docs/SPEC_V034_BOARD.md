@@ -98,7 +98,9 @@
 - 新增 `frontend/src/pages/execution/pipeline/BoardTab.tsx`；`ExecutionPage` 一级 tab 顺序：`看板（默认）｜预处理｜审核｜发布｜异常`。
 - `PostReviewTab.tsx` 删 `PostView` 三分段与按钮组（`:19`、`:29-66`），只保留现存的发布列表 + 发布历史（看板不吞掉发布历史，它仍在发布 tab）。
 - 删除文件：`frontend/src/pages/execution/CalendarView.tsx`、`frontend/src/pages/execution/calendar.ts` 及其测试、`frontend/src/components/execution/QueueView.tsx`。
-- **保留**：`PublishCard` 上 `queue_phase`/`scheduled_at` 的**只读呈现**（如果将来开自动发布，用户在卡片上看得懂状态），但删掉卡片上的「入队」按钮 —— 界面不再产生 `queue_phase` 写入。
+- **保留**：`PublishCard` 上的 **`ScheduleField`（可编辑，`PublishCard.tsx:402` 经 `onSaveMeta` 写 `scheduled_at`）**。这不是「留着旧入口以防万一」——`publishers/router.py:162-177` 读 `item.scheduled_at` 走的是 **biliup 原生定时上传（`--dtime`）**，与 `queue_phase`/`auto_publish` 无关：手动点发布 + 一个未来时间 = B 站侧定时上线。撤掉它就是删一项活能力（本 spec 早期版本写的是「只读呈现」，实施前自查 grep 全部写点后**纠正为保留可编辑**——写点清单：`service_publish.set_meta`、`enqueue`(:229)、`reschedule_expired`(`service_schedule.py:76`)、`service_promotion.py:127,223,338`)。
+- **删除**：`PublishCard` 的**「入队」按钮**与 `onEnqueue` 传参（这是 `queue_phase` 在界面上唯一的写点）。
+- **由此产生的已知后果（不许事后惊讶）**：撤掉入队按钮后，`auto_publish_tick` 在界面上**再也无法被喂进数据**（它的筛选条件是 `queue_phase == 'ready'`）。代码、端点与产能槽位一律保留，但要开无人值守发布得靠 API 或 Telegram 侧写相位。这与用户定档「全部手动发、两者都撤」一致，故**接受并记录**，不额外补 UI。
 - 后端 `GET /api/pipeline/calendar` 随视图删除（唯一调用方是 `CalendarView.tsx:66`）；`GET /publish/queue` 与 `POST /items/{id}/queue` **保留**，它们是 `auto_publish` 这条被配置开关的能力唯一读写口。`reschedule_expired`（进审核页自动触发）与 `next_schedule_slot` 机制**一律不动**。
 - i18n：`console.calendar*` / `console.queueView` 等键随组件删除，不留孤儿键。**注意**：本仓没有任何门禁校验 i18n 键（已核：`grep -rn "i18n|zh.json|orphan" tests/*.py` 与 `grep -rln "zh.json|en.json" frontend/src --include="*.test.ts*"` 均零命中），所以这条靠实施时人工核对 + 补一条 vitest（`zh.json` 与 `en.json` 键集相等，且被删键不再被任何 `.tsx` 引用）。
 

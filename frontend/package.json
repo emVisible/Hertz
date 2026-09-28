@@ -1,7 +1,7 @@
 {
   "name": "hertz-frontend",
   "private": true,
-  "version": "0.30.1",
+  "version": "0.33.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

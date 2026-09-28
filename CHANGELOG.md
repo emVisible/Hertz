@@ -6,7 +6,15 @@
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
 ## [Unreleased]
-### 文稿成片融合域（D-205~D-211，执行域独立菜单 `/monoline`）
+
+（暂无未发布变更。原先挂在本段的「文稿成片融合域」六条已随 v0.33.0 发版下移，内容逐字保留在该段内。
+v0.34 的入口事实见 [docs/ROADMAP.md](./docs/ROADMAP.md) 的「在飞（未发布）」段。）
+
+## [v0.33.0] - 2026-09-28
+
+自 `v0.30.1` 起 **34 个提交**（`git rev-list --count v0.30.1..HEAD`，2026-09-28 于本发版提交之前量；计划原文写的 27 是写计划时的数，之后又落了 7 条），本版一次收口。
+
+### 文稿成片融合域（monoline，D-205~D-211，执行域独立菜单 `/monoline`）
 
 - 九阶段文稿转视频全链：大纲审阅（合并/拆分/ pin 图）→ Kokoro 本地配音 → 组装 → 分镜 → 字体子集化 → 合成 → HyperFrames 门禁/渲染/交付；`scripts/monoline_warmup.py` 冷启动验收
 - 逐拍精修：改旁白（单拍重 TTS）、换 kind/版式/图标/槽位、拖拽重排（音频跟随）、单拍/全片换音色、换主题、单拍问模型、快捷键 j/k/1-9
@@ -14,6 +22,43 @@
 - 资产链：图片/BGM/Logo 上传冻结、品牌默认外观、音色试听、AI 写稿（主题/语气/篇幅）
 - 地基回哺：API 清单 228 操作双向比对、标题排版 owner、阶段输入指纹、httpx 本地直连（`trust_env=False`）+ 502/503 重试
 - 打包：`hertz.spec` 收 TTS 链与 monoline 运行期数据，冻结包内真机验证通过
+
+### 本地引擎入包（v0.31 B1/B3，D-200）
+
+faster-whisper 与 ctranslate2 升为主依赖、删掉到不了的 `asr` 可选组、本地引擎进固化包，并修掉冻结入口缺 `multiprocessing.freeze_support()` 的进程风暴（此前每构造一次模型就把主脚本从头再跑一遍，45 秒内进程 1→7、观测到 138 个残留）。实测代价：`backend-dist` 153M→305M，dmg 189,948,623→245,200,985 字节（+52.7MiB / +29%）；产物内 `/api/studio/transcribe` HTTP 200——转写与翻译从此不再取决于用户机器上有没有装对东西。
+
+### 质量片 S1–S6（v0.32，D-201…D-204）
+
+alembic autogenerate 删表闸（两个 `remove_table` 漂移不可逆操作先亮牌）+ 其 PyInstaller hiddenimports 回归修复；工坊转写改走 `asr.transcribe_cues()` 单一权威出口并把繁体字符集从 63 字扩到 83 字（原集漏掉真实模型输出，纠偏从未触发）；无效索引声明清偿（`add_fk` 2→0、`add_index` 8→4、`remove_table` 恒 0）；产物级发布门禁 `release-check.sh`（源码门禁 → 重建固化包 → 产物门禁，任一非零即禁止打 tag）；仓库内 pytest 告警 8→6（余下 6 条均在依赖生成代码里）；文档真相与门禁卫生四项。
+
+### 设置页保存回归（v0.32 S4.1，影响面最大的一条）
+
+**自 v0.20 起设置页点「保存」提交的是空 `overrides`**——所有改动只活在内存里，页面却 toast「已保存」（`git blame` 指到拆分那一次）。改为草稿态 diff + 按类型强制转换，并补前端 7 项 + 仓库级 7 项守卫防复发。
+
+### 本地模型落位（v0.32 S4 / S4c，D-203）
+
+Whisper 与翻译模型搬进应用数据目录（`HERTZ_DATA_DIR/models/whisper`）+ 一键下载；`HF_HOME` 不再参与，隔离数据目录即等价空缓存。状态卡五态化，把「还没问到」和「依赖没装」分开显示（此前二者共用一个红色结论）；工坊不可用改按异常类型分派，502 带应用内出路而非裸 500。
+
+### 空壳条目治理（v0.33）
+
+起因是「下载一直 403」。实测根因不是 CDN，而是采集器兜底「不确定就算 video_raw」把 **2011 条 `media_url == source_url`**（把帖子页当媒体）的空壳放进了可操作队列，其中 1989 条连正文都没有；点下载就是抓被反爬拦截的页面，403 还会把整域冻进冷却、连带 2089 条真视频停摆。交付：`pipeline/quality.py` 作判据唯一作者 + 新增布尔 `is_invalid`（wave30）+ `counts()` 与列表共用 `operational_filters()` + 异常区「空壳」池 + `engine._pending` 不再白跑 + 常驻数据体检 `integrity`（六条不变量，只报不改）+ 存量回填脚本（干跑默认）。dev 库实测 discovered 4703→2666、failed 181→27、queued 5→0，rejected 371 / published 18 一条未动。
+
+### 网络与门禁收口
+
+「本地目标直连、外部目标跟随代理」这件事原先被写了 8 遍（4 处手写关掉环境代理、3 处各自发现系统代理、1 处新增权威），全部收进 `infrastructure/net.py`；配套仓库级守卫从「只禁旧形状」改成**正向棘轮**——删掉收口即红，且有成对变异证据。并代修并发工作流欠下的门禁红（2×F401 + 2×N812 + 一个因打桩位缺失而 AttributeError 的测试），零业务逻辑改动。
+
+### Reddit 凭证状态可见（v0.33，D-190 四件套第三例）
+
+未配 `client_id/secret` 时 `ensure_reddit_token()` 直接返回 None，v0.3.7 的签名直链兜底**从未启用**，而界面上没有任何地方说这件事——用户体感只是「下载偶尔 403」。补一条能力矩阵条目（`off` 带出路文案、`ok` 说明已配置）+ 显示名 + `GET /api/pipeline/reddit-auth/status`（`?probe=true` 才真取 token，避免设置页渲染就打 Reddit）。可选能力，不阻断预检：匿名通道本就能用。
+
+评审抓出并一并修掉的三处：判据「id 与 secret 均非空」原先在采集器里还有第二份写法（不 `strip()`，空格尾巴会两边判定不一致）——现收成 `deps.reddit_credentials_configured()` 一个作者、采集器也消费它；`probe=true` 原先可能命中模块缓存返回一个过期 token 冒充「刚验过」——现强制重取；保存凭证后矩阵不刷新（新条目要等重启或手动重测才变绿）——现凭证改动触发重算。守卫也补了行为腿：只扫源码字面量的断言会被注释喂饱，现改成 monkeypatch 判据 helper 后断言端点跟着变。
+
+### 已知遗留（如实）
+
+1. **141MB Whisper 模型的全量冷启动首下未实测**：本机代理 egress 多次整体中断，只拿到 30MB/141MB 进度与完整失败路径证据。判据已沉淀为 `scripts/sim-newmachine.sh --with-download`（断言模型落进应用目录且 `~/.cache/huggingface` 一个字节不长）。
+2. **Reddit 签名直链兜底仍未闭合**：`pipeline_reddit_client_id/secret` 为空时 `ensure_reddit_token()` 直接返回 None，v0.3.7 的兜底从未启用。本版只做到「这件事可见」（能力矩阵 `reddit_auth` 条目 + `GET /api/pipeline/reddit-auth/status`，probe 需显式 `?probe=true`）；闭合需要用户去 `reddit.com/prefs/apps` 建 script 应用后填凭证。
+3. **情感文字供给链断裂已量化未修复**：`items.selftext` 在 dev 库 5281 行里 0 行非空，隔离的 2196 条中 2013 条落在情感名单、1982 条来自文字为主子版，未隔离的同子版只剩 6 条。修复面在 v0.34。
+4. **测试替身会永久遮蔽配置代理（本片修 I3 时发现，未修）**：`monkeypatch.setattr(settings, …)` 撤销时把旧值写成 `_EffectiveSettings` 的**实例属性**，从此遮蔽对 `runtime.yaml` 的 read-through——同一进程内后续测试看到的不再是真配置。本次在测试内局部规避并写明，真正的修法在 `backend/config.py` 的代理形状，留作 v0.34 独立切片。
 
 ## [v0.30.1] - 2026-09-23
 ### 补丁发布：三处「文档说交付了、产物里没有」的缺陷
