@@ -7,12 +7,13 @@
 
 ## [Unreleased]
 
-（暂无未发布变更。原先挂在本段的「文稿成片融合域」六条已随 v0.33.0 发版下移，内容逐字保留在该段内。
-v0.34 的入口事实见 [docs/ROADMAP.md](./docs/ROADMAP.md) 的「在飞（未发布）」段。）
+（暂无未发布变更。原先挂在本段的三条 v0.34 工作面——未评分三轴筛选 A、情感供给链 C-code、看板 B——已全部并入下面的 `[v0.34.0]`。）
 
-## [v0.33.0] - 2026-09-28
+## [v0.34.0] - 2026-09-30
 
-自 `v0.30.1` 起 **34 个提交**（`git rev-list --count v0.30.1..HEAD`，2026-09-28 于本发版提交之前量；计划原文写的 27 是写计划时的数，之后又落了 7 条），本版一次收口。
+自 `v0.30.1` 起 **42 个提交**（`git rev-list --count v0.30.1..HEAD`，2026-09-30 于本发版提交之前量）。
+
+**为什么这一版把原来的 `[v0.33.0]` 段一起吃掉**：v0.33.0 从未打 tag、从未 push、从未出过产物（发版准备提交 `4d4f050` 之后 main 上又叠了 16 个提交：A 筛选、C-code 供给片、B 看板后端+界面、第 8 条体检）。给一段**没有发布过**的提交单独占一个版本号，结果就是「CHANGELOG 说 0.33.0 交付了 X，而任何 0.33.0 的产物里都没有 X」——这正是本仓一路在防的那类缺陷（见 D-185 之后各轮「文档说交付了、产物里没有」的补丁条目）。下面各小节按原样保留，新增内容追加在「已知遗留」之前。
 
 ### 文稿成片融合域（monoline，D-205~D-211，执行域独立菜单 `/monoline`）
 
@@ -53,12 +54,52 @@ Whisper 与翻译模型搬进应用数据目录（`HERTZ_DATA_DIR/models/whisper
 
 评审抓出并一并修掉的三处：判据「id 与 secret 均非空」原先在采集器里还有第二份写法（不 `strip()`，空格尾巴会两边判定不一致）——现收成 `deps.reddit_credentials_configured()` 一个作者、采集器也消费它；`probe=true` 原先可能命中模块缓存返回一个过期 token 冒充「刚验过」——现强制重取；保存凭证后矩阵不刷新（新条目要等重启或手动重测才变绿）——现凭证改动触发重算。守卫也补了行为腿：只扫源码字面量的断言会被注释喂饱，现改成 monkeypatch 判据 helper 后断言端点跟着变。
 
-### 已知遗留（如实）
+### 未评分区三轴筛选（v0.34 A，`6172dde` + `fb735b2`）
+
+用户要转情感垂类，第一件需要的不是新内容而是「从杂域里把情感浮出来」。实测分母：未评分活口 2659，情感类 747（28.1%，高质量档 252）。三条轴全部**服务端**筛（`limit 500 < 活口 2659`，客户端筛只能看见最新 500 条，一旦情感不在里面界面就会得出「没有情感内容」的假结论）：
+
+- 主题轴名单作者 `category.THEME_SUBREDDITS`（情感块实测**恰好 17 个**子版，与简报名单双向零差异）；质量轴阈值作者 `quality.QUALITY_TIERS`（loose 100/0.80、standard 500/0.90、strict 1500/0.94）；正文轴用 `length(coalesce(selftext,''))`，两档互补且 `with + without == 分母`。
+- **缺省值不当成低质量**：实测未评分活口里 **17.2% 的 `upvote_ratio` 是采集器缺省的 0**（不是「真的 0 赞」）。任何 `min_ratio > 0` 的档位都会把它们**静默排除**——「未知」和「不合格」是两个事实。处置是单列 `quality.QUALITY_UNFILLED` 一档（可选、可数），不是把数字混进低质量。
+- `GET /api/pipeline/items/facets` 与列表共用同一份条件（`service_queries.axis_filters`），**`total` 与 `hit` 分开报**（把筛后当全量是本仓被坑过的形状）；未知 `theme`/`quality` 抛 `ValueError` 并列出可选值，映射 422——「名单没配」不能伪装成「今天没有情感内容」。
+- 界面：`core/preReviewFilter.ts` 是「界面选择 → HTTP query」唯一构造点，默认三轴全「全部」（默认情感会让人以为数据变少了）；`usePipelineData.test.tsx` 钉住选了情感+标准档就真的发出 `theme=sentiment&quality=standard`。
+
+### 情感文字供给链可判的那半（v0.34 C-code，`aa206c2`）
+
+- 匿名 JSON 通道补 `raw_json=1` 并与 OAuth 通道共用 `_listing_params`（`raw_json=0` 时 Reddit 按自家渲染返回正文，`&#32;`/`&amp;` 直接进库）。守卫数的是字面量出现次数 == 1，两个通道各写一份就会一边补一边漏。
+- `quality.reassess()` 成为**唯一能摘隔离标**的出口（`stamp` 的既有语义是只加不清）。三条保守规则：终态不动、`shell_reason` 仍成立不动、`error_class` 不是本模块的原因码就不清——隔离位上挂着别人的失败记录时，静默摘标等于替别人宣布「问题解决了」。
+- **修掉一条长期误报**：体检第 3 条 `downloaded_without_file` 原先不排除 `is_invalid`，把 v0.33 刻意停进异常区的空壳天天报成「产物缺失」；它还写死 `limit(500)` 私有窗口，正是本文件 `SCAN_CAP` 注释记过的坑复发。改消费 `operational_filters()` + 接回 `SCAN_CAP`，dev 库体检 **2 红 → 1 红**。
+- 新增体检第 7 条 `story_without_text`。如实记一条：**它在 dev 库是绿的**（`count=0`），也就是说它不是能抓住这次供给断裂的那条——真正在报这件事的是 `invalid_share 2196`。别把它当安全网夸。
+- `scripts/backfill-selftext.py`：默认干跑、每请求 100 个 id、四类计数分明；**出网探针失败就退出且一个查询都不发**——「0 条候选」既可能是已回填完也可能是根本连不上，脚本拒绝替运维猜哪一种。代理一律走 `net.system_proxy` 单作者（旧写法按 URL 前缀只给匿名通道挂代理，结果是「配了凭证反而不走代理」）。
+
+### 看板替换发布 tab（v0.34 B，`754ff2c` + `5469344` + `de89099`，D-213/D-214）
+
+用户原话：每天要给自己设一个文字目标（像 to-do），而「队列和日历大概没什么实际作用，我要发的话直接就发了」。定档两条：全部手动发、两个视图都撤。
+
+- **是替换不是新增**：实测流水线页原本就有 6 个内层 tab（唯一作者 `pipeline/shared.tsx` 的 `PIPELINE_TABS`）。在被抱怨「结构没用」的地方加第 7 个是反方向。发布 tab 的实质内容正是 `approved` / `published` 两张列表 = 看板的「待发布」「今日已发」，于是**搬过去**复用同一批卡片（`PublishCard`/`AuditCard`/`StageItemRow`），不产生第二套发布入口。tab 数 **6→6**，`board` 放第 2 位，默认页签改 `board`。
+- 顶栏完成度用**真实已发数**（`已发 N / 捞入 M`），不是手勾 checkbox——手勾要新表新状态机，且「勾了」和「发出去了」是两件事，那数字会自我安慰。
+- 数据形状：`daily_goal`（一天一行）+ `items.focus_date`/`focus_note`（wave31）。选日期不选 `is_today` 布尔：布尔要每天凌晨有人清零，那是第二个写入口；日期让「昨天捞的」自然掉出今日列，零后台作业。`focus_*` 有意不建索引（沿用 v0.32 S2「先量再决定」）。备注长在卡片上——用户说他后面要自己加工。
+- **判据各归一个作者**：列的划分只在后端 `pipeline/board.py`（`counts` 是截断**前**的数，界面写「共 N 条」不能拿展示条数冒充）；「界面上的某一天 → HTTP query」只在 `core/boardWindow.ts`（半开区间 `[本地零点, 次日零点)`，含两端会把午夜那条数进两天）；ISO 归一化只在 `service_queries.utc_instant`（否则「SQL 筛了 A 区间、界面按 B 区间分列」）。
+- **撤界面不撤字段**：`queue_phase`/`scheduled_at`、`auto_publish` 槽位、可编辑 `ScheduleField`（被发布器读成 biliup 原生 `--dtime` 定时上传）全部保留。已知后果写进 spec §4.4：撤掉「入队」按钮后，自动发布**在界面上再也喂不进数据**，要开无人值守得走 API/Telegram。
+- 两处 spec 判据按证据作废（§4.4c）：前端 `queueView()` 不能删——运营看板 `DashboardPage` 是活读者，而它写的是 `queryFn: pipelineApi.queueView`（**不带括号**），我按 `queueView(` 搜所以漏了，是 `tsc` 抓到的；`GET /api/pipeline/calendar` 不删——它有在跑的行为测试且读的字段仍可写。顺带修一条既存坏链：`/queue` 深链一直指向 `?mode=queue`，而 reader 只认 `pipeline|monoline` ⇒ 书签进来是 Studio。
+- **第 8 条体检 `focus_orphan` 前置纪律（D-214）**：spec 原文那条判据照抄会造出一条长期红的报警器——「上午捞进今日、下午拒掉/归档/发布」是日常操作，而这三条 transition 谁都不清 focus。所以先给「清」一个作者（`board_store.clear_focus` 接进那三处），再上判据；视图层另留兜底 `FOCUS_EXCLUDED_STATUSES`，报警器坏掉的那天界面也不假装今天还有活儿。
+- 本仓**第一条 i18n 门禁**（`frontend/src/i18n/catalog.test.ts`）：中英叶子键集相等（当前 1404 = 1404）+ 退役键既不在目录也不被引用 + 看板要的键两边都在。实测既存两处漂移（`common.copyTitle` 只在中文、`common.custom` 只在英文）都是代码里真在用的键，切语言会露裸键名——**补齐而不是加例外**。负向那条带两条对照组（判据必须能抓到 `t('…')` 直用的键，否则「零命中」只是判据不可达），并如实写下盲区：拼出来的键与放在 `labelKey:` 映射表里的键它看不见。
+
+### v0.34 的验证账（数字由命令产生，不心算）
+
+- 源码门禁 `./scripts/verify.sh` 五段全绿多次；最后一次于 `de89099`：**ruff 0、全量 pytest 584 passed、tsc 0、vitest 17 文件 77 tests、vite build OK**。基线从 v0.33 准备时的 521 涨到 584（A +25、C-code +16、B 后端与界面 +22，另有替换视图带来的删减）。
+- 变异证据（每条新判据都验过「摘掉能力本身」会红）：窗口改成两端闭、`counts` 改用截断后长度、`focus_date` 参数收下不用、端点少传 `limit`、三处 `clear_focus` 调用任摘其一、第 8 条从 `CHECKS` 删除、回填脚本摘掉探针或把代理改回按前缀分支——各自把对应测试跑红。
+- 迁移 `wave31_board_goal` 在一次性真库 `hertz_wave31_probe` 上跑完整往返（`upgrade heads` ⇒ `downgrade -1` ⇒ 再 `upgrade`）后 `dropdb`；heads 迁移前后**都是 2**（悬空分支 `wave21_glossary_remove` 按定档不动，有测试钉住）。
+- 界面在浏览器里真用过（vite :3000 + 自建 :8899 后端 + dev 库）：看板是默认页签、五列真数据、目标保存后**换页回读仍在库里**、捞入今日 ⇒ 列 0→1 且「捞入 1」、备注失焦落库、移出回到 0、空态动线落在未评分且三轴为情感+有正文。探针数据已清干净（`daily_goal` 0 行、`focus_*` 非空 0 行，清空走 PATCH 而不是手改库）。**截图与观感未验**（browser-use 拿不到可见面，指针/视觉动作被拒），验的是结构、文本与真写库回读。
+
+
 
 1. **141MB Whisper 模型的全量冷启动首下未实测**：本机代理 egress 多次整体中断，只拿到 30MB/141MB 进度与完整失败路径证据。判据已沉淀为 `scripts/sim-newmachine.sh --with-download`（断言模型落进应用目录且 `~/.cache/huggingface` 一个字节不长）。
 2. **Reddit 签名直链兜底仍未闭合**：`pipeline_reddit_client_id/secret` 为空时 `ensure_reddit_token()` 直接返回 None，v0.3.7 的兜底从未启用。本版只做到「这件事可见」（能力矩阵 `reddit_auth` 条目 + `GET /api/pipeline/reddit-auth/status`，probe 需显式 `?probe=true`）；闭合需要用户去 `reddit.com/prefs/apps` 建 script 应用后填凭证。
-3. **情感文字供给链断裂已量化未修复**：`items.selftext` 在 dev 库 5281 行里 0 行非空，隔离的 2196 条中 2013 条落在情感名单、1982 条来自文字为主子版，未隔离的同子版只剩 6 条。修复面在 v0.34。
+3. **情感文字供给链只修了一半**：`items.selftext` 在 dev 库 5281 行里 0 行非空，隔离的 2196 条中 2013 条落在情感名单、1982 条来自文字为主子版，未隔离的同子版只剩 6 条。本版落的是**可判的那半**（C-code：`raw_json` 单作者、`quality.reassess()` 唯一清标出口、体检第 7 条、回填脚本）；**C-run（真回填那 1982 条）仍未执行**——它需要出网，而 2026-09-30 复测 `www.reddit.com` 直连与 `127.0.0.1:7897` 两条路都是 `000`。命令已就绪：`uv run python scripts/backfill-selftext.py`（先看干跑，再 `--apply`）。也就是说**装好这一版之后，情感「文字」垂类的可操作弹药仍然是 6 条而不是 1982 条**，别把 C-code 当成供给恢复本身。
 4. **测试替身会永久遮蔽配置代理（本片修 I3 时发现，未修）**：`monkeypatch.setattr(settings, …)` 撤销时把旧值写成 `_EffectiveSettings` 的**实例属性**，从此遮蔽对 `runtime.yaml` 的 read-through——同一进程内后续测试看到的不再是真配置。本次在测试内局部规避并写明，真正的修法在 `backend/config.py` 的代理形状，留作 v0.34 独立切片。
+
+5. **本条版本号对应的产物尚未生成、也未发布**：`[v0.34.0]` 这一段写的是「代码已在 main、源码门禁全绿」，**`scripts/release-check.sh`（产物级门禁）未跑，tag `v0.34.0` 未打，`origin/main` 落后 16 个提交**。三者都需要单独授权后才动；在那之前任何「v0.34.0 已交付」的说法只适用于源码树，不适用于任何可安装的产物。
+6. **看板那三处「界面写点已撤」是决定而不是遗漏**：撤掉「入队」按钮与队列/日历视图后，`auto_publish_tick` 在界面上再也喂不进数据（它的筛选条件是 `queue_phase == 'ready'`）。代码、端点（`POST /items/{id}/queue`、`GET /publish/queue`、批量入队）与产能槽位一律保留，要开无人值守发布得走 API 或 Telegram 侧写相位。
 
 ## [v0.30.1] - 2026-09-23
 ### 补丁发布：三处「文档说交付了、产物里没有」的缺陷

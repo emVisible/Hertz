@@ -1,7 +1,7 @@
 {
   "name": "hertz-electron",
   "private": true,
-  "version": "0.33.0",
+  "version": "0.34.0",
   "description": "Hertz 桌面壳——AI 驱动的内容创作与自动化平台",
   "author": {
     "name": "emVisible"
