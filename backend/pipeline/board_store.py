@@ -64,6 +64,27 @@ async def put_goal(day: date, goal_text: str) -> dict:
         return _shape(row, day)
 
 
+def clear_focus(item) -> bool:
+    """条目退出工作区时清掉 `focus_date` / `focus_note`——**清**的判据与 `set_focus` 同源。
+
+    为什么需要它（而不是让三条 transition 各自 `item.focus_date = None`）：那样「清」
+    就有了三个作者，而 spec §4.6 的体检第 8 条要抓的正是「绕过写入口的那条路径」——
+    判据散成三处之后就没有判据可对了。
+
+    为什么这三处必须清：`focus_date` 非空但条目已归档 / 已拒 / 已发，意思是「库里还有人
+    把它当今天的活儿」。不在这儿清，第 8 条就会在**正常操作**上变红，等于新造一条
+    长期红的报警器（v0.34 C 刚消灭过同一种形状）。
+
+    收实例而不是 id：调用方已经把行装载在自己的 session 里，这里只改字段、不 commit，
+    提交时机仍归调用方（`set_focus` 才是那个自己开 session 的写入口）。
+    """
+    if getattr(item, "focus_date", None) is None and getattr(item, "focus_note", None) is None:
+        return False
+    item.focus_date = None
+    item.focus_note = None
+    return True
+
+
 async def set_focus(
     item_id: UUID | str,
     *,

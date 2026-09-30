@@ -20,7 +20,7 @@ from sqlalchemy import delete, select
 from backend.models.board import DailyGoal
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
-from backend.pipeline import board, board_store
+from backend.pipeline import board, board_store, integrity
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -442,3 +442,96 @@ async def test_list_items_focus_filter_is_not_decorative(client) -> None:
                 delete(Item).where(Item.id.in_([UUID(focused), UUID(newer_unfocused)]))
             )
             await session.commit()
+
+
+# ---------- 退出工作区的三条路径都要清 focus（体检第 8 条的前提） ----------
+
+
+@pytest.mark.asyncio
+async def test_reject_and_archive_clear_focus(client) -> None:
+    """「上午捞进今日、下午拒掉/归档」是正常操作 ⇒ 这两条路径必须清，第 8 条才不会长期红。"""
+    from backend.factory.registry import ServiceRegistry
+
+    pipe = ServiceRegistry.get().pipeline
+    day = date(2034, 7, 10)
+    rejected = await _mk_item(status=ItemStatus.QUEUED)
+    archived = await _mk_item(status=ItemStatus.APPROVED)
+    try:
+        for iid in (rejected, archived):
+            await board_store.set_focus(iid, focus_date=day, focus_note="探针备注", touch_note=True)
+        await pipe.reject(UUID(rejected))
+        arch = await pipe.archive([UUID(archived)])
+        assert arch["ok"] == 1, f"归档没成功，这条测试就没测到清理：{arch}"
+
+        async with session_factory() as session:
+            r = await session.get(Item, UUID(rejected))
+            a = await session.get(Item, UUID(archived))
+            assert r.status == ItemStatus.REJECTED
+            assert (r.focus_date, r.focus_note) == (None, None), "拒掉之后 focus 还挂着"
+            assert a.archived is True
+            assert (a.focus_date, a.focus_note) == (None, None), "归档之后 focus 还挂着"
+    finally:
+        async with session_factory() as session:
+            await session.execute(
+                delete(Item).where(Item.id.in_([UUID(rejected), UUID(archived)]))
+            )
+            await session.commit()
+
+
+def test_publish_path_also_clears_focus() -> None:
+    """发布那条不跑真上传，用**正向**源码断言：写 PUBLISHED 的那一段必须调 clear_focus。
+
+    为什么不写「文件里出现 clear_focus( 就行」：那搬到任何位置都成立，测不到同一事务。
+    这里取 `status = ItemStatus.PUBLISHED` 之后到下一次 commit 之间的片段来查。
+    """
+    src = (ROOT / "backend/pipeline/service_publish.py").read_text(encoding="utf-8")
+    at = src.index("row.status = ItemStatus.PUBLISHED")
+    window = src[at : at + 1200]
+    assert "clear_focus(row)" in window, "发布时没清 focus：今日列会长期挂着已发出去的条目"
+    assert "session.commit()" in window, "取错片段了（应该落在同一段提交之前）"
+
+
+@pytest.mark.asyncio
+async def test_focus_orphan_invariant_reports_only_bypasses(client) -> None:
+    """第 8 条 `focus_orphan` 的三条腿：干净库不红、旁路写必红、撤掉旁路即绿。
+
+    「旁路」是手工把 archived 行留着 focus_date —— 真实路径已经清了（上一条测试），
+    所以这里报出来的只可能是绕过。
+    """
+    from sqlalchemy import delete as sa_delete
+
+    day = date(2034, 7, 11)
+    clean = await _mk_item(status=ItemStatus.APPROVED)
+    bypass = await _mk_item(status=ItemStatus.APPROVED)
+
+    async def _count() -> int:
+        report = await integrity.integrity_report()
+        found = [f for f in report["findings"] if f["name"] == "focus_orphan"]
+        assert found, "integrity 里没注册 focus_orphan，这条判据等于没跑"
+        return int(found[0]["count"])
+
+    try:
+        base = await _count()
+        for iid in (clean, bypass):
+            await board_store.set_focus(iid, focus_date=day, focus_note=None, touch_note=False)
+        async with session_factory() as session:
+            row = await session.get(Item, UUID(bypass))
+            row.archived = True  # 绕过 archive() 的清洗路径，模拟「第二条写入口」
+            await session.commit()
+
+        hit = await _count()
+        assert hit == base + 1, f"旁路那一行该被报出来：{base} → {hit}"
+        async with session_factory() as session:
+            await session.execute(sa_delete(Item).where(Item.id.in_([UUID(clean), UUID(bypass)])))
+            await session.commit()
+        back = await _count()
+        assert back == base, f"脏行撤了仍报 = 把历史算进当前：{hit} → {back}"
+    finally:
+        async with session_factory() as session:
+            await session.execute(sa_delete(Item).where(Item.id.in_([UUID(clean), UUID(bypass)])))
+            await session.commit()
+
+
+def test_integrity_registers_eighth_check() -> None:
+    names = [c.__name__ for c in integrity.CHECKS]
+    assert "check_focus_orphan" in names, names

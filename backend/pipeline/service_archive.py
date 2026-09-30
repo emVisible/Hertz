@@ -12,6 +12,7 @@ from sqlalchemy import select
 from backend.models import script_keys as models_script_keys
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
+from backend.pipeline.board_store import clear_focus
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,9 @@ class ArchiveMixin:
                         } or None
                     item.scheduled_at = None
                     item.queue_phase = ""
+                    # 看板（v0.34 B）：归档 = 退出工作区，今日的活儿也不再是今日的。
+                    # 「清」只有一个作者（`board_store.clear_focus`），体检第 8 条才有的对。
+                    clear_focus(item)
                     item.archived = True
                     await session.commit()
                 ok += 1

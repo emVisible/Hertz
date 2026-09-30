@@ -19,6 +19,7 @@ from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.models.system import JobRun, JobStatus
 from backend.pipeline.base import Pipe, ProcessResult, StepContext, StepError
+from backend.pipeline.board_store import clear_focus
 from backend.pipeline.cancel import ItemCancelledError
 from backend.pipeline.errors import InvalidItemStateError, ItemNotFoundError, classify_error
 from backend.pipeline.steps import PIPELINE_ORDER, get_step
@@ -192,6 +193,9 @@ class StepEngine:
             )
             item.status = ItemStatus.REJECTED
             item.error = reason or "rejected at review"
+            # 看板（v0.34 B）：拒了就不再是今天的活儿——「上午捞入、下午拒掉」是正常操作，
+            # 不在这里清，体检第 8 条就会长期红（而今日列的视图层排除只是最后一道兜底）。
+            clear_focus(item)
             await bump_item_seq(session, item)  # v0.8.9
             await session.merge(item)
             await session.commit()

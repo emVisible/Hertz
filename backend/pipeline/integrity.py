@@ -16,7 +16,7 @@ import asyncio
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from backend.config import settings
 from backend.models.item import Item, ItemStatus
@@ -288,6 +288,44 @@ async def check_story_without_text() -> Finding:
     )
 
 
+#: 「已经离开工作区」的状态：这三处各自调 `board_store.clear_focus` 清 focus，
+#: 所以带着 `focus_date` 出现在这里 = 有人绕过那三处写了 focus（spec §4.6）。
+FOCUS_ORPHAN_STATUSES = (ItemStatus.REJECTED, ItemStatus.PUBLISHED)
+
+
+async def check_focus_orphan() -> Finding:
+    """8) `focus_date` 非空但条目已离开工作区（v0.34 B 看板）。
+
+    为什么这条现在才成立：`archive()` / `reject()` / 发布三条路径**都调** `clear_focus`
+    之后，「今天捞入的条目被拒了/归档了还占着今日」不再是正常操作，而是旁路写入的证据。
+    在没那三处清理之前加这条判据，它会在用户最日常的动作为红——一条长期红的报警器
+    等于没有报警器（本文件第 3 条刚为此被修过）。
+
+    归档行要单独算：`archived` 与 `status` 是两件事（归档可以是任何状态），
+    而看板的取数默认就排除归档，所以「归档却带着 focus」只能来自绕过。
+    """
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(Item)
+                .where(
+                    Item.focus_date.isnot(None),
+                    or_(
+                        Item.archived.is_(True),
+                        Item.status.in_(FOCUS_ORPHAN_STATUSES),
+                    ),
+                )
+                .order_by(Item.seq.desc())
+                .limit(SCAN_CAP)
+            )
+        ).scalars().all()
+    return Finding(
+        "focus_orphan", not rows, len(rows),
+        "focus_date 还挂在已归档/已拒/已发的条目上：这三条路径本应清掉它",
+        _sample_rows(list(rows)),
+    )
+
+
 CHECKS = (
     check_shell_in_pipeline,
     check_video_without_media,
@@ -296,6 +334,7 @@ CHECKS = (
     check_illegal_phase_status,
     check_invalid_share,
     check_story_without_text,
+    check_focus_orphan,
 )
 
 

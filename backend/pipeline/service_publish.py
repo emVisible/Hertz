@@ -14,6 +14,7 @@ from backend.models import script_keys as sk
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.pipeline.base import StepContext
+from backend.pipeline.board_store import clear_focus
 from backend.pipeline.errors import ItemNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,9 @@ class PublishMixin:
         async with session_factory() as session:
             row = await session.get(Item, item_id)
             row.status = ItemStatus.PUBLISHED
+            # 看板（v0.34 B）：发出去就不该再占着「今日待办」。发布列的「今日已发」
+            # 按 `published_at` 计数，与 focus 无关，所以这里清掉不丢任何信息。
+            clear_focus(row)
             pub_json: dict = {"target": target, **result}
             if auto:
                 # v0.12 产能计数依据：仅自动发布标记，手动发布不计入每日上限

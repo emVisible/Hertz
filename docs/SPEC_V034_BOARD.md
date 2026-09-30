@@ -158,15 +158,20 @@
 | 今日一列条目为空 | 空态文案给「去未评分筛情感素材」的动线按钮，不是「暂无数据」死路 |
 | 迁移 downgrade | `wave31_board_goal` 必须可降：先 drop 两列再 drop 表；alembic 删表闸（v0.32 S1）会要求显式声明 |
 
-### 4.6 体检新增一条不变量（`pipeline/integrity.py`，只报不改）——**本轮不做，理由如下**
+### 4.6 体检第 8 条不变量 `focus_orphan`（`pipeline/integrity.py`，只报不改）——**已交付，但判据形状与原文不同**
 
-原设计 `focus_orphan`：`focus_date` 非空但条目处于终态（`REJECTED` / `archived`）→ 说明有第二条路径在绕过 `archive()` 的白名单写 focus。这条是「常驻巡检」层，和 v0.33 那六条同级。
+原设计：`focus_date` 非空但条目处于终态（`REJECTED` / `archived`）→ 说明有第二条路径在绕过 `archive()` 的白名单写 focus。
 
-**前提不成立**：`set_focus` 之后用户完全可能接着把那条拒了 / 归档了 / 发出去——这三条 transition 都不经过 `set_focus`，谁都不清 `focus_date`。于是这条判据会在**正常操作**上变红，正是 C 切片刚消灭的那个形状（一条长期红的报警器等于没有报警器）。
+**原文那个形状不能直接实现**（这是设计时的漏算，不是实施走样）：`set_focus` 之后用户完全可能接着把那条拒了 / 归档了 / 发出去——这三条 transition 都不经过 `set_focus`，谁都不清 `focus_date`。照原文加判据，它会在**最日常的操作**上变红，等于新造一条长期红的报警器（C 切片刚为同一个形状修过第 3 条）。
 
-本轮按证据做到的部分：`board.FOCUS_EXCLUDED_STATUSES` 让 `rejected` 与 `published` 都不进今日列，且 `progress.focused`（M）不计 `rejected`——**界面上不再假装今天还有活儿**。守卫是 `tests/test_board_domain.py` 的 `test_one_row_lands_in_exactly_one_column` 与 `test_progress_uses_real_published_count_not_checkboxes`，夹具里那条 `g` 就是「上午捞入、下午被拒」。
+交付的是两半，顺序不能反：
 
-要真加这条报警器的前置条件（独立切片，别顺手做）：`archive()` / `reject()` / 发布三条路径各自调 `board_store.clear_focus(item)` 清掉 focus——即「清」也只有一个作者。那之后判据才只抓真正的旁路写。另外实测 `focus_date` 目前**全表 0 条非空**（新列），所以任何孤儿都只可能来自新写入路径：现在加判据既没有存量信号，也没有真样本可对照。
+1. **先给「清」一个作者**：`board_store.clear_focus(item)`（改字段不 commit，提交时机仍归调用方）。三个退出工作区的点各自调它——`engine.reject`、`service_archive.archive`（紧挨着既有的 `scheduled_at` / `queue_phase` 清洗）、`service_publish` 写 `PUBLISHED` 的那一段。
+2. **再上判据**：`check_focus_orphan` = `focus_date IS NOT NULL AND (archived OR status ∈ (rejected, published))`。第 1 步之后，正常操作再也造不出这种行，报出来的只可能是绕过。
+
+视图层还留了一道兜底：`board.FOCUS_EXCLUDED_STATUSES` 让 `rejected` 与 `published` 都不进今日列，且 `progress.focused`（M）不计 `rejected`——**报警器坏掉的那天，界面也不假装今天还有活儿**。
+
+守卫（`tests/test_board_domain.py`）：`test_reject_and_archive_clear_focus`（真走两条服务路径）、`test_publish_path_also_clears_focus`（发布不跑真上传，正向断言 `clear_focus(row)` 落在写 `PUBLISHED` 与 commit 之间的同一片段里）、`test_focus_orphan_invariant_reports_only_bypasses`（干净库不红 / 手工旁路那一行必红 / 撤掉即绿）、`test_integrity_registers_eighth_check`。四条变异各自验过：摘掉三处 `clear_focus` 调用、或把第 8 条从 `CHECKS` 里删掉，对应测试都红。
 
 ---
 
@@ -189,7 +194,7 @@
 | 列分组纯函数（一条记录 → 唯一一列） | **不在 vitest，在后端**：`board.build_columns` 是 Python 侧的纯函数，前端不再分一次列（分两处才会漂）。见 `test_one_row_lands_in_exactly_one_column` |
 | 草稿态 vs 保存态（D-204 形状） | 前端 `BoardTab.test.tsx`：未改过 ⇒ 按钮 disabled 且一次请求都不发；改过 ⇒ `saveGoal(day, text)` 真发出去；换日期 ⇒ 上一天的草稿作废 |
 | i18n 补一条 vitest | `src/i18n/catalog.test.ts`（中英叶子键集相等 + 退役键既不在目录也不被引用 + 看板要的键两边都在，并带两条「判据能抓到在用的键」对照组） |
-| `focus_orphan` 不变量 | **未做**，理由见 §4.6 的纠正（前提不成立会造成长期红） |
+| `focus_orphan` 不变量 | **已交付，但判据形状与 §4.6 原文不同**：先给「清」一个作者（`clear_focus` 接进 reject/archive/publish 三处），再上第 8 条。四条腿 + 四条变异见 §4.6 末段 |
 | `release-check.sh` | **未跑**（产物门禁排在所有 fix round 之后，见 ROADMAP） |
 
 ---
