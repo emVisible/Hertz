@@ -146,3 +146,37 @@ def stamp(item) -> None:
     if not (item.error_class or "").strip():
         item.error_class = INVALID_REASON
         item.error = reason
+
+
+def reassess(item) -> bool:
+    """重新评估隔离标：**理由不再成立就把标摘掉**，返回是否改了。
+
+    为什么 `stamp` 之外还需要这一个：`stamp` 的语义是「只加标、不清标」（它要在
+    每个写入口安全地被调用一次，清标动作放进它会让人工标记被机器抹掉）。但正文
+    回填之后必须有人把 `is_invalid` 摘掉，否则 1982 条文字帖永远躺在异常区。
+    由本模块提供这个出口，回填脚本就不必自己写 `item.is_invalid = False`——
+    自己写就是第二个作者，会被 v0.33 那条「隔离标记只由 quality 写」的纪律按住。
+
+    三条保守规则：
+    ①终态一律不动（复用 `is_quarantinable`，不另列一份状态白名单）；
+    ②`shell_reason` 仍然成立 → 原样返回 False，连文案都不改；
+    ③`error_class` 不是本模块写的那个原因码时**不清标**——隔离位上挂着别人的
+      失败记录（例如 `download_failed`）说明还有别的理由让它待在异常区，
+      这里静默摘标等于替别人宣布「问题解决了」。
+    """
+    if not is_quarantinable(item):
+        return False
+    if shell_reason(media_url=item.media_url, selftext=item.selftext):
+        return False
+    if not item.is_invalid:
+        return False
+    if (item.error_class or "").strip() not in ("", INVALID_REASON):
+        return False
+    item.is_invalid = False
+    if (item.error_class or "") == INVALID_REASON:
+        item.error_class = ""
+        item.error = None
+    if not has_downloadable_media(item.media_url):
+        story_like = len((item.selftext or "").strip()) >= MIN_STORY_CHARS
+        item.item_type = "text_only" if story_like else ""
+    return True

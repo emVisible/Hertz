@@ -22,7 +22,8 @@ from backend.config import settings
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.pipeline.publish_queue import PHASE_HOLDING, PHASE_READY
-from backend.pipeline.quality import QUARANTINABLE_STATUSES
+from backend.pipeline.quality import MIN_STORY_CHARS, QUARANTINABLE_STATUSES
+from backend.pipeline.service_queries import operational_filters
 
 #: 隔离占比超过它就不正常——通常是某个采集通道整体劣化（判据变了 / 源站改版）
 INVALID_SHARE_MAX = 0.2
@@ -116,22 +117,46 @@ async def check_video_without_media() -> Finding:
     )
 
 
+#: 「产物类」状态（downloaded 及之后）：这几档要求磁盘上有文件。
+ARTIFACT_STATUSES = (
+    ItemStatus.DOWNLOADED, ItemStatus.SCORED, ItemStatus.QUEUED, ItemStatus.APPROVED,
+)
+
+
+def artifact_scope() -> list:
+    """产物不变量的**取行范围**（v0.34 C 抽出，供测试与后续复用）。
+
+    为什么单独成一个函数：这条不变量栽过的两个跟头都在「范围」上——原先它
+    不排除 `is_invalid`（把刻意停进异常区的空壳报成产物缺失，长期红），
+    又写死私有小窗口（计数不动）。范围与判据分开之后，范围这一半可以被
+    直接断言，不需要靠「往共享库里插数据再看全局计数」那种顺序敏感的做法。
+    """
+    return [
+        *operational_filters(include_archived=False, include_invalid=False),
+        Item.status.in_(ARTIFACT_STATUSES),
+    ]
+
+
 async def check_downloaded_without_file() -> Finding:
-    """downloaded 及之后的状态必须有产物文件（路径缺失=制作必然失败）。"""
+    """downloaded 及之后的状态必须有产物文件（路径缺失=制作必然失败）。
+
+    2026-09-28 实测后修掉两处自身缺陷（起因是它在这台机器上长期红 5 条）：
+
+    ①**它原先不排除 `is_invalid`**。dev 库里那 5 条 offender 全部是
+      `status=queued` + `error_class=invalid_media`——即 v0.33 刻意停进异常区的空壳。
+      把它们算成「产物缺失」是把「我们已知它没产物」报两遍。一条长期红的报警器
+      等于没有报警器，而这正是本片要消灭的形状。
+    ②**窗口原先写死 `limit(500)`**，而本文件顶部 `SCAN_CAP` 的注释记着同一个坑：
+      窗口尾部被新数据挤出去时计数纹丝不动——「插一条脏数据，计数 +1」的自证
+      断言会因此随机失效。统一用 `SCAN_CAP`。
+
+    「可操作范围」的判据作者是 `service_queries.operational_filters`，此处只消费不重写。
+    """
     missing: list[dict] = []
     async with session_factory() as session:
         rows = (
             await session.execute(
-                select(Item)
-                .where(
-                    Item.archived.is_(False),
-                    Item.status.in_((
-                        ItemStatus.DOWNLOADED, ItemStatus.SCORED,
-                        ItemStatus.QUEUED, ItemStatus.APPROVED,
-                    )),
-                )
-                .order_by(Item.seq.desc())
-                .limit(500)
+                select(Item).where(*artifact_scope()).order_by(Item.seq.desc()).limit(SCAN_CAP)
             )
         ).scalars().all()
     root = Path(str(settings.data_dir))
@@ -232,6 +257,37 @@ async def check_invalid_share() -> Finding:
     )
 
 
+async def check_story_without_text() -> Finding:
+    """7) `item_type=text_only` 却低于正文门槛（v0.34 C 供给链可见化）。
+
+    为什么单列一条：dev 库实测 `items.selftext` **0/5281**——文字帖的正文根本没落库
+    （只有 JSON/OAuth 通道的 `_to_post` 会写 selftext，匿名 JSON 被 403 时静默降级
+    到取不到正文的 RSS）。后果是 2196 条被隔离的条目里 2013 条落在情感名单，
+    情感**文字**垂类的可操作供给只剩 6 条。这不是代码坏了，是上游断供，
+    而断供在界面上的样子恰好和「今天没有好素材」一模一样——不说就没人分辨得出。
+
+    正文门槛复用 `quality.MIN_STORY_CHARS`，此处不另立数字。
+    """
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(Item)
+                .where(
+                    Item.archived.is_(False),
+                    Item.item_type == "text_only",
+                    func.length(func.coalesce(Item.selftext, "")) < MIN_STORY_CHARS,
+                )
+                .order_by(Item.seq.desc())
+                .limit(SCAN_CAP)
+            )
+        ).scalars().all()
+    return Finding(
+        "story_without_text", not rows, len(rows),
+        f"text_only 条目正文低于 {MIN_STORY_CHARS} 字：正文没落库（采集通道劣化或回填未跑）",
+        _sample_rows(rows),
+    )
+
+
 CHECKS = (
     check_shell_in_pipeline,
     check_video_without_media,
@@ -239,6 +295,7 @@ CHECKS = (
     check_duplicate_source_id,
     check_illegal_phase_status,
     check_invalid_share,
+    check_story_without_text,
 )
 
 

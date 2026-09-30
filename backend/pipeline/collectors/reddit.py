@@ -205,6 +205,21 @@ def classify_media(url: str, is_video: bool, extra: dict) -> str:
     return "video_raw"
 
 
+def _listing_params(limit: int) -> dict:
+    """列表端点的查询参数——**`raw_json` 的唯一作者**。
+
+    为什么两个通道必须同源：`raw_json=0` 时 Reddit 会按自家渲染返回 `selftext`
+    （`&#32;`、`&amp;` 这类实体直接进库），而 v0.11.7 起的文字产线吃的就是
+    `selftext`。OAuth 通道一直传 1，匿名 JSON 通道没传——于是同一条产线在两条
+    通道上给出两种质量的正文。各写一份参数 dict 就会这样一边补一边漏
+    （守卫见 `tests/test_sentiment_supply.py::test_raw_json_has_one_author`）。
+
+    RSS 通道**不走这里**：它拿的是 XML，`raw_json` 对它没有意义，
+    而且那条通道本来就取不到 `selftext`（见 `_rss_to_post`）。
+    """
+    return {"limit": min(limit, 100), "raw_json": 1}
+
+
 class RedditCollector(SourceCollector):
     name = "reddit"
     # v0.8.9 AXIOM 28：最近一次成功采集走的通道（oauth/json/rss）——
@@ -258,14 +273,12 @@ class RedditCollector(SourceCollector):
         except httpx.HTTPError as exc:
             raise _classify_http(exc, str(exc)) from exc
 
-    async def _collect_oauth(
-        self, sub: str, sort: str, limit: int, token: str
-    ) -> list[RawPost]:
+    async def _collect_oauth(self, sub: str, sort: str, limit: int, token: str) -> list[RawPost]:
         """认证通道（v0.3.5）：oauth.reddit.com 走官方 API，匿名 403 不再命中。"""
         url = f"https://oauth.reddit.com/r/{sub}/{sort}"
         resp = await self._client.get(
             url,
-            params={"limit": min(limit, 100), "raw_json": 1},
+            params=_listing_params(limit),
             headers={"Authorization": f"Bearer {token}"},
         )
         if resp.status_code in (401, 403):
@@ -291,7 +304,7 @@ class RedditCollector(SourceCollector):
 
     async def _collect_json(self, sub: str, sort: str, limit: int) -> list[RawPost]:
         url = f"https://www.reddit.com/r/{sub}/{sort}.json"
-        resp = await self._client.get(url, params={"limit": min(limit, 100)})
+        resp = await self._client.get(url, params=_listing_params(limit))
         if resp.status_code in (403, 429):
             raise _JsonRejectedError(resp.status_code)
         try:
@@ -457,4 +470,3 @@ class FakeRedditCollector(RedditCollector):
 
     async def collect(self, ctx, channel: str, limit: int) -> list[RawPost]:
         return list(self._posts)[:limit]
-
