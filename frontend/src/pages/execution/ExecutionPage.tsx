@@ -15,7 +15,8 @@ type Mode = 'studio' | 'pipeline' | 'monoline'
 /** 执行工作台：第二级路由（Studio / Pipeline / 文稿成片切换）+ 组装。
  *  Studio 域与 Pipeline 域分别位于 StudioView.tsx / PipelineView.tsx（解耦）；
  *  文稿成片为独立融合域（pages/monoline/），在此仅挂载为第三 tab。
- *  发布队列（v0.12）已融合进 PipelineView 发布 tab（QueueView）。 */
+ *  发布队列（v0.12）与内容日历（v0.2.3）在 v0.34 B 一并撤下界面，其职能由流水线
+ *  第一级的「看板」tab 承载（`queue_phase` / `scheduled_at` 字段与后端机制都保留）。 */
 export function ExecutionPage() {
   const { t } = useTranslation()
   const [params, setParams] = useSearchParams()
@@ -120,7 +121,6 @@ export function ExecutionPage() {
           setPublishStats={pipeline.setPublishStats}
           uploadCover={pipeline.uploadCover}
           randomCover={pipeline.randomCover}
-          enqueueItem={pipeline.enqueueItem}
           retryClass={pipeline.retryClass}
           backToPrep={pipeline.backToPrep}
           batchAction={pipeline.batchAction}

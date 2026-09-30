@@ -43,8 +43,8 @@ export interface PipelineViewProps {
   setPublishStats: (item: PipelineItem) => void
   uploadCover: (item: PipelineItem, file: File) => void
   randomCover: (item: PipelineItem) => void
-  /** 发布队列（v0.12）：holding/ready/出队 */
-  enqueueItem: (item: PipelineItem, phase: '' | 'holding' | 'ready') => void
+  // v0.34 B：发布队列的界面写点（`enqueueItem`）随「入队」按钮退役——
+  // `queue_phase` 字段与后端 `POST /items/{id}/queue` 都还在，只是界面上喂不进去。
   retryClass: (cls: string, n: number) => void
   backToPrep: (item: PipelineItem) => void
   batchAction: (action: 'approve' | 'reject' | 'back_to_prep' | 'requeue', ids: string[]) => void
@@ -74,17 +74,21 @@ export interface PipelineViewProps {
   busy: Record<string, { action: string; title: string }>
 }
 
-export type PipelineTabId = 'run' | 'preReview' | 'workshop' | 'inReview' | 'postReview' | 'exceptions'
+export type PipelineTabId = 'run' | 'board' | 'workshop' | 'preReview' | 'inReview' | 'exceptions'
 
 // 第三级路由：内容流水线平铺菜单（v0.2.0 审核三态）——
 // v0.8.4：采集（scheduler 自动 + 手动触发，只入 DB）｜预处理（下载/评分/生产方式/制作）
 // ｜审核（内容判断）｜发布（分发）｜异常（独立恢复区）
+// v0.34 B：**看板替换发布**（tab 数 6→6，不是加在旁边）。依据见 spec §4.4b——发布 tab
+// 的实际内容就是 approved / published 两张列表，正是看板的「待发布」「今日已发」两列，
+// 搬过去而不是复制一份，所以不产生第二套发布入口。位置放第 2 位（run 之后）而不是最前：
+// 「运行/采集运维」是每天第一眼要看的东西。异常区仍留在 exceptions，看板不承载。
 export const PIPELINE_TABS = [
   { id: 'run', labelKey: 'console.stageCollect' },
+  { id: 'board', labelKey: 'console.stageBoard', countKeys: ['approved', 'published'] },
   { id: 'workshop', labelKey: 'console.workshop' },
   { id: 'preReview', labelKey: 'console.stagePreReview', countKeys: ['discovered', 'downloaded', 'scored'] },
   { id: 'inReview', labelKey: 'console.stageAudit', countKeys: ['queued'] },
-  { id: 'postReview', labelKey: 'console.stagePublish', countKeys: ['approved', 'published'] },
   { id: 'exceptions', labelKey: 'console.stageExceptions', countKeys: ['failed', 'rejected'] },
 ] satisfies Array<{
   id: PipelineTabId

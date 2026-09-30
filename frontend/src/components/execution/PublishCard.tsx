@@ -4,7 +4,7 @@ import i18n from '../../i18n'
 
 import type { PipelineItem } from '../../api'
 import { useExecutionStore } from '../../stores/execution'
-import { Badge, Button, Icon, Menu, Select, type IconName } from '../ui'
+import { Badge, Button, Icon, Menu, Select } from '../ui'
 import { ITEM_TYPE_BADGE, MediaThumb } from './PipelineStage'
 import { ScheduleField } from './ScheduleField'
 import { BILI_TIDS, biliTidName } from '../../constants/bilibili'
@@ -26,15 +26,12 @@ export function PublishCard({
   onSaveMeta,
   onRequeue,
   onRandomCover,
-  onEnqueue,
 }: {
   item: PipelineItem
   onPublish: (item: PipelineItem, selfmade: boolean, target: string, now: boolean) => void
   onSaveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
   onRequeue: (item: PipelineItem) => void
   onRandomCover: (item: PipelineItem) => void
-  /** 入队/出队（v0.12）：''=出队｜holding=预发布｜ready=发布队列 */
-  onEnqueue: (item: PipelineItem, phase: '' | 'holding' | 'ready') => void
 }) {
   const { t } = useTranslation()
   // v0.11.3：发布进行中——按钮转圈 + 防重复提交（上传为长任务）
@@ -467,37 +464,10 @@ export function PublishCard({
                   title: !scheduled ? t('console.scheduleFirst') : undefined,
                   onClick: () => onPublish(item, selfmade, target, false),
                 },
-                'divider',
-                ...(item.queue_phase === 'ready'
-                  ? [{
-                      label: t('console.queueLeaveReady'),
-                      icon: 'rewind' as IconName,
-                      active: true,
-                      disabled: !!busy,
-                      onClick: () => onEnqueue(item, ''),
-                    }]
-                  : [{
-                      label: t('console.queueToReady'),
-                      icon: 'clock' as IconName,
-                      active: false,
-                      disabled: !!busy,
-                      onClick: () => onEnqueue(item, 'ready'),
-                    }]),
-                ...(item.queue_phase === 'holding'
-                  ? [{
-                      label: t('console.queueLeave'),
-                      icon: 'library' as IconName,
-                      active: true,
-                      disabled: !!busy,
-                      onClick: () => onEnqueue(item, ''),
-                    }]
-                  : [{
-                      label: t('console.queueToHolding'),
-                      icon: 'library' as IconName,
-                      active: false,
-                      disabled: !!busy,
-                      onClick: () => onEnqueue(item, 'holding'),
-                    }]),
+                // v0.34 B：「入队 / 出队」两个菜单项随队列视图一起撤掉（用户定档：
+                // 全部手动发）。`queue_phase` 本身与它的只读呈现（上方那枚徽章、
+                // 「立即发」的 now 判据）都还在——**界面上再也喂不进自动发布的相位**
+                // 是这次的决定，不是遗漏：要开无人值守发布得走 API / Telegram 写相位。
               ]}
             />
           </div>

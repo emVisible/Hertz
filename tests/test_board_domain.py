@@ -181,6 +181,8 @@ OVERLAP = {
         _row("d", "published", published="2034-07-01T02:00:00+00:00", focus=DAY),
         _row("e", "published", published="2034-06-30T10:00:00+00:00"),
         _row("f", "discovered"),
+        # 上午捞进今日、下午被拒：它哪儿都不该出现（异常区的事），也不能算进 M
+        _row("g", "rejected", focus=DAY),
     ],
     "from": "2034-06-30T16:00:00+00:00",
     "to": "2034-07-01T16:00:00+00:00",
@@ -200,12 +202,17 @@ def test_one_row_lands_in_exactly_one_column() -> None:
     assert out["columns"]["ready_to_publish"] == [], "a 已归 focus，待发列不该再算它"
     # d 落在窗口内、e 落在窗口外（`from` 之前）；published 且今天捞入的 d 仍归发布列
     assert [r["id"] for r in out["columns"]["published_today"]] == ["d"]
-    # f 是未评分区的事，看板不接
+    # f 是未评分区的事，看板不接；g 今天被拒，也不能继续赖在今日列里
     assert "f" not in seen
+    assert "g" not in seen, "已拒条目带着 focus_date 出现在看板上 = 假装今天还有活儿"
 
 
 def test_progress_uses_real_published_count_not_checkboxes() -> None:
-    """spec §4.3 的完成度语义：M = 今天捞入的条数（含已发的），N = 其中今天发掉的。"""
+    """spec §4.3 的完成度语义：M = 今天捞入的条数（含已发的），N = 其中今天发掉的。
+
+    夹具里那条 `rejected` 带着今天的 focus_date：它两边都不算，否则 N 永远追不平 M，
+    而「追不平的完成度」正是手勾 checkbox 换出来的那种自我安慰数字。
+    """
     out = board.build_columns(OVERLAP["items"], DAY, OVERLAP["from"], OVERLAP["to"])
     assert out["progress"] == {"focused": 2, "published_of_focus": 1}, out["progress"]
 
@@ -347,6 +354,65 @@ async def test_board_endpoint_asks_for_the_documented_columns(client, monkeypatc
     published = [c for c in calls if c.get("status") == "published"]
     assert published and published[0]["published_from"] == "2034-07-02T16:00:00+00:00", calls
     assert len(calls) == 5, f"每列各一次，多了就是有人自己加了一遍查询：{len(calls)}"
+
+
+@pytest.mark.asyncio
+async def test_endpoint_maps_store_errors_to_status_codes(client) -> None:
+    """判据在 `board_store`，但**映射**在端点——那一跳坏了界面只会看到 500。
+
+    两条各自的失败形状：超长的 422 变成 500（用户不知道是自己写多了），
+    归档条目的 409 变成 500（用户以为系统坏了，而正解是「先取消归档」）。
+    """
+    day = date(2034, 7, 7)
+    too_long = "x" * (board_store.GOAL_MAX_CHARS + 1)
+    resp = await client.put(f"/api/pipeline/goal/{day}", json={"goal_text": too_long})
+    assert resp.status_code == 422, f"超长目标应 422，实际 {resp.status_code}"
+
+    iid = await _mk_item()
+    try:
+        async with session_factory() as session:
+            row = await session.get(Item, UUID(iid))
+            row.archived = True
+            await session.commit()
+        resp2 = await client.patch(
+            f"/api/pipeline/items/{iid}/focus", json={"focus_date": day.isoformat()}
+        )
+        assert resp2.status_code == 409, f"归档条目应 409，实际 {resp2.status_code}"
+        assert "归档" in resp2.json()["detail"]
+
+        resp3 = await client.patch(
+            f"/api/pipeline/items/{uuid4()}/focus", json={"focus_date": day.isoformat()}
+        )
+        assert resp3.status_code == 404, "不存在的条目必须 404，不是 500"
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(Item).where(Item.id == UUID(iid)))
+            await session.execute(delete(DailyGoal).where(DailyGoal.goal_date == day))
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_goal_put_then_read_back_through_http(client) -> None:
+    """「已保存」的判据必须穿过一次真实 HTTP：PUT 之后 GET 回同样的文本。
+
+    只测 store 层会漏掉整条写路径——D-204 那次就是 `save()` 提交了空载荷，
+    页面照样 toast「已保存」。
+    """
+    day = date(2034, 7, 8)
+    try:
+        put = await client.put(f"/api/pipeline/goal/{day}", json={"goal_text": "挑 5 条改开头"})
+        assert put.status_code == 200, put.text
+        got = await client.get(f"/api/pipeline/goal/{day}")
+        assert got.status_code == 200, got.text
+        assert got.json()["goal_text"] == "挑 5 条改开头"
+        assert got.json()["goal_date"] == "2034-07-08"
+        # 读不许建行：换一天读，回的是空文本
+        empty = await client.get("/api/pipeline/goal/2034-07-09")
+        assert empty.json() == {"goal_date": "2034-07-09", "goal_text": "", "updated_at": None}
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(DailyGoal).where(DailyGoal.goal_date == day))
+            await session.commit()
 
 
 @pytest.mark.asyncio

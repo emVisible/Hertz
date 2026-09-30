@@ -64,10 +64,12 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
     void queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-jobs'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-sources'] })
-    // 失败分类看板 / 供给告警 / 内容日历：操作后即时刷新（§7.5 缓存症状）
+    // 失败分类看板 / 供给告警：操作后即时刷新（§7.5 缓存症状）
     void queryClient.invalidateQueries({ queryKey: ['pipeline-failures'] })
     void queryClient.invalidateQueries({ queryKey: ['pipeline-supply'] })
-    void queryClient.invalidateQueries({ queryKey: ['pipeline-calendar'] })
+    // v0.34 B：看板按天取数（`['pipeline-board', day]`，前缀匹配覆盖所有天）。
+    // 内容日历的 invalidate 随日历视图一起退役——端点还在，只是界面不再读它。
+    void queryClient.invalidateQueries({ queryKey: ['pipeline-board'] })
   }
 
   /** 单条评分（v0.3.5，预处理手动评分按钮）。 */
@@ -310,23 +312,9 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
     }
   }
 
-  /** 入队/出队（v0.12）：holding=预发布｜ready=发布队列｜''=出队 */
-  async function enqueueItem(item: PipelineItem, phase: '' | 'holding' | 'ready') {
-    try {
-      await withBusy(item, 'enqueue', () => pipelineApi.enqueue(item.id, phase))
-      refresh()
-      toast(
-        phase === 'holding'
-          ? t('console.queueHoldingOk')
-          : phase === 'ready'
-            ? t('console.queueReadyOk')
-            : t('console.queueLeaveOk'),
-        'success',
-      )
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'error')
-    }
-  }
+  /** 入队/出队的 hook 随「入队」按钮一起退役（v0.34 B，用户定档：全部手动发）。
+   *  撤的是**界面写点**：后端 `POST /items/{id}/queue` 与 `queue_phase` 字段、
+   *  `auto_publish` 的槽位机制一律保留——要开无人值守发布，走 API 或 Telegram 写相位。 */
 
   /** 同类批量重试（失败分类看板）：批量副作用，先确认（AXIOM §13.1）。 */
   async function retryClass(cls: string, n: number) {
@@ -438,7 +426,6 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
     publishItem,
     uploadCover,
     randomCover,
-    enqueueItem,
     retryClass,
     backToPrep,
     rescheduleExpired,

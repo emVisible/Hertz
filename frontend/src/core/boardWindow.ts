@@ -9,6 +9,14 @@
  * 发布算进两天，`已发 N` 随之虚高。
  */
 
+/** 每日目标文本长度上限——**镜像**后端 `board_store.GOAL_MAX_CHARS`（判据的作者在那边）。
+ *
+ * 这里只用来做输入提示与 `maxLength`；真正的拒绝仍由后端 422 发生。镜像会漂，所以
+ * `boardWindow.test.ts` 有一条把它和 Python 侧那个数对在一起的守卫（照 `INVALID_POOL_LIMIT`
+ * 的先例：界面需要一个数才能画，但判据不许在两边各写一份逻辑）。
+ */
+export const GOAL_MAX_CHARS = 4000
+
 /** 本地墙上日期 `YYYY-MM-DD`（不是 `toISOString().slice(0,10)`——那个是 UTC 日期，
  *  东八区晚上八点看板上会显示成昨天）。 */
 export function wallDay(now: Date = new Date()): string {

@@ -33,13 +33,18 @@
 
 ## 在飞（代码已在 main，未打 tag、未发布）
 
-> **2026-09-28 一页状态（给明早读这里的你）**
+> **2026-09-30 一页状态（给下一个读这里的你；全部是已完成的事实，没有进行时）**
 >
-> - **v0.33.0 发版准备已提交 `4d4f050`**：`./scripts/verify.sh` **GATE_EXIT=0 且日志含 `ALL GATES PASSED`**（全量 pytest 521 passed、ruff 0、tsc 0、vitest 12 文件），版本五处 `0.33.0`、CHANGELOG `[v0.33.0]`（34 提交 + 四条如实遗留）、D-205 撞号已改为 D-212。**`release-check.sh`（产物门禁）未跑，tag 与 push 未执行，等你授权**；`origin/main` 落后 9 个提交。
-> - **A（未评分情感/质量筛选）后端已完成但未提交**：11 个文件留在工作树（归属逐名记在 `.superpowers/sdd/2026-09-27-v033-release-runway/progress.md`，勿 `git add -A`、勿 revert）。controller 亲验：`ruff` 0、新测试 **25 passed**、`tsc` 0、`vitest` **13 文件**（基线 12）。全量 pytest 在后台 `/tmp/park_full.log`（看尾部 `FULL_EXIT=` 与 passed≈546）。**按「绿了才提交」的规矩，我没在全量结果出来之前提交。** 前端 UI 一行未动 ⇒ 你的 vite 不会加载半截代码。**下一步**：全量绿 → 提交这批（首行 `feat(pipeline): 未评分区主题/质量/缺值三轴服务端筛选（后端与请求映射；UI 接线待续）`，正文必须写明界面还不能点）→ 再做 UI 接线（`PreReviewTab` 筛选条 + store 默认值 + i18n 双语键）。**读数三条，全是实测**：① 情感活口 **747 / 2659 = 28.1%**，其中**带媒体 747（100%）、`text_only` 0** —— 「筛到 0 条情感文字」是真的 0，不是筛选坏了；② **17.2% 的活口 `upvote_ratio == 0`**（采集器缺省值 = 没取到，不是 0 分赞），A 已把它做成可选/可数的 `QUALITY_UNFILLED` 一档而不是静默排除；③ 界面 limit 只有 500 而活口 2659，筛选必须服务端做，否则「没有情感内容」永远是可疑结论。全库分母：标准档 **749 = 28.2%**，严格档 **440 = 16.5%**。
-> - **最大的一条不是界面问题，是供给**：`items.selftext` 全库 **0/5281**。隔离池 2196 条里 **2013 条（91.7%）就是情感**、1982 条来自文字为主子版；未隔离的同子版只剩 6 条。也就是说你要做的情感**文字**垂直，现在弹药是 6 条而不是 1982 条——差的那 1976 条缺的只是正文，且 2196 条**全部带 `source_id`，可回填**。修复面 = C 切片（`task-C-brief.md`，C-code 不需要网络，C-run 需要）。
-> - **等你的三个点头**：① 授权 push + 打 tag `v0.33.0`（或先跑 `release-check.sh` 再授）；② C-code 是否插到 B 之前（我推荐是——否则 B 的候补池是空的）；③ B 的 spec（`docs/SPEC_V034_BOARD.md`）里完成度语义用真实已发布数、不用手勾 checkbox，这条认不认。
-> - 顺带留了一条我自己的错：修 I3 时发现 `monkeypatch` 撤销会把旧值写成配置代理的实例属性，从此遮蔽 `runtime.yaml` 的 read-through（详见 CHANGELOG 遗留第 4 条）——真正的修法在 `backend/config.py` 的代理形状，属独立切片。
+> - **v0.33.0 待发**：发版准备提交在 `4d4f050`，`./scripts/verify.sh` 当时 **GATE_EXIT=0 且日志含 `ALL GATES PASSED`**（全量 pytest 521、ruff 0、tsc 0、vitest 12 文件），版本五处 `0.33.0`、CHANGELOG `[v0.33.0]`（34 提交 + 四条如实遗留）、D-205 撞号已改 D-212。**`release-check.sh`（产物门禁）没跑过；tag 与 push 都没执行**，`origin/main` 落后 14 个提交。
+> - **A（未评分三轴筛选）已交付**：后端 `6172dde` + 界面接线 `fb735b2`。主题（情感 17 子版）/ 质量档 / 正文有无三轴全部**服务端**筛；`core/preReviewFilter.ts` 是「界面选择 → HTTP query」的唯一构造点，列表与分面共用，`hit/total` 两个数分开报（外加 `unfilled` 那一档）。
+> - **C-code 已交付 `aa206c2`**：①`_listing_params` 让匿名 JSON 与 OAuth 共用同一个 `raw_json=1`；②`quality.reassess()` 是**唯一能摘隔离标**的出口；③体检第 7 条 `story_without_text`；④`scripts/backfill-selftext.py` 默认干跑 + 出网探针失败即退出 2 且一个查询都不发。顺手修掉长期误报的体检第 3 条（不排除 `is_invalid` + 写死 `limit(500)`），dev 库体检 **2 红 → 1 红**，剩下的 `invalid_share 2196` 才是真信号。
+> - **C-run 未跑，被出网卡着**：本机 egress 一直是 `000`，1982 条正文还躺在异常区。命令是 `uv run python scripts/backfill-selftext.py`（先看干跑，再 `--apply`）。
+> - **B（看板融合）已交付**：后端契约 `754ff2c`（`daily_goal` + `items.focus_date/focus_note` + wave31 + `board_store` + `GET /api/pipeline/board` + `core/boardWindow`），界面见本节末的 B-UI 提交。tab 数 **6→6**（看板**替换**发布 tab，队列/日历/入队三个界面写点撤掉，字段与后端机制全留）。`./scripts/verify.sh` 五段全绿：ruff 0、全量 pytest **578 passed**、tsc 0、vitest **17 文件 / 77 tests**、vite build OK。
+> - **供给这条底座没变**：`items.selftext` 全库 **0/5281**；隔离池 2196 条里 **2013 条（91.7%）就是情感**、1982 条来自文字为主子版，未隔离的同子版只剩 6 条。你要做的情感**文字**垂直，弹药是 6 条而不是 1982 条——差的缺的只是正文，且 2196 条**全部带 `source_id`，可回填**（= 上面的 C-run）。
+> - **还开着的三件事**：① 授权 `release-check.sh` + push + 打 tag `v0.33.0`；② C-run（要出网）；③ Reddit OAuth 凭证要你在外部注册后填进设置页（能力矩阵已能看到「已配置/未配置」，`probe=true` 会真去换一次 token）。
+> - **一条既存缺陷本轮顺手修了**：`/queue` 深链指向 `?mode=queue`，而 `ExecutionPage` 只认 `pipeline|monoline` ⇒ 书签进来一直是 Studio。改指 `mode=pipeline`。
+> - **两条按证据作废的 spec 判据**（细节在 `docs/SPEC_V034_BOARD.md` §4.4c / §4.6）：`queueView()` 不能删（运营看板是活读者）；`focus_orphan` 不变量不做（正常「捞入后又拒绝」就会红 = 新造长期红报警器）。
+> - 另留一条自己的错：修 I3 时发现 `monkeypatch` 撤销会把旧值写成配置代理的实例属性，从此遮蔽 `runtime.yaml` 的 read-through（CHANGELOG 遗留第 4 条）——真正的修法在 `backend/config.py` 的代理形状，属独立切片。
 
 - **v0.31 尾巴**：B1/B3 引擎入包 ✅（D-200）；B4/B5「模型搬家 + 一键下载」✅ 已并入 v0.32 S4（D-203）。**仍未做**：141MB 全量冷启动首下的成功实测——本机代理 egress 两次中断，只拿到 30MB/141MB 进度与完整失败路径证据；判据已沉淀为 `scripts/sim-newmachine.sh --with-download`（断言模型落进应用目录且 `~/.cache/huggingface` 一个字节不长）
 - **v0.32 质量片 S1–S6 ✅**（D-201…D-204）：alembic 删表闸 / 工坊中文输出繁体纠偏 / schema 漂移清偿 / 文档卫生 / 产物级发布门禁 / 本地模型单一真相源，外加清偿一条 **v0.20 起设置页只演出不落盘**的回归（D-204：`save()` 提交的是空 `overrides`，改动全在内存里，页面却 toast「已保存」）。S7 前端拆壳按定档不在本版。**发布动作未执行**：先 `./scripts/release-check.sh` 通过，再谈版本号五处对齐与 tag（push / 打 tag 需单独授权）

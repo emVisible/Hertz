@@ -54,13 +54,21 @@
 
 ## 四、设计
 
-### 4.1 数据模型（一次迁移 `wave31_board_plan`，接在 `wave30_item_invalid` 之后）
+### 4.1 数据模型（一次迁移 `wave31_board_goal`，接在 `wave30_item_invalid` 之后）
 
-**新表 `daily_plan`**（一天一行，仿 `models/brief.py` 的 `BaseModel` 约定，白得 id/created_at/updated_at）：
+> **命名冲突已纠正（2026-09-28 实测）**：本 spec 早期版本把每日目标叫 `daily_plan`、
+> 模型放进 `backend/models/plan.py`。而 `models/plan.py` **已存在**且属于**编排域**
+> （`plans` 表 / `Plan` / `WorkflowRun` / `PhaseRun`）——同一仓库里两个「plan」迟早
+> 漂成两套读法，正是 D-205/D-212 在消灭的形状。发现过程也不体面：我按 spec 去"新建"
+> 那个文件，Write 直接覆盖了已存在的编排模型（靠 `git checkout` 秒回，未提交所以无损）。
+> 现统一改名：表 **`daily_goal`**、列 **`goal_date`**、模型 **`backend/models/board.py`**、
+> 服务 **`backend/pipeline/board_store.py`**、端点 **`/api/pipeline/goal/{day}`**。
+
+**新表 `daily_goal`**（一天一行，仿 `models/brief.py` 的 `BaseModel` 约定，白得 id/created_at/updated_at）：
 
 | 列 | 类型 | 说明 |
 |---|---|---|
-| `plan_date` | `Date`，`unique=True`，`index=True` | 一天一行的身份。索引是因为查询永远是「按日期取一行」，选择性极高 |
+| `goal_date` | `Date`，`unique=True`，`index=True` | 一天一行的身份。索引是因为查询永远是「按日期取一行」，选择性极高 |
 | `goal_text` | `Text`，`default=""`，nullable=False | 多行自由文字（用户要的「文字输入 + to do list」就长在这里，不拆成子表） |
 
 **`items` 新增两列**（同一条迁移）：
@@ -72,7 +80,7 @@
 
 **为什么是 `focus_date` 而不是 `is_today: bool`**：bool 会要求「每天凌晨有人去清零」，那是第二个写入口和新故障面；日期让「昨天捞的」自然掉出今日列，无需任何后台作业。
 
-**时区约定**：`plan_date` / `focus_date` 存「用户墙上日期」。后端**不猜时区**——由前端算出 `YYYY-MM-DD` 字符串随请求下发（`daily_plan` 与今日列的全部读写都走这个口径）。这条写进端点契约，避免 UTC 与服务端本地时区打架。
+**时区约定**：`goal_date` / `focus_date` 存「用户墙上日期」。后端**不猜时区**——由前端算出 `YYYY-MM-DD` 字符串随请求下发（`daily_goal` 与今日列的全部读写都走这个口径）。这条写进端点契约，避免 UTC 与服务端本地时区打架。
 
 ### 4.2 后端接口（读仍归 `QueriesMixin`，编排不另立查询作者）
 
@@ -117,31 +125,72 @@
 - `PIPELINE_TABS` 里把 `postReview` 一项换成 `{ id: 'board', labelKey: ..., countKeys: ['approved','published'] }`，位置放**第 2 位**（`run` 之后）——没放最前，因为「运行/采集运维」是你每天第一眼要看的东西；顺序若要调，改这一行就够。默认 tab 改 `board`，作者仍是 `stores/execution.ts` 的初始 state。
 - 删除清单因此增加一个：`PostReviewTab.tsx`（职能被看板接管）。`CalendarView.tsx` / `calendar.ts` + 测试 / `QueueView.tsx` 照旧删。
 
-其余一律不变：撤界面不撤字段、`PublishCard` 保留可编辑 `ScheduleField`（§4.4 已纠正）、删「入队」按钮、`GET /calendar` 随视图删、`publish/queue` 与 `items/{id}/queue` 保留。
+其余一律不变：撤界面不撤字段、`PublishCard` 保留可编辑 `ScheduleField`（§4.4 已纠正）、删「入队」按钮、~~`GET /calendar` 随视图删~~（**§4.4c 第 2 条按证据作废**）、`publish/queue` 与 `items/{id}/queue` 保留。
+
+### 4.4c 实施时的三处纠正（2026-09-30，B-UI 落地当天）
+
+写 spec 时数读者数错了三处。都是同一类错：**只数了界面读者，没数机制读者和深链读者**。留编号、留实测，不改写历史。
+
+1. **`queueView()` / `PublishQueueView` 必须保留**（§4.4 的删除清单里那条作废）。
+   依据：`pages/dashboard/DashboardPage.tsx:134-136` 在用 `pipelineApi.queueView`，读 `today` 产能与
+   `ready`/`holding` 计数。撤掉它会把运营看板的产能卡变成空白——而那是**另一个界面**的活读者。
+   教训记法：数读者要按符号名搜（`queueView`），不能按调用写法搜（`queueView(`），
+   因为 TanStack Query 的 `queryFn: pipelineApi.queueView` 不带括号——本次就是 `tsc` 替我抓到的。
+   保留范围只到读侧：`enqueue()` / `enqueueBatch()` 两个前端写点照 §4.4 删除。
+2. **`GET /api/pipeline/calendar` 不删**。它不只被视图用：`tests/test_pipeline_governance.py::test_calendar_endpoint`
+   是一条真在跑的行为测试（跨月区间过滤），而且它读的是 `scheduled_at` / `published_at` 这两个
+   **仍然可写**的字段（`ScheduleField` → `set_meta`，biliup `--dtime` 消费）。删端点=删一项可检验的能力，
+   与「撤界面不撤字段」这条定档自相矛盾。改判：**端点、service 方法、那条测试都留着**；
+   删掉的只有前端 `calendar()` 方法与 `CalendarView.tsx`，以及 `refresh()` 里那条
+   `['pipeline-calendar']` invalidate（界面不再读它了）。
+3. **`/queue` 深链一直是坏的**（顺带修的既存缺陷，不在原 spec 里）。`AppShell.tsx:132` 指向
+   `?mode=queue`，而 `ExecutionPage` 的 reader 只认 `pipeline|monoline`，其余一律落回 `studio`
+   ——书签进来看到的是 Studio。改成 `/execution?mode=pipeline`，看板正好是默认页签。
 
 ### 4.5 边界与失败处理
 
 | 情况 | 行为 |
 |---|---|
-| `plan_date` 不存在就 PUT | upsert 建行，200 |
+| `goal_date` 不存在就 PUT | upsert 建行，200 |
 | 同一天并发 PUT | 后写覆盖；不做乐观锁（单人本地桌面应用，加版本号是纯成本） |
 | `focus` 打在一个已 `archived` 的条目 | 409，文案说明先取消归档 |
 | `date` 参数不合法（非 `YYYY-MM-DD`） | 422，由 pydantic 层拦，不进 SQL |
 | 今日一列条目为空 | 空态文案给「去未评分筛情感素材」的动线按钮，不是「暂无数据」死路 |
-| 迁移 downgrade | `wave31_board_plan` 必须可降：先 drop 两列再 drop 表；alembic 删表闸（v0.32 S1）会要求显式声明 |
+| 迁移 downgrade | `wave31_board_goal` 必须可降：先 drop 两列再 drop 表；alembic 删表闸（v0.32 S1）会要求显式声明 |
 
-### 4.6 体检新增一条不变量（`pipeline/integrity.py`，只报不改）
+### 4.6 体检新增一条不变量（`pipeline/integrity.py`，只报不改）——**本轮不做，理由如下**
 
-`focus_orphan`：`focus_date` 非空但条目处于终态（`REJECTED` / `archived`）→ 说明有第二条路径在绕过 `archive()` 的白名单写 focus。这条是「常驻巡检」层，和 v0.33 那六条同级。
+原设计 `focus_orphan`：`focus_date` 非空但条目处于终态（`REJECTED` / `archived`）→ 说明有第二条路径在绕过 `archive()` 的白名单写 focus。这条是「常驻巡检」层，和 v0.33 那六条同级。
+
+**前提不成立**：`set_focus` 之后用户完全可能接着把那条拒了 / 归档了 / 发出去——这三条 transition 都不经过 `set_focus`，谁都不清 `focus_date`。于是这条判据会在**正常操作**上变红，正是 C 切片刚消灭的那个形状（一条长期红的报警器等于没有报警器）。
+
+本轮按证据做到的部分：`board.FOCUS_EXCLUDED_STATUSES` 让 `rejected` 与 `published` 都不进今日列，且 `progress.focused`（M）不计 `rejected`——**界面上不再假装今天还有活儿**。守卫是 `tests/test_board_domain.py` 的 `test_one_row_lands_in_exactly_one_column` 与 `test_progress_uses_real_published_count_not_checkboxes`，夹具里那条 `g` 就是「上午捞入、下午被拒」。
+
+要真加这条报警器的前置条件（独立切片，别顺手做）：`archive()` / `reject()` / 发布三条路径各自调 `board_store.clear_focus(item)` 清掉 focus——即「清」也只有一个作者。那之后判据才只抓真正的旁路写。另外实测 `focus_date` 目前**全表 0 条非空**（新列），所以任何孤儿都只可能来自新写入路径：现在加判据既没有存量信号，也没有真样本可对照。
 
 ---
 
 ## 五、测试策略
 
-- **后端 pytest**：`daily_plan` upsert 与按日期回读；`PUT` 超 4000 字 → 422；`focus` 对归档条目 → 409；`board` 端点各列取数与 `list_items` 的筛选参数一致（防第二作者）；`wave31` 升降级可逆（真库跑一次）；`focus_orphan` 不变量对脏数据行必红、对干净库不红（正/负样本都要，参照 `test_shell_items.py` 的守卫形状）。
+- **后端 pytest**：`daily_goal` upsert 与按日期回读；`PUT` 超 4000 字 → 422；`focus` 对归档条目 → 409；`board` 端点各列取数与 `list_items` 的筛选参数一致（防第二作者）；`wave31` 升降级可逆（真库跑一次）；`focus_orphan` 不变量对脏数据行必红、对干净库不红（正/负样本都要，参照 `test_shell_items.py` 的守卫形状）。
 - **前端 vitest**：列分组纯函数（一条记录 → 唯一一列，不重复计数）；`goal_text` 草稿态与保存态的区分（这条正是 D-204 那个「只演出不落盘」回归的门禁形状，必须断言真发请求）。
 - **产物门禁**：`scripts/verify.sh` 全绿 + `scripts/release-check.sh` 装得上、固化后端日志里 `scheduled job 'integrity'` 仍在（证明我没顺手弄死后台作业）。
 - **不做**：不为看板加新依赖；不加 e2e（本仓无 e2e 基座，单开一个不在本版范围）。
+
+### 五的实际落地（2026-09-30，别拿本节当门禁的替身——命令与数字在提交消息里）
+
+| 上面要求的那条 | 在哪儿 |
+|---|---|
+| `daily_goal` upsert + 按日期回读 | `test_put_goal_upserts_one_row_per_day` / `test_goal_put_then_read_back_through_http`（后者穿 HTTP，PUT→GET 同一文本） |
+| `PUT` 超长 → 422 | 判据半条在 `test_overlong_goal_rejected_by_the_single_author`，映射半条在 `test_endpoint_maps_store_errors_to_status_codes`（同处还测 409 与 404） |
+| `focus` 对归档 → 409 | `test_focus_patch_semantics`（store 层）+ 上面那条端点测试 |
+| 各列取数与 `list_items` 参数一致（防第二作者） | `test_board_endpoint_asks_for_the_documented_columns`（替身只记 kwargs）+ `test_list_items_focus_filter_is_not_decorative`（真库，证明筛选不是摆设）+ `test_board_and_router_do_not_write_their_own_sql` |
+| `wave31` 升降级可逆 | 一次性真库 `hertz_wave31_probe` 跑完整往返后 `dropdb`；`test_wave31_joins_main_line_and_heads_stay_two` 钉住 heads 仍是 2 |
+| 列分组纯函数（一条记录 → 唯一一列） | **不在 vitest，在后端**：`board.build_columns` 是 Python 侧的纯函数，前端不再分一次列（分两处才会漂）。见 `test_one_row_lands_in_exactly_one_column` |
+| 草稿态 vs 保存态（D-204 形状） | 前端 `BoardTab.test.tsx`：未改过 ⇒ 按钮 disabled 且一次请求都不发；改过 ⇒ `saveGoal(day, text)` 真发出去；换日期 ⇒ 上一天的草稿作废 |
+| i18n 补一条 vitest | `src/i18n/catalog.test.ts`（中英叶子键集相等 + 退役键既不在目录也不被引用 + 看板要的键两边都在，并带两条「判据能抓到在用的键」对照组） |
+| `focus_orphan` 不变量 | **未做**，理由见 §4.6 的纠正（前提不成立会造成长期红） |
+| `release-check.sh` | **未跑**（产物门禁排在所有 fix round 之后，见 ROADMAP） |
 
 ---
 

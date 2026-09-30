@@ -82,8 +82,9 @@ export interface PipelineItem {
   approved_at: string | null
   scheduled_at: string | null
   published_at: string | null
-  /** 发布队列相位（v0.12）：''=手动｜holding=预发布队列｜ready=发布队列 */
-  queue_phase?: '' | 'holding' | 'ready'
+  /** 发布队列相位（v0.12）：''=手动｜holding=预发布队列｜ready=发布队列。
+   *  v0.34 B 之后界面无写点，只读呈现仍在（`PublishCard` 徽章）。 */
+  queue_phase?: QueuePhase
   /** 归属栏目（v0.22 栏目化，后端 _serialize 全量携带，日历欄目色用） */
   channel_key?: string | null
   /** 制作优先级（v0.26 运营面板，默认 0；engine 取件降序） */
@@ -123,10 +124,15 @@ export interface BoardResponse {
 
 export type BoardColumn = 'focus' | 'in_work' | 'review' | 'ready_to_publish' | 'published_today'
 
-/** 发布队列相位（v0.12）：与后端 publish_queue 常量一致 */
+/** 发布队列相位（v0.12）：与后端 publish_queue 常量一致。
+ *  v0.34 B：界面上的入队写点撤了（「全部手动发」），这个**字段**留着——
+ *  只读呈现与后端机制都不动，见 `docs/SPEC_V034_BOARD.md` §4.4。 */
 export type QueuePhase = '' | 'holding' | 'ready'
 
-/** 发布队列看板（v0.12；v0.13 增账号画像） */
+/** 发布队列看板（v0.12；v0.13 增账号画像）。
+ *  v0.34 B 之后**仍然在用**：运营看板（`pages/dashboard/DashboardPage.tsx`）读它的
+ *  `today` 产能与 `ready`/`holding` 计数。被撤掉的只是「发布队列」那个界面视图与
+ *  入队写点，不是这份读侧数据形状——删它会把看板的产能卡变成空白。 */
 export interface PublishQueueView {
   ready: PipelineItem[]
   holding: PipelineItem[]
@@ -300,10 +306,9 @@ export const pipelineApi = {
     api.get<Array<{ date: string; collected: number; inserted: number; published: number }>>(
       `/api/pipeline/trends?days=${days}`,
     ),
-  calendar: (from: string, to: string) =>
-    api.get<{ items: PipelineItem[]; unscheduled: PipelineItem[] }>(
-      `/api/pipeline/calendar?from=${from}&to=${to}`,
-    ),
+  // v0.34 B：`calendar()` 随内容日历视图退役（唯一调用方是已删的 CalendarView.tsx）。
+  // 后端 `GET /api/pipeline/calendar` 与它的区间聚合**保留**——`scheduled_at` /
+  // `published_at` 仍是活字段（biliup 原生定时读的就是它），撤的是界面不是能力。
   approve: (id: string) => api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/approve`),
   reject: (id: string, reason = '') =>
     api.post<{ id: string; status: string }>(`/api/pipeline/items/${id}/reject?reason=${encodeURIComponent(reason)}`),
@@ -429,19 +434,12 @@ export const pipelineApi = {
   failures: () => api.get<Record<string, number>>('/api/pipeline/failures'),
   retryClass: (cls: string) => api.post<{ cls: string; requeued: number }>('/api/pipeline/retry-class', { cls }),
   nextScheduleSlot: () => api.get<{ recommended_at: string }>('/api/pipeline/schedule/next'),
-  /** 发布队列看板（v0.12）：ready/holding 列表 + 今日产能 */
+  /** 发布队列看板（v0.12）：ready/holding 列表 + 今日产能。读侧保留（运营看板在用）。 */
   queueView: () => api.get<PublishQueueView>('/api/pipeline/publish/queue'),
-  /** 入队/出队（v0.12）：phase ''=出队｜holding｜ready */
-  enqueue: (id: string, phase: QueuePhase) =>
-    api.post<{ id: string; queue_phase: QueuePhase; scheduled_at: string | null }>(
-      `/api/pipeline/items/${id}/queue`,
-      { phase },
-    ),
-  /** 批量入队（v0.12）：逐条执行，失败不中断 */
-  enqueueBatch: (ids: string[], phase: QueuePhase) =>
-    api.post<{ ok: number; failed: Array<{ id: string; error: string }> }>(
-      '/api/pipeline/items/batch/queue',
-      { ids, phase },
-    ),
+  // v0.34 B：入队 / 批量入队两个前端写点随「入队」按钮退役（用户定档：全部手动发）。
+  // 后端 `POST /items/{id}/queue`、`POST /items/batch/queue` 与 `auto_publish` 的槽位
+  // 机制**都保留**——撤的是界面上的读写点，不是能力本身；由此「无人值守发布」在界面上
+  // 再也喂不进数据，这条后果记在 spec §4.4，不是遗漏。`item.queue_phase` 仍被
+  // `PublishCard` 只读呈现。`calendar()` 随日历视图删除，后端 `GET /calendar` 保留。
   eventsUrl: () => `${API_BASE}/api/pipeline/events`,
 }

@@ -128,8 +128,11 @@ export function AppShell() {
               <Route path="/monoline" element={<Navigate to="/execution?mode=monoline" replace />} />
               <Route path="/studio" element={<Navigate to="/execution?mode=studio" replace />} />
               <Route path="/console" element={<Navigate to="/execution?mode=pipeline" replace />} />
-              {/* v0.12：发布队列并入执行页第三 tab（队列也是执行域） */}
-              <Route path="/queue" element={<Navigate to="/execution?mode=queue" replace />} />
+              {/* 发布队列（v0.12）曾在执行页第三 tab，v0.34 B 起并入看板。
+                  这里指向 `mode=pipeline`：此前写的 `mode=queue` 从来不是 reader 认的值
+                  （`ExecutionPage` 只接 pipeline|monoline，其余落回 studio）——
+                  也就是这条深链一直是坏的，书签进来看到的是 Studio。 */}
+              <Route path="/queue" element={<Navigate to="/execution?mode=pipeline" replace />} />
               <Route path="/plans" element={<PlansPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/assets" element={<AssetsPage />} />

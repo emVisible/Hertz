@@ -9,7 +9,7 @@ import { RunTab } from './pipeline/RunTab'
 import { PreReviewTab, type PreStage } from './pipeline/PreReviewTab'
 import { InReviewTab, type BatchRunAction } from './pipeline/InReviewTab'
 import { ExceptionsTab, type ExSubTabId } from './pipeline/ExceptionsTab'
-import { PostReviewTab, type PostView } from './pipeline/PostReviewTab'
+import { BoardTab } from './pipeline/BoardTab'
 import { ScriptWorkshop } from '../../components/execution/ScriptWorkshop'
 import { PIPELINE_TABS, type PipelineTabId, type PipelineViewProps } from './pipeline/shared'
 
@@ -19,8 +19,6 @@ import { PIPELINE_TABS, type PipelineTabId, type PipelineViewProps } from './pip
 
 export function PipelineView(p: PipelineViewProps) {
   const { t } = useTranslation()
-  // 发布 tab 视图：列表（默认）｜发布队列（v0.12 融合）｜内容日历（v0.2.3）
-  const [postView, setPostView] = useState<PostView>('list')
   // 批量生产方式（v0.3.3，预处理）
   const [produceBatchOpen, setProduceBatchOpen] = useState(false)
   // 预处理排序（v0.3.12）：要素 × 方向两维度；默认 入库序+降序（最新在前）
@@ -323,8 +321,17 @@ export function PipelineView(p: PipelineViewProps) {
           />
         )}
 
-        {pTab === 'postReview' && (
-          <PostReviewTab p={p} postView={postView} setPostView={setPostView} />
+        {pTab === 'board' && (
+          <BoardTab
+            p={p}
+            onGoUnscored={() => {
+              // 动线的三件事必须由壳一次做完：设两轴、切到「未评分」分段、换 tab。
+              // 少切分段就会落在「已下载未加工」上，那条筛选条根本不渲染。
+              p.setPreFilters({ preTheme: 'sentiment', preHasText: 'yes' })
+              setPreStage('discovered')
+              p.setTab('preReview')
+            }}
+          />
         )}
       </div>
     </div>

@@ -80,7 +80,9 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
   pipeline: {
     step: 'collect',
     limit: 10,
-    tab: 'inReview',
+    // v0.34 B：默认落看板（spec §4.4b）。菜单里第 1 位仍是「运行」——那是每天第一眼
+    // 要扫的东西，而看板是每天要**守**的东西，两者不是一回事，别把顺序当成默认值。
+    tab: 'board',
     // v0.34 A：未评分区三轴默认「全部」——默认情感会让第一次打开像是数据变少了
     preTheme: 'all',
     preQuality: 'all',

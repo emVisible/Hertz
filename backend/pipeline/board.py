@@ -4,7 +4,7 @@
 
 | 列 | 归属条件 |
 |---|---|
-| `focus` | `focus_date == day` 且 status ≠ published |
+| `focus` | `focus_date == day` 且 status ∉ (published, rejected) |
 | `in_work` | status ∈ (downloaded, scored) 且未捞进今日 |
 | `review` | status == queued |
 | `ready_to_publish` | status == approved |
@@ -20,6 +20,10 @@ ISO 字符串（同一来源、同一格式，字典序即时间序）。
 from __future__ import annotations
 
 IN_WORK_STATUSES = ("downloaded", "scored")
+#: 今日列不许出现的状态。为什么单独列出来：`set_focus` 只挡归档，用户完全可能
+#: 「上午捞进今日、下午把它拒了」——那时它该只出现在异常区，而不是继续赖在
+#: 今日待办里冒充还有活儿。`published` 走 spec §4.2 的原规则（归今日已发列）。
+FOCUS_EXCLUDED_STATUSES = ("published", "rejected")
 #: 每列的展示上限（集中在这一处，端点与界面都读它，别在两侧各写一个数）
 COLUMN_LIMITS = {
     "focus": 200,
@@ -54,9 +58,12 @@ def build_columns(
     def _in_window(it: dict) -> bool:
         return published_from <= str(it.get("published_at") or "") < published_to
 
-    # 完成度的 M 含「今天捞入且已发布」那批：它们不进 focus 列（published 一律排除），
+    # 完成度的 M 含「今天捞入且已发布」那批：它们不进 focus 列（published 归今日已发），
     # 但 spec §4.3 的「已发 N / 捞入 M」必须数得到它们，否则今天发掉的会凭空消失。
-    focused = [r for r in rows if r.get("focus_date") == day]
+    # `rejected` 两边都不算：那条活儿今天不会再动了，把它计进 M 就是让 N/M 永远追不平。
+    focused = [
+        r for r in rows if r.get("focus_date") == day and str(r.get("status") or "") != "rejected"
+    ]
     published_of_focus = [
         r for r in focused if str(r.get("status") or "") == "published" and _in_window(r)
     ]
@@ -64,7 +71,7 @@ def build_columns(
     cols: dict[str, list[dict]] = {k: [] for k in COLUMNS}
     for it in rows:
         status = str(it.get("status") or "")
-        if it.get("focus_date") == day and status != "published":
+        if it.get("focus_date") == day and status not in FOCUS_EXCLUDED_STATUSES:
             cols["focus"].append(it)
         elif status in IN_WORK_STATUSES:
             cols["in_work"].append(it)
