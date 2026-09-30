@@ -5,13 +5,14 @@ Lifecycle: discovered → downloaded → scored → queued → approved → publ
 Any stage may fail → failed; rejected at review.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -81,6 +82,15 @@ class Item(BaseModel):
     # 进异常区专属池。判据与原因码在 `pipeline/quality.py`（唯一作者）；不建索引
     # 的理由写在 wave28 迁移里。
     is_invalid: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # 每日关注（v0.34 B 看板）：focus_date 非空 = 被捞进那一天的待办。
+    # 为什么是日期而不是 `is_today` 布尔：布尔需要每天凌晨有人清零，那是第二个
+    # 写入口 + 新的故障面；日期让「昨天捞的」自然掉出今日列，零后台作业。
+    # 两列都不建索引（日切下非空行选择性不足，v0.32 S2 的实测口径）。
+    # 唯一写入口是 `pipeline/board_store.set_focus`（见 spec §4.2）。
+    focus_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: 「我后面要怎么加工它」——备注长在卡片上，不长在文档里（用户：重质量、要后期加工）。
+    focus_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Production artifacts (paths relative to data_dir)
     raw_path: Mapped[str | None] = mapped_column(Text, nullable=True)

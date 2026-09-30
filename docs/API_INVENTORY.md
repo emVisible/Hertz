@@ -159,6 +159,7 @@
 `DELETE /api/phases/{phase_key}`
 `PUT /api/phases/{phase_key}`
 `POST /api/pipeline/auto-approve`
+`GET /api/pipeline/board`
 `GET /api/pipeline/calendar`
 `POST /api/pipeline/cancel`
 `POST /api/pipeline/chain`
@@ -166,6 +167,8 @@
 `GET /api/pipeline/collect/status`
 `GET /api/pipeline/events`
 `GET /api/pipeline/failures`
+`GET /api/pipeline/goal/{day}`
+`PUT /api/pipeline/goal/{day}`
 `GET /api/pipeline/integrity`
 `GET /api/pipeline/items`
 `POST /api/pipeline/items/archive`
@@ -184,6 +187,7 @@
 `POST /api/pipeline/items/{item_id}/cover`
 `POST /api/pipeline/items/{item_id}/cover-random`
 `POST /api/pipeline/items/{item_id}/download`
+`PATCH /api/pipeline/items/{item_id}/focus`
 `PUT /api/pipeline/items/{item_id}/meta`
 `POST /api/pipeline/items/{item_id}/produce`
 `POST /api/pipeline/items/{item_id}/produce-cancel`

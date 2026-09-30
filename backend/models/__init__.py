@@ -9,6 +9,9 @@ from backend.models.ai_registry import (
     ModelRole,
 )
 from backend.models.base import Base, BaseModel
+
+# 看板域（v0.34 B）登记在此：不 import 则 alembic autogenerate 看不见该表。
+from backend.models.board import DailyGoal
 from backend.models.brief import Brief
 from backend.models.buff import Buff
 from backend.models.channel import Channel
@@ -41,6 +44,7 @@ from backend.models.role import Role
 from backend.models.system import JobRun, JobStatus
 
 __all__ = [
+    "DailyGoal",
     "AICall",
     "AIModel",
     "AIPromptTemplate",

@@ -11,6 +11,7 @@
 
 from fastapi import APIRouter
 
+from backend.routers.pipeline_board import router as _board
 from backend.routers.pipeline_items import router as _items
 from backend.routers.pipeline_ops import router as _ops
 from backend.routers.pipeline_publish import router as _publish
@@ -21,3 +22,4 @@ router.include_router(_run)
 router.include_router(_items)
 router.include_router(_publish)
 router.include_router(_ops)
+router.include_router(_board)

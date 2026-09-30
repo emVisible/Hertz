@@ -1,6 +1,7 @@
 /** Execution-domain (content pipeline) API types + calls. */
 
 import { api, API_BASE } from './client'
+import { boardQuery } from '../core/boardWindow'
 import {
   DEFAULT_PRE_FILTERS,
   facetsQuery,
@@ -91,7 +92,36 @@ export interface PipelineItem {
   archived?: boolean
   /** 空壳隔离（v0.33）：无媒体且无正文 → 不在流水线计数里，只出现在异常区 */
   is_invalid?: boolean
+  /** 看板（v0.34 B）：被捞进哪一天的待办（`YYYY-MM-DD`，空 = 不在今日列） */
+  focus_date?: string | null
+  /** 「我后面要怎么加工它」——备注长在卡片上（用户：重质量、要后期加工） */
+  focus_note?: string | null
 }
+
+/** 每日目标（v0.34 B）：一天一行，`goal_text` 是纯文字 to-do（不自动联网）。 */
+export interface DailyGoal {
+  goal_date: string
+  goal_text: string
+  updated_at: string | null
+}
+
+/** 看板响应（v0.34 B）。**列的划分只有后端一个作者**（`pipeline/board.py`）：
+ *  前端再分一次就会漂成两套「什么叫今日待办」。
+ *  - `columns`：已按每列上限截断后的条目
+ * - `counts`：截断**前**的条数（写「共 N 条」用它，不能拿展示条数冒充）
+ * - `progress`：顶栏完成度，真实数字（捞入 M / 其中今天已发 N），不是手勾 */
+export interface BoardResponse {
+  date: string
+  published_from: string
+  published_to: string
+  goal_text: string
+  goal_updated_at: string | null
+  columns: Record<BoardColumn, PipelineItem[]>
+  counts: Record<BoardColumn, number>
+  progress: { focused: number; published_of_focus: number }
+}
+
+export type BoardColumn = 'focus' | 'in_work' | 'review' | 'ready_to_publish' | 'published_today'
 
 /** 发布队列相位（v0.12）：与后端 publish_queue 常量一致 */
 export type QueuePhase = '' | 'holding' | 'ready'
@@ -237,6 +267,19 @@ export const pipelineApi = {
   itemFacets: (status?: string, filters: PreReviewFilters = DEFAULT_PRE_FILTERS) =>
     api.get<ItemFacets>(`/api/pipeline/items/facets?${facetsQuery(status, filters)}`),
   counts: () => api.get<Record<string, number>>('/api/pipeline/items/counts'),
+  /** 看板（v0.34 B）：五列 + 每日目标 + 计数。列语义的唯一作者是后端 `pipeline/board.py`，
+   *  这里不重复划分（前端再分一次就会漂成两套「什么叫今日待办」）。
+   *  日期参数由 `core/boardWindow` 一处算好（后端不猜时区，spec §4.1）。 */
+  board: (day: string) => api.get<BoardResponse>(`/api/pipeline/board?${boardQuery(day)}`),
+  goal: (day: string) => api.get<DailyGoal>(`/api/pipeline/goal/${day}`),
+  saveGoal: (day: string, goal_text: string) =>
+    api.put<DailyGoal>(`/api/pipeline/goal/${day}`, { goal_text }),
+  /** 今日关注：局部 PATCH——只发 focus_date 不会清空备注（后端 touch_note 语义）。 */
+  setFocus: (id: string, patch: { focus_date?: string | null; focus_note?: string | null }) =>
+    api.patch<{ id: string; focus_date: string | null; focus_note: string | null }>(
+      `/api/pipeline/items/${id}/focus`,
+      patch,
+    ),
   /** 采集运维状态（v0.8.2）：运行中/上次结果/下次自动/间隔 */
   collectStatus: () =>
     api.get<{

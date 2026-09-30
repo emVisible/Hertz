@@ -6,7 +6,7 @@ PipelineService 组合全部 Mixin，外部 import 路径不变。
 
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func, not_, select
 
@@ -81,6 +81,21 @@ def axis_filters(*, theme: str | None, quality: str | None, has_text: bool | Non
     return conditions
 
 
+def utc_instant(value: str) -> datetime:
+    """把前端下发的 ISO 时刻统一成 **UTC 带时区** datetime（比较发生在 SQL 层）。
+
+    唯一作者：`list_items` 的区间条件与看板端点回给界面的 ISO 串都走这里，
+    两处各写一遍解析就会漂成「SQL 筛了 A 区间、界面按 B 区间分列」。
+
+    为什么不直接比字符串：`published_at` 存的是 tz-aware UTC，序列化形如
+    `...+00:00`；前端习惯写 `...Z`。两者字典序在 `+`(0x2B) 与 `Z`(0x5A) 处会翻
+    边界，日切那一条就归错列——归错列的看板和「今天没发」在数字上分不出来。
+    时区语义只在「前端算区间」这一处（spec §4.1），后端只做归一化不做推断。
+    """
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 class QueriesMixin:
@@ -90,6 +105,8 @@ class QueriesMixin:
         self, status: str | None = None, limit: int = 50, source: str | None = None,
         include_archived: bool = False, include_invalid: bool = False,
         theme: str | None = None, quality: str | None = None, has_text: bool | None = None,
+        focus_date: str | None = None,
+        published_from: str | None = None, published_to: str | None = None,
     ) -> list[dict]:
         """条目列表；status 支持逗号分隔多状态（wave13：前端单查询聚合阶段队列）。
         排序：入库序号 seq desc（v0.3.1——同批 created_at 相同，seq 才是真实先后）。
@@ -97,7 +114,12 @@ class QueriesMixin:
         wave10：默认排除 archived（备用库用独立 archived_items 查询）。
         v0.33：默认排除 is_invalid（空壳只出现在异常区，不再冒充可操作数据）。
         v0.34 A：三条筛选轴 theme/quality/has_text（服务端筛，见 `axis_filters`）。
-        未知 theme/quality → ValueError（调用方映射成 422，不静默给空列表）。"""
+        v0.34 B（看板取数）：`focus_date` = 今天捞入的那批；`published_from/to` =
+          发布时刻落在区间内。**这两个条件必须在这一层**，因为看板列的「唯一作者」
+          纪律是「条目怎么查只有一个地方」——`board.py` 只分列不写 SQL。
+          发布列尤其不能靠 `limit` + `seq desc` 截断：老条目今天才发布，按入库序
+          截窗口会**静默漏掉**它，而漏掉的数字看起来和「今天没发」一模一样。
+        格式非法 / 未知 theme|quality → ValueError（调用方映射 422，不静默给空列表）。"""
         statuses = [s.strip() for s in (status or "").split(",") if s.strip()] or None
         async with session_factory() as session:
             order = Item.seq.desc().nulls_last()
@@ -109,6 +131,14 @@ class QueriesMixin:
                 conditions.append(Item.status.in_(statuses))
             if source:
                 conditions.append(Item.source == source)
+            if focus_date is not None:
+                conditions.append(Item.focus_date == date.fromisoformat(focus_date))
+            if published_from is not None or published_to is not None:
+                conditions.append(Item.published_at.isnot(None))
+                if published_from is not None:
+                    conditions.append(Item.published_at >= utc_instant(published_from))
+                if published_to is not None:
+                    conditions.append(Item.published_at < utc_instant(published_to))
             # 轴条件走 axis_filters（与 items_facets 同一份）；即便其余条件为空也要
             # 先求值一次——未知 theme 必须在这里就抛，而不是等结果集。
             conditions.extend(axis_filters(theme=theme, quality=quality, has_text=has_text))

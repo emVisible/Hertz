@@ -152,6 +152,10 @@ class PipelineService(
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,
             "approved_at": item.approved_at.isoformat() if item.approved_at else None,
             "scheduled_at": item.scheduled_at.isoformat() if item.scheduled_at else None,
+            # 看板（v0.34 B）：今日关注日期 + 加工备注。序列化唯一作者在此，
+            # 看板列的划分读的就是这两个字段（`board.build_columns` 不再自己查库取列）。
+            "focus_date": item.focus_date.isoformat() if item.focus_date else None,
+            "focus_note": item.focus_note,
             # 分区自动建议（v0.2.7，参考原项目 assign_bili_tid）：未手动设置时的推荐分区
             "auto_tid": (
                 None

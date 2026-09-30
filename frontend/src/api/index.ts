@@ -29,6 +29,9 @@ export type {
   CollectSourceRun,
   JobListResult,
   LogLineHistory,
+  BoardResponse,
+  BoardColumn,
+  DailyGoal,
 } from './pipeline'
 export { docsApi } from './docs'
 export { canvasApi } from './canvas'
