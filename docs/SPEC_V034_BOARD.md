@@ -87,7 +87,7 @@
 | 端点 | 形状 | 备注 |
 |---|---|---|
 | `GET /api/pipeline/board?date=YYYY-MM-DD` | `{date, goal_text, columns: {focus, in_work, review, ready_to_publish, published_today}, counts: {...}}` | 只做编排：五个列的取数全部调 `list_items(...)`，各列上限常量集中在此模块。列的**唯一**定义（一条记录只能落进一列，重复计数由 vitest 纯函数断言）：`focus` = `focus_date = date` 且未发布；`in_work` = `status ∈ (downloaded, scored)` 且未捞入 focus；`review` = `status = queued`；`ready_to_publish` = `status = approved`；`published_today` = `status = published` 且 `published_at` 落在 `date` 当天（前端下发 UTC 区间两端，后端不做时区推断） |
-| `PUT /api/pipeline/plan/{date}` | body `{goal_text: str}` → 回读整行 | upsert 语义；`goal_text` 长度上限 4000，超限 422（输入边界，不是内部信任问题） |
+| `PUT /api/pipeline/goal/{day}`（§4.1 改名后修正，原写 `plan/{date}`；实际实现见 `docs/API_INVENTORY.md`） | body `{goal_text: str}` → 回读整行 | upsert 语义；`goal_text` 长度上限 4000，超限 422（输入边界，不是内部信任问题） |
 | `PATCH /api/pipeline/items/{id}/focus` | body `{focus_date: str\|null, focus_note: str\|null}` → 回读条目 | 单一写入口。归档条目拒绝（409），与既有 `archive()` 白名单纪律一致 |
 
 `_serialize` 增出 `focus_date` / `focus_note` 两字段（`service.py:144` 附近，那里已是序列化的唯一作者）。
