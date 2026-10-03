@@ -13,6 +13,7 @@ import { PromptsManager } from './PromptsManager'
 import { TracePanel } from './TracePanel'
 import { GeneralSection } from './sections/GeneralSection'
 import { AiSection } from './sections/AiSection'
+import { NormsSection } from './sections/NormsSection'
 import { PipelineSection } from './sections/PipelineSection'
 import { SettingsNav, type SettingsSection } from './SettingsNav'
 import { buildOverrides } from '../../core/settingsOverrides'
@@ -75,11 +76,14 @@ interface ConfigData {
   cost_usd_rate?: number
   cost_monthly_budget?: number
   channel_persona?: string
+  /** 运营者自用规范与固定计划（v0.34）：只给人看，不进任何 prompt */
+  creator_norms?: string
+  standing_plan?: string
   llm_api_key_masked?: string | null
   llm_api_key_set?: boolean
 }
 
-const SECTION_IDS = ['general', 'ai', 'prompts', 'trace', 'pipeline'] as const
+const SECTION_IDS = ['general', 'ai', 'norms', 'prompts', 'trace', 'pipeline'] as const
 type SectionId = (typeof SECTION_IDS)[number]
 
 export function SettingsPage() {
@@ -128,6 +132,8 @@ export function SettingsPage() {
       pipeline_watch_exclude: cfg.pipeline_watch_exclude ?? '',
       pipeline_watch_min_score: String(cfg.pipeline_watch_min_score ?? 0),
       channel_persona: cfg.channel_persona ?? '',
+      creator_norms: cfg.creator_norms ?? '',
+      standing_plan: cfg.standing_plan ?? '',
       telegram_enabled: String(cfg.telegram_enabled ?? false),
       telegram_bot_token: cfg.telegram_bot_token ?? '',
       telegram_chat_id: cfg.telegram_chat_id ?? '',
@@ -202,6 +208,12 @@ export function SettingsPage() {
   const sections: SettingsSection[] = [
     { id: 'general', icon: 'moon', label: 'settings.general' },
     { id: 'ai', icon: 'studio', label: 'settings.ai', badge: providers.some((p) => p.enabled) ? t('settings.configured') : t('settings.unconfigured') },
+    {
+      id: 'norms',
+      icon: 'library',
+      label: 'settings.navNorms',
+      badge: form.creator_norms || form.standing_plan ? t('settings.configured') : undefined,
+    },
     { id: 'prompts', icon: 'pen', label: 'settings.prompts' },
     { id: 'trace', icon: 'console', label: 'settings.usage' },
     { id: 'pipeline', icon: 'config', label: 'settings.pipeline' },
@@ -227,6 +239,10 @@ export function SettingsPage() {
 
             {sectionId === 'ai' && (
               <AiSection form={form} set={set} />
+            )}
+
+            {sectionId === 'norms' && (
+              <NormsSection form={form} set={set} save={save} dirty={dirty} />
             )}
 
             {sectionId === 'prompts' && (

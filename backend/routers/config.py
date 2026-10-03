@@ -87,6 +87,9 @@ RUNTIME_ALLOWLIST = {
     "ai_model_prices",
     # 频道人设记忆（v0.18）：注入脚本与标题 prompt
     "channel_persona",
+    # 运营者自用规范与固定计划（v0.34）：只读给人看，不进任何 prompt
+    "creator_norms",
+    "standing_plan",
     # 成本报表币种（v0.14.1）：CNY|USD + USD→目标币汇率
     "cost_currency",
     "cost_usd_rate",

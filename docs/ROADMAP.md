@@ -40,9 +40,11 @@
 > - **C-code 已交付 `aa206c2`**：①`_listing_params` 让匿名 JSON 与 OAuth 共用同一个 `raw_json=1`；②`quality.reassess()` 是**唯一能摘隔离标**的出口；③体检第 7 条 `story_without_text`；④`scripts/backfill-selftext.py` 默认干跑 + 出网探针失败即退出 2 且一个查询都不发。顺手修掉长期误报的体检第 3 条（不排除 `is_invalid` + 写死 `limit(500)`），dev 库体检 **2 红 → 1 红**，剩下的 `invalid_share 2196` 才是真信号。
 > - **C-run 未跑，被出网卡着**：本机 egress 一直是 `000`，1982 条正文还躺在异常区。命令是 `uv run python scripts/backfill-selftext.py`（先看干跑，再 `--apply`）。
 > - **B（看板融合）已交付**：后端契约 `754ff2c`（`daily_goal` + `items.focus_date/focus_note` + wave31 + `board_store` + `GET /api/pipeline/board` + `core/boardWindow`），界面 `5469344`（BoardTab + 撤三个界面写点）。tab 数 **6→6**（看板**替换**发布 tab，队列/日历/入队三个界面写点撤掉，字段与后端机制全留）。`./scripts/verify.sh` 五段全绿：ruff 0、全量 pytest **578 passed**、tsc 0、vitest **17 文件 / 77 tests**、vite build OK。
+> - **设置页新增「规范与计划」一节（D-215，本轮最后一格）**：用户要的是「自己能编辑的一本册子」（大概规范 + 固定计划），不是又一个生效配置。两个长文本字段 `creator_norms` / `standing_plan` 落 `runtime.yaml`（无新表无迁移），**不注入任何 prompt**、也不并进 `channel_persona`（那个会被 `ai/router.py` 拼进脚本与标题提示词，合成一格就等于「改备注 → 改口播」）。全量 pytest 587 passed，3 条新测试（含真 PATCH→GET 往返）+ 3 处变异。
+> - **`webui.sh` 起不来已修**：SIGTERM 杀不动卡死的 uvicorn（优雅退出要事件循环还转得动）→ 改 TERM→轮询→SIGKILL→复查；另 `lsof -ti tcp:$PORT` 会连**已连接的客户端**一起返回（旧写法能 kill 到浏览器），已加 `-sTCP:LISTEN`。真复现体验过（`SIG_IGN` 的监听者被强杀成功、客户端存活）。
 > - **spec §4.6 的第 8 条体检项已交付（D-214）**：原判据照抄会造出长期红的报警器（「今天捞入又被拒」是日常操作，谁都不清 focus）。改两步做：先给「清」一个作者（`board_store.clear_focus` 接进 `engine.reject` / `service_archive.archive` / 发布三处），再上 `check_focus_orphan`；视图层另留兜底 `FOCUS_EXCLUDED_STATUSES`（已拒/已发不进今日列、也不计进完成度的 M）。全量 pytest 因此 **578 → 584**。决策与两条教训写在 `docs/DECISIONS.md` 的 D-213 / D-214。
 > - **供给这条底座没变**：`items.selftext` 全库 **0/5281**；隔离池 2196 条里 **2013 条（91.7%）就是情感**、1982 条来自文字为主子版，未隔离的同子版只剩 6 条。你要做的情感**文字**垂直，弹药是 6 条而不是 1982 条——差的缺的只是正文，且 2196 条**全部带 `source_id`，可回填**（= 上面的 C-run）。
-> - **还开着的三件事**：① 授权 `release-check.sh` + push + 打 tag `v0.33.0`；② C-run（要出网）；③ Reddit OAuth 凭证要你在外部注册后填进设置页（能力矩阵已能看到「已配置/未配置」，`probe=true` 会真去换一次 token）。
+> - **还开着的三件事**：① 授权 `release-check.sh` + push + 打 tag `v0.34.0`（口径见本段第一条）；② C-run（要出网）；③ Reddit OAuth 凭证要你在外部注册后填进设置页（能力矩阵已能看到「已配置/未配置」，`probe=true` 会真去换一次 token）。
 > - **一条既存缺陷本轮顺手修了**：`/queue` 深链指向 `?mode=queue`，而 `ExecutionPage` 只认 `pipeline|monoline` ⇒ 书签进来一直是 Studio。改指 `mode=pipeline`。
 > - **两条按证据作废的 spec 判据**（细节在 `docs/SPEC_V034_BOARD.md` §4.4c / §4.6）：`queueView()` 不能删（运营看板是活读者）；`focus_orphan` 不变量不做（正常「捞入后又拒绝」就会红 = 新造长期红报警器）。
 > - 另留一条自己的错：修 I3 时发现 `monkeypatch` 撤销会把旧值写成配置代理的实例属性，从此遮蔽 `runtime.yaml` 的 read-through（CHANGELOG 遗留第 4 条）——真正的修法在 `backend/config.py` 的代理形状，属独立切片。

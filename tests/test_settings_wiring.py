@@ -113,3 +113,44 @@ def test_v032_model_settings_are_wired_end_to_end(key: str) -> None:
     assert key in _seed_keys()
     assert key in _edited_keys()
     assert key in (ROOT / "backend/config.py").read_text(encoding="utf-8")
+
+
+# ---------- v0.34：设置页的「我的规范 / 固定计划」 ----------
+
+NORMS_KEYS = ("creator_norms", "standing_plan")
+
+
+@pytest.mark.parametrize("key", NORMS_KEYS)
+def test_v034_norms_settings_are_wired_end_to_end(key: str) -> None:
+    """用户要的是「自己能编辑的册子」，那就得走完整链：字段 → 白名单 → 草稿 → 分区编辑。"""
+    assert key in _allowlist(), f"{key} 不在 RUNTIME_ALLOWLIST——PATCH 会整体 400，全页存不下"
+    assert key in _seed_keys(), f"{key} 没进主壳草稿——保存时被整个丢掉（v0.20 的形状）"
+    assert key in _edited_keys(), f"{key} 在分区里根本不可编辑，那这个字段就是死的"
+    assert key in (ROOT / "backend/config.py").read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_norms_patch_round_trips_through_runtime_yaml(client) -> None:
+    """真写 + 真读，内容带中文与换行。
+
+    上面那条是源码级三段守卫，这条是端到端：只看「有没有接线」会放过
+    「接了但存不下/读不回」——而这两段文字唯一的价值就是下次打开还在。
+    """
+    from backend.config import settings
+
+    payload = {
+        "creator_norms": "开头三行必须给冲突\n绝不写「家人们」",
+        "standing_plan": "周一 AITA\n周三 关系类\n周五 复盘",
+    }
+    try:
+        resp = await client.patch("/api/config", json={"overrides": payload})
+        assert resp.status_code == 200, resp.text
+        got = (await client.get("/api/config")).json()
+        for key, value in payload.items():
+            assert got.get(key) == value, f"{key} 存了但读不回来：{got.get(key)!r}"
+    finally:
+        for key in payload:
+            vars(settings).pop(key, None)
+        runtime = Path(settings.data_dir) / "runtime.yaml"
+        if runtime.exists():
+            runtime.unlink()
