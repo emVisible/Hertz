@@ -132,12 +132,26 @@ export function TodayPanel({ onGoGoal }: { onGoGoal: () => void }) {
                   aria-label={t('dashboard.todoToggle', { text: line.content })}
                 />
                 <span
-                  className={`min-w-0 text-sm leading-snug ${
+                  className={`min-w-0 flex-1 truncate text-sm leading-snug ${
                     line.done ? 'text-text-disabled line-through' : 'text-text-primary'
                   }`}
+                  title={line.content}
                 >
-                  {line.content}
+                  {line.title || line.content}
                 </span>
+                {/* 第一个字段之后的都是 tag（D-221），画在行右侧；重复标签按序号给 key */}
+                {line.tags.length > 0 && (
+                  <span className="flex shrink-0 flex-wrap justify-end gap-1 pt-0.5">
+                    {line.tags.map((tag, i) => (
+                      <span
+                        key={`${tag}-${i}`}
+                        className="rounded border border-border bg-surface-0 px-1.5 py-px font-mono text-[10px] text-text-secondary"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                )}
               </label>
             </li>
           ))}

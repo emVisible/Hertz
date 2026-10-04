@@ -74,6 +74,32 @@ describe('goalChecklist', () => {
     expect(goalProgress(parseGoalLines('   \n\t'))).toEqual({ done: 0, total: 0 })
   })
 
+  describe('一行里的「目标 + tag」（D-221）', () => {
+    it('第一个字段是目标，后面空格隔开的都是 tag', () => {
+      const [line] = parseGoalLines('改开头 AITA 高质量 3条')
+      expect(line.title).toBe('改开头')
+      expect(line.tags).toEqual(['AITA', '高质量', '3条'])
+      // content 仍是整段正文（含 tag），界面拿 title/tags 分别画
+      expect(line.content).toBe('改开头 AITA 高质量 3条')
+    })
+
+    it('只有目标没有 tag，和多余空格都不该生出空 tag', () => {
+      expect(parseGoalLines('只筛不发')[0]).toMatchObject({ title: '只筛不发', tags: [] })
+      const [line] = parseGoalLines('捞5条   情感 \t 复盘')
+      expect(line.title).toBe('捞5条')
+      expect(line.tags).toEqual(['情感', '复盘'])
+    })
+
+    it('勾选标记与 tag 共存时都解析对，且点一下勾不许吞掉 tag', () => {
+      const text = '- [x] 改开头 AITA 高质量'
+      expect(parseGoalLines(text)[0]).toMatchObject({ done: true, title: '改开头', tags: ['AITA', '高质量'] })
+      expect(toggleGoalLine(text, 0)).toBe('- [ ] 改开头 AITA 高质量')
+      const bare = '改开头 AITA'
+      expect(parseGoalLines(bare)[0]).toMatchObject({ done: false, title: '改开头', tags: ['AITA'] })
+      expect(toggleGoalLine(bare, 0)).toBe('- [x] 改开头 AITA')
+    })
+  })
+
   it('洗勾（D-220 沿用到新一天）：勾过的变未勾，裸行与空行一个字不动', () => {
     const carried = '- [x] 捞 5 条进今日\n裸行也是待办\n\n  - [x] 缩进那条'
     expect(clearGoalTicks(carried)).toBe('- [ ] 捞 5 条进今日\n裸行也是待办\n\n  - [ ] 缩进那条')

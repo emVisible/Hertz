@@ -12,42 +12,47 @@
  * ③ 取消勾选留 `- [ ] ` 而不是退回原样——那是他动过的行，标记本身就是信息。
  */
 
-export interface GoalLine {
-  /** 在原文里的行号（toggle 用它定位，界面不许自己数） */
-  index: number
-  raw: string
-  /** 去掉缩进、项目符号与勾选标记后的正文 */
-  content: string
-  done: boolean
-  /** 空行不是待办，只是排版 */
-  blank: boolean
-}
-
 /** `- [x] 内容` / `* [ ] 内容`（缩进允许，X 大小写都认） */
 const MARKED = /^(\s*)(?:[-*]\s*)?\[( |x|X)\]\s?(.*)$/
 /** 普通项目符号行 `- 内容`：勾选时把它升级成带框的那一行，不叠成 `- - [x]`  */
 const BULLET = /^(\s*)[-*]\s+(.*)$/
 
+/** 一行拆成「目标 + tag」的规则（v0.34 D-221）：
+ *  第一个字段是目标本身，后面每个空格隔开的字段都是 tag。
+ *  连续空格/制表符不产生空 tag；只有目标没有 tag 时 `tags` 为空数组。
+ *  （代价：目标里如果自带空格，第二个词起会被当成 tag——要改成语法化的 `#tag`
+ *  只需动这一个函数，界面那侧不用改。） */
+function splitTitleTags(content: string): { title: string; tags: string[] } {
+  const parts = content.split(/\s+/).filter(Boolean)
+  return { title: parts[0] ?? '', tags: parts.slice(1) }
+}
+
+export interface GoalLine {
+  /** 在原文里的行号（toggle 用它定位，界面不许自己数） */
+  index: number
+  raw: string
+  /** 去掉缩进、项目符号与勾选标记后的正文（含 tag） */
+  content: string
+  /** 第一个字段 */
+  title: string
+  /** 第一个字段之后空格隔开的字段 */
+  tags: string[]
+  done: boolean
+  /** 空行不是待办，只是排版 */
+  blank: boolean
+}
+
 export function parseGoalLines(text: string): GoalLine[] {
   return text.split(/\r?\n/).map((raw, index) => {
+    const base = { index, raw, blank: raw.trim() === '' }
     const marked = MARKED.exec(raw)
     if (marked) {
-      return {
-        index,
-        raw,
-        content: marked[3].trim(),
-        done: marked[2] !== ' ',
-        blank: marked[3].trim() === '',
-      }
+      const content = marked[3].trim()
+      return { ...base, content, ...splitTitleTags(content), done: marked[2] !== ' ', blank: content === '' }
     }
     const bullet = BULLET.exec(raw)
-    return {
-      index,
-      raw,
-      content: (bullet ? bullet[2] : raw).trim(),
-      done: false,
-      blank: raw.trim() === '',
-    }
+    const content = (bullet ? bullet[2] : raw).trim()
+    return { ...base, content, ...splitTitleTags(content), done: false }
   })
 }
 

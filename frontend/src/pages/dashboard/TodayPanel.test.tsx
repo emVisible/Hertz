@@ -130,6 +130,19 @@ describe('今日待办悬浮栏的接缝', () => {
     expect(await screen.findByText('dashboard.goalTooLong')).toBeInTheDocument()
   })
 
+  it('一行里的 tag 渲染在右侧：第一个字段是目标，后面的是标签（D-221）', async () => {
+    currentBoard = { ...boardFixture, goal_text: '改开头 AITA 高质量\n只筛不发' }
+    const { container } = render(<TodayPanel onGoGoal={vi.fn()} />, { wrapper })
+    await screen.findAllByRole('checkbox')
+    // 目标那一格只剩第一个字段，其余字段变成 chip
+    expect(screen.getByText('改开头')).toBeInTheDocument()
+    expect(screen.queryByText('改开头 AITA 高质量')).toBeNull()
+    expect(screen.getByText('AITA')).toBeInTheDocument()
+    expect(screen.getByText('高质量')).toBeInTheDocument()
+    // 没有 tag 的行不生出空 chip
+    expect(container.querySelectorAll('label span span').length).toBe(2)
+  })
+
   it('沿用最近一份时洗掉昨天的勾，并说清沿自哪天（D-220）', async () => {
     currentBoard = {
       ...boardFixture,

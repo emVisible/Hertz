@@ -360,7 +360,7 @@
     "planFootnote": "This is your own schedule notebook. Auto-publish settings live in the Pipeline section — writing here changes no behaviour.",
     "navGoal": "Todo list",
     "goalTitle": "Todo list (one standing list)",
-    "goalHint": "One list that lasts, not a fresh one every day: a day you never wrote carries the nearest list forward, and ticks start over daily. Edit the wording here; tick things off in the board's floating Today panel.",
+    "goalHint": "One list that lasts, not a fresh one every day: a day you never wrote carries the nearest list forward, and ticks start over daily. Each line is one todo — **the first field is the goal, later space-separated fields become tags**. Edit the wording here; tick things off in the board's floating Today panel.",
     "goalDay": "Goal date",
     "goalToday": "Today",
     "goalLabel": "Goal text",
