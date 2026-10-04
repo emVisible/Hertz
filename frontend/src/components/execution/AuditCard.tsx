@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { ReactNode } from 'react'
+
 import type { PipelineItem } from '../../api'
 import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, CopyButton, Icon } from '../ui'
@@ -22,6 +24,7 @@ export function AuditCard({
   selectMode,
   onSelect,
   selected,
+  pick,
 }: {
   item: PipelineItem
   onApprove: (item: PipelineItem) => void
@@ -38,6 +41,8 @@ export function AuditCard({
   onSelect?: (item: PipelineItem) => void
   /** 已勾选（v0.4 A2）：高亮 */
   selected?: boolean
+  /** 「捞入今日」（v0.34 D-218）：入口由列表侧决定，卡片自己不发起写（`TodayPick`） */
+  pick?: ReactNode
 }) {
   const { t } = useTranslation()
   // v0.11.3：审核操作进行中——按钮转圈 + 防重复提交
@@ -253,6 +258,7 @@ export function AuditCard({
 
         {/* 操作区（v0.3.9 职责单一）：审核只负责 通过 / 拒绝 / 打回预处理 */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+          {pick}
           <Button
             size="sm"
             variant="ghost"

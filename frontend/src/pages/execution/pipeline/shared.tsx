@@ -2,7 +2,7 @@
  *  「state 留壳、JSX 下放」（D-183）——collectProgress 等是 hook useState 非 zustand，
  *  tab 组件不自治取数，全部经主壳 props 下发，避免与 ActivityPanel 状态分裂。 */
 
-import type { PipelineItem } from '../../../api'
+import type { FocusPatch, PipelineItem } from '../../../api'
 import type { PreFilterPatch } from '../../../hooks/usePipelineData'
 import type { usePipelineExecution } from '../../../hooks/usePipelineExecution'
 
@@ -38,6 +38,9 @@ export interface PipelineViewProps {
   stop: () => void
   collectProgress: ReturnType<typeof usePipelineExecution>['collectProgress']
   act: (item: PipelineItem, action: 'approve' | 'reject' | 'retry' | 'requeue' | 'retranslate') => void
+  /** 今日关注（v0.34 D-218）：预处理 / 待审 / 已过审待发三个列表的「捞入今日」共用这一个
+   *  写点（看板的移出与备注也走它）。失效在 `usePipelineActions.refresh()` 一处。 */
+  setFocus: (item: PipelineItem, patch: FocusPatch) => Promise<void>
   saveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => Promise<void>
   publishItem: (item: PipelineItem, selfmade?: boolean, target?: string, now?: boolean) => void
   setPublishStats: (item: PipelineItem) => void

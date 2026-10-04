@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { ReactNode } from 'react'
+
 import type { PipelineItem, ProduceOptions } from '../../api'
 import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, Icon } from '../ui'
@@ -17,6 +19,7 @@ export function PreReviewCard({
   onCancelProduce,
   onReject,
   onUploadCover,
+  pick,
 }: {
   item: PipelineItem
   onSaveOptions: (item: PipelineItem, options: Partial<ProduceOptions>) => void
@@ -24,6 +27,8 @@ export function PreReviewCard({
   onCancelProduce: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
   onUploadCover: (item: PipelineItem, file: File) => void
+  /** 「捞入今日」（v0.34 D-218）：入口由列表侧决定（`TodayPick`） */
+  pick?: ReactNode
 }) {
   const { t } = useTranslation()
   // v0.11.3：制作进行中——按钮转圈 + 防重复提交（长任务，禁连点）
@@ -146,6 +151,7 @@ export function PreReviewCard({
 
         {/* 主操作（v0.8.9：卡片仅服务已下载未加工阶段——评分/下载已在行内完成） */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+          {pick}
           <Button size="sm" variant="danger" disabled={!!busy} onClick={() => onReject(item)}>
             <Icon name="close" size={12} />
             {t('console.reject')}

@@ -116,6 +116,7 @@ export function ExecutionPage() {
           collectProgress={pipeline.collectProgress}
           stop={pipeline.stop}
           act={pipeline.act}
+          setFocus={pipeline.setFocus}
           saveMeta={pipeline.saveMeta}
           publishItem={pipeline.publishItem}
           setPublishStats={pipeline.setPublishStats}

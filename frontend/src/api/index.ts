@@ -32,6 +32,7 @@ export type {
   BoardResponse,
   BoardColumn,
   DailyGoal,
+  FocusPatch,
 } from './pipeline'
 export { docsApi } from './docs'
 export { canvasApi } from './canvas'

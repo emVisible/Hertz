@@ -13,6 +13,7 @@ import {
   PreReviewRow,
   SortControl,
   StageList,
+  TodayPick,
   type SortField,
   type SortSpec,
 } from '../../../components/execution'
@@ -50,6 +51,10 @@ export function PreReviewTab({
   setProduceBatchOpen,
 }: PreReviewTabProps) {
   const { t } = useTranslation()
+  /** 「捞入今日」（v0.34 D-218）：三段的行都挂，写点归 `p.setFocus`（唯一作者在 `usePipelineActions`）。 */
+  const pick = (item: PipelineItem) => (
+    <TodayPick item={item} onPick={(i, day) => void p.setFocus(i, { focus_date: day })} />
+  )
   return (
     <div className="p-4">
       <PipelineStage
@@ -241,6 +246,7 @@ export function PreReviewTab({
               <PreReviewCard
                 key={item.id}
                 item={item}
+                pick={pick(item)}
                 onSaveOptions={(i, options) => void p.setProduceOptions([i], options)}
                 onProduce={(i) => void p.produceOne(i)}
                 onCancelProduce={(i) => void p.cancelProduceOne(i)}
@@ -253,6 +259,7 @@ export function PreReviewTab({
                 key={item.id}
                 item={item}
                 stage={preStage}
+                pick={pick(item)}
                 onScore={(i) => void p.scoreOne(i)}
                 onDownload={(i) => void p.downloadOne(i)}
                 onDownloadDirect={(i) => void p.downloadOneDirect(i)}

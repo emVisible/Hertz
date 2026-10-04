@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
-import { pipelineApi, type PipelineItem } from '../api'
+import { pipelineApi, type FocusPatch, type PipelineItem } from '../api'
 import { useToast } from '../components/ui'
 import { useExecutionStore } from '../stores/execution'
 
@@ -190,6 +190,19 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
         await withBusy(item, 'retry', () => pipelineApi.retry(item.id))
         toast(t('console.retriedHint'), 'success')
       }
+      refresh()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
+  /** 今日关注（v0.34 D-218）：捞入 / 移出 / 改备注的**唯一**界面写点。
+   *  看板与流水线共用这一个函数——从前看板自带一份 mutation，两边各写一份就会漂成
+   *  两套失效逻辑（看板的 `['pipeline-board']` 与流水线的 `pipeline-stage` 只被一边清）。
+   *  成功不弹 toast：点完列表自己就变了，弹字是噪音；失败必须弹，否则是静默不写。 */
+  async function setFocus(item: PipelineItem, patch: FocusPatch) {
+    try {
+      await pipelineApi.setFocus(item.id, patch)
       refresh()
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
@@ -420,6 +433,7 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
 
   return {
     act,
+    setFocus,
     batchAction,
     setPublishStats,
     saveMeta,

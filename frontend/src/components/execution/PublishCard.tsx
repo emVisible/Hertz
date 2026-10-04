@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../i18n'
 
+import type { ReactNode } from 'react'
+
 import type { PipelineItem } from '../../api'
 import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, Icon, Menu, Select } from '../ui'
@@ -26,12 +28,15 @@ export function PublishCard({
   onSaveMeta,
   onRequeue,
   onRandomCover,
+  pick,
 }: {
   item: PipelineItem
   onPublish: (item: PipelineItem, selfmade: boolean, target: string, now: boolean) => void
   onSaveMeta: (item: PipelineItem, meta: Record<string, string | number | null>) => void
   onRequeue: (item: PipelineItem) => void
   onRandomCover: (item: PipelineItem) => void
+  /** 「捞入今日」（v0.34 D-218）：入口由列表侧决定（`TodayPick`） */
+  pick?: ReactNode
 }) {
   const { t } = useTranslation()
   // v0.11.3：发布进行中——按钮转圈 + 防重复提交（上传为长任务）
@@ -406,6 +411,7 @@ export function PublishCard({
          *  v0.11.9：打回审核独立按钮（对标 AuditCard 操作组）；
          *  分裂主按钮（GitHub Merge ▾ 式）：主按钮一键执行默认路径，▾ 菜单收纳发布变体 */}
         <div className="mt-2 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+          {pick}
           <Button
             size="sm"
             variant="ghost"

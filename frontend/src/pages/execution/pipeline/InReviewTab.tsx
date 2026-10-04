@@ -11,12 +11,20 @@ import { Button, Icon } from '../../../components/ui'
 import {
   AuditCard,
   PipelineStage,
+  PublishCard,
   SortControl,
+  TodayPick,
   type SortField,
   type SortSpec,
 } from '../../../components/execution'
 import type { useBatchSelect } from '../../../hooks/useBatchSelect'
 import type { PipelineViewProps } from './shared'
+
+/** 审核页的次级分段（v0.34 D-218）：`待审` 之外补上 **已过审待发**。
+ *  补的是个洞：D-213 把「发布」tab 并进看板之后，`approved` 条目在整个界面里只剩
+ *  看板「待处理」那一列这一个落点；D-218 用户说那一列不该在看板上，于是单条发布
+ *  的入口搬到这里——不搬就等于界面上再也发不出去。 */
+export type AuditStage = 'queued' | 'approved'
 
 // 排序要素（v0.3.12 两维度：要素 × 方向）
 const AUDIT_SORT_FIELDS: SortField[] = [
@@ -33,6 +41,9 @@ interface InReviewTabProps {
   p: PipelineViewProps
   /** 主壳排序/筛选/搜索后的待审列表 */
   sortedQueued: PipelineItem[]
+  /** 次级分段（v0.34 D-218）：待审 / 已过审待发。留主壳（D-183）。 */
+  auditStage: AuditStage
+  setAuditStage: (v: AuditStage) => void
   auditFocus: string | null
   auditSel: ReturnType<typeof useBatchSelect>
   toggleSelect: (item: PipelineItem) => void
@@ -68,11 +79,50 @@ export function InReviewTab({
   toggleAuditRandom,
   auditSort,
   setAuditSort,
+  auditStage,
+  setAuditStage,
 }: InReviewTabProps) {
   const { t } = useTranslation()
+  const segments = [
+    // 计数用后端的 `counts`（截断前），不是列表长度——和预处理那三个分段同一口径
+    { key: 'queued' as const, labelKey: 'console.boardColReview', n: p.counts.queued ?? p.stageQueued.length },
+    { key: 'approved' as const, labelKey: 'console.approvedStage', n: p.counts.approved ?? p.stageApproved.length },
+  ]
   return (
     /* 审核专注审核（v0.2.6）：异常内容移至独立「异常」menu——全宽单栏 */
     <div className="p-4">
+      {/* 次级分段（v0.34 D-218）：样式跟预处理那三个分段一致 */}
+      <div
+        role="tablist"
+        aria-label={t('console.stageAudit')}
+        className="mb-2 flex gap-1 border-b border-border bg-surface-2/40 px-3 py-2"
+      >
+        {segments.map((seg) => {
+          const active = auditStage === seg.key
+          return (
+            <button
+              key={seg.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setAuditStage(seg.key)}
+              className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors ${
+                active
+                  ? 'bg-surface-1 font-medium text-text-primary shadow-sm ring-1 ring-border'
+                  : 'text-text-secondary hover:bg-surface-1/50 hover:text-text-primary'
+              }`}
+            >
+              <span className="truncate">{t(seg.labelKey)}</span>
+              <span className={`shrink-0 font-mono text-[10px] ${active ? 'text-text-secondary' : 'text-text-disabled'}`}>
+                {seg.n}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {auditStage === 'approved' && <ApprovedStage p={p} />}
+      {auditStage === 'queued' && (
       <PipelineStage
         title={t('console.stageAudit')}
         isEmpty={p.stageQueued.length === 0}
@@ -207,6 +257,44 @@ export function InReviewTab({
           {t('console.keyHint')}
         </p>
       </PipelineStage>
+      )}
     </div>
+  )
+}
+
+/** 已过审待发（v0.34 D-218）：逐条发布 + 捞入今日。
+ *
+ * 这一段的头**故意不给**待审那套搜索/低分/随机/排序控件——那些 state 只作用在
+ * `sortedQueued` 上，把控件画在待发列表上就是「看着能筛、实际没发参数」的 UI 谎言
+ * （预处理三轴那条踩过的同一形状）。approved 的量级也撑不起一套筛选。
+ */
+function ApprovedStage({ p }: { p: PipelineViewProps }) {
+  const { t } = useTranslation()
+  const approved = p.stageApproved
+  return (
+    <PipelineStage
+      title={`${t('console.approvedStage')} (${p.counts.approved ?? approved.length})`}
+      isEmpty={approved.length === 0}
+      emptyText={t('console.approvedEmpty')}
+    >
+      <ul className="divide-y divide-border/60">
+        {approved.map((item) => (
+          <PublishCard
+            key={item.id}
+            item={item}
+            pick={
+              <TodayPick item={item} onPick={(i, day) => void p.setFocus(i, { focus_date: day })} />
+            }
+            onPublish={(i, selfmade, target, now) => void p.publishItem(i, selfmade, target, now)}
+            onSaveMeta={(i, meta) => void p.saveMeta(i, meta)}
+            onRequeue={(i) => void p.act(i, 'requeue')}
+            onRandomCover={(i) => void p.randomCover(i)}
+          />
+        ))}
+      </ul>
+      <p className="border-t border-border/60 px-3 py-2 text-[10px] text-text-disabled">
+        {t('console.approvedHint')}
+      </p>
+    </PipelineStage>
   )
 }

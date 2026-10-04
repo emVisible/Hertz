@@ -1,48 +1,44 @@
 /**
- * 看板页（v0.4 C2 起家的这一页；v0.34 重设计拆成三个栏目）。
+ * 看板页（v0.4 C2 起家的这一页；v0.34 D-218 收成两个栏目）。
  * 数据全部来自既有端点，前端聚合展示，无新后端读模型。
  *
- * 三个栏目按「问题的种类」分，不按数据来源分：
- * - 今天：今天要动哪几条（目标 + 待办 + 今日已发），**一块**，可动手
- * - 供给：手里还有多少货、该捞什么口味
+ * 栏目按「问题的种类」分：
+ * - 今天（默认，进来就是这页）：今天要做什么、做到哪了——目标清单（一行一条、点了就勾）
+ *   + 今日条目 + 今日已发 + 供给水位/洞察
  * - 成本与健康：这段时间做得怎样、花了多少、哪儿在坏
- * 原来 15 个模块平铺一屏，滚不到底也看不出该先看哪儿（D-217）。
  *
- * 这一页只写两件事：`focus_date`/`focus_note`（捞进/移出今日）与条目的阶段动作。
- * **每日目标不在这里编辑**——用户定的是「看板只显示，不做设置」，写目标的地方是
- * 顶级「设置 → 每日目标」（`pages/settings/sections/GoalSection.tsx`）。
+ * 「待处理」不再在这页上（D-218）：捞入今日与单条发布搬去流水线，看板只留今天要动的东西。
+ * 这一页写两件事：**勾选当日目标**（`PUT /goal/{day}`，见 `TodayPanel`）与条目的今日关注
+ * （`p.setFocus`，唯一作者在 `usePipelineActions`）。目标**文字**仍不在这里改——
+ * 那是设置页的「每日目标」那一节（用户：「看板只是显示了，他不做设置」）。
  */
 
 import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import { pipelineApi, type PipelineItem } from '../../api'
 import { TabBar } from '../../components/ui'
 import { goUnscoredPatch } from '../../core/boardWindow'
 import { usePipelineExecution } from '../../hooks/usePipelineExecution'
 import { useExecutionStore } from '../../stores/execution'
 import { HealthPanel } from './HealthPanel'
-import { SupplyPanel } from './SupplyPanel'
-import { TodayPanel, type FocusPatch } from './TodayPanel'
+import { SupplySection } from './SupplySection'
+import { TodayPanel } from './TodayPanel'
 
-const SECTION_IDS = ['today', 'supply', 'health'] as const
+const SECTION_IDS = ['today', 'health'] as const
 type SectionId = (typeof SECTION_IDS)[number]
 
 /** 栏目清单——tab 标签与 `?tab=` 深链白名单同一份，改一处两边跟随。 */
 const SECTIONS: Array<{ id: SectionId; labelKey: string }> = [
   { id: 'today', labelKey: 'dashboard.sectionToday' },
-  { id: 'supply', labelKey: 'dashboard.sectionSupply' },
   { id: 'health', labelKey: 'dashboard.sectionHealth' },
 ]
 
 export function DashboardPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const qc = useQueryClient()
-  /** 动作面（发布/审核/捞入）复用流水线那个总线 hook：查询键与 `usePipelineData`
-   *  完全相同（同一份缓存，不会多一套轮询），组件也是同一批——全仓一套发布入口。 */
+  /** 动作面（发布 / 审核 / 今日关注）复用流水线那个总线 hook：查询键与 `usePipelineData`
+   *  完全相同（同一份缓存，不多开一路轮询），`setFocus` 的失效也在同一处。 */
   const pipeline = usePipelineExecution()
 
   const [searchParams] = useSearchParams()
@@ -61,16 +57,6 @@ export function DashboardPage() {
   }
   const goGoal = () => navigate('/config?section=goal')
 
-  /** 今日关注的写点只有一个：两个栏目都要捞入/移出，失效也只需一处。
-   *  日期归各面板自己管（今天栏可回看昨天，供给栏只对着当天）。 */
-  const focusMut = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: FocusPatch }) => pipelineApi.setFocus(id, patch),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['pipeline-board'] }),
-  })
-  const onFocus = (item: PipelineItem, patch: FocusPatch) => focusMut.mutate({ id: item.id, patch })
-
-  const actions = { p: pipeline, onFocus }
-
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-6">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
@@ -84,9 +70,11 @@ export function DashboardPage() {
         </div>
 
         {sectionId === 'today' && (
-          <TodayPanel p={pipeline} onFocus={onFocus} onGoUnscored={goUnscored} onGoGoal={goGoal} />
+          <>
+            <TodayPanel p={pipeline} onGoUnscored={goUnscored} onGoGoal={goGoal} />
+            <SupplySection />
+          </>
         )}
-        {sectionId === 'supply' && <SupplyPanel {...actions} />}
         {sectionId === 'health' && <HealthPanel />}
       </div>
     </div>

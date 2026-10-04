@@ -15,6 +15,7 @@ export type BoardActions = Pick<
   PipelineBus,
   | 'publishStatus'
   | 'act'
+  | 'setFocus'
   | 'saveMeta'
   | 'publishItem'
   | 'randomCover'

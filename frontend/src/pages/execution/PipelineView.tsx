@@ -7,7 +7,7 @@ import type { SortSpec } from '../../components/execution'
 import { useBatchSelect } from '../../hooks/useBatchSelect'
 import { RunTab } from './pipeline/RunTab'
 import { PreReviewTab } from './pipeline/PreReviewTab'
-import { InReviewTab, type BatchRunAction } from './pipeline/InReviewTab'
+import { InReviewTab, type AuditStage, type BatchRunAction } from './pipeline/InReviewTab'
 import { ExceptionsTab, type ExSubTabId } from './pipeline/ExceptionsTab'
 import { ScriptWorkshop } from '../../components/execution/ScriptWorkshop'
 import { useExecutionStore } from '../../stores/execution'
@@ -58,6 +58,8 @@ export function PipelineView(p: PipelineViewProps) {
   }, [preSort])
   // 审核排序（v0.3.12）：要素 × 方向 + 独立开关「有成片优先 / 随机洗牌」
   const [auditSort, setAuditSort] = useState<SortSpec>({ field: 'seq', dir: 'desc' })
+  // 审核页次级分段（v0.34 D-218）：待审｜已过审待发。留主壳（D-183：state 留壳，tab 只拿 props）
+  const [auditStage, setAuditStage] = useState<AuditStage>('queued')
   // 审核搜索（v0.8.9）：标题关键词过滤
   const [auditQuery, setAuditQuery] = useState('')
   const [videoFirst, setVideoFirst] = useState(true)
@@ -309,6 +311,8 @@ export function PipelineView(p: PipelineViewProps) {
             toggleAuditRandom={toggleAuditRandom}
             auditSort={auditSort}
             setAuditSort={setAuditSort}
+            auditStage={auditStage}
+            setAuditStage={setAuditStage}
           />
         )}
 

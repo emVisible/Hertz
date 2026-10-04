@@ -99,6 +99,14 @@ export interface PipelineItem {
   focus_note?: string | null
 }
 
+/** 今日关注的局部 PATCH（v0.34 D-218 抽成一个类型）：看板与流水线两侧都写它，
+ *  形状在 API 层定义一次，界面上就不会各写一份可选字段清单。
+ *  `focus_note` 缺席 ≠ 清空——后端按 `model_fields_set` 区分「没传」与「传了空串」。 */
+export interface FocusPatch {
+  focus_date?: string | null
+  focus_note?: string | null
+}
+
 /** 每日目标（v0.34 B）：一天一行，`goal_text` 是纯文字 to-do（不自动联网）。 */
 export interface DailyGoal {
   goal_date: string
@@ -281,7 +289,7 @@ export const pipelineApi = {
   saveGoal: (day: string, goal_text: string) =>
     api.put<DailyGoal>(`/api/pipeline/goal/${day}`, { goal_text }),
   /** 今日关注：局部 PATCH——只发 focus_date 不会清空备注（后端 touch_note 语义）。 */
-  setFocus: (id: string, patch: { focus_date?: string | null; focus_note?: string | null }) =>
+  setFocus: (id: string, patch: FocusPatch) =>
     api.patch<{ id: string; focus_date: string | null; focus_note: string | null }>(
       `/api/pipeline/items/${id}/focus`,
       patch,

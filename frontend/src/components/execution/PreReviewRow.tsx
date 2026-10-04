@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
+import type { ReactNode } from 'react'
+
 import type { PipelineItem } from '../../api'
 import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, Icon } from '../ui'
@@ -17,6 +19,7 @@ export function PreReviewRow({
   onDownload,
   onDownloadDirect,
   onReject,
+  pick,
 }: {
   item: PipelineItem
   stage: 'discovered' | 'scored'
@@ -25,6 +28,8 @@ export function PreReviewRow({
   /** 直下（v0.11.10）：未评分条目绕过评分直接下载——省 API 余额场景 */
   onDownloadDirect?: (item: PipelineItem) => void
   onReject: (item: PipelineItem) => void
+  /** 「捞入今日」（v0.34 D-218）：由列表侧决定的入口，卡片自己不发起写（`TodayPick`） */
+  pick?: ReactNode
 }) {
   const { t } = useTranslation()
   // v0.11.3：单条操作进行中——按钮转圈 + 防重复提交
@@ -75,6 +80,7 @@ export function PreReviewRow({
 
       {/* 操作：按阶段主操作 + hover 拒绝 */}
       <span className="flex shrink-0 items-center gap-1.5">
+        {pick}
         <Button
           size="sm"
           variant="ghost"

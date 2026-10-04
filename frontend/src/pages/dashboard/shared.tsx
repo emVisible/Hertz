@@ -1,52 +1,12 @@
-/** 看板页共享件：条目卡片分派 + 阶段清单 + 两个纯 CSS 图（AXIOM 零依赖：不引图表库）。
+/** 看板页共享件：阶段清单 + 两个纯 CSS 图（AXIOM 零依赖：不引图表库）。
  *
- * 从 `DashboardPage` 抽出来是因为这一页拆成了三个子栏目（今天 / 供给 / 成本与健康），
- * 而 `Bar`（漏斗水位、AI 用量）和条目卡片分派都被两个栏目共用——留在其中一个文件里，
- * 另一个就得跨页去捡私有组件；放这儿，两边都只依赖这份签名。
+ * 从 `DashboardPage` 抽出来是因为 `Bar` 被两处共用（漏斗水位、AI 用量）——
+ * 留在其中一个文件里，另一个就得跨页去捡私有组件。
+ * 条目卡片分派不在这儿：v0.34 D-218 之后只有「今天」那一块画条目，
+ * 只有一个消费者的抽象放回用处更诚实（`TodayPanel.tsx::ItemCard`）。
  */
 
 import { useTranslation } from 'react-i18next'
-
-import type { PipelineItem } from '../../api'
-import { Badge } from '../../components/ui'
-import { AuditCard, PublishCard, StageItemRow } from '../../components/execution'
-import type { BoardActions } from './boardActions'
-
-/** 一条条目该用哪张卡（v0.34 重设计抽成一处）。
- *
- * 抽出来的理由：今天栏和供给栏都要画同一批条目，而「approved 能发、queued 能审、
- * 其余只列出来」这条规则如果两边各写一遍，改状态时就会漂成两套动作（这个仓库里
- * 最贵的就是同一个判断有两个作者）。动作本身仍复用流水线那两个卡片组件，
- * 所以全仓只有一套发布/过审入口。
- */
-export function ItemCard({ item, p }: { item: PipelineItem; p: BoardActions }) {
-  if (item.status === 'approved') {
-    return (
-      <PublishCard
-        item={item}
-        onPublish={(i, selfmade, target, now) => p.publishItem(i, selfmade, target, now)}
-        onSaveMeta={(i, meta) => void p.saveMeta(i, meta)}
-        onRequeue={(i) => void p.act(i, 'requeue')}
-        onRandomCover={(i) => void p.randomCover(i)}
-      />
-    )
-  }
-  if (item.status === 'queued') {
-    return (
-      <AuditCard
-        item={item}
-        onApprove={(i) => void p.act(i, 'approve')}
-        onReject={(i) => void p.act(i, 'reject')}
-        onUploadCover={(i, file) => void p.uploadCover(i, file)}
-        onRandomCover={(i) => void p.randomCover(i)}
-        onBackToPrep={(i) => void p.backToPrep(i)}
-      />
-    )
-  }
-  // 其余状态（在制 downloaded/scored 等）只列出来：下载/制作的入口在流水线，
-  // 在这里抄一份按钮就会变成第二个写点。
-  return <StageItemRow item={item} badge={<Badge tone="neutral">{item.status}</Badge>} />
-}
 
 /** 频道洞察（v0.19 数据飞轮）：`/api/ai/insights` 的快照形状。
  *  原来只在 `DashboardPage` 里本地声明，搬到供给栏后放这份共享模块，

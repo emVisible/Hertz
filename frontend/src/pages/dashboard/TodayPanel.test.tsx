@@ -1,13 +1,10 @@
-/** 看板「今天」栏的**接缝**测试（v0.34 重设计）。
+/** 看板「今天」块的**接缝**测试（v0.34 D-218）。
  *
- * 测的不是「长得对不对」，而是**界面选的东西真的进了请求、后端真的数真的上屏**：
- *  - `board(day)` 带着归一化后的墙上日期发出去（不是硬编码今天，也不是 `?day=`）
- *  - 「移出今日 / 改备注」发出的是 `focus_date = null` / `{focus_date, focus_note}`
- *  - 完成度与列头用的是**后端的数**（progress，不是前端自己数列表长度）
- *  - 目标**只读**：这块里没有可编辑的目标框，出路是「设置 → 每日目标」
- *  - 今日已发的两条收尾动作（打回审核 / 补录数据）真的走到总线那同一个函数上
- *
- * 写目标本身的接缝在 `pages/settings/sections/GoalSection.test.tsx`（编辑处搬过去了）。
+ * 这块的形状是用户两次纠正定下来的，所以测的正是那两条：
+ * ① 目标与待办是一个东西 ⇒ **一行一条待办**，点一下就完成（写回的是整段文本，
+ *    只改被点那一行——这条判据在 `core/goalChecklist.test.ts`，这里测界面真的用了它）；
+ * ② 看板不做设置 ⇒ **没有可编辑目标文字的控件**，出路指向「设置 → 每日目标」。
+ * 另外三条老判据继续留着：按墙上日期取数、完成度读后端、条目动作走总线那一个写点。
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -15,7 +12,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { wallDay } from '../../core/boardWindow'
+import { GOAL_MAX_CHARS, wallDay } from '../../core/boardWindow'
 
 const tCalls: Array<[string, unknown]> = []
 vi.mock('react-i18next', async (importOriginal) => {
@@ -31,14 +28,13 @@ vi.mock('react-i18next', async (importOriginal) => {
   }
 })
 
-// 卡片替身：这三张卡自己的测试在流水线那侧，这里只关心「今天」栏把它们挂对了地方
 vi.mock('../../components/execution', () => ({
   PublishCard: ({ item }: { item: { id: string } }) => <div data-testid="publish-card">{item.id}</div>,
   AuditCard: ({ item }: { item: { id: string } }) => <div data-testid="audit-card">{item.id}</div>,
   StageItemRow: ({ item }: { item: { id: string } }) => <div data-testid="stage-row">{item.id}</div>,
 }))
 
-const calls: Record<string, unknown[][]> = { board: [], setFocus: [] }
+const calls: Record<string, unknown[][]> = { board: [], saveGoal: [] }
 let currentBoard: unknown = {}
 
 const DAY = wallDay()
@@ -63,7 +59,7 @@ const boardFixture = {
   date: DAY,
   published_from: `${DAY}T00:00:00+00:00`,
   published_to: '2999-01-01T00:00:00+00:00',
-  goal_text: '过一遍 AITA 前 20 条',
+  goal_text: '过一遍 AITA 前 20 条\n挑 5 条改开头\n\n只筛不发做复盘',
   goal_updated_at: '2026-09-30T01:00:00+00:00',
   columns: {
     focus: [focusItem],
@@ -72,7 +68,7 @@ const boardFixture = {
     ready_to_publish: [],
     published_today: [publishedItem],
   },
-  counts: { focus: 2, in_work: 0, review: 0, ready_to_publish: 0, published_today: 1 },
+  counts: { focus: 1, in_work: 0, review: 0, ready_to_publish: 0, published_today: 1 },
   progress: { focused: 2, published_of_focus: 1 },
 }
 
@@ -86,6 +82,9 @@ vi.mock('../../api', () => ({
         (...args: unknown[]) => {
           if (prop in calls) calls[prop].push(args)
           if (prop === 'board') return Promise.resolve(currentBoard)
+          if (prop === 'saveGoal') {
+            return Promise.resolve({ goal_date: args[0], goal_text: args[1], updated_at: 'x' })
+          }
           return Promise.resolve([])
         },
     },
@@ -103,6 +102,7 @@ const wrapper = ({ children }: { children: ReactNode }) => {
 const p = {
   publishStatus: null,
   act: vi.fn(),
+  setFocus: vi.fn(),
   saveMeta: vi.fn(),
   publishItem: vi.fn(),
   randomCover: vi.fn(),
@@ -121,43 +121,52 @@ beforeEach(() => {
 
 describe('TodayPanel 的接缝', () => {
   it('按墙上日期取看板数据', async () => {
-    render(<TodayPanel p={p} onFocus={noop} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
+    render(<TodayPanel p={p} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
     await waitFor(() => expect(calls.board.length).toBeGreaterThan(0))
     expect(calls.board[0][0]).toBe(DAY)
   })
 
-  it('完成度用的是后端 progress，不是前端数列表', async () => {
-    render(<TodayPanel p={p} onFocus={noop} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
-    expect(await screen.findByText('item-focus')).toBeInTheDocument()
-    // focus 列只有 1 行，progress 却是 1/2 —— 界面必须报 2（截断/漏数都不能冒充）
-    const progress = [...tCalls].reverse().find(([key]) => key === 'console.boardProgress')
-    expect(progress, '顶栏没读 progress 就只剩一个装饰文案').toBeDefined()
-    expect(progress?.[1]).toMatchObject({ published: 1, focused: 2 })
+  it('一行一条待办：三行文本渲染出三个勾选框（空行不算）', async () => {
+    render(<TodayPanel p={p} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
+    expect(await screen.findAllByRole('checkbox')).toHaveLength(3)
+    expect(screen.getByText('只筛不发做复盘')).toBeInTheDocument()
   })
 
-  it('移出今日 / 改备注发的是同一个 patch 形状', async () => {
-    const onFocus = vi.fn()
-    render(<TodayPanel p={p} onFocus={onFocus} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
-    await screen.findByText('item-focus')
-
-    fireEvent.click(screen.getByTitle('console.boardDropHint'))
-    expect(onFocus).toHaveBeenLastCalledWith(focusItem, { focus_date: null })
-
-    const note = screen.getByLabelText('console.boardNoteLabel')
-    fireEvent.change(note, { target: { value: '结尾加一句反转' } })
-    fireEvent.focusOut(note)
-    expect(onFocus).toHaveBeenLastCalledWith(focusItem, {
-      focus_date: DAY,
-      focus_note: '结尾加一句反转',
-    })
+  it('点一下就是完成：发出去的是「只改那一行」的整段文本', async () => {
+    render(<TodayPanel p={p} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
+    const boxes = await screen.findAllByRole('checkbox')
+    fireEvent.click(boxes[1])
+    await waitFor(() => expect(calls.saveGoal.length).toBe(1))
+    expect(calls.saveGoal[0][0]).toBe(DAY)
+    expect(calls.saveGoal[0][1]).toBe('过一遍 AITA 前 20 条\n- [x] 挑 5 条改开头\n\n只筛不发做复盘')
+    // 勾上的状态来自后端回读那一行，不是界面自己以为成功了
+    await waitFor(() => expect(boxes[1]).toBeChecked())
   })
 
-  it('目标只读：没有可编辑的目标框，出路指向设置', async () => {
+  it('再点一次是取消勾选（文本回到 - [ ]），仍然真发请求', async () => {
+    currentBoard = { ...boardFixture, goal_text: '- [x] 已经勾上的条目' }
+    render(<TodayPanel p={p} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
+    const box = (await screen.findByRole('checkbox')) as HTMLInputElement
+    expect(box).toBeChecked()
+    fireEvent.click(box)
+    await waitFor(() => expect(calls.saveGoal.length).toBe(1))
+    expect(calls.saveGoal[0][1]).toBe('- [ ] 已经勾上的条目')
+  })
+
+  it('顶到长度上限时不发请求，并给出说法（勾不上≠坏了）', async () => {
+    currentBoard = { ...boardFixture, goal_text: '一'.repeat(GOAL_MAX_CHARS - 2) }
+    render(<TodayPanel p={p} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
+    fireEvent.click((await screen.findByRole('checkbox')) as HTMLInputElement)
+    expect(calls.saveGoal.length).toBe(0)
+    expect(await screen.findByText('dashboard.goalTooLong')).toBeInTheDocument()
+  })
+
+  it('看板不编辑目标文字：没有 textarea，出路指向设置', async () => {
     const onGoGoal = vi.fn()
-    render(<TodayPanel p={p} onFocus={noop} onGoUnscored={noop} onGoGoal={onGoGoal} />, { wrapper })
-    // 目标原文照显示（来自后端 `goal_text`），但它不是 input——唯一的文本框是备注
-    expect(await screen.findByText('过一遍 AITA 前 20 条')).toBeInTheDocument()
+    render(<TodayPanel p={p} onGoUnscored={noop} onGoGoal={onGoGoal} />, { wrapper })
+    await screen.findAllByRole('checkbox')
     expect(screen.queryByRole('textbox', { name: 'settings.goalLabel' })).toBeNull()
+    expect(document.querySelectorAll('textarea')).toHaveLength(0)
     fireEvent.click(screen.getByText('console.boardGoalSavedAt'))
     expect(onGoGoal).toHaveBeenCalledTimes(1)
   })
@@ -166,16 +175,37 @@ describe('TodayPanel 的接缝', () => {
     currentBoard = { ...boardFixture, goal_text: '', columns: { ...boardFixture.columns, focus: [] } }
     const onGoGoal = vi.fn()
     const onGoUnscored = vi.fn()
-    render(<TodayPanel p={p} onFocus={noop} onGoUnscored={onGoUnscored} onGoGoal={onGoGoal} />, { wrapper })
-    fireEvent.click(await screen.findByText('dashboard.goalGo'))
+    render(<TodayPanel p={p} onGoUnscored={onGoUnscored} onGoGoal={onGoGoal} />, { wrapper })
+    expect(await screen.findByText('dashboard.goalEmpty')).toBeInTheDocument()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    fireEvent.click(screen.getByText('dashboard.goalGo'))
     expect(onGoGoal).toHaveBeenCalledTimes(1)
-    // 空今日列同时给动线（去未评分区捞素材），两条出路都在
     fireEvent.click(screen.getByText('console.boardGoPreReview'))
     expect(onGoUnscored).toHaveBeenCalledTimes(1)
   })
 
+  it('完成度报后端的数，条目动作走总线那一个写点', async () => {
+    render(<TodayPanel p={p} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
+    await screen.findByText('item-focus')
+    // 待办 0/3（勾出来的）与「已发 1 / 捞入 2」（后端 progress）是两个数，都得在
+    expect(screen.getByText('dashboard.todoDone')).toBeInTheDocument()
+    const progress = [...tCalls].reverse().find(([key]) => key === 'console.boardProgress')
+    expect(progress?.[1]).toMatchObject({ published: 1, focused: 2 })
+
+    fireEvent.click(screen.getByTitle('console.boardDropHint'))
+    expect(p.setFocus).toHaveBeenLastCalledWith(focusItem, { focus_date: null })
+
+    const note = screen.getByLabelText('console.boardNoteLabel')
+    fireEvent.change(note, { target: { value: '结尾加一句反转' } })
+    fireEvent.focusOut(note)
+    expect(p.setFocus).toHaveBeenLastCalledWith(focusItem, {
+      focus_date: DAY,
+      focus_note: '结尾加一句反转',
+    })
+  })
+
   it('今日已发的收尾动作走总线那同一个函数', async () => {
-    render(<TodayPanel p={p} onFocus={noop} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
+    render(<TodayPanel p={p} onGoUnscored={noop} onGoGoal={noop} />, { wrapper })
     await screen.findByText('My husband hid his student loans')
     fireEvent.click(screen.getByTitle('console.backToReviewHint'))
     expect(p.act).toHaveBeenCalledWith(publishedItem, 'requeue')

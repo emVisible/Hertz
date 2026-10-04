@@ -54,7 +54,10 @@ function sourceFiles(dir: string = SRC): string[] {
     const full = join(dir, entry)
     if (entry === 'node_modules' || entry.startsWith('.')) continue
     if (statSync(full).isDirectory()) out.push(...sourceFiles(full))
-    else if (/\.(ts|tsx)$/.test(entry) && !full.endsWith('catalog.test.ts')) {
+    // 测试文件不算「在用」：守卫管的是界面代码。反向的用法本身就发生在测试里——
+    // `tabs.test.ts` 为了断言「看板不再引用 dashboard.sectionSupply」必须写出那个键名，
+    // 把它算成使用会让退役清单永远关不上（负向文本守卫被自己的断言喂饱）。
+    else if (/\.tsx?$/.test(entry) && !entry.endsWith('.test.ts') && !entry.endsWith('.test.tsx')) {
       out.push(full)
     }
   }
@@ -103,6 +106,14 @@ const RETIRED = [
   'dashboard.funnel',
   'dashboard.usage',
   'dashboard.cost',
+  // v0.34 D-218：供给从独立栏目并进「今天」；看板的「待处理」两列搬去流水线，
+  // 那两列用的空态/截断/批处理提示文案跟着退役（待发分段另起了 `console.approved*`）
+  'dashboard.awaiting',
+  'dashboard.sectionSupply',
+  'console.boardColumnEmpty',
+  'console.boardTruncated',
+  'console.boardColReady',
+  'console.publishHint',
 ]
 
 describe('i18n 目录', () => {
@@ -155,7 +166,7 @@ describe('i18n 目录', () => {
     // 所以本条只负责「删掉的视图不许还有人直读」。全量孤儿检查是另一片的工作。
   })
 
-  it('看板三个栏目用到的键在两份目录里都存在', () => {
+  it('看板与设置「每日目标」用到的键在两份目录里都存在', () => {
     // 正向腿：上面几条只证明「删干净了」，这一条证明**新界面要的键真的在**。
     // 缺键的形状是界面渲染出 `console.boardColFocus` 这种裸键名，而它不会报错。
     const zh = new Set(leafKeys(catalog('zh')))
@@ -165,21 +176,23 @@ describe('i18n 目录', () => {
       'console.boardGoalSavedAt',
       'console.boardColFocus',
       'console.boardColReview',
-      'console.boardColReady',
       'console.boardColPublished',
       'console.boardPickToday',
+      'console.boardPickedToday',
       'console.boardRemoveToday',
       'console.boardNotePlaceholder',
       'console.boardEmptyFocus',
       'console.boardGoPreReview',
-      'console.boardTruncated',
+      'console.approvedEmpty',
+      'console.approvedHint',
       'dashboard.sectionToday',
-      'dashboard.sectionSupply',
       'dashboard.sectionHealth',
       'dashboard.supplyWater',
       'dashboard.publishHealth',
       'dashboard.usageCost',
       'dashboard.goalEmpty',
+      'dashboard.todoDone',
+      'dashboard.goalEditText',
       'settings.navGoal',
       'settings.goalTitle',
       'settings.goalSaveHint',
@@ -193,14 +206,16 @@ describe('i18n 目录', () => {
     // 而不是只测我手抄的这份名单）
     const panelFiles = [
       'pages/dashboard/TodayPanel.tsx',
-      'pages/dashboard/SupplyPanel.tsx',
+      'pages/dashboard/SupplySection.tsx',
       'pages/dashboard/HealthPanel.tsx',
       'pages/dashboard/DashboardPage.tsx',
       'pages/dashboard/shared.tsx',
       'pages/settings/sections/GoalSection.tsx',
+      'components/execution/TodayPick.tsx',
+      'pages/execution/pipeline/InReviewTab.tsx',
     ].map((rel) => readFileSync(join(SRC, rel), 'utf-8'))
     const used = panelFiles
-      .flatMap((text) => [...text.matchAll(/\b(?:console\.board|dashboard\.|settings\.goal|settings\.navGoal)[A-Za-z0-9]*/g)])
+      .flatMap((text) => [...text.matchAll(/\b(?:console\.board|console\.approved|dashboard\.|settings\.goal|settings\.navGoal)[A-Za-z0-9]*/g)])
       .map((m) => m[0])
     expect(used.length, '一个看板键都没找到=正则或文件路径错了').toBeGreaterThan(20)
     const absent = [...new Set(used)].filter((k) => !zh.has(k))

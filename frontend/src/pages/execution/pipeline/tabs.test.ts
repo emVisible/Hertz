@@ -46,23 +46,54 @@ describe('流水线子菜单与看板归属', () => {
     expect(read('pages/execution/PipelineView.tsx')).not.toContain('TodayPanel')
   })
 
-  it('看板分三个栏目，且目标编辑不在看板上（设置里才是写点）', () => {
+  it('看板收成两个栏目：今天（含供给）｜成本与健康', () => {
     const dash = read('pages/dashboard/DashboardPage.tsx')
-    for (const key of ['dashboard.sectionToday', 'dashboard.sectionSupply', 'dashboard.sectionHealth']) {
-      expect(dash, `栏目少了 ${key}`).toContain(key)
-    }
-    // 用户原话：「这个看板只是显示了，他不做设置」。判据写成「看板的文件里不许出现
-    // 保存目标的调用」，同一条 matcher 在设置那一侧必须命中——否则零命中只说明
-    // 我搜错了符号（空结果≠不存在，这条在本仓坑过两次）。
+    expect(dash).toContain('dashboard.sectionToday')
+    expect(dash).toContain('dashboard.sectionHealth')
+    // 供给不再是第三个栏目（D-218），也不能退回独立文件的旧形状
+    expect(dash).not.toContain('dashboard.sectionSupply')
+    expect(dash).toContain('<SupplySection')
+  })
+
+  it('看板只显示不设置：没有可编辑目标文字的控件，勾选才是它唯一的目标写点', () => {
+    // 用户原话：「这个看板只是显示了，他不做设置」+「我每天能设置是否完成，点击一下我就完成了」。
+    // 所以形状是：不许有 textarea（改文字去设置），但允许把勾选写回同一行文本。
+    // 对照组的另一头在设置那一侧——那条必须真出现 textarea，否则零命中只说明我搜错了形状。
     for (const rel of [
       'pages/dashboard/DashboardPage.tsx',
       'pages/dashboard/TodayPanel.tsx',
-      'pages/dashboard/SupplyPanel.tsx',
+      'pages/dashboard/SupplySection.tsx',
+      'pages/dashboard/HealthPanel.tsx',
+      'pages/dashboard/shared.tsx',
+    ]) {
+      expect(read(rel), `${rel} 还在看板上编辑目标文字`).not.toContain('<textarea')
+    }
+    expect(read('pages/settings/sections/GoalSection.tsx')).toContain('<textarea')
+    // 勾选这件事只有看板有：设置那一节不许长出 checkbox
+    expect(read('pages/dashboard/TodayPanel.tsx')).toContain('type="checkbox"')
+    expect(read('pages/settings/sections/GoalSection.tsx')).not.toContain('type="checkbox"')
+  })
+
+  it('待处理两列不在看板上，单条发布与捞入今日真的落在了流水线', () => {
+    // 「撤视图不撤能力」这条又用上了：D-218 删掉看板的待处理列时，approved 条目在
+    // 整个界面里就没有落点了（D-213 把发布 tab 并进看板之后就是这样），所以入口必须
+    // 在流水线那一侧真存在——只测「看板里没有了」会奖励删干净但把能力删没。
+    for (const rel of [
+      'pages/dashboard/DashboardPage.tsx',
+      'pages/dashboard/TodayPanel.tsx',
+      'pages/dashboard/SupplySection.tsx',
       'pages/dashboard/HealthPanel.tsx',
     ]) {
-      expect(read(rel), `${rel} 还在写每日目标`).not.toContain('saveGoal(')
+      expect(read(rel), `${rel} 还挂着待发布那两列`).not.toContain('ready_to_publish')
     }
-    expect(read('pages/settings/sections/GoalSection.tsx')).toContain('pipelineApi.saveGoal(')
+    const audit = read('pages/execution/pipeline/InReviewTab.tsx')
+    expect(audit).toContain('stageApproved')
+    expect(audit).toContain('PublishCard')
+    // 捞入今日：预处理 + 审核两侧都挂，且都走 `p.setFocus` 那一个写点
+    expect(read('pages/execution/pipeline/PreReviewTab.tsx')).toContain('TodayPick')
+    expect(audit).toContain('TodayPick')
+    expect(read('pages/dashboard/TodayPanel.tsx')).toContain('p.setFocus')
+    expect(read('components/execution/TodayPick.tsx')).toContain('focus_date')
   })
 
   it('流水线默认落在「预处理」（看板已不在流水线里）', () => {
@@ -89,6 +120,7 @@ describe('流水线子菜单与看板归属', () => {
       'pages/execution/pipeline/PostReviewTab.tsx',
       'pages/execution/pipeline/BoardTab.tsx',
       'pages/dashboard/BoardTab.tsx',
+      'pages/dashboard/SupplyPanel.tsx',
     ]) {
       expect(existsSync(resolve(SRC, rel))).toBe(false)
     }
