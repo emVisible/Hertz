@@ -201,6 +201,8 @@ describe('i18n 目录', () => {
       'dashboard.goalEmpty',
       'dashboard.todoDone',
       'dashboard.publishedToday',
+      'dashboard.goalCarriedFrom',
+      'dashboard.goalCarriedHint',
       'dashboard.goalEditText',
       'settings.navGoal',
       'settings.goalTitle',

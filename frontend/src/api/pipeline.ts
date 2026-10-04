@@ -107,11 +107,15 @@ export interface FocusPatch {
   focus_note?: string | null
 }
 
-/** 每日目标（v0.34 B）：一天一行，`goal_text` 是纯文字 to-do（不自动联网）。 */
+/** 待办清单（v0.34 B 起按天存，D-220 起"长期一份 + 沿用"）：
+ *  一天一行仍在，但那天没行时读侧会**沿用最近一份**并给出 `carried_from`；
+ *  勾选状态在沿用那一刻由界面洗掉（`core/goalChecklist.clearGoalTicks`），不在后端做。 */
 export interface DailyGoal {
   goal_date: string
   goal_text: string
   updated_at: string | null
+  /** 抄来自哪天；null = 那天自己有过一行 */
+  carried_from: string | null
 }
 
 /** 看板响应（v0.34 B）。**列的划分只有后端一个作者**（`pipeline/board.py`）：
@@ -125,6 +129,8 @@ export interface BoardResponse {
   published_to: string
   goal_text: string
   goal_updated_at: string | null
+  /** 清单抄自哪天（D-220）；null = 今天自己写过 */
+  goal_carried_from: string | null
   columns: Record<BoardColumn, PipelineItem[]>
   counts: Record<BoardColumn, number>
   progress: { focused: number; published_of_focus: number }

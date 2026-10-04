@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { goalProgress, parseGoalLines, toggleGoalLine } from './goalChecklist'
+import { clearGoalTicks, goalProgress, parseGoalLines, toggleGoalLine } from './goalChecklist'
 
 const THREE = '过一遍 AITA 前 20 条\n挑 5 条改开头\n\n只筛不发做复盘'
 
@@ -72,5 +72,25 @@ describe('goalChecklist', () => {
     expect(parseGoalLines('')).toHaveLength(1)
     expect(goalProgress(parseGoalLines(''))).toEqual({ done: 0, total: 0 })
     expect(goalProgress(parseGoalLines('   \n\t'))).toEqual({ done: 0, total: 0 })
+  })
+
+  it('洗勾（D-220 沿用到新一天）：勾过的变未勾，裸行与空行一个字不动', () => {
+    const carried = '- [x] 捞 5 条进今日\n裸行也是待办\n\n  - [x] 缩进那条'
+    expect(clearGoalTicks(carried)).toBe('- [ ] 捞 5 条进今日\n裸行也是待办\n\n  - [ ] 缩进那条')
+    expect(goalProgress(parseGoalLines(clearGoalTicks(carried)))).toEqual({ done: 0, total: 3 })
+  })
+
+  it('洗勾是幂等的，且不会把已经未勾的行改写', () => {
+    const once = clearGoalTicks('- [ ] 没勾的\n- [x] 勾了的')
+    expect(once).toBe('- [ ] 没勾的\n- [ ] 勾了的')
+    expect(clearGoalTicks(once)).toBe(once)
+    expect(clearGoalTicks('   ')).toBe('   ')
+  })
+
+  it('洗勾保留换行风格（CRLF 清单洗完不许变成 LF）', () => {
+    const crlf = '- [x] 第一条\r\n- [x] 第二条'
+    const next = clearGoalTicks(crlf)
+    expect(next).toBe('- [ ] 第一条\r\n- [ ] 第二条')
+    expect(next.includes('\r\n')).toBe(true)
   })
 })

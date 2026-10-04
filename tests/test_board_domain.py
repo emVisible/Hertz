@@ -60,14 +60,77 @@ def test_daily_goal_model_shape() -> None:
 
 @pytest.mark.asyncio
 async def test_get_goal_is_side_effect_free() -> None:
-    day = date(2034, 6, 1)
+    # 用 1999 年那一天：库里任何测试都不会往那么早的日期写行，而 D-220 之后
+    # 「那天没有行」不再等于「回空文本」——它会沿用最近一份。要证「什么都没有时回空」
+    # 必须挑一个前面真的没有行的日期，否则这条判据测的是沿用逻辑。
+    day = date(1999, 1, 1)
     got = await board_store.get_goal(day)
-    assert got == {"goal_date": "2034-06-01", "goal_text": "", "updated_at": None}
+    assert got == {
+        "goal_date": "1999-01-01",
+        "goal_text": "",
+        "updated_at": None,
+        "carried_from": None,
+    }
     async with session_factory() as session:
         n = (
             await session.execute(select(DailyGoal).where(DailyGoal.goal_date == day))
         ).scalar_one_or_none()
     assert n is None, "读操作不许建行"
+
+
+@pytest.mark.asyncio
+async def test_get_goal_carries_the_nearest_list_forward() -> None:
+    """D-220：待办是长期一份，不是每天重写。
+
+    三条都要钉住：①那天没行时**沿用不超过那天的最近一份**；②未来的行不许被抄到
+    今天（否则"今天"显示的是明天打算做的事）；③抄的时候仍然不建行。
+    """
+    past = date(2034, 8, 1)
+    today = date(2034, 8, 5)
+    future = date(2034, 8, 9)
+    try:
+        await board_store.put_goal(past, "- [x] 捞 5 条进今日\n改完 3 个开头")
+        await board_store.put_goal(future, "明天的清单，不该被抄到今天")
+        got = await board_store.get_goal(today)
+        assert got["goal_date"] == "2034-08-05", "回的是「今天这份」，日期不该跟着源行走"
+        assert got["goal_text"] == "- [x] 捞 5 条进今日\n改完 3 个开头"
+        assert got["carried_from"] == "2034-08-01"
+        assert "明天" not in got["goal_text"], "抄到了未来的行"
+        # 洗勾不在后端做（一行怎么算勾着的判据只有一个作者：`core/goalChecklist`），
+        # 后端只负责"抄哪一份"与"这是抄来的"。
+        async with session_factory() as session:
+            created = (
+                await session.execute(select(DailyGoal).where(DailyGoal.goal_date == today))
+            ).scalar_one_or_none()
+            assert created is None, "沿用同样不许有副作用"
+    finally:
+        async with session_factory() as session:
+            await session.execute(
+                delete(DailyGoal).where(DailyGoal.goal_date.in_([past, today, future]))
+            )
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_goal_prefers_the_latest_row_before_the_day() -> None:
+    """多份历史时抄最近的那一份，不是最早的那一份。"""
+    old, newer, ask = date(2034, 8, 11), date(2034, 8, 13), date(2034, 8, 14)
+    try:
+        await board_store.put_goal(old, "第一版清单")
+        await board_store.put_goal(newer, "改过的那版")
+        got = await board_store.get_goal(ask)
+        assert got["goal_text"] == "改过的那版"
+        assert got["carried_from"] == "2034-08-13"
+        # 有行的那天不该被抄：拿自己那份，carried_from 为空
+        own = await board_store.get_goal(newer)
+        assert own["carried_from"] is None
+        assert own["goal_text"] == "改过的那版"
+    finally:
+        async with session_factory() as session:
+            await session.execute(
+                delete(DailyGoal).where(DailyGoal.goal_date.in_([old, newer, ask]))
+            )
+            await session.commit()
 
 
 @pytest.mark.asyncio
@@ -406,12 +469,62 @@ async def test_goal_put_then_read_back_through_http(client) -> None:
         assert got.status_code == 200, got.text
         assert got.json()["goal_text"] == "挑 5 条改开头"
         assert got.json()["goal_date"] == "2034-07-08"
-        # 读不许建行：换一天读，回的是空文本
-        empty = await client.get("/api/pipeline/goal/2034-07-09")
-        assert empty.json() == {"goal_date": "2034-07-09", "goal_text": "", "updated_at": None}
+        # D-220 之后这条判据换了形状：换一天读，回的是**上一份清单**（沿用），
+        # 而不是空文本。原来断言的是「每天都是新的空目标」，那个模型被用户否掉了
+        # ——待办是长期一份，所以这里现在钉的是「抄来了 + 仍然不建行」。
+        carried = await client.get("/api/pipeline/goal/2034-07-09")
+        assert carried.json() == {
+            "goal_date": "2034-07-09",
+            "goal_text": "挑 5 条改开头",
+            "updated_at": carried.json()["updated_at"],
+            "carried_from": "2034-07-08",
+        }
+        assert carried.json()["updated_at"], "沿用那份也要带上它真正被写的时间"
+        async with session_factory() as session:
+            n = (
+                await session.execute(
+                    select(DailyGoal).where(DailyGoal.goal_date == date(2034, 7, 9))
+                )
+            ).scalar_one_or_none()
+        assert n is None, "沿用同样不许有副作用"
     finally:
         async with session_factory() as session:
-            await session.execute(delete(DailyGoal).where(DailyGoal.goal_date == day))
+            await session.execute(
+                delete(DailyGoal).where(DailyGoal.goal_date.in_([day, date(2034, 7, 9)]))
+            )
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_goal_carries_forward_over_http_and_on_the_board(client) -> None:
+    """长期清单必须同时到位两处：`/goal/{day}` 与看板 `/board` 读的是同一个 `get_goal`。
+
+    只测一个端点会漏掉另一半——看板的悬浮栏读的是 `/board` 里那份 `goal_text`，
+    如果只有 `/goal` 会沿用，界面白天看到的仍是空清单。
+    """
+    src, ask = date(2034, 9, 1), date(2034, 9, 2)
+    try:
+        put = await client.put(f"/api/pipeline/goal/{src}", json={"goal_text": "- [x] 捞 5 条"})
+        assert put.status_code == 200, put.text
+        got = await client.get(f"/api/pipeline/goal/{ask}")
+        assert got.json()["goal_text"] == "- [x] 捞 5 条"
+        assert got.json()["carried_from"] == "2034-09-01"
+
+        board = await client.get(
+            "/api/pipeline/board",
+            params={
+                "date": "2034-09-02",
+                "from": "2034-09-01T16:00:00Z",
+                "to": "2034-09-02T16:00:00Z",
+            },
+        )
+        assert board.status_code == 200, board.text
+        body = board.json()
+        assert body["goal_text"] == "- [x] 捞 5 条"
+        assert body["goal_carried_from"] == "2034-09-01"
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(DailyGoal).where(DailyGoal.goal_date.in_([src, ask])))
             await session.commit()
 
 

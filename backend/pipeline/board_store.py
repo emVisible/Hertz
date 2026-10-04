@@ -26,23 +26,55 @@ from backend.models.session import session_factory
 GOAL_MAX_CHARS = 4000
 
 
-def _shape(row: DailyGoal | None, day: date) -> dict:
+def _shape(row: DailyGoal | None, day: date, carried_from: str | None = None) -> dict:
     if row is None:
-        return {"goal_date": day.isoformat(), "goal_text": "", "updated_at": None}
+        return {
+            "goal_date": day.isoformat(),
+            "goal_text": "",
+            "updated_at": None,
+            "carried_from": None,
+        }
     return {
-        "goal_date": row.goal_date.isoformat(),
+        # 日期回的是**被问的那一天**：抄来的那份也代表今天该做什么，
+        # 而来源由 `carried_from` 单独说——把源日期塞进 `goal_date` 会让界面以为
+        # 「今天已经有行了」，第一次保存就会写到别的日期上去。
+        "goal_date": day.isoformat(),
         "goal_text": row.goal_text or "",
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "carried_from": carried_from,
     }
 
 
 async def get_goal(day: date) -> dict:
-    """取某天的目标；没有那一行时回答空文本，**不**建行（读不该有副作用）。"""
+    """取某天的待办清单。
+
+    长期一份、每天重写这件事用户否掉了（D-220）：「这个待办基本上是一段时间或者很长
+    一段时间我才需要修改一次……我每次保存就几乎等于永久保存，每天都是这个任务」。
+    所以那天没有行时**沿用不超过那天的最近一份**，仍然不建行。
+
+    两件刻意不做的事：
+    * **不在这里洗勾选**。后端只回答"抄哪一份"和"这是抄来的"；一行怎么算勾着、取消勾选
+      长什么样，判据只有一个作者（`frontend/src/core/goalChecklist.ts`）。在这儿再实现
+      一遍 `- [x]`，两边就会漂成两套勾选语义。
+    * **不往后抄**。查未来那天不该拿到今天的清单，所以条件是 `goal_date <= day`。
+    """
     async with session_factory() as session:
         row = (
             await session.execute(select(DailyGoal).where(DailyGoal.goal_date == day))
         ).scalar_one_or_none()
-        return _shape(row, day)
+        if row is not None:
+            return _shape(row, day)
+        prior = (
+            await session.execute(
+                select(DailyGoal)
+                .where(DailyGoal.goal_date <= day)
+                .order_by(DailyGoal.goal_date.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if prior is None:
+            return _shape(None, day)
+        return _shape(prior, day, carried_from=prior.goal_date.isoformat())
 
 
 async def put_goal(day: date, goal_text: str) -> dict:

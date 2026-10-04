@@ -8,6 +8,9 @@
  *
  * 仍然**不编辑目标文字**（textarea 只在「设置 → 每日目标」），这里只有勾选这一个写动作；
  * 勾选写回同一段文本，判据唯一作者 `core/goalChecklist.ts`。
+ *
+ * D-220 又改了一件事：这份清单是**长期一份**，不是每天重写。没写过的那一天沿用最近一份
+ * 并洗掉昨天的勾（`goal_carried_from` 非空时），小字因此会显示「沿自 10 月 3 日」。
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,7 +20,7 @@ import { useTranslation } from 'react-i18next'
 import { pipelineApi } from '../../api'
 import { Button, Icon, QueryErrorState } from '../../components/ui'
 import { GOAL_MAX_CHARS, wallDay } from '../../core/boardWindow'
-import { goalProgress, parseGoalLines, toggleGoalLine } from '../../core/goalChecklist'
+import { clearGoalTicks, goalProgress, parseGoalLines, toggleGoalLine } from '../../core/goalChecklist'
 
 export function TodayPanel({ onGoGoal }: { onGoGoal: () => void }) {
   const { t } = useTranslation()
@@ -25,7 +28,11 @@ export function TodayPanel({ onGoGoal }: { onGoGoal: () => void }) {
   const [day, setDay] = useState(() => wallDay())
   const boardQuery = useQuery({ queryKey: ['pipeline-board', day], queryFn: () => pipelineApi.board(day) })
   const data = boardQuery.data
-  const stored = data?.goal_text ?? ''
+  /** D-220：清单是长期一份。那天还没写过就沿用最近一份（`goal_carried_from` 非空），
+   *  并把昨天的勾洗掉——这份是每天重复的例行事项，昨天的完成不算今天的完成。
+   *  洗法在 `clearGoalTicks`（与勾选同一作者），后端只管"抄哪一份"。 */
+  const carried = data?.goal_carried_from ?? null
+  const stored = data ? (carried ? clearGoalTicks(data.goal_text) : data.goal_text) : ''
 
   /** 勾选后的文本先留在本地（带 `day`，换日期自动作废），成功再拿**后端回读**那行覆盖。
    *  不做乐观写入的话，连点两下会以同一份旧文本各发一次 PUT，后一次把前一次的勾抹掉。 */
@@ -143,14 +150,25 @@ export function TodayPanel({ onGoGoal }: { onGoGoal: () => void }) {
         <button type="button" onClick={onGoGoal} className="transition-colors hover:text-primary">
           {t('dashboard.goalEditText')}
         </button>
-        {data?.goal_updated_at && (
+        {carried ? (
           <button
             type="button"
             onClick={onGoGoal}
             className="ml-auto font-mono transition-colors hover:text-primary"
+            title={t('dashboard.goalCarriedHint')}
           >
-            {t('console.boardGoalSavedAt', { at: new Date(data.goal_updated_at).toLocaleDateString() })}
+            {t('dashboard.goalCarriedFrom', { day: carried })}
           </button>
+        ) : (
+          data?.goal_updated_at && (
+            <button
+              type="button"
+              onClick={onGoGoal}
+              className="ml-auto font-mono transition-colors hover:text-primary"
+            >
+              {t('console.boardGoalSavedAt', { at: new Date(data.goal_updated_at).toLocaleDateString() })}
+            </button>
+          )
         )}
       </p>
     </section>

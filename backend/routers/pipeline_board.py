@@ -85,13 +85,15 @@ async def get_board(
         "published_to": to_iso,
         "goal_text": goal["goal_text"],
         "goal_updated_at": goal["updated_at"],
+        # 长期清单沿用时给界面一句「沿自哪天」（D-220）；今天自己写过的话是 null
+        "goal_carried_from": goal["carried_from"],
         **parts,
     }
 
 
 @router.get("/goal/{day}")
 async def get_goal(day: date) -> dict:
-    """某天的每日目标（没有那一行时回空文本，不建行）。"""
+    """某天的待办清单。那天没有行时沿用最近一份（`carried_from` 说明是哪天），仍不建行。"""
     return await board_store.get_goal(day)
 
 

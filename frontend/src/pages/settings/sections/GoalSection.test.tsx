@@ -23,6 +23,8 @@ vi.mock('react-i18next', async (importOriginal) => {
 const calls: Record<string, unknown[][]> = { goal: [], saveGoal: [] }
 const DAY = wallDay()
 const OTHER = '2034-07-04'
+/** 没写过的一行清单会被沿用（D-220），mock 里让这天返回 carried_from + 带勾的原文 */
+const CARRIED = '2034-07-05'
 
 vi.mock('../../../api', () => ({
   pipelineApi: new Proxy(
@@ -33,10 +35,21 @@ vi.mock('../../../api', () => ({
         (...args: unknown[]) => {
           if (prop in calls) calls[prop].push(args)
           if (prop === 'goal') {
+            const asked = args[0]
+            if (asked === CARRIED) {
+              return Promise.resolve({
+                goal_date: CARRIED,
+                goal_text: '- [x] 捞 5 条进今日\n改完 3 个开头',
+                updated_at: '2034-07-04T01:00:00+00:00',
+                carried_from: OTHER,
+              })
+            }
             return Promise.resolve({
-              goal_date: args[0],
-              goal_text: args[0] === DAY ? '库里今天' : '库里那天',
+              goal_date: asked,
+              // 历史那天保留它自己的勾（翻回 07-04 要看见当天做了什么）
+              goal_text: asked === DAY ? '库里今天' : '- [x] 那天自己的条目',
               updated_at: null,
+              carried_from: null,
             })
           }
           if (prop === 'saveGoal') {
@@ -90,9 +103,22 @@ describe('GoalSection 的接缝', () => {
 
     fireEvent.change(box, { target: { value: '这条只属于今天' } })
     fireEvent.change(screen.getByLabelText('settings.goalDay'), { target: { value: OTHER } })
-    await waitFor(() => expect(box).toHaveValue('库里那天'))
+    await waitFor(() => expect(box).toHaveValue('- [x] 那天自己的条目'))
     expect(calls.goal.some((a) => a[0] === OTHER)).toBe(true)
 
+    fireEvent.click(screen.getByText('settings.save'))
+    expect(calls.saveGoal.length).toBe(0)
+  })
+
+  it('没写过的那天沿用最近一份：洗掉勾、说明沿自哪天，且这不算"改过"（D-220）', async () => {
+    render(<GoalSection />, { wrapper })
+    const box = await screen.findByRole('textbox')
+    await waitFor(() => expect(box).toHaveValue('库里今天'))
+
+    fireEvent.change(screen.getByLabelText('settings.goalDay'), { target: { value: CARRIED } })
+    // 洗过勾的版本：基线就是它，所以保存按钮仍是未点亮——不该一进来就"有未保存修改"
+    await waitFor(() => expect(box).toHaveValue('- [ ] 捞 5 条进今日\n改完 3 个开头'))
+    expect(await screen.findByText(/dashboard\.goalCarriedFrom/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('settings.save'))
     expect(calls.saveGoal.length).toBe(0)
   })

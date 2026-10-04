@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next'
 import { pipelineApi } from '../../../api'
 import { Button, Icon, QueryErrorState } from '../../../components/ui'
 import { GOAL_MAX_CHARS, wallDay } from '../../../core/boardWindow'
+import { clearGoalTicks } from '../../../core/goalChecklist'
 import { heading, section, sub } from './shared'
 
 export function GoalSection() {
@@ -29,7 +30,15 @@ export function GoalSection() {
     queryKey: ['daily-goal', day],
     queryFn: () => pipelineApi.goal(day),
   })
-  const stored = goalQuery.data?.goal_text ?? ''
+  /** D-220：清单长期一份。没写过的那一天沿用最近一份，并把勾洗掉——今天的完成
+   *  要从今天开始数。洗法与勾选同一作者（`core/goalChecklist`），这里只决定"什么时候洗"：
+   *  只有 `carried_from` 非空（不是那天自己那行）才洗，翻回历史某天要看它自己的勾。 */
+  const carried = goalQuery.data?.carried_from ?? null
+  const stored = goalQuery.data
+    ? carried
+      ? clearGoalTicks(goalQuery.data.goal_text)
+      : goalQuery.data.goal_text
+    : ''
 
   /** 草稿 = 「哪天 + 改没改过」合在一起的一份状态（不能拆成 `useState(text)` + 同步 effect）。
    *  带 `day` 之后「换过日期仍然拿着上一天的文字去保存」这件事在类型里就不可能发生了。 */
@@ -69,6 +78,11 @@ export function GoalSection() {
             <Button size="sm" variant="ghost" onClick={() => setDay(wallDay())}>
               {t('settings.goalToday')}
             </Button>
+          )}
+          {carried && (
+            <span className="text-[10px] text-text-disabled">
+              {t('dashboard.goalCarriedFrom', { day: carried })} · {t('dashboard.goalCarriedHint')}
+            </span>
           )}
           <span className="ml-auto text-[10px] text-text-disabled">
             {shown.length} / {GOAL_MAX_CHARS}

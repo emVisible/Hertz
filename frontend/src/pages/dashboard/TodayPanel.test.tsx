@@ -130,6 +130,21 @@ describe('今日待办悬浮栏的接缝', () => {
     expect(await screen.findByText('dashboard.goalTooLong')).toBeInTheDocument()
   })
 
+  it('沿用最近一份时洗掉昨天的勾，并说清沿自哪天（D-220）', async () => {
+    currentBoard = {
+      ...boardFixture,
+      goal_text: '- [x] 捞 5 条进今日\n改完 3 个开头',
+      goal_carried_from: '2034-08-01',
+    }
+    render(<TodayPanel onGoGoal={vi.fn()} />, { wrapper })
+    const boxes = await screen.findAllByRole('checkbox')
+    expect(boxes).toHaveLength(2)
+    expect(boxes[0], '昨天勾过的不该算今天的完成').not.toBeChecked()
+    expect(await screen.findByText('dashboard.goalCarriedFrom')).toBeInTheDocument()
+    // 「上次保存」这时不该出现——它是昨天那次保存的时间，画在今天会被读成数据陈旧
+    expect(screen.queryByText('console.boardGoalSavedAt')).toBeNull()
+  })
+
   it('最简指标用的是后端的 progress，不是列表长度', async () => {
     render(<TodayPanel onGoGoal={vi.fn()} />, { wrapper })
     // 先等到数据上屏（清单渲染出来才算），否则取到的是首帧的 0

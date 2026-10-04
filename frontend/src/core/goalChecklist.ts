@@ -70,6 +70,25 @@ export function toggleGoalLine(text: string, index: number): string {
   return lines.join(eol)
 }
 
+/** 把每一项勾掉（v0.34 D-220）。
+ *
+ * 沿用昨天的清单到今天时，昨天的勾**不算今天的完成**——这份清单是每天重复的例行事项。
+ * 洗勾只发生在界面读到 `carried_from` 非空的那一刻：后端只回答"抄哪一份"，
+ * 一行怎么算勾着、取消勾长什么样仍然由这一个作者说了算（Python 侧再实现一遍就会漂）。
+ * 没带标记的行原样留着，正文与行序一个字都不动。
+ */
+export function clearGoalTicks(text: string): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  return text
+    .split(/\r?\n/)
+    .map((raw) => {
+      const m = MARKED.exec(raw)
+      if (!m || m[2] === ' ') return raw
+      return `${m[1]}- [ ] ${m[3]}`
+    })
+    .join(eol)
+}
+
 /** 「已完成 x / y」——分母只数非空行。 */
 export function goalProgress(lines: GoalLine[]): { done: number; total: number } {
   const todos = lines.filter((l) => !l.blank)
