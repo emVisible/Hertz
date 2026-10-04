@@ -18,6 +18,7 @@ import {
 } from '../../../components/execution'
 import { ProduceBatchModal } from '../../../components/execution/ProduceBatchModal'
 import type { PipelineViewProps } from './shared'
+import type { PreStage } from '../../../stores/execution'
 
 // 排序要素（v0.3.12 两维度：要素 × 方向）
 const PRE_SORT_FIELDS: SortField[] = [
@@ -26,8 +27,6 @@ const PRE_SORT_FIELDS: SortField[] = [
   { id: 'produce', labelKey: 'console.sort.produce' },
   { id: 'updated', labelKey: 'console.sort.updated' },
 ]
-
-export type PreStage = 'discovered' | 'scored' | 'downloaded'
 
 interface PreReviewTabProps {
   p: PipelineViewProps

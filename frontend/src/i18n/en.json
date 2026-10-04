@@ -759,7 +759,6 @@
     "tidDefault": "Default partition (empty)",
     "approvedHint": "Approved — handle it in the Board tab's ready column",
     "recentPublishes": "Recent publishes",
-    "stageBoard": "Board",
     "boardDay": "Board date",
     "boardToday": "Today",
     "boardRefresh": "Refresh",
@@ -1288,6 +1287,7 @@
     "failures": "Failure distribution",
     "failuresEmpty": "No failures recorded",
     "insightTitle": "Channel insights",
+    "monitorTitle": "Operations (trends · failures · cost · queue capacity)",
     "insightRegenerate": "Re-analyze",
     "insightPref": "Prefers",
     "insightAvoid": "Avoid"

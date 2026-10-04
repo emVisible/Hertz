@@ -6,11 +6,12 @@ import { TabBar } from '../../components/ui'
 import type { SortSpec } from '../../components/execution'
 import { useBatchSelect } from '../../hooks/useBatchSelect'
 import { RunTab } from './pipeline/RunTab'
-import { PreReviewTab, type PreStage } from './pipeline/PreReviewTab'
+import { PreReviewTab } from './pipeline/PreReviewTab'
 import { InReviewTab, type BatchRunAction } from './pipeline/InReviewTab'
 import { ExceptionsTab, type ExSubTabId } from './pipeline/ExceptionsTab'
-import { BoardTab } from './pipeline/BoardTab'
 import { ScriptWorkshop } from '../../components/execution/ScriptWorkshop'
+import { useExecutionStore } from '../../stores/execution'
+import type { PreStage } from '../../stores/execution'
 import { PIPELINE_TABS, type PipelineTabId, type PipelineViewProps } from './pipeline/shared'
 
 // ================= Pipeline 域 =================
@@ -24,8 +25,11 @@ export function PipelineView(p: PipelineViewProps) {
   // 预处理排序（v0.3.12）：要素 × 方向两维度；默认 入库序+降序（最新在前）
   const [preSort, setPreSort] = useState<SortSpec>({ field: 'seq', dir: 'desc' })
   // 预处理阶段子菜单（v0.8.8）：未评分 / 已评分未下载 / 已下载未加工——
-  // 点击切换查看对应阶段数据（原下拉折叠分组改为菜单导航；待审核归审核页签）
-  const [preStage, setPreStage] = useState<PreStage>('downloaded')
+  // v0.34：这份状态搬进 `stores/execution`（不再 local state）——顶级看板的
+  // 「去未评分筛素材」动线在另一个页面上，它要一次把「分段 + 三轴 + tab」都设好；
+  // 留在壳里就跨不过去，动线只能做成半根线（上轮实测到的）。
+  const preStage = useExecutionStore((s) => s.pipeline.preStage)
+  const setPreStage = (v: PreStage) => useExecutionStore.getState().setPipeline({ preStage: v })
   const sortPreList = useMemo(() => {
     const seqOf = (item: PipelineItem) => item.seq ?? (item.created_at ? Date.parse(item.created_at) : 0)
     const updatedOf = (item: PipelineItem) =>
@@ -321,18 +325,6 @@ export function PipelineView(p: PipelineViewProps) {
           />
         )}
 
-        {pTab === 'board' && (
-          <BoardTab
-            p={p}
-            onGoUnscored={() => {
-              // 动线的三件事必须由壳一次做完：设两轴、切到「未评分」分段、换 tab。
-              // 少切分段就会落在「已下载未加工」上，那条筛选条根本不渲染。
-              p.setPreFilters({ preTheme: 'sentiment', preHasText: 'yes' })
-              setPreStage('discovered')
-              p.setTab('preReview')
-            }}
-          />
-        )}
       </div>
     </div>
   )

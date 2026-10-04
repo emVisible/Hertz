@@ -27,11 +27,19 @@ export interface StudioExecState {
   depth: string
 }
 
+/** 预处理页的次级分段（未评分 / 已评分未下载 / 已下载未加工）。
+ *  类型与状态同在 store：看板的「去未评分筛素材」动线在**另一个页面**（顶级看板），
+ *  它必须能同时设「分段 + 三轴 + tab」，所以这三件事得是同一个作者名下的状态。
+ *  （放在 `PreReviewTab.tsx` 里就会变成「页面持有、跨页写不到」。） */
+export type PreStage = 'discovered' | 'scored' | 'downloaded'
+
 export interface PipelineExecState {
   step: string
   limit: number
   /** 流水线平铺菜单当前部分（wave13：跨模式切换保持上下文） */
   tab: string
+  /** 预处理页的次级分段（v0.34：为跨页动线搬进 store，见 `PreStage` 注释） */
+  preStage: PreStage
   /** 未评分区筛选轴（v0.34 A）：与 tab/limit 同一作者——离开页面再回来要保住，
    *  且必须随请求发送（服务端筛）。默认三轴全是「全部」：**不**默认情感，
    *  否则用户第一次打开会以为数据变少了。 */
@@ -80,9 +88,11 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
   pipeline: {
     step: 'collect',
     limit: 10,
-    // v0.34 B：默认落看板（spec §4.4b）。菜单里第 1 位仍是「运行」——那是每天第一眼
-    // 要扫的东西，而看板是每天要**守**的东西，两者不是一回事，别把顺序当成默认值。
-    tab: 'board',
+    // v0.34：看板搬到顶级菜单后，流水线自己默认开在「预处理」——那是每天真正
+    // 动手的地方（未评分筛选 + 下载/评分/制作），而「今天要做什么」看顶级看板。
+    tab: 'preReview',
+    /** 分段默认「已下载未加工」（沿用 v0.8.8 以来的习惯：进页面先看能直接做的活） */
+    preStage: 'downloaded',
     // v0.34 A：未评分区三轴默认「全部」——默认情感会让第一次打开像是数据变少了
     preTheme: 'all',
     preQuality: 'all',

@@ -1,23 +1,28 @@
-/** tab 结构守卫（v0.34 B）：这次是**融合**，不是加东西。
+/** tab 结构守卫（v0.34）：看板在**顶级菜单**那一页，流水线自己只剩 5 个子 tab。
  *
- * 用户在抱怨「队列/日历结构没用」的同时要了看板。加一级 tab 会变成 7 个并列项——
- * 恰好在被抱怨的地方加东西。所以验收判据就是「同级项不升」，这一条先钉死；
- * 顺手钉两件同轮的既成事实：默认页签、以及被看板上收的两个视图不会自己回来。
+ * 两条规则都来自用户亲口纠正，不是审美偏好：
+ * ① 需求是「融合」而不是「加东西」——同级项不许上升（先是 6→6 把发布 tab 换掉，
+ *    后来整体搬到顶级页，流水线降到 5）；
+ * ② 他说的「看板」从来指导航栏那一页（进软件默认落到的 `/dashboard`），
+ *    所以看板必须挂在那一页上，而不是藏在流水线的子菜单里。
+ * 双向钉：只测「流水线里没有 board」会奖励搬错地方——所以同时测「dashboard 真挂了它」。
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { PIPELINE_TABS } from './shared'
+import { goUnscoredPatch } from '../../../core/boardWindow'
 import { useExecutionStore } from '../../../stores/execution'
 
-describe('流水线 tab 结构', () => {
-  it('数量仍是 6（看板替换发布，不是加在旁边）', () => {
-    expect(PIPELINE_TABS).toHaveLength(6)
+const SRC = resolve(process.cwd(), 'src')
+const read = (rel: string) => readFileSync(resolve(SRC, rel), 'utf-8')
+
+describe('流水线子菜单与看板归属', () => {
+  it('流水线只剩 5 个子 tab，board 不在其中', () => {
     expect(PIPELINE_TABS.map((tb) => tb.id)).toEqual([
       'run',
-      'board',
       'workshop',
       'preReview',
       'inReview',
@@ -25,27 +30,45 @@ describe('流水线 tab 结构', () => {
     ])
   })
 
-  it('postReview 这个 id 不再存在，且看板带上了原发布 tab 的计数口径', () => {
+  it('原发布 tab 不回潮（postReview 这个 id 彻底不存在）', () => {
     const ids = PIPELINE_TABS.map((tb) => tb.id as string)
     expect(ids).not.toContain('postReview')
-    const board = PIPELINE_TABS.find((tb) => tb.id === 'board')
-    expect(board?.countKeys).toEqual(['approved', 'published'])
+    expect(ids).not.toContain('board')
   })
 
-  it('默认页签是看板（作者只有 stores/execution 的初始 state）', () => {
-    // 读活存储的当前值而不是复制一份常量：jsdom 里 localStorage 是空的，
-    // persist 没有可回灌的旧值，拿到的就是 create() 里那份初始 state。
-    expect(useExecutionStore.getState().pipeline.tab).toBe('board')
+  it('看板挂在顶级「看板」页上（搬错地方同样算失败）', () => {
+    const dash = read('pages/dashboard/DashboardPage.tsx')
+    expect(dash).toContain('<BoardTab')
+    expect(existsSync(resolve(SRC, 'pages/dashboard/BoardTab.tsx'))).toBe(true)
+    // 反向：流水线的壳里不该再留任何渲染分支
+    expect(read('pages/execution/PipelineView.tsx')).not.toContain('BoardTab')
   })
 
-  it('被撤掉的三个视图文件不会自己回来', () => {
-    // 正向腿在下面：`board` 那个文件必须真的在——只测「旧文件没了」的守卫，
-    // 删掉新界面照样全绿（v0.33 那条「只禁旧形状的守卫」教训）。
-    const src = (rel: string) => resolve(process.cwd(), 'src', rel)
-    expect(existsSync(src('pages/execution/CalendarView.tsx'))).toBe(false)
-    expect(existsSync(src('pages/execution/calendar.ts'))).toBe(false)
-    expect(existsSync(src('components/execution/QueueView.tsx'))).toBe(false)
-    expect(existsSync(src('pages/execution/pipeline/PostReviewTab.tsx'))).toBe(false)
-    expect(existsSync(src('pages/execution/pipeline/BoardTab.tsx'))).toBe(true)
+  it('流水线默认落在「预处理」（看板已不在流水线里）', () => {
+    expect(useExecutionStore.getState().pipeline.tab).toBe('preReview')
+  })
+
+  it('跨页动线一次改齐四件事：两轴 + 分段 + tab', () => {
+    // 上一版只设了两轴，用户跳过去落在「已下载未加工」——筛选条压根不渲染。
+    expect(goUnscoredPatch()).toEqual({
+      preTheme: 'sentiment',
+      preHasText: 'yes',
+      preStage: 'discovered',
+      tab: 'preReview',
+    })
+    // 分段状态必须在 store 里：页面 local state 跨不过去
+    expect('preStage' in useExecutionStore.getState().pipeline).toBe(true)
+  })
+
+  it('被撤掉的四个视图文件不会自己回来', () => {
+    for (const rel of [
+      'pages/execution/CalendarView.tsx',
+      'pages/execution/calendar.ts',
+      'components/execution/QueueView.tsx',
+      'pages/execution/pipeline/PostReviewTab.tsx',
+      'pages/execution/pipeline/BoardTab.tsx',
+    ]) {
+      expect(existsSync(resolve(SRC, rel))).toBe(false)
+    }
   })
 })

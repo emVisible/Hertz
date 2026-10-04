@@ -101,6 +101,15 @@ Whisper 与翻译模型搬进应用数据目录（`HERTZ_DATA_DIR/models/whisper
 - **`lsof -ti tcp:$PORT` 连客户端一起返回**：实测造一个监听者 + 一个已连接客户端，不加限制时返回 3 个 pid——也就是浏览器开着 dev 页面时脚本会去 kill 浏览器。加 `-sTCP:LISTEN` 后只返回监听者。这个危险在改之前就存在。
 - 验证用真复现体（`signal(SIGTERM, SIG_IGN)` 的监听者，确认 `kill -TERM` 后仍 LISTEN）：新 `free_port` 强杀成功、`FREE_RC=0`、已连接的客户端进程存活；空端口直接返回 0。
 
+### 看板归位：搬到顶级菜单那一页（v0.34，D-216 覆盖 D-213 的位置那半）
+
+用户看到实现后纠正：「我说的看板是放在顶级 menu 栏里，也就是进入软件默认的看板页面中，而不是流水线本身的子 menu 里」。顶级导航第 1 项本来就叫「看板」（`/dashboard`，且没有 `/` 路由时默认兜到它）——**我把他嘴里的「看板」当成了要新建的东西，其实那是个已存在的界面**。
+
+- `BoardTab` 移到 `pages/dashboard/`，挂在 `/dashboard` 第一屏；原本那套只读评估面板（趋势 / 失败 / 成本 / 队列产能 / 频道洞察）**下移保留**，中间加一条「运营面板」分区标题——两块共用一页但不是一件事，没被点名删的东西不顺手清掉。
+- 流水线子 tab **6→5**（`run / workshop / preReview / inReview / exceptions`），默认落「预处理」。发布入口跟着看板走，复用的还是同一批 `PublishCard`，所以依旧只有一套发布入口。
+- 两个连带改动：① `preStage` 从 `PipelineView` 的 local state 搬进 `stores/execution`，动线要改的四件事（两轴 + 分段 + tab）抽成 `core/boardWindow.goUnscoredPatch()`——跨页了才暴露出「分段留在壳里就设不到」，上一版那根半根线（跳过去落在「已下载未加工」、筛选条不渲染）从此有了守卫；② `BoardTab` 的 props 从整包 `PipelineViewProps` 收窄成 `Pick<ReturnType<typeof usePipelineExecution>, …>`：不在主壳里就拿不到那些字段，为过类型编假值比声明真实需求糟。
+- 这不算「加东西」，§4.4b 的「同级项不许上升」没被推翻：顶级页从「只读统计」变成「能干活的今天」，流水线一侧是净减一项。
+
 ### v0.34 的验证账（数字由命令产生，不心算）
 
 - 源码门禁 `./scripts/verify.sh` 五段全绿多次；最后一次于设置节那块之后：**ruff 0、全量 pytest 587 passed、tsc 0、vitest 17 文件 77 tests、vite build OK**。基线从 v0.33 准备时的 521 涨到 587（A +25、C-code +16、B 后端与界面 +22、设置节 +3、dev.sh 与 i18n 门禁带来的增减另计）。

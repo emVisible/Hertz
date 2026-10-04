@@ -774,7 +774,6 @@
     "tidDefault": "默认分区（留空）",
     "approvedHint": "已通过审核，请在「看板」的待发布列处理",
     "recentPublishes": "最近发布",
-    "stageBoard": "看板",
     "boardDay": "看板日期",
     "boardToday": "今天",
     "boardRefresh": "刷新",
@@ -1288,6 +1287,7 @@
     "failures": "失败分布",
     "failuresEmpty": "暂无失败记录",
     "insightTitle": "频道洞察",
+    "monitorTitle": "运营面板（趋势 · 失败 · 成本 · 队列产能）",
     "insightRegenerate": "重新分析",
     "insightPref": "偏好",
     "insightAvoid": "避开"

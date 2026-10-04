@@ -146,7 +146,6 @@ describe('i18n 目录', () => {
     const zh = new Set(leafKeys(catalog('zh')))
     const en = new Set(leafKeys(catalog('en')))
     const needed = [
-      'console.stageBoard',
       'console.boardProgress',
       'console.boardGoalSave',
       'console.boardColFocus',
@@ -167,7 +166,7 @@ describe('i18n 目录', () => {
     expect(missingEn, `英文缺：${missingEn.join(', ')}`).toEqual([])
     // 引用面核对：BoardTab 里出现的 board* 键必须都在目录里（防「界面写了新键、
     // 目录没加」——那正是这条守卫要防的形状，而不是只测我手抄的这份名单）
-    const boardTab = readFileSync(join(SRC, 'pages', 'execution', 'pipeline', 'BoardTab.tsx'), 'utf-8')
+    const boardTab = readFileSync(join(SRC, 'pages', 'dashboard', 'BoardTab.tsx'), 'utf-8')
     const used = [...boardTab.matchAll(/console\.board[A-Za-z0-9]*/g)].map((m) => m[0])
     expect(used.length, 'BoardTab 里一个 board* 键都没找到=正则或文件路径错了') .toBeGreaterThan(10)
     const absent = [...new Set(used)].filter((k) => !zh.has(k))

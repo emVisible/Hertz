@@ -35,6 +35,22 @@ export function dayWindow(day: string): { from: string; to: string } {
   return { from: start.toISOString(), to: end.toISOString() };
 }
 
+/** 「去看未评分区筛情感素材」这一跳要一次改齐的四件事（v0.34 顶级看板 → 流水线）。
+ *
+ * 为什么抽成函数而不是在页面里手写字面量：这条动线上过一版就是**半根线**——只设了
+ * 两轴、没设分段，用户跳过去落在「已下载未加工」上，那条筛选条根本不渲染，看起来
+ * 像「筛不出东西」。四件事（轴 ×2 + 分段 + tab）缺一个就是同一个 bug，所以它们
+ * 得是一个值，且可测。
+ */
+export function goUnscoredPatch(): {
+  preTheme: 'sentiment'
+  preHasText: 'yes'
+  preStage: 'discovered'
+  tab: 'preReview'
+} {
+  return { preTheme: 'sentiment', preHasText: 'yes', preStage: 'discovered', tab: 'preReview' }
+}
+
 /** 看板端点的完整 query：`date` 给今日列，`from`/`to` 给发布列。 */
 export function boardQuery(day: string): string {
   const { from, to } = dayWindow(day);

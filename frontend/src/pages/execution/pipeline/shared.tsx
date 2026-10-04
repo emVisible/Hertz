@@ -74,18 +74,19 @@ export interface PipelineViewProps {
   busy: Record<string, { action: string; title: string }>
 }
 
-export type PipelineTabId = 'run' | 'board' | 'workshop' | 'preReview' | 'inReview' | 'exceptions'
+export type PipelineTabId = 'run' | 'workshop' | 'preReview' | 'inReview' | 'exceptions'
 
 // 第三级路由：内容流水线平铺菜单（v0.2.0 审核三态）——
 // v0.8.4：采集（scheduler 自动 + 手动触发，只入 DB）｜预处理（下载/评分/生产方式/制作）
 // ｜审核（内容判断）｜发布（分发）｜异常（独立恢复区）
-// v0.34 B：**看板替换发布**（tab 数 6→6，不是加在旁边）。依据见 spec §4.4b——发布 tab
-// 的实际内容就是 approved / published 两张列表，正是看板的「待发布」「今日已发」两列，
-// 搬过去而不是复制一份，所以不产生第二套发布入口。位置放第 2 位（run 之后）而不是最前：
-// 「运行/采集运维」是每天第一眼要看的东西。异常区仍留在 exceptions，看板不承载。
+// v0.34 B：看板**替换发布**（当时 6→6）。同日用户纠正了他说的「看板」指哪一页——
+// 是**顶级菜单**那个进软件默认落到的看板（`/dashboard`），不是流水线的子菜单。
+// 于是 board 整体搬去顶级页（`pages/dashboard/BoardTab.tsx`），流水线回到 5 个子 tab；
+// 发布动作跟着走（「待发布」列在顶级看板上，复用的还是同一批 `PublishCard`）。
+// 取舍与否决方案记在 `docs/SPEC_V034_BOARD.md` §4.4b/§4.4c 与 D-216。
+// 异常区仍留在 exceptions，看板不承载（§二 非目标不变）。
 export const PIPELINE_TABS = [
   { id: 'run', labelKey: 'console.stageCollect' },
-  { id: 'board', labelKey: 'console.stageBoard', countKeys: ['approved', 'published'] },
   { id: 'workshop', labelKey: 'console.workshop' },
   { id: 'preReview', labelKey: 'console.stagePreReview', countKeys: ['discovered', 'downloaded', 'scored'] },
   { id: 'inReview', labelKey: 'console.stageAudit', countKeys: ['queued'] },

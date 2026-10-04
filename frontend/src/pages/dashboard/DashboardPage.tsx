@@ -1,11 +1,16 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 
 import { api, pipelineApi } from '../../api'
 import { aiRegistryApi } from '../../api/ai'
 import type { PipelineItem } from '../../api/pipeline'
 import { Card, Icon } from '../../components/ui'
+import { goUnscoredPatch } from '../../core/boardWindow'
+import { usePipelineExecution } from '../../hooks/usePipelineExecution'
+import { useExecutionStore } from '../../stores/execution'
+import { BoardTab } from './BoardTab'
 
 const STAGES: Array<{ key: string; labelKey: string; tone: string }> = [
   { key: 'discovered', labelKey: 'console.stageCollect', tone: 'bg-text-disabled/50' },
@@ -110,6 +115,18 @@ interface ChannelInsight {
 
 export function DashboardPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  /** 看板（v0.34 归位）：用户说的「看板」是这一页——进软件默认落到的顶级菜单页，
+   *  不是流水线的子菜单。动作层（发布/审核/捞入）复用流水线那个总线 hook，
+   *  因为查询键与 `usePipelineData` 完全相同（同一份缓存，不会多一套轮询）。 */
+  const pipeline = usePipelineExecution()
+
+  const goUnscored = () => {
+    // 四件事一次设齐（轴 ×2 + 分段 + tab）再跳过去——分开写就会漏掉分段那条，
+    // 漏了就落在「已下载未加工」上，筛选条不渲染（判据在 `goUnscoredPatch` 的测试里）。
+    useExecutionStore.getState().setPipeline(goUnscoredPatch())
+    navigate('/execution?mode=pipeline')
+  }
 
   const { data: counts = {} } = useQuery({
     queryKey: ['pipeline-counts'],
@@ -227,6 +244,18 @@ export function DashboardPage() {
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-6">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         <h1 className="text-base font-semibold text-text-primary">{t('dashboard.title')}</h1>
+
+        {/* 看板（v0.34 归位）：每天真正要守的那一屏——每日目标 + 五列，能直接捞入、
+            写备注、点发布。原本的系统评估面板（趋势/失败/成本/队列产能/洞察）一律
+            下移保留：它是另一件事（周期性看健康），没有被点名删除，不能顺手清掉。 */}
+        <BoardTab p={pipeline} onGoUnscored={goUnscored} />
+
+        {/* 上面是「今天要做什么」，下面是「这段时间做得怎样」——两块共用一页但不是一件事，
+            所以留一条分区标题，不然滚起来会分不清哪块是看板哪块是统计。 */}
+        <h2 className="mt-2 flex items-center gap-2 border-t border-border pt-4 text-sm font-semibold text-text-primary">
+          <Icon name="grid" size={14} className="text-text-secondary" />
+          {t('dashboard.monitorTitle')}
+        </h2>
 
         {/* 频道洞察（v0.19 数据飞轮）：AI 基于发布表现总结受众偏好 */}
         {insight && (

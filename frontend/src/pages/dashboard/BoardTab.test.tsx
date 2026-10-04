@@ -15,7 +15,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { wallDay } from '../../../core/boardWindow'
+import { wallDay } from '../../core/boardWindow'
 
 const tCalls: Array<[string, unknown]> = []
 // 只换掉 `useTranslation`，其余导出（`initReactI18next` 等）留给真实模块——
@@ -73,7 +73,7 @@ const boardFixture = {
   progress: { focused: 2, published_of_focus: 1 },
 }
 
-vi.mock('../../../api', () => ({
+vi.mock('../../api', () => ({
   api: { get: vi.fn(async () => ({})), post: vi.fn(async () => ({})) },
   pipelineApi: new Proxy(
     {},
@@ -100,8 +100,7 @@ vi.mock('../../../api', () => ({
   ),
 }))
 
-import { BoardTab } from './BoardTab'
-import type { PipelineViewProps } from './shared'
+import { BoardTab, type BoardActions } from './BoardTab'
 
 const wrapper = ({ children }: { children: ReactNode }) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -119,7 +118,7 @@ const p = {
   randomCover: vi.fn(),
   uploadCover: vi.fn(),
   backToPrep: vi.fn(),
-} as unknown as PipelineViewProps
+} as unknown as BoardActions
 
 const noop = () => undefined
 

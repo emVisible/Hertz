@@ -1,13 +1,15 @@
-/** 看板 tab（v0.34 B）：每日目标 + 五列（今日待办 / 在制 / 待审 / 待发布 / 今日已发）。
+/** 看板（v0.34）：**顶级菜单「看板」页的第一屏**，也就是进软件默认看到的那一屏。
+ *  每日目标 + 五列（今日待办 / 在制 / 待审 / 待发布 / 今日已发）。
  *
- * 它**替换**原发布 tab（tab 数 6→6，不是加在旁边）：发布 tab 的实际内容就是
- * `stageApproved` / `stagePublished` 两张列表，正是这里的「待发布」与「今日已发」两列，
- * 卡片组件复用同一批（`PublishCard` / `AuditCard` / `StageItemRow`），所以不产生第二套发布入口。
- * 队列与日历两个视图按用户定档撤销（「全部手动发」），撤的是界面不是字段：
- * `queue_phase` / `scheduled_at` 的读写口都还在（见 spec §4.4）。
+ * 位置为什么在顶级页而不是流水线的子菜单：用户说的「看板」从来就是导航栏那一页
+ * （`/dashboard`），他要的是「打开软件就知道今天做什么、发什么」——藏在流水线的
+ * 第 2 个子菜单里等于每天都要多点两下（D-216 覆盖 D-213 的那半）。
+ * 原发布 tab 的内容（`stageApproved` / `stagePublished` 两张列表）就是这里的
+ * 「待发布」「今日已发」两列，卡片复用同一批（`PublishCard` / `AuditCard` /
+ * `StageItemRow`），所以仍然只有一套发布入口。队列与日历按定档撤掉界面，
+ * 撤的是界面不是字段：`queue_phase` / `scheduled_at` 的读写口都还在（spec §4.4）。
  *
- * 取数自持（照原 `CalendarView` 的先例）：看板的参数是「哪一天」，不是 tab state，
- * 塞进主壳 props 只会让 `usePipelineExecution` 多背一层搬运。
+ * 取数自持：看板的参数是「哪一天」，不是 tab state。
  * 列的划分**不在这里**——唯一作者是后端 `pipeline/board.py`，前端再分一次就会漂成
  * 两套「什么叫今日待办」。
  */
@@ -16,11 +18,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { pipelineApi, type BoardColumn, type PipelineItem } from '../../../api'
-import { Badge, Button, Icon, QueryErrorState } from '../../../components/ui'
-import { AuditCard, PublishCard, StageItemRow } from '../../../components/execution'
-import { GOAL_MAX_CHARS, wallDay } from '../../../core/boardWindow'
-import type { PipelineViewProps } from './shared'
+import { pipelineApi, type BoardColumn, type PipelineItem } from '../../api'
+import { Badge, Button, Icon, QueryErrorState } from '../../components/ui'
+import { AuditCard, PublishCard, StageItemRow } from '../../components/execution'
+import { GOAL_MAX_CHARS, wallDay } from '../../core/boardWindow'
+import type { usePipelineExecution } from '../../hooks/usePipelineExecution'
+
+/** 看板需要的只是这条「动作面」，不是流水线主壳那一整包 props。
+ *  为什么现在收窄：它从前住在流水线壳里、props 由主壳下发（D-183「state 留壳」）；
+ *  搬到顶级页之后，主壳那些字段（`statusJob` / `limit` / 各种排序 state）这里根本
+ *  拿不到——为了过类型去编一份假值，比直接声明需求糟得多。
+ *  用 `Pick<ReturnType<typeof usePipelineExecution>, …>` 而不是手抄签名：签名跟着
+ *  hook 走，改了参数不会悄悄漂成两套。 */
+type PipelineBus = ReturnType<typeof usePipelineExecution>
+export type BoardActions = Pick<
+  PipelineBus,
+  'publishStatus' | 'act' | 'saveMeta' | 'publishItem' | 'randomCover' | 'uploadCover' | 'backToPrep'
+>
 
 /** 列顺序 = 工作流顺序（从「今天要动它」到「今天已经发出去」）。 */
 const COLUMN_ORDER: BoardColumn[] = ['focus', 'in_work', 'review', 'ready_to_publish', 'published_today']
@@ -34,7 +48,7 @@ const COLUMN_LABEL_KEY: Record<BoardColumn, string> = {
 }
 
 interface BoardTabProps {
-  p: PipelineViewProps
+  p: BoardActions
   /** 空态动线：切到未评分区并带上「情感 + 有正文」两轴。
    *  必须由主壳来 compose——`preStage`（未评分/已下载/已评分三个次级分段）的作者
    *  是 `PipelineView` 的 local state（「state 留壳」D-183），看板去猜它等于开第二作者，
@@ -222,7 +236,7 @@ export function BoardTab({ p, onGoUnscored }: BoardTabProps) {
 }
 
 /** 发布目标状态（原发布 tab 顶部那条警示，跟着「待发布」列走，不留孤儿告警）。 */
-function PublishStatusLine({ status }: { status: NonNullable<PipelineViewProps['publishStatus']> }) {
+function PublishStatusLine({ status }: { status: NonNullable<BoardActions['publishStatus']> }) {
   const { t } = useTranslation()
   const warn = status.noop || (status.target === 'bilibili' && !status.cookie_exists)
   return (
@@ -275,7 +289,7 @@ interface BoardRowProps {
   column: BoardColumn
   item: PipelineItem
   day: string
-  p: PipelineViewProps
+  p: BoardActions
   onPick: () => void
   onDrop: () => void
   onSaveNote: (note: string) => void
