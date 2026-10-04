@@ -121,11 +121,24 @@ Whisper 与翻译模型搬进应用数据目录（`HERTZ_DATA_DIR/models/whisper
 - 顺手收成单作者的一处：设置分区清单从前有三份字面量副本（左栏导航、`?section=` 白名单、⌘K 面板），已漂过一次（D-215 的 `norms` 进了导航没进面板）。三份合成 `SettingsNav.SETTINGS_SECTIONS`，守卫 `pages/settings/sections.test.ts`。
 - `BoardTab.tsx` 与其测试文件删除；`console.boardGoal*` 里编辑用的那些键退役（同义文案在 `settings.goal*` 重开），`console.boardColInWork` 与 `dashboard.funnel|usage|cost|monitorTitle` 随合并退役。
 
+### 看板收成两栏 + 目标变成「一行一条待办，点了就勾」（v0.34，D-218 覆盖 D-217 的栏目划分）
+
+用户第三次纠正，三条：「供给这部分的待处理不要有，没必要放这里」；「把今天和供给合在一起作为看板的默认页面，成本与健康就作为一个独立的子 menu」；「我们每次输入一行内容呢就代表着一个待办事项，所以渲染格式也需要给我优化一下，并且我每天能设置是否完成——点击一下我就完成了」。
+
+- 栏目 **3 → 2**：今天（默认，含目标清单 + 今日条目 + 今日已发 + 供给水位 + 频道洞察）｜成本与健康。
+- **一行 = 一条待办**：目标文本按行渲染成可勾选清单，点一下写回 `- [x] 那条`；主完成度改成 `待办已完成 x / y`，「已发 / 捞入」降为副行。不加列、不加迁移——勾选活在文本里，复制出去仍是一份能读的清单，换一天就是新的一行。判据唯一作者 `core/goalChecklist.ts`：未标记的行也是待办（不该为了用勾选先学会写语法）、只改被点那一行且**保留换行风格**（全文 CRLF 点一次勾不该把整段重排）、取消勾选留 `- [ ]`。
+- 看板仍**不编辑目标文字**（textarea 只在「设置 → 每日目标」），只是多了勾选这一件事。
+- **「撤视图不撤能力」这条救回一个洞**：实测 `approved` 条目自 D-213 起在整个界面里只剩看板「待发布」那一列一个落点（流水线里 `stageApproved` 只做批量选择反查，界面上也没有批处理发布按钮）。直接删那两列就等于让已过审的条目再也发不出去，所以入口搬去流水线：**审核页新增次级分段「已过审待发」**（复用同一张 `PublishCard`）+ **`TodayPick`「捞入今日」**挂到预处理 / 待审 / 已过审待发三个列表的每一行。`focus` 写点收成 `usePipelineActions.setFocus` 一处，失效同时覆盖看板那份缓存与流水线的阶段/计数。
+- 待发那一段**不给**待审的搜索/低分/随机/排序控件（那些 state 只作用在待审列表上，画上就是「看着能筛、实际没发参数」的 UI 谎言）；分段计数用后端 `counts`（截断前）。
+- 退役六个键，其中 `console.publishHint`（「经『运行 → publish』批处理发布」）在界面上根本没有对应路径——一句假话跟着那两列一起走。
+
 ### v0.34 的验证账（数字由命令产生，不心算）
 
 - 源码门禁 `./scripts/verify.sh` 五段全绿多次；于设置节那块之后的一次：**ruff 0、全量 pytest 587 passed、tsc 0、vitest 17 文件 77 tests、vite build OK**。基线从 v0.33 准备时的 521 涨到 587（A +25、C-code +16、B 后端与界面 +22、设置节 +3、dev.sh 与 i18n 门禁带来的增减另计）。
 - **看板重设计（D-217）之后的一次，2026-10-04**：`./scripts/verify.sh` 五段全绿——ruff 0、**pytest 587 passed**、tsc 0、**vitest 20 文件 / 94 tests**、vite build OK（1,188.20 kB 入口块，与改前同量级）。测试增减：`BoardTab.test.tsx`（5 条）拆成 `TodayPanel.test.tsx`（6）+ `SupplyPanel.test.tsx`（4）+ `sections/GoalSection.test.tsx`（4），另加 `settings/sections.test.ts`（3）与 i18n 那条「每个叶子值必须是字符串」。
 - 重设计这轮的浏览器验证是在**他正在跑的那台实例**上做的（vite :3000 + `--reload` 后端 :8787，同一份工作树，所以验的就是被改的代码），并**回读库**：供给栏「捞入今日」⇒ `items.focus_date='2026-10-04'` 且今日栏 0/1；「移出今日」⇒ 回 0/0 且全表 `focus_date` 零行；设置里写目标 ⇒ `daily_goal` 落盘带 `updated_at`，看板标题显示那段字（只读），点「上次保存」跳 `/config?section=goal` 且 textarea 就是那段；三个栏目 innerText 里没有任何裸 i18n 键名。探针目标行已删回原状（`DELETE 1` ⇒ `daily_goal` 0 行）。
+- **D-218（两栏 + 勾选清单）之后的一次，2026-10-04**：`./scripts/verify.sh` 五段全绿——ruff 0、**pytest 587 passed**（后端零改动：勾选复用既有 `PUT /goal/{day}`）、tsc 0、**vitest 22 文件 / 107 tests**、vite build OK。测试增减：`core/goalChecklist.test.ts`（8 条，含「只改被点那一行」与 CRLF 保真）、`hooks/usePipelineActions.test.tsx`（2 条：`setFocus` 把 PATCH 原样发出 + 三份缓存一起失效，并带一条「它没失效的那个键确实不在清单里」的对照组）、`TodayPanel.test.tsx`（9 条，含顶到 4000 字上限时不发请求）、`SupplySection.test.tsx`（3 条）。
+- D-218 的浏览器验证同样在**他那台 `--reload` 实例**上做并回读库：设置写三行 ⇒ 看板渲染 3 个勾选框（空行不算一条）；点第二条 ⇒ 界面 `0/3 → 1/3`，库里 `goal_text` **只有那一行**前缀变成 `- [x] `，另两行一字未动；审核页「已过审待发 (2)」出 `PublishCard` 与捞入今日 ⇒ `focus_date` 落库、按钮变「已在今日」置灰 ⇒ 回看板今日列真有它 ⇒ 点移出 ⇒ 库里 `focus_date` 全表 0 行；预处理列表 2 行 2 个捞入按钮。探针目标行已 `DELETE` 回原状（`daily_goal` 0 行）。
 - 变异证据（每条新判据都验过「摘掉能力本身」会红）：窗口改成两端闭、`counts` 改用截断后长度、`focus_date` 参数收下不用、端点少传 `limit`、三处 `clear_focus` 调用任摘其一、第 8 条从 `CHECKS` 删除、回填脚本摘掉探针或把代理改回按前缀分支——各自把对应测试跑红。
 - 迁移 `wave31_board_goal` 在一次性真库 `hertz_wave31_probe` 上跑完整往返（`upgrade heads` ⇒ `downgrade -1` ⇒ 再 `upgrade`）后 `dropdb`；heads 迁移前后**都是 2**（悬空分支 `wave21_glossary_remove` 按定档不动，有测试钉住）。
 - 界面在浏览器里真用过（vite :3000 + 自建 :8899 后端 + dev 库）：看板是默认页签、五列真数据、目标保存后**换页回读仍在库里**、捞入今日 ⇒ 列 0→1 且「捞入 1」、备注失焦落库、移出回到 0、空态动线落在未评分且三轴为情感+有正文。探针数据已清干净（`daily_goal` 0 行、`focus_*` 非空 0 行，清空走 PATCH 而不是手改库）。**截图与观感未验**（browser-use 拿不到可见面，指针/视觉动作被拒），验的是结构、文本与真写库回读。
