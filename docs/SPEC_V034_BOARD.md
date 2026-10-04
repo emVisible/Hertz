@@ -177,6 +177,37 @@
    `?mode=queue`，而 `ExecutionPage` 的 reader 只认 `pipeline|monoline`，其余一律落回 `studio`
    ——书签进来看到的是 Studio。改成 `/execution?mode=pipeline`，看板正好是默认页签。
 
+### 4.4e 三栏目 + 目标与待办合为一块（2026-10-04 用户第二次纠正；**本小节覆盖 §4.4d 的界面形状那半**）
+
+用户看到 §4.4d 交付的那一屏后给了两条纠正，第二条是把第一条又往回推了一步：
+
+1. 「优化一下布局，看板分子 menu，以及现在模块有些多，其实可以合并一些功能到一起，比如今日待办和每日目标……发挥一些创造性把它放一起」；
+2. 第一版把「目标 + 待办」做成一块里的两栏，他立刻否掉：「这个每日目标还有今日代办实际上是一个东西啊，你不要给我做成两个东西啊，你这个把简单东西搞复杂了。另外这个看板只是显示了，他不做设置。那么设置每日目标的地方在那个顶级 menu 的设置里面……你单独给他做一个子 menu 出来」。
+
+覆盖后的形状：
+
+| 项 | §4.4d 交付的形状 | 现在 |
+|---|---|---|
+| 这一屏有几个模块 | 一滚到底 **16** 个（看板 6 + 运营面板 10） | **8** 个，且按栏目分：今天 1 / 供给 3 / 成本与健康 4 |
+| 分子菜单 | 无（只有一条「运营面板」分区标题） | `TabBar` 三个栏目 + `?tab=` 深链（照设置页 `?section=` 的 effect 先例） |
+| 每日目标 | 看板上一个 textarea + 保存按钮 | **看板只显示**：目标文本就是「今天」这块的标题；编辑在顶级「设置 → 每日目标」（`pages/settings/sections/GoalSection.tsx`，新子菜单） |
+| 目标与待办的关系 | 两个模块 | **一块**：标题=目标，右上角一个数=完成度，正文=今日条目，底部一条 chip 带=今日已发 |
+| 文件 | `pages/dashboard/BoardTab.tsx` | 该文件已删；`TodayPanel / SupplyPanel / HealthPanel / shared / boardActions` |
+
+四个设计判断，都不是审美：
+
+1. **合并不新增**：`今天/供给/成本与健康` 用的是既有的 `TabBar`；三个栏目读的还是那九个查询键（`pipeline-counts` / `pipeline-trends` / `pipeline-board` / `pipeline-status` / `publish-queue` / `channel-insight` / `pipeline-failures` / `ai-trace-summary` / `config`），**逐字未改**——同键同缓存，拆栏目不多开一路轮询（`SupplyPanel.test.tsx` 里那条洞察断言就是钉这件事）。
+2. **撤视图不撤能力**：待审 / 待发布两列从「列」变成供给栏里的一张卡，但每条仍挂得动 `AuditCard` / `PublishCard`——这两列是界面上**唯一**的单条过审与发布入口（原「发布」tab 已并进看板，§4.4b）。压成文字清单就等于让 approved 条目再也发不出去。卡片分派抽成 `shared.tsx::ItemCard` 一处，两个栏目共用；全仓仍只有一套动作组件。
+3. **写点留壳**：`focus` 的 PATCH（捞入 / 移出 / 备注）由 `DashboardPage` 一个 mutation 发起，两个栏目只交回调。从前看板自己那份 `goalMut` 与 `focusMut` 都在板子里，编辑处搬走后失效逻辑就会分家。
+4. **目标为什么在设置里自持一份状态、不并进设置页那份大草稿**：目标是**按天一行**存 PG（`daily_goal`），而设置页的保存是「把打开页面时的所有字段整体写回 `runtime.yaml`」。混在一起会有两个真缺陷：① 改目标点亮全局「有未保存修改」，一次无关的「保存设置」连带写回别的分区；② 挂着设置页跨天不关，草稿里的日期还是昨天，点保存把今天的想法写进昨天那一行——这正是 §4.4b 交付后我自己测出来的那个 bug，所以 `GoalSection.test.tsx` 里「换日期 ⇒ 草稿作废 ⇒ 保存按钮回到 disabled」这条继续留着，哪怕编辑器换了地方。
+
+连带收成单作者的一处：设置分区清单从前有三份字面量副本（左栏导航、`?section=` 白名单、⌘K 命令面板），实测已经漂过——`norms`（D-215）进了导航却没进面板。加「每日目标」是第三次会漏同步的地方，所以三份合成 `SettingsNav.SETTINGS_SECTIONS`（守卫 `pages/settings/sections.test.ts`，含一条同 matcher 的正对照组）。
+
+**实测数字**：`./scripts/verify.sh` 五段全绿——ruff 0、pytest **587 passed**、tsc 0、vitest **20 文件 94 tests**（重设计前 17 文件 79 tests）、vite build OK。浏览器在用户那台 `--reload` 实例（`:3000` + `:8787`，同一份工作树）上走完整闭环并**回读数据库**：供给栏「捞入今日」⇒ `items.focus_date='2026-10-04'`；「移出今日」⇒ 回到 0/0 且 `focus_date` 全表零行；设置里写目标 ⇒ `daily_goal` 落盘并带 `updated_at`；看板标题显示该文本（只读），点「上次保存」落到 `/config?section=goal` 且 textarea 是那段字；三个栏目 innerText 里没有任何裸 i18n 键名。验证产生的那行目标已删回原状（`DELETE 1`，`daily_goal` 回到 0 行）。
+
+**新增的一条门禁**（这一轮自己踩出来的）：i18n 守卫从前只比键集相等，批量加键时我把 `(中文, 英文)` 元组原样塞进了目录——两份键数一样、键集相等，五条断言全绿，而界面会渲染出 `["…","…"]`。`catalog.test.ts` 因此加了一条「每个叶子值必须是字符串」，并把看板/设置新界面的键按源码扫文本核存在性（不再只测手抄名单）。
+
+
 ### 4.5 边界与失败处理
 
 | 情况 | 行为 |
@@ -222,7 +253,7 @@
 | 各列取数与 `list_items` 参数一致（防第二作者） | `test_board_endpoint_asks_for_the_documented_columns`（替身只记 kwargs）+ `test_list_items_focus_filter_is_not_decorative`（真库，证明筛选不是摆设）+ `test_board_and_router_do_not_write_their_own_sql` |
 | `wave31` 升降级可逆 | 一次性真库 `hertz_wave31_probe` 跑完整往返后 `dropdb`；`test_wave31_joins_main_line_and_heads_stay_two` 钉住 heads 仍是 2 |
 | 列分组纯函数（一条记录 → 唯一一列） | **不在 vitest，在后端**：`board.build_columns` 是 Python 侧的纯函数，前端不再分一次列（分两处才会漂）。见 `test_one_row_lands_in_exactly_one_column` |
-| 草稿态 vs 保存态（D-204 形状） | 前端 `BoardTab.test.tsx`：未改过 ⇒ 按钮 disabled 且一次请求都不发；改过 ⇒ `saveGoal(day, text)` 真发出去；换日期 ⇒ 上一天的草稿作废 |
+| 草稿态 vs 保存态（D-204 形状） | 前端 `pages/settings/sections/GoalSection.test.tsx`：未改过 ⇒ 按钮 disabled 且一次请求都不发；改过 ⇒ `saveGoal(day, text)` 真发出去；换日期 ⇒ 上一天的草稿作废；保存成功 ⇒ 看板那份缓存一起失效。（2026-10-04 §4.4e 之前这条在 `BoardTab.test.tsx`，那个文件已随重设计删除；判据本身没变） |
 | i18n 补一条 vitest | `src/i18n/catalog.test.ts`（中英叶子键集相等 + 退役键既不在目录也不被引用 + 看板要的键两边都在，并带两条「判据能抓到在用的键」对照组） |
 | `focus_orphan` 不变量 | **已交付，但判据形状与 §4.6 原文不同**：先给「清」一个作者（`clear_focus` 接进 reject/archive/publish 三处），再上第 8 条。四条腿 + 四条变异见 §4.6 末段 |
 | `release-check.sh` | **未跑**（产物门禁排在所有 fix round 之后，见 ROADMAP） |

@@ -110,9 +110,22 @@ Whisper 与翻译模型搬进应用数据目录（`HERTZ_DATA_DIR/models/whisper
 - 两个连带改动：① `preStage` 从 `PipelineView` 的 local state 搬进 `stores/execution`，动线要改的四件事（两轴 + 分段 + tab）抽成 `core/boardWindow.goUnscoredPatch()`——跨页了才暴露出「分段留在壳里就设不到」，上一版那根半根线（跳过去落在「已下载未加工」、筛选条不渲染）从此有了守卫；② `BoardTab` 的 props 从整包 `PipelineViewProps` 收窄成 `Pick<ReturnType<typeof usePipelineExecution>, …>`：不在主壳里就拿不到那些字段，为过类型编假值比声明真实需求糟。
 - 这不算「加东西」，§4.4b 的「同级项不许上升」没被推翻：顶级页从「只读统计」变成「能干活的今天」，流水线一侧是净减一项。
 
+### 看板重设计：三栏目 + 目标与待办合成一块（v0.34，D-217 覆盖 D-216 的界面形状那半）
+
+用户第二次纠正，两条：「优化一下布局，看板分子 menu，现在模块有些多，其实可以合并一些功能到一起，比如今日待办和每日目标……发挥一些创造性把它放一起」；看到我先把目标与待办做成「一块里的两栏」后立刻否掉——「这个每日目标还有今日代办实际上是一个东西啊，你不要给我做成两个东西啊，你这个把简单东西搞复杂了。另外这个看板只是显示了，他不做设置。那么设置每日目标的地方在那个顶级 menu 的设置里面……你单独给他做一个子 menu 出来」。
+
+- **一屏 16 个模块 → 8 个**，按 `今天 1 / 供给 3 / 成本与健康 4` 分栏目（既有 `TabBar` + `?tab=` 深链）。合并四处：趋势 + 漏斗水位 → 「供给水位」；原「发布 tab」那两列 + 队列 → 「待处理」；发布通道 + 自动产能 + 队列深度 → 「发布健康」；AI 用量 + 成本估算 → 一张卡两种看法。
+- **目标就是那块标题**，不是另一张卡：标题=当日目标文本（只读）、右上一个数=完成度、正文=今日条目、底部一条 chip 带=今日已发。查询键九个全部逐字沿用（`pipeline-counts` / `pipeline-trends` / `pipeline-board` / `pipeline-status` / `publish-queue` / `channel-insight` / `pipeline-failures` / `ai-trace-summary` / `config`），同键同缓存——拆栏目不多开一路轮询。
+- **每日目标的编辑搬进顶级「设置 → 每日目标」新子菜单**（`pages/settings/sections/GoalSection.tsx`）。它不并进设置页那份 runtime.yaml 大草稿：目标是按天一行存 PG，混进去会让一次无关的「保存设置」连带写回，而且挂着页面跨天后草稿仍拿着昨天的日期去保存。看板上的出路两条：「去设置里写」与「上次保存 …」。
+- **撤视图不撤能力**：待审 / 待发布压成供给栏一张卡，但每条仍挂得动 `AuditCard` / `PublishCard`——它们是界面上唯一的单条过审与发布入口，压成文字清单就等于 approved 条目再也发不出去。卡片分派收成 `dashboard/shared.tsx::ItemCard` 一处（两栏共用），`focus` 的写点收成主壳一个 mutation。
+- 顺手收成单作者的一处：设置分区清单从前有三份字面量副本（左栏导航、`?section=` 白名单、⌘K 面板），已漂过一次（D-215 的 `norms` 进了导航没进面板）。三份合成 `SettingsNav.SETTINGS_SECTIONS`，守卫 `pages/settings/sections.test.ts`。
+- `BoardTab.tsx` 与其测试文件删除；`console.boardGoal*` 里编辑用的那些键退役（同义文案在 `settings.goal*` 重开），`console.boardColInWork` 与 `dashboard.funnel|usage|cost|monitorTitle` 随合并退役。
+
 ### v0.34 的验证账（数字由命令产生，不心算）
 
-- 源码门禁 `./scripts/verify.sh` 五段全绿多次；最后一次于设置节那块之后：**ruff 0、全量 pytest 587 passed、tsc 0、vitest 17 文件 77 tests、vite build OK**。基线从 v0.33 准备时的 521 涨到 587（A +25、C-code +16、B 后端与界面 +22、设置节 +3、dev.sh 与 i18n 门禁带来的增减另计）。
+- 源码门禁 `./scripts/verify.sh` 五段全绿多次；于设置节那块之后的一次：**ruff 0、全量 pytest 587 passed、tsc 0、vitest 17 文件 77 tests、vite build OK**。基线从 v0.33 准备时的 521 涨到 587（A +25、C-code +16、B 后端与界面 +22、设置节 +3、dev.sh 与 i18n 门禁带来的增减另计）。
+- **看板重设计（D-217）之后的一次，2026-10-04**：`./scripts/verify.sh` 五段全绿——ruff 0、**pytest 587 passed**、tsc 0、**vitest 20 文件 / 94 tests**、vite build OK（1,188.20 kB 入口块，与改前同量级）。测试增减：`BoardTab.test.tsx`（5 条）拆成 `TodayPanel.test.tsx`（6）+ `SupplyPanel.test.tsx`（4）+ `sections/GoalSection.test.tsx`（4），另加 `settings/sections.test.ts`（3）与 i18n 那条「每个叶子值必须是字符串」。
+- 重设计这轮的浏览器验证是在**他正在跑的那台实例**上做的（vite :3000 + `--reload` 后端 :8787，同一份工作树，所以验的就是被改的代码），并**回读库**：供给栏「捞入今日」⇒ `items.focus_date='2026-10-04'` 且今日栏 0/1；「移出今日」⇒ 回 0/0 且全表 `focus_date` 零行；设置里写目标 ⇒ `daily_goal` 落盘带 `updated_at`，看板标题显示那段字（只读），点「上次保存」跳 `/config?section=goal` 且 textarea 就是那段；三个栏目 innerText 里没有任何裸 i18n 键名。探针目标行已删回原状（`DELETE 1` ⇒ `daily_goal` 0 行）。
 - 变异证据（每条新判据都验过「摘掉能力本身」会红）：窗口改成两端闭、`counts` 改用截断后长度、`focus_date` 参数收下不用、端点少传 `limit`、三处 `clear_focus` 调用任摘其一、第 8 条从 `CHECKS` 删除、回填脚本摘掉探针或把代理改回按前缀分支——各自把对应测试跑红。
 - 迁移 `wave31_board_goal` 在一次性真库 `hertz_wave31_probe` 上跑完整往返（`upgrade heads` ⇒ `downgrade -1` ⇒ 再 `upgrade`）后 `dropdb`；heads 迁移前后**都是 2**（悬空分支 `wave21_glossary_remove` 按定档不动，有测试钉住）。
 - 界面在浏览器里真用过（vite :3000 + 自建 :8899 后端 + dev 库）：看板是默认页签、五列真数据、目标保存后**换页回读仍在库里**、捞入今日 ⇒ 列 0→1 且「捞入 1」、备注失焦落库、移出回到 0、空态动线落在未评分且三轴为情感+有正文。探针数据已清干净（`daily_goal` 0 行、`focus_*` 非空 0 行，清空走 PATCH 而不是手改库）。**截图与观感未验**（browser-use 拿不到可见面，指针/视觉动作被拒），验的是结构、文本与真写库回读。
