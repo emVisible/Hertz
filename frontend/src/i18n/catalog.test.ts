@@ -114,6 +114,17 @@ const RETIRED = [
   'console.boardTruncated',
   'console.boardColReady',
   'console.publishHint',
+  // v0.34 D-219：今日待办收成右侧悬浮栏，只留目标清单与一个最简指标——
+  // 条目列表（含空态动线）、今日已发那排 chip、加工备注输入框都从看板上撤了
+  // （条目动作与补录数据在流水线；`focus_note` 字段与端点仍在，界面上暂时没有了写点，实测 0/5281 用过）
+  'console.boardProgress',
+  'console.boardColPublished',
+  'console.boardEmptyFocus',
+  'console.boardGoPreReview',
+  'console.boardRemoveToday',
+  'console.boardDropHint',
+  'console.boardNoteLabel',
+  'console.boardNotePlaceholder',
 ]
 
 describe('i18n 目录', () => {
@@ -172,19 +183,16 @@ describe('i18n 目录', () => {
     const zh = new Set(leafKeys(catalog('zh')))
     const en = new Set(leafKeys(catalog('en')))
     const needed = [
-      'console.boardProgress',
       'console.boardGoalSavedAt',
       'console.boardColFocus',
       'console.boardColReview',
-      'console.boardColPublished',
       'console.boardPickToday',
       'console.boardPickedToday',
-      'console.boardRemoveToday',
-      'console.boardNotePlaceholder',
-      'console.boardEmptyFocus',
-      'console.boardGoPreReview',
       'console.approvedEmpty',
       'console.approvedHint',
+      'console.publishedEmpty',
+      'console.published',
+      'console.stats',
       'dashboard.sectionToday',
       'dashboard.sectionHealth',
       'dashboard.supplyWater',
@@ -192,6 +200,7 @@ describe('i18n 目录', () => {
       'dashboard.usageCost',
       'dashboard.goalEmpty',
       'dashboard.todoDone',
+      'dashboard.publishedToday',
       'dashboard.goalEditText',
       'settings.navGoal',
       'settings.goalTitle',

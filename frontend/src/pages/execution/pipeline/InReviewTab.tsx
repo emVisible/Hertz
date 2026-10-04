@@ -7,12 +7,13 @@ import { useTranslation } from 'react-i18next'
 import type { Dispatch, SetStateAction } from 'react'
 
 import type { PipelineItem } from '../../../api'
-import { Button, Icon } from '../../../components/ui'
+import { Badge, Button, Icon } from '../../../components/ui'
 import {
   AuditCard,
   PipelineStage,
   PublishCard,
   SortControl,
+  StageItemRow,
   TodayPick,
   type SortField,
   type SortSpec,
@@ -20,11 +21,12 @@ import {
 import type { useBatchSelect } from '../../../hooks/useBatchSelect'
 import type { PipelineViewProps } from './shared'
 
-/** 审核页的次级分段（v0.34 D-218）：`待审` 之外补上 **已过审待发**。
- *  补的是个洞：D-213 把「发布」tab 并进看板之后，`approved` 条目在整个界面里只剩
- *  看板「待处理」那一列这一个落点；D-218 用户说那一列不该在看板上，于是单条发布
- *  的入口搬到这里——不搬就等于界面上再也发不出去。 */
-export type AuditStage = 'queued' | 'approved'
+/** 审核页的次级分段（v0.34 D-218/D-219）：`待审`｜`已过审待发`｜`已发布`。
+ *  补的是同一个洞：D-213 把「发布」tab 并进看板之后，`approved` 与 `published` 两类条目
+ *  在整个界面里只剩看板的「待处理」列与「今日已发」chip 两处；D-218/D-219 用户把这两处
+ *  都从看板上删了，于是入口搬到这里——不搬就是**界面上再也发不出去、再也补不了数据**
+ *  （实测已发布 19 条里 12 条录过播放/互动，这件事他真在做）。 */
+export type AuditStage = 'queued' | 'approved' | 'published'
 
 // 排序要素（v0.3.12 两维度：要素 × 方向）
 const AUDIT_SORT_FIELDS: SortField[] = [
@@ -87,6 +89,7 @@ export function InReviewTab({
     // 计数用后端的 `counts`（截断前），不是列表长度——和预处理那三个分段同一口径
     { key: 'queued' as const, labelKey: 'console.boardColReview', n: p.counts.queued ?? p.stageQueued.length },
     { key: 'approved' as const, labelKey: 'console.approvedStage', n: p.counts.approved ?? p.stageApproved.length },
+    { key: 'published' as const, labelKey: 'console.published', n: p.counts.published ?? p.stagePublished.length },
   ]
   return (
     /* 审核专注审核（v0.2.6）：异常内容移至独立「异常」menu——全宽单栏 */
@@ -121,6 +124,7 @@ export function InReviewTab({
         })}
       </div>
 
+      {auditStage === 'published' && <PublishedStage p={p} />}
       {auditStage === 'approved' && <ApprovedStage p={p} />}
       {auditStage === 'queued' && (
       <PipelineStage
@@ -295,6 +299,53 @@ function ApprovedStage({ p }: { p: PipelineViewProps }) {
       <p className="border-t border-border/60 px-3 py-2 text-[10px] text-text-disabled">
         {t('console.approvedHint')}
       </p>
+    </PipelineStage>
+  )
+}
+
+/** 已发布（v0.34 D-219）：补录播放/互动 + 打回审核。
+ *  这条以前住在看板「今日已发」那排 chip 上，用户把那块删了（「下面两个部分删掉，只留最简指标」），
+ *  但**补录数据这件事他真在做**（实测已发布 19 条里 12 条有 stats），所以入口跟着搬到这里，
+ *  不然就是「机制还在、界面上再也喂不进数据」。 */
+function PublishedStage({ p }: { p: PipelineViewProps }) {
+  const { t } = useTranslation()
+  const published = p.stagePublished
+  return (
+    <PipelineStage
+      title={`${t('console.published')} (${p.counts.published ?? published.length})`}
+      isEmpty={published.length === 0}
+      emptyText={t('console.publishedEmpty')}
+    >
+      <ul className="divide-y divide-border/60">
+        {published.map((item) => (
+          <StageItemRow
+            key={item.id}
+            item={item}
+            badge={
+              <span className="flex items-center gap-1.5">
+                <Badge tone="success">{item.status}</Badge>
+                {item.published_at && (
+                  <span className="font-mono text-[10px] text-text-disabled">
+                    {new Date(item.published_at).toLocaleString()}
+                  </span>
+                )}
+              </span>
+            }
+            right={
+              <span className="flex items-center gap-1.5">
+                <Button size="sm" variant="ghost" onClick={() => void p.setPublishStats(item)} title={t('console.statsHint')}>
+                  <Icon name="tag" size={12} />
+                  {t('console.stats')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void p.act(item, 'requeue')} title={t('console.backToReviewHint')}>
+                  <Icon name="rewind" size={12} />
+                  {t('console.backToReview')}
+                </Button>
+              </span>
+            }
+          />
+        ))}
+      </ul>
     </PipelineStage>
   )
 }

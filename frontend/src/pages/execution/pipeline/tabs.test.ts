@@ -14,7 +14,6 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { PIPELINE_TABS } from './shared'
-import { goUnscoredPatch } from '../../../core/boardWindow'
 import { useExecutionStore } from '../../../stores/execution'
 
 const SRC = resolve(process.cwd(), 'src')
@@ -89,26 +88,29 @@ describe('流水线子菜单与看板归属', () => {
     const audit = read('pages/execution/pipeline/InReviewTab.tsx')
     expect(audit).toContain('stageApproved')
     expect(audit).toContain('PublishCard')
-    // 捞入今日：预处理 + 审核两侧都挂，且都走 `p.setFocus` 那一个写点
+    // 捞入今日：预处理 + 审核两侧都挂；写点只有一个作者（`usePipelineActions.setFocus`）
     expect(read('pages/execution/pipeline/PreReviewTab.tsx')).toContain('TodayPick')
     expect(audit).toContain('TodayPick')
-    expect(read('pages/dashboard/TodayPanel.tsx')).toContain('p.setFocus')
     expect(read('components/execution/TodayPick.tsx')).toContain('focus_date')
+    expect(read('hooks/usePipelineActions.ts')).toContain('async function setFocus')
+    // D-219：看板上一个条目动作都不发了——悬浮栏只剩目标清单，条目卡也不该再出现。
+    // 对照组就是上面那两条 `PublishCard` / `TodayPick` 命中：同一条 matcher 在流水线
+    // 那一侧必须抓得到，否则看板的「零命中」说明不了任何事。
+    for (const rel of [
+      'pages/dashboard/DashboardPage.tsx',
+      'pages/dashboard/TodayPanel.tsx',
+      'pages/dashboard/SupplySection.tsx',
+    ]) {
+      const text = read(rel)
+      expect(text, `${rel} 还在看板上画条目卡片`).not.toContain('PublishCard')
+      expect(text, `${rel} 还在看板上画审核卡`).not.toContain('AuditCard')
+      expect(text, `${rel} 还在看板上写 focus`).not.toContain('setFocus')
+    }
   })
 
   it('流水线默认落在「预处理」（看板已不在流水线里）', () => {
     expect(useExecutionStore.getState().pipeline.tab).toBe('preReview')
-  })
-
-  it('跨页动线一次改齐四件事：两轴 + 分段 + tab', () => {
-    // 上一版只设了两轴，用户跳过去落在「已下载未加工」——筛选条压根不渲染。
-    expect(goUnscoredPatch()).toEqual({
-      preTheme: 'sentiment',
-      preHasText: 'yes',
-      preStage: 'discovered',
-      tab: 'preReview',
-    })
-    // 分段状态必须在 store 里：页面 local state 跨不过去
+    // 分段状态必须在 store 里：`PipelineView` 与跨页都要读它
     expect('preStage' in useExecutionStore.getState().pipeline).toBe(true)
   })
 
@@ -121,6 +123,7 @@ describe('流水线子菜单与看板归属', () => {
       'pages/execution/pipeline/BoardTab.tsx',
       'pages/dashboard/BoardTab.tsx',
       'pages/dashboard/SupplyPanel.tsx',
+      'pages/dashboard/boardActions.ts',
     ]) {
       expect(existsSync(resolve(SRC, rel))).toBe(false)
     }
