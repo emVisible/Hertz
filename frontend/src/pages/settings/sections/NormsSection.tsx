@@ -4,8 +4,10 @@
  * `channel_persona`（会被 `ai/router.py` 拼进脚本与标题 prompt）的区别就是
  * 「改了这个不会改动产出」——混在同一格里，改个备注就会顺手改了视频口播。
  *
- * 为什么也不放看板：看板那个是**每天一条**的目标（存 `daily_goal`），
- * 这两段是**长期一份**（存 runtime.yaml）。按天的东西放设置页，每天要多切一次屏。
+ * 为什么和「每日目标」分开两节：目标是**每天一条**（存 Postgres 的 `daily_goal`，
+ * 一天一行、按日期取），这两段是**长期一份**（存 runtime.yaml）。同一页里两个保存
+ * 通道不是偷懒——把按天的东西并进这份大草稿，会让「保存设置」连带写回一个可能已经
+ * 过期的日期，见 `GoalSection.tsx` 的说明。
  */
 
 import { useTranslation } from 'react-i18next'

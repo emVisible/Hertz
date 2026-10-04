@@ -2,6 +2,24 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge, Icon } from '../../components/ui'
 
+/** 设置分区清单（v0.34）——**唯一作者**：左栏导航、`?section=` 深链白名单、⌘K 面板三处都读这份。
+ *
+ * 为什么收成一份：这三处从前各写一份字面量，实测已经漂过——`norms` 加进左栏导航时
+ * ⌘K 面板那份没跟着加，于是「命令面板里搜不到的分区」和「设置页真实存在的分区」是两个答案。
+ * 判据在 `pages/settings/sections.test.ts`。
+ */
+export const SETTINGS_SECTIONS = [
+  { id: 'general', icon: 'moon', labelKey: 'settings.general' },
+  { id: 'ai', icon: 'studio', labelKey: 'settings.ai' },
+  { id: 'norms', icon: 'library', labelKey: 'settings.navNorms' },
+  { id: 'goal', icon: 'pin', labelKey: 'settings.navGoal' },
+  { id: 'prompts', icon: 'pen', labelKey: 'settings.prompts' },
+  { id: 'trace', icon: 'console', labelKey: 'settings.usage' },
+  { id: 'pipeline', icon: 'config', labelKey: 'settings.pipeline' },
+] as const
+
+export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
+
 /** 设置页左栏导航项。 */
 export interface SettingsSection {
   id: string

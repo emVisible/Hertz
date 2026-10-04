@@ -6,10 +6,11 @@
  * 露出键名。撤掉日历/队列视图时删的键更多，没有守卫就一定会漏一半（留下一半孤儿键，
  * 或者删多了一半还在用的键）。
  *
- * 判据只有两条，都是可判的：
- * ①两份目录的叶子键集**相等**（谁都不许多）；
- * ②这一片退役掉的键（日历 / 队列视图 / 入队）在两份目录里都不存在，
- *   而且不再被任何 `.ts` / `.tsx` 引用。
+ * 判据只有三条，都是可判的：
+ * ①两份目录的叶子键集**相等**（谁都不许多），且每个叶子值都是字符串；
+ * ②这一片退役掉的键（日历 / 队列视图 / 入队 / 看板里的目标编辑）在两份目录里都不存在，
+ *   而且不再被任何 `.ts` / `.tsx` 引用；
+ * ③新界面（看板三栏目 + 设置「每日目标」）要的键确实存在于两份目录。
  * 不做「每个键都必须被引用」那种全量孤儿检查——动态键（`console.busy.${action}`、
  * `queue.phase.${phase}` 这类拼出来的）会把它喂出一堆假阳性，那是另一片的工作。
  */
@@ -86,6 +87,22 @@ const RETIRED = [
   'console.queueReadyOk',
   'console.queueLeaveOk',
   'queue',
+  // v0.34 看板重设计（D-217）：目标编辑从看板搬去「设置 → 每日目标」，
+  // 看板只显示所以这些编辑用键退役（同义文案在 `settings.goal*` 下重开）。
+  'console.boardGoalLabel',
+  'console.boardGoalPlaceholder',
+  'console.boardGoalSave',
+  'console.boardGoalSaving',
+  'console.boardGoalSaved',
+  'console.boardGoalSaveFailed',
+  'console.boardGoalLimit',
+  // 「在制」不再单列一栏（捞进今天的才进「今天」，其余留在流水线）
+  'console.boardColInWork',
+  // 三个栏目 tab 取代了那条「运营面板」分区标题；漏斗/用量/成本的旧单卡标题并进了合卡标题
+  'dashboard.monitorTitle',
+  'dashboard.funnel',
+  'dashboard.usage',
+  'dashboard.cost',
 ]
 
 describe('i18n 目录', () => {
@@ -131,25 +148,22 @@ describe('i18n 目录', () => {
     // 对照组：判据必须能抓到**确实在用**的键，否则「零命中」可能只是判据不可达
     // （空结果≠不存在，这条在本仓被坑过两次）。两处都是直写 `t('…')` 形态。
     expect(usedAsKey('common.copyTitle'), '判据抓不到 tCopy(...) 的直用键=判据是坏的').toBe(true)
-    expect(usedAsKey('console.backToReview'), '判据抓不到 BoardTab 的直用键=判据是坏的').toBe(true)
+    expect(usedAsKey('console.backToReviewHint'), '判据抓不到 TodayPanel 的直用键=判据是坏的').toBe(true)
     // 已知盲区（如实写下，不假装这条守卫是全量的）：两种「间接用键」都抓不到——
     // ①拼出来的：`t(\`console.busy.${action}\`)`；②存在映射表里的：
     // `{ key: 'approved', labelKey: 'console.stagePublish' }`（DashboardPage 就是这么用的）。
-    // 所以本条只负责「删掉的视图不许还有人直读」。新界面的键由下一条测试兜住
-    // （它按 BoardTab 源码里的 `console.board*` 文本名单去目录里查，映射表写法也能命中）。
-    // 全量孤儿检查是另一片的工作。
+    // 所以本条只负责「删掉的视图不许还有人直读」。全量孤儿检查是另一片的工作。
   })
 
-  it('看板用到的键在两份目录里都存在', () => {
+  it('看板三个栏目用到的键在两份目录里都存在', () => {
     // 正向腿：上面几条只证明「删干净了」，这一条证明**新界面要的键真的在**。
     // 缺键的形状是界面渲染出 `console.boardColFocus` 这种裸键名，而它不会报错。
     const zh = new Set(leafKeys(catalog('zh')))
     const en = new Set(leafKeys(catalog('en')))
     const needed = [
       'console.boardProgress',
-      'console.boardGoalSave',
+      'console.boardGoalSavedAt',
       'console.boardColFocus',
-      'console.boardColInWork',
       'console.boardColReview',
       'console.boardColReady',
       'console.boardColPublished',
@@ -159,17 +173,55 @@ describe('i18n 目录', () => {
       'console.boardEmptyFocus',
       'console.boardGoPreReview',
       'console.boardTruncated',
+      'dashboard.sectionToday',
+      'dashboard.sectionSupply',
+      'dashboard.sectionHealth',
+      'dashboard.supplyWater',
+      'dashboard.publishHealth',
+      'dashboard.usageCost',
+      'dashboard.goalEmpty',
+      'settings.navGoal',
+      'settings.goalTitle',
+      'settings.goalSaveHint',
     ]
     const missingZh = needed.filter((k) => !zh.has(k))
     const missingEn = needed.filter((k) => !en.has(k))
     expect(missingZh, `中文缺：${missingZh.join(', ')}`).toEqual([])
     expect(missingEn, `英文缺：${missingEn.join(', ')}`).toEqual([])
-    // 引用面核对：BoardTab 里出现的 board* 键必须都在目录里（防「界面写了新键、
-    // 目录没加」——那正是这条守卫要防的形状，而不是只测我手抄的这份名单）
-    const boardTab = readFileSync(join(SRC, 'pages', 'dashboard', 'BoardTab.tsx'), 'utf-8')
-    const used = [...boardTab.matchAll(/console\.board[A-Za-z0-9]*/g)].map((m) => m[0])
-    expect(used.length, 'BoardTab 里一个 board* 键都没找到=正则或文件路径错了') .toBeGreaterThan(10)
+    // 引用面核对：这一片的源码里出现的 `console.board*` / `dashboard.*` / `settings.goal*`
+    // 键必须都在目录里（防「界面写了新键、目录没加」——那正是这条守卫要防的形状，
+    // 而不是只测我手抄的这份名单）
+    const panelFiles = [
+      'pages/dashboard/TodayPanel.tsx',
+      'pages/dashboard/SupplyPanel.tsx',
+      'pages/dashboard/HealthPanel.tsx',
+      'pages/dashboard/DashboardPage.tsx',
+      'pages/dashboard/shared.tsx',
+      'pages/settings/sections/GoalSection.tsx',
+    ].map((rel) => readFileSync(join(SRC, rel), 'utf-8'))
+    const used = panelFiles
+      .flatMap((text) => [...text.matchAll(/\b(?:console\.board|dashboard\.|settings\.goal|settings\.navGoal)[A-Za-z0-9]*/g)])
+      .map((m) => m[0])
+    expect(used.length, '一个看板键都没找到=正则或文件路径错了').toBeGreaterThan(20)
     const absent = [...new Set(used)].filter((k) => !zh.has(k))
-    expect(absent, `BoardTab 引用了目录里没有的键：${absent.join(', ')}`).toEqual([])
+    expect(absent, `界面引用了目录里没有的键：${absent.join(', ')}`).toEqual([])
+  })
+
+  it('每个叶子值都是字符串（数组/对象会让界面显示 [object Object]）', () => {
+    // 这条是被自己坑出来的：批量加键时把 (中文, 英文) 元组原样塞了进去，两份目录
+    // 键数一样、键集相等，上面几条全绿，而界面会渲染出 `["…","…"]`。
+    for (const lang of ['zh', 'en'] as const) {
+      const doc = catalog(lang)
+      const bad: string[] = []
+      const walk = (o: Record<string, unknown>, prefix = '') => {
+        for (const [k, v] of Object.entries(o)) {
+          const path = prefix ? `${prefix}.${k}` : k
+          if (v && typeof v === 'object') walk(v as Record<string, unknown>, path)
+          else if (typeof v !== 'string') bad.push(`${path}=${JSON.stringify(v)}`)
+        }
+      }
+      walk(doc)
+      expect(bad, `${lang} 里这些叶子不是字符串：${bad.join(', ')}`).toEqual([])
+    }
   })
 })

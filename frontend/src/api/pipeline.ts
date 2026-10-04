@@ -130,7 +130,7 @@ export type BoardColumn = 'focus' | 'in_work' | 'review' | 'ready_to_publish' | 
 export type QueuePhase = '' | 'holding' | 'ready'
 
 /** 发布队列看板（v0.12；v0.13 增账号画像）。
- *  v0.34 B 之后**仍然在用**：运营看板（`pages/dashboard/DashboardPage.tsx`）读它的
+ *  v0.34 B 之后**仍然在用**：看板的健康栏（`pages/dashboard/HealthPanel.tsx`）读它的
  *  `today` 产能与 `ready`/`holding` 计数。被撤掉的只是「发布队列」那个界面视图与
  *  入队写点，不是这份读侧数据形状——删它会把看板的产能卡变成空白。 */
 export interface PublishQueueView {

@@ -7,6 +7,7 @@ import { api } from '../api'
 import { plansApi } from '../api/orchestration'
 import type { LibraryEntry } from '../api/library'
 import { Icon } from './ui'
+import { SETTINGS_SECTIONS } from '../pages/settings/SettingsNav'
 import { useExecutionStore } from '../stores/execution'
 import { useBoardStore } from '../stores/board'
 
@@ -19,13 +20,8 @@ interface CommandItem {
   run: () => void
 }
 
-const SETTINGS_SECTIONS = [
-  { id: 'general', labelKey: 'settings.general' },
-  { id: 'ai', labelKey: 'settings.ai' },
-  { id: 'prompts', labelKey: 'settings.prompts' },
-  { id: 'trace', labelKey: 'settings.usage' },
-  { id: 'pipeline', labelKey: 'settings.pipeline' },
-] as const
+// 分区清单不在这里重抄一份：从前这里是独立的一份字面量，加设置分区时漏同步过
+//（`norms` 进了左栏导航却没进面板）。单一作者 = `pages/settings/SettingsNav`。
 
 /**
  * ⌘K 全局命令面板（v0.2.3，参考 Eagle 快速搜索/Notion）：

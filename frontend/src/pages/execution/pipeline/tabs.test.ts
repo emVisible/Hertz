@@ -1,10 +1,11 @@
 /** tab 结构守卫（v0.34）：看板在**顶级菜单**那一页，流水线自己只剩 5 个子 tab。
  *
- * 两条规则都来自用户亲口纠正，不是审美偏好：
+ * 这些规则都来自用户亲口纠正，不是审美偏好：
  * ① 需求是「融合」而不是「加东西」——同级项不许上升（先是 6→6 把发布 tab 换掉，
  *    后来整体搬到顶级页，流水线降到 5）；
  * ② 他说的「看板」从来指导航栏那一页（进软件默认落到的 `/dashboard`），
- *    所以看板必须挂在那一页上，而不是藏在流水线的子菜单里。
+ *    所以看板必须挂在那一页上，而不是藏在流水线的子菜单里；
+ * ③ 看板只显示、不做设置——写每日目标的位置是「设置 → 每日目标」（D-217）。
  * 双向钉：只测「流水线里没有 board」会奖励搬错地方——所以同时测「dashboard 真挂了它」。
  */
 
@@ -38,10 +39,30 @@ describe('流水线子菜单与看板归属', () => {
 
   it('看板挂在顶级「看板」页上（搬错地方同样算失败）', () => {
     const dash = read('pages/dashboard/DashboardPage.tsx')
-    expect(dash).toContain('<BoardTab')
-    expect(existsSync(resolve(SRC, 'pages/dashboard/BoardTab.tsx'))).toBe(true)
+    expect(dash).toContain('<TodayPanel')
+    expect(existsSync(resolve(SRC, 'pages/dashboard/TodayPanel.tsx'))).toBe(true)
     // 反向：流水线的壳里不该再留任何渲染分支
     expect(read('pages/execution/PipelineView.tsx')).not.toContain('BoardTab')
+    expect(read('pages/execution/PipelineView.tsx')).not.toContain('TodayPanel')
+  })
+
+  it('看板分三个栏目，且目标编辑不在看板上（设置里才是写点）', () => {
+    const dash = read('pages/dashboard/DashboardPage.tsx')
+    for (const key of ['dashboard.sectionToday', 'dashboard.sectionSupply', 'dashboard.sectionHealth']) {
+      expect(dash, `栏目少了 ${key}`).toContain(key)
+    }
+    // 用户原话：「这个看板只是显示了，他不做设置」。判据写成「看板的文件里不许出现
+    // 保存目标的调用」，同一条 matcher 在设置那一侧必须命中——否则零命中只说明
+    // 我搜错了符号（空结果≠不存在，这条在本仓坑过两次）。
+    for (const rel of [
+      'pages/dashboard/DashboardPage.tsx',
+      'pages/dashboard/TodayPanel.tsx',
+      'pages/dashboard/SupplyPanel.tsx',
+      'pages/dashboard/HealthPanel.tsx',
+    ]) {
+      expect(read(rel), `${rel} 还在写每日目标`).not.toContain('saveGoal(')
+    }
+    expect(read('pages/settings/sections/GoalSection.tsx')).toContain('pipelineApi.saveGoal(')
   })
 
   it('流水线默认落在「预处理」（看板已不在流水线里）', () => {
@@ -67,6 +88,7 @@ describe('流水线子菜单与看板归属', () => {
       'components/execution/QueueView.tsx',
       'pages/execution/pipeline/PostReviewTab.tsx',
       'pages/execution/pipeline/BoardTab.tsx',
+      'pages/dashboard/BoardTab.tsx',
     ]) {
       expect(existsSync(resolve(SRC, rel))).toBe(false)
     }

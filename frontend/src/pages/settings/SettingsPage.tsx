@@ -14,8 +14,9 @@ import { TracePanel } from './TracePanel'
 import { GeneralSection } from './sections/GeneralSection'
 import { AiSection } from './sections/AiSection'
 import { NormsSection } from './sections/NormsSection'
+import { GoalSection } from './sections/GoalSection'
 import { PipelineSection } from './sections/PipelineSection'
-import { SettingsNav, type SettingsSection } from './SettingsNav'
+import { SettingsNav, SETTINGS_SECTIONS, type SettingsSection, type SettingsSectionId } from './SettingsNav'
 import { buildOverrides } from '../../core/settingsOverrides'
 
 interface ConfigData {
@@ -83,8 +84,10 @@ interface ConfigData {
   llm_api_key_set?: boolean
 }
 
-const SECTION_IDS = ['general', 'ai', 'norms', 'prompts', 'trace', 'pipeline'] as const
-type SectionId = (typeof SECTION_IDS)[number]
+// 分区清单只有一个作者（`SettingsNav.SETTINGS_SECTIONS`）——导航、这份深链白名单、
+// ⌘K 面板从前各写一份，已经漂过一次。这里只从那份派生。
+const SECTION_IDS = SETTINGS_SECTIONS.map((s) => s.id)
+type SectionId = SettingsSectionId
 
 export function SettingsPage() {
   const { t } = useTranslation()
@@ -205,19 +208,20 @@ export function SettingsPage() {
     return <QueryErrorState message={t('error.queryFailed', { detail: 'config' })} onRetry={() => void refetch()} />
   }
 
-  const sections: SettingsSection[] = [
-    { id: 'general', icon: 'moon', label: 'settings.general' },
-    { id: 'ai', icon: 'studio', label: 'settings.ai', badge: providers.some((p) => p.enabled) ? t('settings.configured') : t('settings.unconfigured') },
-    {
-      id: 'norms',
-      icon: 'library',
-      label: 'settings.navNorms',
-      badge: form.creator_norms || form.standing_plan ? t('settings.configured') : undefined,
-    },
-    { id: 'prompts', icon: 'pen', label: 'settings.prompts' },
-    { id: 'trace', icon: 'console', label: 'settings.usage' },
-    { id: 'pipeline', icon: 'config', label: 'settings.pipeline' },
-  ]
+  /** 分区清单只有一份（`SETTINGS_SECTIONS`）；badge 是各分区自己的判据，留在这里。 */
+  const badgeOf = (id: SettingsSectionId): string | undefined => {
+    if (id === 'ai') {
+      return providers.some((p) => p.enabled) ? t('settings.configured') : t('settings.unconfigured')
+    }
+    if (id === 'norms') return form.creator_norms || form.standing_plan ? t('settings.configured') : undefined
+    return undefined
+  }
+  const sections: SettingsSection[] = SETTINGS_SECTIONS.map((s) => ({
+    id: s.id,
+    icon: s.icon,
+    label: s.labelKey,
+    badge: badgeOf(s.id),
+  }))
 
   return (
     // v0.22 修复：恢复自管滚动（v0.20 拆分时丢失——main overflow-hidden 下
@@ -244,6 +248,8 @@ export function SettingsPage() {
             {sectionId === 'norms' && (
               <NormsSection form={form} set={set} save={save} dirty={dirty} />
             )}
+
+            {sectionId === 'goal' && <GoalSection />}
 
             {sectionId === 'prompts' && (
               <section className="border border-border bg-surface-1/60 p-4">
