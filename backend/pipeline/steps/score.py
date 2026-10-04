@@ -8,6 +8,10 @@ total recompute and the safety redline.
 - safety 红线（参考原项目 safety≤3）：合规硬性拒绝——人工导入也不豁免，
   与「低分可复用」不同，safety 是合规边界
 - 低分（非 safety）：标记 is_lowscore 继续流程（人工审核决定）
+- **评分输入 = 正文（D-222）**：`score_input()` 决定模型看到什么，并记下 `basis`。
+  从前这里硬拼 `subreddit / score` 两行、prompt 又把它标成「内容：」，于是八维里的
+  completion / emotion 一直在给"标题 + 热度"打内容分。现在没正文就照实记 `title_only`，
+  不猜、也不造一段看起来像内容的上下文。
 
 成本闸门（v0.2.1，参考原项目评分预算）：单次运行 / 单日 LLM 评分硬限额，
 超限跳过评分（条目保持 discovered，下轮或次日再评）——防 API 费用失控。
@@ -22,8 +26,35 @@ from sqlalchemy import func, select
 from backend.models.item import Item
 from backend.models.session import session_factory
 from backend.pipeline.base import Pipe, ProcessResult, StepContext, StepError
+from backend.pipeline.quality import MIN_STORY_CHARS
 
 logger = logging.getLogger(__name__)
+
+#: 送给评分模型的正文上限。prompt 侧还会再截一次（`ai/prompts/score.py` 的 3000 字），
+#: 这一层先按字符截，是为了让"评分一次花多少 token"由这一步说了算，不受超长帖摆布。
+SCORE_BODY_CHARS = 2400
+
+
+def score_input(item) -> tuple[str, str]:
+    """评分模型**实际看到的东西**，以及它是凭哪种输入打的分：`(content, basis)`。
+
+    修这个函数之前，调用点硬拼的是 `f"subreddit: {…}\\nscore: {…}"`，而 prompt 把这段
+    标成「内容：」——于是 `completion`（有没有头有尾）、`emotion`（情绪价值）这些维度
+    全在给"标题 + 热度"打内容分，而且**理由里看不出这件事**（D-222）。
+
+    两条规则：
+    * 正文够长（阈值仍归 `quality.MIN_STORY_CHARS`，这里不复制数字）才送进去，记 `body`；
+    * 没正文照实记 `title_only`——不猜、也不给模型造一段"看起来像内容"的上下文。
+    """
+    body = (getattr(item, "selftext", None) or "").strip()
+    context = f"subreddit: {item.subreddit}\nscore: {item.reddit_score}"
+    if len(body) >= MIN_STORY_CHARS:
+        return f"{context}\n\n正文：\n{body[:SCORE_BODY_CHARS]}", "body"
+    return context, "title_only"
+
+
+#: `basis` 的两种取值（界面与评测脚本都读它，别处不许再发明第三种）
+SCORE_BASES = ("body", "title_only")
 
 # 维度权重（参考原项目：short_form 短视频适配加权、safety 合规加权、emotion 降权）
 # v0.11.6 情感频道适配：emotion 0.9 → 1.3（情感类以转载内容为主，情绪价值是核心指标）
@@ -131,8 +162,13 @@ class ScoreStep(Pipe):
                     status="scored",
                     data={
                         "score_total": h_total,
-                        "score_dimensions": {**h_dims, "engine": "heuristic"},
-                        "score_reasons": [f"规则引擎评分 {h_total}"],
+                        # 规则引擎只看热度与标题（它压根没读正文），所以 basis 与 LLM 路同一个字段
+                        "score_dimensions": {
+                            **h_dims,
+                            "engine": "heuristic",
+                            "basis": "title_only",
+                        },
+                        "score_reasons": [f"规则引擎评分 {h_total}（仅标题与热度）"],
                         "is_lowscore": not suitable,
                     },
                 )
@@ -158,9 +194,10 @@ class ScoreStep(Pipe):
         ai = ctx.ai
         if ai is None or not ai.llm_available:
             raise StepError("LLM provider not configured — cannot score")
+        content, basis = score_input(item)
         result = await ai.score(
             title=item.title,
-            content=f"subreddit: {item.subreddit}\nscore: {item.reddit_score}",
+            content=content,
             source=item.source_url,
             # v0.14.1 溯源：ai_calls.task_id = item:<uuid>——成本页可跳转产物
             task_id=f"item:{item.id}",
@@ -169,6 +206,9 @@ class ScoreStep(Pipe):
 
         dims = dict(result.dimensions or {})
         reasons = list(result.reasons or [])
+        # 「这次评分凭的是什么输入」由服务端记，不采信模型自报——它没有渠道知道我们喂了什么
+        dims["basis"] = basis
+        reasons.append("按正文打分" if basis == "body" else "仅凭标题与热度打分（无正文）")
         # 服务端重算 total（v0.3.0）：LLM 自报 total 不采信
         total = recompute_total(dims)
 
