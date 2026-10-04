@@ -1,7 +1,7 @@
 /** 看板「今天」页里那一节供给的接缝测试（v0.34 D-218）。
  *
  * 只剩读数了：待处理两列搬去流水线之后，这块不该再有任何写入口——
- * 所以这里测的是「数从后端来」+「跳转仍在」，不测按钮。
+ * 所以这里测的是「数从后端来」+「跳转仍在」+「告警接得出来」，不测按钮。
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -21,6 +21,7 @@ vi.mock('react-router-dom', () => ({
 }))
 
 let currentCounts: Record<string, number> = {}
+let currentWarnings: string[] = []
 
 vi.mock('../../api', () => ({
   api: {
@@ -36,6 +37,10 @@ vi.mock('../../api', () => ({
       return currentCounts
     },
     trends: async () => [],
+    supply: async () => {
+      apiCalls.push('/api/pipeline/supply')
+      return { warnings: currentWarnings }
+    },
   },
 }))
 
@@ -50,6 +55,7 @@ beforeEach(() => {
   apiCalls.length = 0
   navigated.length = 0
   currentCounts = { discovered: 2659, approved: 2, published: 19 }
+  currentWarnings = []
 })
 
 describe('SupplySection 的接缝', () => {
@@ -74,5 +80,23 @@ describe('SupplySection 的接缝', () => {
     // 按钮文案带箭头，所以用正则匹配
     fireEvent.click(await screen.findByText(/dashboard\.goPipeline/))
     expect(navigated).toEqual(['/execution?mode=pipeline'])
+  })
+
+  it('后端有供给告警时必须显示在水位卡上（v0.34 D-223）', async () => {
+    // 正向腿：采集停摆六周期间，这四档告警一直由后端算好、前端从没接出来。
+    currentWarnings = ['scheduler_silent', 'supply_tight']
+    render(<SupplySection />, { wrapper })
+    const strip = await screen.findByRole('alert')
+    expect(strip).toHaveTextContent('console.supply.scheduler_silent')
+    expect(strip).toHaveTextContent('console.supply.supply_tight')
+    expect(apiCalls).toContain('/api/pipeline/supply')
+  })
+
+  it('没有告警时不留空壳', async () => {
+    // 对照组：等水位数渲染出来再断言缺席，否则测的是「还没加载」。
+    currentWarnings = []
+    render(<SupplySection />, { wrapper })
+    await screen.findByText('2659')
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

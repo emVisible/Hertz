@@ -756,7 +756,8 @@
     "supply": {
       "funnel_empty": "漏斗为空：还没有采集到任何内容",
       "supply_tight": "供给偏紧：待处理内容不足 5 条",
-      "source_unreachable": "采集源连续失败，请检查网络或代理"
+      "source_unreachable": "采集源连续失败，请检查网络或代理",
+      "scheduler_silent": "调度器静默：进程活着但定时作业一条都没跑过（采集已停）"
     },
     "restore": "恢复待审",
     "shownLimit": "显示前 {{shown}} 条 / 共 {{total}} 条",

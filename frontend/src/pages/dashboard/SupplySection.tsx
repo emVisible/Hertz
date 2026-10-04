@@ -37,6 +37,14 @@ export function SupplySection() {
     queryFn: () => api.get<ChannelInsight | null>('/api/ai/insights'),
     refetchInterval: 300_000,
   })
+  // 供给告警（v0.34 D-223）：后端早就算好了四档水位，界面上却一直没接出来——
+  // 「采集停了六周」这件事当时就躺在这条查询里，没人看得见。
+  const { data: supply } = useQuery({
+    queryKey: ['pipeline-supply'],
+    queryFn: pipelineApi.supply,
+    refetchInterval: 30_000,
+  })
+  const warnings = supply?.warnings ?? []
 
   const maxCount = useMemo(() => Math.max(...STAGES.map((s) => counts[s.key] ?? 0), 1), [counts])
 
@@ -55,6 +63,19 @@ export function SupplySection() {
             {t('dashboard.goPipeline')} ↗
           </button>
         </div>
+        {warnings.length > 0 && (
+          <div
+            role="alert"
+            className="mb-3 flex flex-col gap-1 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2"
+          >
+            {warnings.map((w) => (
+              <p key={w} className="flex items-start gap-1.5 text-[11px] leading-relaxed text-warning">
+                <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
+                {t(`console.supply.${w}`, w)}
+              </p>
+            ))}
+          </div>
+        )}
         <TrendChart data={trends} />
         <div className="mt-4 flex flex-col gap-1.5 border-t border-border/60 pt-3">
           {STAGES.map((s) => (

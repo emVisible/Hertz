@@ -741,7 +741,8 @@
     "supply": {
       "funnel_empty": "Funnel empty: nothing collected yet",
       "supply_tight": "Supply tight: fewer than 5 items pending",
-      "source_unreachable": "Collector failing repeatedly — check network/proxy"
+      "source_unreachable": "Collector failing repeatedly — check network/proxy",
+      "scheduler_silent": "Scheduler registered but never fired — automation is not running"
     },
     "restore": "Restore to review",
     "shownLimit": "Showing first {{shown}} of {{total}}",

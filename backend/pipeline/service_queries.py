@@ -542,8 +542,17 @@ class QueriesMixin:
             return out
 
     async def supply_warnings(self) -> list[str]:
-        """供给告警（参考原项目漏斗水位）：空漏斗 / 供给偏紧 / 采集源失联。"""
+        """供给告警（参考原项目漏斗水位）：空漏斗 / 供给偏紧 / 采集源失联 / 调度器静默。"""
         warnings: list[str] = []
+        # 调度器静默（v0.34 D-223）：所有定时作业都经由 `_timed` → `record_tick` 落一行遥测，
+        # 所以「进程活着但一条 tick 都没有」就是「作业注册了却从没执行」的直接证据——
+        # 这个缺陷存在期间采集停了六周，而界面上唯一的信号是一个都没接出来的告警。
+        # 宽限期只按启动时长算：刚起来的 3 分钟内 1 分钟作业可能确实还没轮到，不许误报。
+        from backend.infrastructure import telemetry
+
+        snap = telemetry.snapshot()
+        if int(snap.get("uptime_s") or 0) > 180 and not snap.get("ticks"):
+            warnings.append("scheduler_silent")
         async with session_factory() as session:
             total_items = (
                 await session.execute(select(func.count(Item.id)))
