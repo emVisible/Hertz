@@ -36,6 +36,17 @@ class SourceState(BaseModel):
     last_strategy: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    @classmethod
+    def for_source(cls, source: str, channel: str) -> "SourceState":
+        """新建一条源状态，计数器显式归零（D-224）。
+
+        `mapped_column(default=0)` 是 flush 时才写进 INSERT 的 Python 侧默认，
+        刚 new 出来的实例读到的仍是 None；调用方紧接着 `state.fail_count += 1`
+        就得到 `TypeError: NoneType + int`，而记账外层吞异常——于是每个**新数据源
+        的第一次失败**悄悄无痕（冷却、连续失败、界面健康徽章全无）。
+        """
+        return cls(source=source, channel=channel, ok_count=0, fail_count=0, consecutive_fails=0)
+
     def get_cursor(self) -> dict:
         if not self.cursor_json:
             return {}

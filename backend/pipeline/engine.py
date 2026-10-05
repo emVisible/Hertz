@@ -497,7 +497,7 @@ class StepEngine:
                     )
                 ).scalar_one_or_none()
                 if state is None:
-                    state = SourceState(source=source, channel=channel)
+                    state = SourceState.for_source(source, channel)
                     session.add(state)
                 state.fail_count += 1
                 state.consecutive_fails += 1
@@ -546,7 +546,7 @@ class StepEngine:
                     )
                 ).scalar_one_or_none()
                 if state is None:
-                    state = SourceState(source=source, channel=channel)
+                    state = SourceState.for_source(source, channel)
                     session.add(state)
                 state.fail_count += 1
                 prev_fails = state.consecutive_fails

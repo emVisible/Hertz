@@ -54,7 +54,10 @@ def _parse_story(text: str) -> tuple[str, str]:
     match = _JSON_RE.search(text or "")
     if not match:
         raise RuntimeError(f"story seed 输出非 JSON: {text[:120]}")
-    data = json.loads(match.group(0))
+    # strict=False：允许字符串值里出现裸控制字符（D-224）。故事按要求分段写，
+    # 段落之间就是真换行，而 JSON 默认严格模式把 `"...第一段\n\n第二段"` 判成非法——
+    # 表现是"故事一旦分段就永远采不进来"，不是偶发解析失败。
+    data = json.loads(match.group(0), strict=False)
     title = str(data.get("title") or "").strip()
     story = str(data.get("story") or "").strip()
     if len(story) < MIN_STORY_CHARS:

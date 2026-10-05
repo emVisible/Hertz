@@ -64,7 +64,7 @@ async def run_collect(
             )
         ).scalar_one_or_none()
         if state is None:
-            state = SourceState(source=collector.name, channel=channel)
+            state = SourceState.for_source(collector.name, channel)
             session.add(state)
 
         existing = set(
