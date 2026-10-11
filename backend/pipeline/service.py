@@ -14,6 +14,7 @@ from backend.models.item import Item
 from backend.pipeline.engine import StepEngine
 from backend.pipeline.helpers import _auto_tid  # noqa: F401 — _serialize 使用
 from backend.pipeline.service_archive import ArchiveMixin
+from backend.pipeline.service_compilation import CompilationOpsMixin
 from backend.pipeline.service_prep import PrepOpsMixin
 from backend.pipeline.service_promotion import PromotionMixin
 from backend.pipeline.service_publish import PublishMixin
@@ -34,6 +35,7 @@ class PipelineService(
     PrepOpsMixin,
     ScheduleMixin,
     ArchiveMixin,
+    CompilationOpsMixin,
     QueriesMixin,
 ):
     """执行域服务门面（v0.16 拆分为四域 Mixin——D-168 清偿）。
@@ -133,6 +135,10 @@ class PipelineService(
             # 空壳隔离（v0.33）：异常区专属池的判据，前端据此不再把它当可操作数据
             "is_invalid": item.is_invalid,
             "produce_options": item.produce_options,
+            # 多素材合集编排（v0.35）：非合集条目恒为 None。编排面板靠它判断
+            # 「这条是不是合集」——不暴露的话界面只能靠 source==compilation 猜，
+            # 那个判据不在数据契约里（source 是采集来源语义，不是编排语义）。
+            "clips": item.clips,
             # 制作优先级（v0.26）：批量队列拖拽排序落库
             "priority": item.priority,
             "raw_path": item.raw_path,

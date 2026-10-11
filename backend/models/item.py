@@ -111,6 +111,23 @@ class Item(BaseModel):
     # 默认 voice+subtitle+translate（英文旁白 + 中文字幕，现状行为）
     produce_options: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # 多素材合集编排（v0.35，迁移 wave32_item_clips）：
+    # {"clips": [{"item_id", "transition", "transition_s"}, ...], "outro": {...}}
+    # 为什么独立于 produce_options：那是「怎么加工」（五个模块开关，批量套用），
+    # 这里是「拿什么加工」（片段列表+顺序+转场，逐条精细编排）——生命周期不同，
+    # 混在一起会被 ProduceBatchModal 的批量写互相覆盖。详见迁移 docstring。
+    # 存 item_id 引用而非 raw_path 拷贝：打回重制会重分配 output_dir，路径会失效。
+    #
+    # `none_as_null=True` 是**必需**的，不是一时偏好：JSONB 默认把 Python `None`
+    # 序列化成 JSON `null` 存进列，于是「这条不是合集」的判据
+    # `Item.clips.is_(None)`（IS NULL）一条都不匹配——新建的普通条目全被当成
+    # 合集排除，合集编排界面一个片段都列不出来（P3 实测踩到）。加上它之后
+    # Python None 才落成真正的 SQL NULL。列类型不变（仍是 JSONB），
+    # 所以存量数据无需回填、不需要新迁移。
+    clips: Mapped[dict | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+
     # 制作优先级（v0.26 运营面板）：批量队列拖拽排序落库，engine 取件
     # 按 priority 降序（0 = 默认无优先级，与存量行为等价）
     priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

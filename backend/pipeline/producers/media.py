@@ -6,6 +6,7 @@ small result dict for the produce step to persist on the item.
 
 import asyncio
 import logging
+import uuid
 from pathlib import Path
 
 from backend.ai.router import AIRouter
@@ -101,6 +102,132 @@ def _artifacts_dir(files: FileStore, item) -> Path:
     return files.output_root() / "pipeline" / slug
 
 
+async def _assemble_compilation(item, files: FileStore, directory: Path) -> Path:
+    """把合集条目引用的 N 段素材装配成一条中间产物，返回其路径。
+
+    形状来自 `Item.clips`（迁移 wave32_item_clips）：
+        {"clips": [{"item_id": uuid, "transition": str, "transition_s": float}, ...]}
+
+    片头复用栏目 `intro_config`（在 `produce_item` 的单点挂钩里前置，见那里）；
+    这里只负责**片段之间**的拼接与片尾。
+
+    引用的是 item_id 而不是 raw_path 拷贝：打回重制会重新分配 output_dir，
+    路径引用会失效，所以每次装配都现查一次源条目的 raw_path。
+    """
+    from backend.models.item import Item as _Item
+    from backend.models.session import session_factory
+    from backend.pipeline.producers.assemble import assemble_clips
+
+    plan = dict(getattr(item, "clips", None) or {})
+    specs = list(plan.get("clips") or [])
+    if not specs:
+        raise ProducerError("合集条目没有片段配置")
+
+    async with session_factory() as session:
+        # 保序查询：顺序由 clips 数组决定，不靠数据库返回序
+        by_id: dict = {}
+        for spec in specs:
+            raw_id = spec.get("item_id")
+            try:
+                row = await session.get(_Item, uuid.UUID(str(raw_id)))
+            except (ValueError, AttributeError, TypeError):
+                raise ProducerError(f"合集片段引用无效：{raw_id}") from None
+            if row is None:
+                raise ProducerError(f"合集片段不存在：{raw_id}")
+            if not row.raw_path:
+                raise ProducerError(f"合集片段尚未下载：{row.title[:40]}")
+            by_id[str(raw_id)] = (Path(files.resolve(row.raw_path)), row.title)
+
+    clips: list[dict] = []
+    for index, spec in enumerate(specs):
+        entry = by_id.get(str(spec.get("item_id")))
+        if entry is None:
+            raise ProducerError(f"合集片段不存在：{spec.get('item_id')}")
+        clips.append({
+            "path": str(entry[0]),
+            # 第一段没有「入场转场」可言
+            "transition": spec.get("transition") if index else "cut",
+            "transition_s": spec.get("transition_s"),
+        })
+
+    assembled = directory / "assembled.mp4"
+    info = await assemble_clips(clips, assembled)
+    logger.info(
+        "compilation assembled: %d clips → %s (%.1fs, %dx%d)",
+        info["clips"], assembled.name, info["duration_s"],
+        info["width"], info["height"],
+    )
+
+    # 片尾：渲染器复用栏目片头那套（story._render_story_bg），只在成片后面接，
+    # 不参与片段之间的转场计算——所以放在 assemble 之后、compose 之前。
+    outro_cfg = dict(plan.get("outro") or {})
+    if outro_cfg.get("enabled"):
+        try:
+            with_outro = await _append_outro(item, assembled, outro_cfg)
+            if with_outro is not None:
+                assembled = with_outro
+        except Exception:  # noqa: BLE001 — 片尾是加分项，不许拖垮整条合集
+            logger.warning("合集片尾失败，保留无片尾成片", exc_info=True)
+
+    return assembled
+
+
+async def _append_outro(item, main: Path, cfg: dict) -> Path | None:
+    """成片尾部接一张结尾卡。失败返回 None（调用方保留原片）。
+
+    沿用 `_prepend_channel_intro` 的非破坏性契约：任一步失败都不改原片。
+    """
+    from backend.library.thumbnails import find_ffmpeg
+    from backend.pipeline.producers.story import _render_story_bg
+
+    ffmpeg = find_ffmpeg()
+    if ffmpeg is None:
+        return None
+    duration = max(1.0, min(float(cfg.get("duration_s") or 2.5), 10.0))
+    subtitle = str(cfg.get("subtitle") or "").strip()
+
+    params = await _probe_video_params(main)
+    if params is None:
+        logger.warning("outro skipped: video unprobeable")
+        return None
+    width, height, fps, has_audio = params
+
+    card = main.parent / "outro_card.png"
+    await asyncio.to_thread(_render_story_bg, "感谢观看", card, credit=subtitle)
+    outro = main.parent / "outro_clip.mp4"
+
+    vf = f"scale={width}:{height}"
+    cmd = [str(ffmpeg), "-y", "-loop", "1", "-i", str(card)]
+    if has_audio:
+        cmd += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+    cmd += [
+        "-t", f"{duration:.3f}", "-vf", vf, "-r", f"{fps:.3f}",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
+    ]
+    cmd += ["-c:a", "aac", "-b:a", "160k", "-shortest"] if has_audio else ["-an"]
+    cmd.append(str(outro))
+    await _run_cmd(cmd)
+
+    merged = main.parent / "final_with_outro.mp4"
+    concat_list = main.parent / "concat_outro.txt"
+    await asyncio.to_thread(
+        concat_list.write_text,
+        f"file '{main.as_posix()}'\nfile '{outro.as_posix()}'\n",
+    )
+    try:
+        # 参数一致（outro 按主片参数编码）→ 可以 -c copy，不重编码
+        await _run_cmd([
+            str(ffmpeg), "-y",
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-c", "copy", str(merged),
+        ])
+        if not (merged.exists() and merged.stat().st_size >= 1024):
+            return None
+        return merged
+    finally:
+        await asyncio.to_thread(concat_list.unlink, missing_ok=True)
+
+
 async def produce_item(
     ai: AIRouter, files: FileStore, item, existing_script: dict | None = None
 ) -> dict:
@@ -175,14 +302,26 @@ async def _produce_item(
     if getattr(item, "item_type", "") == "text_only":
         return await produce_story_item(ai, files, item, existing_script)
 
-    # v0.8.8（AXIOM 25/34）：先校验 raw 存在再建目录——此前 mkdir 在 raw
-    # 校验之前，raw 缺失的失败会遗留空目录（测试曾积累 300+ 个 hex 空目录）
-    raw_path = Path(files.resolve(item.raw_path)) if item.raw_path else None
-    if raw_path is None or not raw_path.exists():
-        raise ProducerError("raw media missing")
-
-    directory = _artifacts_dir(files, item)
-    await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
+    # v0.35 多素材合集（迁移 wave32_item_clips）：合集条目**本身没有 raw_path**，
+    # 它由若干条已下载素材拼成。先装配、再把 raw_path 指向装配产物——
+    # 这一行之后**下游全部自动正确**：时长探测、ASR、旁白预算、字幕烧录、
+    # 封面（多点采样会在所有片段里挑最好的一帧）、phash 判重，都基于
+    # 拼接后的成片，而不是第一段素材。
+    #
+    # 为什么装配放在 raw 校验**之前**：合集条目的 raw_path 天然为 NULL，
+    # 先校验会直接抛 "raw media missing"——那是给单条目的判据。
+    if getattr(item, "clips", None):
+        directory = _artifacts_dir(files, item)
+        await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
+        raw_path = await _assemble_compilation(item, files, directory)
+    else:
+        # v0.8.8（AXIOM 25/34）：先校验 raw 存在再建目录——此前 mkdir 在 raw
+        # 校验之前，raw 缺失的失败会遗留空目录（测试曾积累 300+ 个 hex 空目录）
+        raw_path = Path(files.resolve(item.raw_path)) if item.raw_path else None
+        if raw_path is None or not raw_path.exists():
+            raise ProducerError("raw media missing")
+        directory = _artifacts_dir(files, item)
+        await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
 
     # 直发（v0.3.3）：不加工——原片即产物（cover/phash 仍做，供审核与去重）
     if passthrough:

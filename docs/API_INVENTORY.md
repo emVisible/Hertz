@@ -165,6 +165,9 @@
 `POST /api/pipeline/chain`
 `GET /api/pipeline/collect/history`
 `GET /api/pipeline/collect/status`
+`POST /api/pipeline/compilations`
+`GET /api/pipeline/compilations/sources`
+`PUT /api/pipeline/compilations/{item_id}`
 `GET /api/pipeline/events`
 `GET /api/pipeline/failures`
 `GET /api/pipeline/goal/{day}`
