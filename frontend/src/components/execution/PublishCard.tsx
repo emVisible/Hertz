@@ -434,8 +434,8 @@ export function PublishCard({
                   ? t('console.publishTimedHint')
                   : undefined
               }
+              icon={<Icon name="send" size={12} />}
             >
-              <Icon name="send" size={12} />
               {busy?.action === 'publish'
                 ? t('console.busy.publish')
                 : scheduled && !holding && !inQueue

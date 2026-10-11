@@ -412,8 +412,12 @@ export function ScriptWorkshop() {
             <Button variant="ghost" size="sm" onClick={() => { setSegments([]); setTitle(''); localStorage.removeItem(DRAFT_KEY) }}>
               {t('common.cancel')}
             </Button>
-            <Button size="sm" loading={saving} onClick={() => void saveAsItem()}>
-              <Icon name="check" size={12} />
+            <Button
+              size="sm"
+              loading={saving}
+              onClick={() => void saveAsItem()}
+              icon={<Icon name="check" size={12} />}
+            >
               {t('workshop.createItem')}
             </Button>
           </div>

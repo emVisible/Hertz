@@ -131,14 +131,23 @@ export function PromptsManager() {
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <Button variant="ghost" size="sm" onClick={() => void reset()} loading={saving}>
-                <Icon name="refresh" size={13} />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void reset()}
+                loading={saving}
+                icon={<Icon name="refresh" size={13} />}
+              >
                 {t('settings.aiPromptReset')}
               </Button>
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={() => setEditing(null)}>{t('common.cancel')}</Button>
-                <Button onClick={() => void save()} loading={saving} disabled={!draft.trim()}>
-                  <Icon name="check" size={14} />
+                <Button
+                  onClick={() => void save()}
+                  loading={saving}
+                  disabled={!draft.trim()}
+                  icon={<Icon name="check" size={14} />}
+                >
                   {t('common.save')}
                 </Button>
               </div>

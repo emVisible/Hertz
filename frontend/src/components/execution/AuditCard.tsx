@@ -275,8 +275,8 @@ export function AuditCard({
             loading={busy?.action === 'approve'}
             disabled={!!busy}
             onClick={() => onApprove(item)}
+            icon={<Icon name="check" size={12} />}
           >
-            <Icon name="check" size={12} />
             {busy?.action === 'approve' ? t('console.busy.approve') : t('console.approve')}
           </Button>
           <Button
@@ -286,8 +286,8 @@ export function AuditCard({
             loading={busy?.action === 'reject'}
             disabled={!!busy}
             onClick={() => onReject(item)}
+            icon={<Icon name="close" size={12} />}
           >
-            <Icon name="close" size={12} />
             {busy?.action === 'reject' ? t('console.busy.reject') : t('console.reject')}
           </Button>
         </div>

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { api } from '../api'
 import { pipelineApi, type CollectSourceRun, type LogLineHistory, type PipelineJob } from '../api/pipeline'
-import { Icon } from './ui'
+import { Icon, Spinner } from './ui'
 import { useExecutionStore } from '../stores/execution'
 
 type ActivityTab = 'jobs' | 'system'
@@ -322,7 +322,7 @@ export function ActivityPanel() {
         {busyEntries.length > 0 ? (
           /* 处理中（v0.11.4）：优先于标题展示——合并了原执行页顶部横幅 */
           <span className="flex min-w-0 items-center gap-1.5 truncate">
-            <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <Spinner size={10} />
             <span className="min-w-0 truncate">
               <span className="font-medium text-text-primary">{t('console.busyBanner', { n: busyEntries.length })}</span>
               {busyEntries.slice(0, 2).map(([id, e]) => (

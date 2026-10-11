@@ -195,8 +195,13 @@ export function RolesManager() {
 
       <div className="flex items-center justify-between border-t border-border pt-3">
         <p className="text-[10px] leading-relaxed text-text-disabled">{t('settings.roleFallbackHint')}</p>
-        <Button size="sm" onClick={() => void save()} disabled={!dirty} loading={saving}>
-          <Icon name="check" size={14} />
+        <Button
+          size="sm"
+          onClick={() => void save()}
+          disabled={!dirty}
+          loading={saving}
+          icon={<Icon name="check" size={14} />}
+        >
           {t('common.save')}
         </Button>
       </div>

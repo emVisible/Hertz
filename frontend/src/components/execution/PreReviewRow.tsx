@@ -34,6 +34,14 @@ export function PreReviewRow({
   const { t } = useTranslation()
   // v0.11.3：单条操作进行中——按钮转圈 + 防重复提交
   const busy = useExecutionStore((s) => s.pipeline.busy[item.id])
+  // 「在忙」必须按动作归属（v0.34 修）：一个条目上同时挂着直下与评分两个按钮，
+  // 早先两处都写 `!!busy`——于是点「直接下载」时，评分按钮也转起来、文案也变成
+  // 「评分中」，用户看到两个动作同时在进行，而评分压根没被调用。
+  // 同一个条目上只有一个动作在跑，所以谓词必须带动作名；禁用仍用 `!!busy`
+  // （同一条目并发两个写操作会互相踩）。
+  const busyOn = (action: string) => busy?.action === action
+  const scored = busyOn('score')
+  const downloading = busyOn('download')
 
   return (
     <li className="group flex items-center gap-3 px-4 py-2 transition-colors hover:bg-surface-2/40">
@@ -96,25 +104,25 @@ export function PreReviewRow({
               <Button
                 size="sm"
                 variant="ghost"
-                loading={!!busy}
+                loading={downloading}
                 disabled={!!busy}
                 onClick={() => onDownloadDirect(item)}
                 title={t('console.downloadUnscoredHint')}
+                icon={<Icon name="downloads" size={12} />}
               >
-                <Icon name="downloads" size={12} />
-                {busy ? t('console.busy.download') : t('console.downloadUnscored')}
+                {downloading ? t('console.busy.download') : t('console.downloadUnscored')}
               </Button>
             )}
             <Button
               size="sm"
               variant="secondary"
-              loading={!!busy}
+              loading={scored}
               disabled={!!busy}
               onClick={() => onScore(item)}
               title={t('console.scoreHint')}
+              icon={<Icon name="whisper" size={12} />}
             >
-              <Icon name="whisper" size={12} />
-              {busy ? t('console.busy.score') : t('console.score')}
+              {scored ? t('console.busy.score') : t('console.score')}
             </Button>
           </>
         )}
@@ -122,13 +130,13 @@ export function PreReviewRow({
           <Button
             size="sm"
             variant="secondary"
-            loading={!!busy}
+            loading={downloading}
             disabled={!!busy}
             onClick={() => onDownload(item)}
             title={t('console.downloadHint')}
+            icon={<Icon name="downloads" size={12} />}
           >
-            <Icon name="downloads" size={12} />
-            {busy ? t('console.busy.download') : t('console.downloadOne')}
+            {downloading ? t('console.busy.download') : t('console.downloadOne')}
           </Button>
         )}
       </span>

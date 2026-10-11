@@ -122,8 +122,12 @@ function ProviderModal({
         )}
         <div className="mt-1 flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button onClick={() => void save()} loading={saving} disabled={!name.trim()}>
-            <Icon name="check" size={14} />
+          <Button
+            onClick={() => void save()}
+            loading={saving}
+            disabled={!name.trim()}
+            icon={<Icon name="check" size={14} />}
+          >
             {t('common.save')}
           </Button>
         </div>
@@ -205,8 +209,13 @@ function ModelsPanel({ provider, models }: { provider: AIProviderDTO; models: AI
           </span>
         </p>
         <div className="flex shrink-0 gap-2">
-          <Button size="sm" variant="ghost" onClick={() => void fetchRemote()} loading={fetching}>
-            <Icon name="refresh" size={12} />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void fetchRemote()}
+            loading={fetching}
+            icon={<Icon name="refresh" size={12} />}
+          >
             {t('settings.aiFetchModels')}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setShowAdd((v) => !v)}>

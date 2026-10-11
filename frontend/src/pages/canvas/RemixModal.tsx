@@ -115,8 +115,13 @@ export function RemixModal({ open, onClose }: { open: boolean; onClose: () => vo
               <Icon name="tag" size={13} />
               {t('canvas.remix.wordbank')}
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => void analyze()} loading={loading}>
-              <Icon name="refresh" size={13} />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void analyze()}
+              loading={loading}
+              icon={<Icon name="refresh" size={13} />}
+            >
               {t('canvas.remix.analyze')}
             </Button>
           </div>

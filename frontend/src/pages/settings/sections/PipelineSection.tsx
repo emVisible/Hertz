@@ -209,8 +209,12 @@ export function RedditCookieCard() {
           className="w-36"
           options={COOKIE_BROWSERS}
         />
-        <Button size="sm" onClick={() => void exportCookie()} loading={busy}>
-          <Icon name="downloads" size={12} />
+        <Button
+          size="sm"
+          onClick={() => void exportCookie()}
+          loading={busy}
+          icon={<Icon name="downloads" size={12} />}
+        >
           {t('settings.cookieExport')}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => void exportCookie(true)} disabled={busy}>
