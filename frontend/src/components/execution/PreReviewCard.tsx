@@ -36,6 +36,13 @@ export function PreReviewCard({
   const [options, setOptions] = useState<ProduceOptions>(() =>
     normalizeOptions(item.produce_options),
   )
+  // 下载态判据三态，**不能拿 raw_path 当「下过没有」再配 status 当「成功没有」**：
+  //   text_only → 无需下载（下载步骤对它就是 no media, skipping，只分配产物目录）
+  //   有 raw    → 已下载（真的取到媒体了）
+  //   两者皆无   → 素材缺失（状态说 downloaded 却没文件：要么文件被清，要么数据错）
+  // 「待下载」在这一段**不作为出口**：它是 discovered 的说法，而这一段是 downloaded
+  // 专属（用户实测：条目进了「已下载未加工」却写着待下载，以为什么都没下）。
+  const isText = (item.item_type || '') === 'text_only'
   const hasRaw = !!item.raw_path
   const hasVideo = !!item.video_path
   const coverInputRef = useRef<HTMLInputElement>(null)
@@ -126,8 +133,19 @@ export function PreReviewCard({
             ? <Badge tone="primary">AI {item.score_total.toFixed(1)}</Badge>
             : <span className="text-[11px] text-text-disabled">{t('console.pendingScore')}</span>}
           <span className="flex items-center gap-1 text-[11px]">
-            <Icon name={hasRaw ? 'check' : 'grip'} size={11} className={hasRaw ? 'text-success' : 'text-text-disabled'} />
-            {hasRaw ? t('console.downloaded') : t('console.pendingDownload')}
+            {isText ? (
+              <span className="text-text-secondary">{t('console.textNoMedia')}</span>
+            ) : hasRaw ? (
+              <>
+                <Icon name="check" size={11} className="text-success" />
+                {t('console.downloaded')}
+              </>
+            ) : (
+              <>
+                <Icon name="close" size={11} className="text-warning" />
+                {t('console.rawMissing')}
+              </>
+            )}
           </span>
         </div>
 
@@ -165,13 +183,13 @@ export function PreReviewCard({
           ) : (
             <Button
               size="sm"
-              loading={!!busy}
+              loading={busy?.action === 'produce'}
               disabled={!!busy}
               onClick={() => onProduce(item)}
               title={t('console.produce.nowHint')}
+              icon={<Icon name="play" size={12} />}
             >
-              <Icon name="play" size={12} />
-              {busy ? t('console.busy.produce') : t('console.produce.now')}
+              {busy?.action === 'produce' ? t('console.busy.produce') : t('console.produce.now')}
             </Button>
           )}
         </div>
