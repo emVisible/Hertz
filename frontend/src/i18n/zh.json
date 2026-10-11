@@ -814,6 +814,9 @@
     "lowScore": "低分可复用",
     "stagePreReview": "预处理",
     "downloaded": "已下载",
+    "downloadSkipped": "未下载：CDN 冷却/熔断中，稍后自动重试（详情看执行工作台日志）",
+    "textNoMedia": "文字帖 · 无需下载",
+    "rawMissing": "素材缺失",
     "pendingDownload": "待下载",
     "pendingScore": "待评分",
     "produced": "已成片",
@@ -1062,7 +1065,12 @@
       "textNo": "无正文",
       "progress": "命中 {{hit}} / 共 {{total}}",
       "unfilled": "分数未采到 {{n}}",
-      "withText": "有正文 {{yes}} · 无正文 {{no}}"
+      "withText": "有正文 {{yes}} · 无正文 {{no}}",
+      "material": "素材类型",
+      "materialAll": "全部类型",
+      "materialImage": "图文",
+      "materialVideo": "视频",
+      "materialText": "文字帖"
     },
     "preStage": {
       "score": "评分",

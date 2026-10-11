@@ -59,7 +59,13 @@ class PrepOpsMixin:
                 row = await session.get(Item, item_id)
                 error = row.error if row is not None else "download failed"
             raise RuntimeError(error)
-        return {"id": str(item_id), "status": "downloaded", "outcome": outcome}
+        # 状态以库为准：冷却/熔断/隔离跳过时条目仍是 discovered，回一个硬编码的
+        # "downloaded" 等于对界面撒谎——用户照这句话去「已下载未加工」找，必然是空的。
+        # 引擎才是状态流转的唯一作者（base.py 契约），这里只如实转述。
+        async with session_factory() as session:
+            row = await session.get(Item, item_id)
+            status = row.status if row is not None else "discovered"
+        return {"id": str(item_id), "status": str(status), "outcome": outcome}
 
     async def download_unscored(self, limit: int = 10) -> dict:
         """批量直下（v0.11.10，预处理「直接下载」按钮）：对全部未评分

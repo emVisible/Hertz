@@ -799,6 +799,9 @@
     "lowScore": "Low score (reusable)",
     "stagePreReview": "Pre-process",
     "downloaded": "Downloaded",
+    "downloadSkipped": "Not downloaded: CDN cooling down, auto-retry later (see execution log)",
+    "textNoMedia": "Text post · nothing to download",
+    "rawMissing": "Media file missing",
     "pendingDownload": "Pending download",
     "pendingScore": "Pending scoring",
     "produced": "Produced",
@@ -1047,7 +1050,12 @@
       "textNo": "No text",
       "progress": "{{hit}} matched / {{total}} total",
       "unfilled": "{{n}} without score data",
-      "withText": "with text {{yes}} · no text {{no}}"
+      "withText": "with text {{yes}} · no text {{no}}",
+      "material": "Media type",
+      "materialAll": "All types",
+      "materialImage": "Image post",
+      "materialVideo": "Video",
+      "materialText": "Text post"
     },
     "preStage": {
       "score": "Score",

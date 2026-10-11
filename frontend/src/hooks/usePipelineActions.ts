@@ -86,9 +86,12 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
   /** 单条下载（v0.8.6 评分先行，预处理手动下载按钮）。 */
   async function downloadOne(item: PipelineItem) {
     try {
-      await withBusy(item, 'download', () => pipelineApi.download(item.id))
+      const res = await withBusy(item, 'download', () => pipelineApi.download(item.id))
       refresh()
-      toast(t('console.downloaded'), 'success')
+      // 跳过的条目（CDN 冷却/熔断、空壳隔离）不会进 downloaded——硬报「已下载」
+      // 就是让用户去「已下载未加工」扑空，而且找不到原因（实测于直下链路）。
+      if (res.outcome === 'skipped') toast(t('console.downloadSkipped'), 'warning')
+      else toast(t('console.downloaded'), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }
@@ -97,9 +100,10 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
   /** 单条直下（v0.11.10）：未评分条目绕过评分直接下载——省 API 余额场景。 */
   async function downloadOneDirect(item: PipelineItem) {
     try {
-      await withBusy(item, 'download', () => pipelineApi.download(item.id, true))
+      const res = await withBusy(item, 'download', () => pipelineApi.download(item.id, true))
       refresh()
-      toast(t('console.downloaded'), 'success')
+      if (res.outcome === 'skipped') toast(t('console.downloadSkipped'), 'warning')
+      else toast(t('console.downloaded'), 'success')
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }

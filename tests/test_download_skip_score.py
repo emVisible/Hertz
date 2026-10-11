@@ -109,3 +109,67 @@ async def test_unscored_flag_ignored_for_other_steps(client) -> None:
         if hit and hit.get("status") in ("completed", "failed"):
             break
         await asyncio.sleep(0.3)
+
+
+@pytest.mark.asyncio
+async def test_download_one_skip_reports_real_status(client, monkeypatch) -> None:
+    """跳过（CDN 熔断）不得谎报 downloaded：条目仍在 discovered，
+    响应 status 必须是库里的真值——否则界面报「已下载」而条目根本没下载，
+    用户去「已下载未加工」找，必然什么都没有。"""
+    import uuid as _uuid
+
+    import backend.pipeline.download as dl
+    from backend.models.item import Item as _Item
+
+    monkeypatch.setattr(dl, "cdn_circuit_open", lambda: True)
+    # 视频条目：text_only 走无媒体直通，永远成功——绕不开熔断判定
+    async with session_factory() as session:
+        row = _Item(
+            status="discovered", source="reddit", source_id="dls-6", item_type="video_raw",
+            title="熔断跳过不谎报", media_url="https://v.redd.it/abc/DASH_720.mp4",
+            source_url="https://www.reddit.com/r/x/comments/abc/",
+        )
+        session.add(row)
+        await session.commit()
+        item_id = str(row.id)
+    resp = await client.post(f"/api/pipeline/items/{item_id}/download?skip_score=1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["outcome"] == "skipped"
+    assert body["status"] == "discovered"
+
+    async with session_factory() as session:
+        row = await session.get(_Item, _uuid.UUID(item_id))
+        assert row is not None and row.status == "discovered"
+        assert not row.raw_path
+
+
+@pytest.mark.asyncio
+async def test_direct_download_output_dir_not_shared(client) -> None:
+    """直下多个条目不得共用一个产物目录：序号来自「磁盘上已有的当日目录」，
+    只写 DB 不建目录会让每个条目都拿到 -01——制作时产物互相覆盖。"""
+    from pathlib import Path
+
+    from backend.config import settings
+
+    ids = [await _mk_item("discovered", f"dls-dir-{i}", f"产物目录不共用-{i}") for i in range(2)]
+    for item_id in ids:
+        resp = await client.post(f"/api/pipeline/items/{item_id}/download?skip_score=1")
+        assert resp.status_code == 200 and resp.json()["outcome"] == "ok"
+
+    import uuid as _uuid
+
+    from backend.models.item import Item as _Item
+
+    root = Path(settings.data_dir) / "pipeline"
+    dirs: list[str] = []
+    async with session_factory() as session:
+        for item_id in ids:
+            row = await session.get(_Item, _uuid.UUID(item_id))
+            assert row is not None and row.status == "downloaded"
+            assert row.output_dir, "产物目录未分配"
+            assert (root / row.output_dir.split("/")[-1]).is_dir(), (
+                f"{row.output_dir} 只写了 DB 没建目录，下一个条目会拿到同一序号"
+            )
+            dirs.append(row.output_dir)
+    assert len(set(dirs)) == len(dirs), f"产物目录撞了：{dirs}"
