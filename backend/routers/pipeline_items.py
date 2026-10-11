@@ -29,17 +29,19 @@ async def list_items(
     theme: str | None = None,
     quality: str | None = None,
     has_text: bool | None = None,
+    material: str | None = None,
 ):
     """条目列表。默认排除空壳（is_invalid，v0.33）——异常区走 /items/invalid；
     需要一并看时显式传 include_invalid=true。
 
-    v0.34 A 筛选轴（服务端筛）：theme=sentiment / quality=loose|standard|strict /
-    has_text=true|false（缺省 = 不加该条条件）。非法 theme/quality → 422，
-    不吞成「今天一条都没有」。"""
+    筛选轴（服务端筛）：theme=sentiment / quality=loose|standard|strict|unfilled /
+    has_text=true|false / material=image|video|text（缺省 = 不加该条条件）。
+    非法 theme|quality|material → 422，不吞成「今天一条都没有」。"""
     try:
         return await _pipe().list_items(
             status=status, limit=limit, source=source, include_invalid=include_invalid,
             theme=theme or None, quality=quality or None, has_text=has_text,
+            material=material or None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -53,6 +55,7 @@ async def items_facets(
     theme: str | None = None,
     quality: str | None = None,
     has_text: bool | None = None,
+    material: str | None = None,
 ):
     """分面计数（v0.34 A）：`{total, hit, by_quality, with_text, without_text}`。
 
@@ -60,11 +63,13 @@ async def items_facets(
     合成一个数就会让用户分不清「筛没了」和「本来就没有」。
     with_text/without_text 让「无正文」成为可数出来的一档，而不是被筛选悄悄滤掉
     （情感池现状：747 条全部无正文，见 docs/ROADMAP.md 在飞段）。
+    material（素材类型）是互斥划分，不另开分面格——三档并起来恒等于分母。
     """
     try:
         return await _pipe().items_facets(
             status=status, source=source, include_invalid=include_invalid,
             theme=theme or None, quality=quality or None, has_text=has_text,
+            material=material or None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -301,6 +306,107 @@ async def set_produce_options(body: ProduceOptionsBody):
 
 class PriorityBody(BaseModel):
     ordered_ids: list[uuid.UUID]
+
+
+# ---------- 多素材合集编排（v0.35） ----------
+
+#: 片段数上限的服务端副本（权威在 `service_compilation.MAX_CLIPS`）。
+#: 这里只做**请求体**层面的早拒——省掉一次查库往返；真正的语义校验在 service。
+MAX_CLIP_BODY = 30
+
+
+class ClipSpec(BaseModel):
+    """一个片段：引用哪条素材 + 从它入场时用什么转场。
+
+    `transition_s` 不设上限校验：真正的上限取决于相邻片段时长
+    （装配时按片段长度二次钳制），这里只挡明显离谱的值。
+    """
+    item_id: uuid.UUID
+    transition: str | None = None
+    transition_s: float | None = Field(None, ge=0.1, le=10.0)
+
+
+class OutroSpec(BaseModel):
+    enabled: bool = False
+    duration_s: float | None = Field(None, ge=1.0, le=10.0)
+    subtitle: str | None = Field(None, max_length=60)
+
+
+class CompilationBody(BaseModel):
+    title: str | None = Field(None, max_length=80)
+    clips: list[ClipSpec] = Field(default_factory=list)
+    # 兼容入口：只要 id 顺序、不指定转场时用它（服务端按顺序裸拼）
+    clip_ids: list[uuid.UUID] = Field(default_factory=list)
+    outro: OutroSpec | None = None
+    channel_key: str | None = Field(None, max_length=64)
+    produce_options: dict | None = None
+
+
+@router.post("/compilations")
+async def create_compilation(body: CompilationBody):
+    """新建合集条目（v0.35）：把若干条已下载素材拼成一条成片。
+
+    发布侧一次只能上传一个文件（`publishers/router.py` 的 biliup 单文件命令），
+    逐条发会撞平台频率限制——合成一条是那条限制下唯一有效的减法。
+
+    产物是**一条新条目**（status=downloaded，直接可制作），源素材条目不受影响。
+    """
+    clips = [c.model_dump() for c in body.clips] or None
+    ids = list(body.clip_ids)
+    if not clips and not ids:
+        raise HTTPException(status_code=422, detail="至少需要一个片段")
+    if len(clips or ids) > MAX_CLIP_BODY:
+        raise HTTPException(
+            status_code=422, detail=f"单条合集最多 {MAX_CLIP_BODY} 个片段"
+        )
+    try:
+        return await _pipe().create_compilation(
+            ids,
+            title=body.title or "",
+            clips=clips,
+            outro=body.outro.model_dump() if body.outro else None,
+            channel_key=body.channel_key,
+            produce_options=body.produce_options,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class CompilationUpdateBody(BaseModel):
+    clips: list[ClipSpec]
+    outro: OutroSpec | None = None
+
+
+@router.put("/compilations/{item_id}")
+async def update_compilation(item_id: uuid.UUID, body: CompilationUpdateBody):
+    """改已有合集的编排：拖拽排序 / 调转场 / 开关片尾。
+
+    只改 `clips` 字段——`produce_options` 仍走 `/produce-options`（批量那套），
+    两套写点各管各的（见 `service_compilation` 的模块 docstring）。
+    """
+    if not body.clips:
+        raise HTTPException(status_code=422, detail="至少需要一个片段")
+    if len(body.clips) > MAX_CLIP_BODY:
+        raise HTTPException(
+            status_code=422, detail=f"单条合集最多 {MAX_CLIP_BODY} 个片段"
+        )
+    try:
+        return await _pipe().update_compilation(
+            item_id,
+            clips=[c.model_dump() for c in body.clips],
+            outro=body.outro.model_dump() if body.outro else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/compilations/sources")
+async def compilation_sources():
+    """可作为片段的条目（已下载 + 有原始媒体 + 非合集 + 非隔离非归档）。
+
+    「能不能当片段」的判据只有这一个作者——编排面板不自己写状态判断。
+    """
+    return await _pipe().compilation_sources()
 
 
 @router.post("/items/priority")

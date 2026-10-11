@@ -16,6 +16,7 @@ from backend.models.session import session_factory
 from backend.models.system import JobRun
 from backend.pipeline.category import theme_subreddits
 from backend.pipeline.quality import (
+    MATERIAL_TIERS,
     MIN_STORY_CHARS,
     MISSING_METRIC_VALUE,
     QUALITY_TIERS,
@@ -41,22 +42,36 @@ def operational_filters(*, include_archived: bool, include_invalid: bool) -> lis
     return conditions
 
 
-def axis_filters(*, theme: str | None, quality: str | None, has_text: bool | None) -> list:
-    """三条筛选轴的统一条件构造（v0.34 A）：主题轴 / 质量轴 / 正文有无轴。
+def axis_filters(*, theme: str | None, quality: str | None, has_text: bool | None,
+                 material: str | None = None) -> list:
+    """四条筛选轴的统一条件构造：主题轴 / 质量轴 / 正文有无轴 / 素材类型轴。
 
     与 `operational_filters()` 同一套纪律：`list_items()` 与 `items_facets()` 共用
     这一份，谁也不许自己再拼一次 WHERE。分开写两遍就会漂成「列表里少了两条、
     数字还是老样子」——而 facets 存在的意义正是给用户报「命中 X / 全量 Y」。
 
     阈值/名单不在这里：成员名单查 `category.THEME_SUBREDDITS`，质量阈值、缺值哨兵
-    与正文门槛查 `quality.QUALITY_TIERS` / `QUALITY_UNFILLED` / `MISSING_METRIC_VALUE`
-    / `MIN_STORY_CHARS`，此处只负责把它们拼成条件。
-    未知 theme / quality 在查表处抛 ValueError——「名单没配」不能伪装成
-    「今天没有情感内容」（空集就是那种伪装）。
+    与正文门槛查 `quality.QUALITY_TIERS` / `quality.QUALITY_UNFILLED` /
+    `quality.MISSING_METRIC_VALUE` / `quality.MIN_STORY_CHARS`，素材类型档查
+    `quality.MATERIAL_TIERS`，此处只负责把它们拼成条件。
+    未知 theme | quality | material → ValueError（「名单没配」不能伪装成
+    「今天没有这类内容」（空集就是那种伪装）。
+
+    `material` 与另三轴不同：它是**划分**（三档互斥且并起来恒等于分母），
+    而 `quality` 是分级且存在第四格「缺值」——所以 `items_facets` 只需把它带进
+    `hit`，不另开 `by_material` 分面。
     """
     conditions: list = []
     if theme is not None:
         conditions.append(Item.subreddit.in_(sorted(theme_subreddits(theme))))
+    if material is not None:
+        item_type = MATERIAL_TIERS.get(material)
+        if item_type is None:
+            raise ValueError(
+                f"unknown material tier '{material}'"
+                f"（可选：{sorted(MATERIAL_TIERS)}）"
+            )
+        conditions.append(Item.item_type == item_type)
     if quality is not None:
         if quality == QUALITY_UNFILLED:
             # 「分数没采到」单独成一档：两个字段一起为 0 是采集缺字段，不是低质量
@@ -105,6 +120,7 @@ class QueriesMixin:
         self, status: str | None = None, limit: int = 50, source: str | None = None,
         include_archived: bool = False, include_invalid: bool = False,
         theme: str | None = None, quality: str | None = None, has_text: bool | None = None,
+        material: str | None = None,
         focus_date: str | None = None,
         published_from: str | None = None, published_to: str | None = None,
     ) -> list[dict]:
@@ -140,8 +156,10 @@ class QueriesMixin:
                 if published_to is not None:
                     conditions.append(Item.published_at < utc_instant(published_to))
             # 轴条件走 axis_filters（与 items_facets 同一份）；即便其余条件为空也要
-            # 先求值一次——未知 theme 必须在这里就抛，而不是等结果集。
-            conditions.extend(axis_filters(theme=theme, quality=quality, has_text=has_text))
+            # 先求值一次——未知 theme/material 必须在这里就抛，而不是等结果集。
+            conditions.extend(
+                axis_filters(theme=theme, quality=quality, has_text=has_text, material=material)
+            )
             if conditions:
                 stmt = select(Item).where(*conditions).order_by(order).limit(limit)
             result = await session.execute(stmt)
@@ -157,18 +175,21 @@ class QueriesMixin:
         self, status: str | None = None, source: str | None = None,
         include_archived: bool = False, include_invalid: bool = False,
         theme: str | None = None, quality: str | None = None, has_text: bool | None = None,
+        material: str | None = None,
     ) -> dict:
         """分面计数（v0.34 A）：给界面报「命中 X / 共 Y」和各轴的水位。
 
         **total 与 hit 必须是两个数**：total 是不加任何筛选轴的分母，hit 是加满
         当前轴之后的结果。把筛后当全量是这个仓库被坑过的形状（用户以为数据变少了）。
-        `by_quality` 保持 theme/has_text 生效、逐档换阈值；`with_text`/`without_text`
+        `by_quality` 保持 theme/has_text/material 生效、逐档换阈值；`with_text`/`without_text`
         保持 theme/quality 生效、逐档换正文条件——两档并起来就是其余轴选定后的池子，
         所以「无正文」能被数出来，而不是被筛选悄悄滤掉。
         `unfilled` 同样保持 theme/has_text 生效，数的是「分数没采到」那一档。
         注意：**三档 + 缺值档 ≠ 全量**（实测 loose 1255 + unfilled 458 = 1713，
         分母 2659）——剩下的里有 312 条只有 ratio 没有 score，两不沾。界面不许把
         这几格说成互补划分，理由见 `quality.QUALITY_UNFILLED` 注释。
+        `material`（素材类型）与上面几格不同：它是互斥划分，不另开分面——三档并起来
+        恒等于分母，界面要的「图文/视频/文字帖各多少」用列表数就够，不占分面格。
 
         条件全部走 `axis_filters()` + `operational_filters()`：这里不许出现第二套 WHERE。
         """
@@ -192,20 +213,26 @@ class QueriesMixin:
                 )
                 return int((await session.execute(stmt)).scalar_one())
 
-            hit = await _count(axis_filters(theme=theme, quality=quality, has_text=has_text))
+            # material 与 theme 一样是「选定后固定」的那类轴：每一格分面都在它选定的
+            # 池子里数（by_quality/with_text/unfilled 都带着它），否则用户在「图文」
+            # 档看到的质量分布会是全库分布——数字说的不是他正在看的那批数据。
+            def _axes(**over: object) -> list:
+                base_axes: dict[str, object] = {
+                    "theme": theme, "quality": quality,
+                    "has_text": has_text, "material": material,
+                }
+                base_axes.update(over)
+                return axis_filters(**base_axes)  # type: ignore[arg-type]
+
+            hit = await _count(_axes())
             by_quality = {
-                tier: await _count(
-                    axis_filters(theme=theme, quality=tier, has_text=has_text)
-                )
-                for tier in QUALITY_TIERS
+                tier: await _count(_axes(quality=tier)) for tier in QUALITY_TIERS
             }
-            with_text = await _count(axis_filters(theme=theme, quality=quality, has_text=True))
-            without_text = await _count(axis_filters(theme=theme, quality=quality, has_text=False))
+            with_text = await _count(_axes(has_text=True))
+            without_text = await _count(_axes(has_text=False))
             # 缺值单列（v0.34 A）：不报这一格，「标准档 252」就会被读成
             # 「其余都是低质量」，而那 17.2% 其实是采集没拿到分数（无从判断）。
-            unfilled = await _count(
-                axis_filters(theme=theme, quality=QUALITY_UNFILLED, has_text=has_text)
-            )
+            unfilled = await _count(_axes(quality=QUALITY_UNFILLED))
             return {
                 "total": await _count([]),
                 "hit": hit,

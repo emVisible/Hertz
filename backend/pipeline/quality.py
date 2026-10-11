@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+from backend.models.item import ItemType
+
 #: Reddit 的页面域：返回 HTML/JSON，不含可下载媒体。媒体域是 v./i./preview./shreddit.*redd.it。
 REDDIT_PAGE_HOSTS = frozenset({
     "reddit.com",
@@ -61,6 +63,25 @@ MISSING_METRIC_VALUE = 0
 #: （不在本片范围）。
 QUALITY_UNFILLED = "unfilled"
 
+
+#: 素材类型档（筛选轴）：图文 / 视频 / 文字帖。
+#:
+#: 档名到 `items.item_type` 的映射**只**写在这一份 dict 里——SQL 条件由
+#: `service_queries.axis_filters()` 读它构造。别处再抄一遍字符串，就会出现
+#: 「改了筛选没改判据」。
+#:
+#: 为什么三档互斥且覆盖全部：`item_type` 本身就是这三值（见 `models/item.ItemType`），
+#: 没有第四种素材形态——所以这一轴是**划分**而非**分级**，「图文 / 视频 / 文字帖」
+#: 三档并起来恒等于分母（与 `quality` 那种「三档 + 缺值档 ≠ 全量」的
+#: `QUALITY_UNFILLED` 情形不同，此轴不存在第四格）。
+#:
+#: 档名说明：`image` 档在界面上叫「图文」——Reddit 图帖（image_gallery）本身
+#: 就是「文字 + 图」的图文形态，单独叫「图片」反而不准。
+MATERIAL_TIERS: dict[str, str] = {
+    "image": ItemType.IMAGE_GALLERY,   # 图文（图片帖）
+    "video": ItemType.VIDEO_RAW,       # 视频
+    "text": ItemType.TEXT_ONLY,        # 文字帖（无媒体，走文字产线）
+}
 
 #: 隔离原因码（进 items.error_class；人可读解释进 items.error）
 INVALID_REASON = "invalid_media"

@@ -48,6 +48,7 @@ describe('usePipelineData 的三轴接缝', () => {
         preTheme: 'all',
         preQuality: 'all',
         preHasText: 'all',
+        preMaterial: 'all',
       })
     })
   })
@@ -56,7 +57,12 @@ describe('usePipelineData 的三轴接缝', () => {
     const { result } = renderHook(() => usePipelineData(), { wrapper })
     await waitFor(() => expect(itemsCalls.length).toBeGreaterThan(0))
     const discovered = itemsCalls.find((c) => c[0] === 'discovered')
-    expect(discovered?.[2]).toMatchObject({ theme: 'all', quality: 'all', hasText: 'all' })
+    expect(discovered?.[2]).toMatchObject({
+      theme: 'all',
+      quality: 'all',
+      hasText: 'all',
+      material: 'all',
+    })
     expect(result.current.preFilters.theme).toBe('all')
   })
 
@@ -85,5 +91,49 @@ describe('usePipelineData 的三轴接缝', () => {
       expect(result.current.preFilters.hasText).toBe('no')
     })
     expect(result.current.preFilters.hasText).toBe('no')
+  })
+
+  // 素材类型轴的接缝：它与另外三轴不同——另外三轴只服务 discovered 段，
+  // 而它**三段共用**（用户要求在已评分/已下载未加工段也能筛）。
+  // 所以除了 discovered 请求，还必须证明 queueAll 那条请求也带上了 material：
+  // 不带就是「画了选择器、后两段没发参数」的 UI 谎言（本仓明令禁止的那种）。
+  it('material 进 discovered 请求', async () => {
+    const { result } = renderHook(() => usePipelineData(), { wrapper })
+    await waitFor(() => expect(itemsCalls.length).toBeGreaterThan(0))
+    act(() => result.current.setPreFilters({ preMaterial: 'text' }))
+    await waitFor(() => {
+      const discovered = itemsCalls.filter((c) => c[0] === 'discovered').pop()
+      expect(discovered?.[2]).toMatchObject({ material: 'text' })
+    })
+  })
+
+  it('material 也进已评分/已下载未加工段的请求（三段共用同一选择）', async () => {
+    const { result } = renderHook(() => usePipelineData(), { wrapper })
+    await waitFor(() => expect(itemsCalls.length).toBeGreaterThan(0))
+
+    const queueStatus = 'downloaded,scored,queued,approved,failed,rejected'
+    // 先确认默认时后两段请求确实带着默认 axes（而不是压根没传第三参）
+    const before = itemsCalls.filter((c) => c[0] === queueStatus).pop()
+    expect(before?.[2]).toMatchObject({ material: 'all' })
+
+    act(() => result.current.setPreFilters({ preMaterial: 'video' }))
+    await waitFor(() => {
+      const after = itemsCalls.filter((c) => c[0] === queueStatus).pop()
+      expect(after?.[2]).toMatchObject({ material: 'video' })
+    })
+  })
+
+  it('material 不污染后两段的另外三轴（它们仍是未评分期的判据，不该在这两段生效）', async () => {
+    const { result } = renderHook(() => usePipelineData(), { wrapper })
+    await waitFor(() => expect(itemsCalls.length).toBeGreaterThan(0))
+    act(() =>
+      result.current.setPreFilters({ preMaterial: 'image', preTheme: 'sentiment' }),
+    )
+    await waitFor(() => {
+      const queue = itemsCalls
+        .filter((c) => c[0] === 'downloaded,scored,queued,approved,failed,rejected')
+        .pop()
+      expect(queue?.[2]).toMatchObject({ material: 'image', theme: 'all' })
+    })
   })
 })

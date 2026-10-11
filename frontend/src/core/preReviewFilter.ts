@@ -1,4 +1,4 @@
-/** 未评分区三条筛选轴的请求映射（v0.34 A）——「主题轴 + 质量轴 + 正文有无轴」叠加。
+/** 未评分区筛选轴的请求映射（v0.34 A）——「主题轴 + 质量轴 + 正文有无轴 + 素材类型轴」叠加。
  *
  * 存在理由：这里是**界面选择 → HTTP query** 的唯一构造点。`pipelineApi.items()` 与
  * `pipelineApi.itemFacets()` 都走它，所以「列表筛的是什么」和「分面数的是什么」不会
@@ -17,18 +17,26 @@ export type PreTheme = 'all' | 'sentiment'
  *  未评分活口里 17.2% 两个字段一起是 0，那是采集没拿到，不是「质量不行」。 */
 export type PreQuality = 'all' | 'loose' | 'standard' | 'strict' | 'unfilled'
 export type PreHasText = 'all' | 'yes' | 'no'
+/** 素材类型轴（与后端 `quality.MATERIAL_TIERS` 一一对应）：
+ *  `image` = 图文（图片帖 image_gallery，Reddit 图帖本身就是「文字+图」的图文形态，
+ *  单独叫「图片」反而不准）/ `video` = 视频 / `text` = 文字帖（无媒体，走文字产线）。
+ *  这是**划分**不是分级：三档互斥且并起来恒等于分母，没有第四格（不像 quality 有
+ *  「缺值档」）。 */
+export type PreMaterial = 'all' | 'image' | 'video' | 'text'
 
 export interface PreReviewFilters {
   theme: PreTheme
   quality: PreQuality
   hasText: PreHasText
+  material: PreMaterial
 }
 
-/** 默认 = 三轴全「全部」（不是默认情感）。 */
+/** 默认 = 四轴全「全部」（不是默认情感）。 */
 export const DEFAULT_PRE_FILTERS: PreReviewFilters = {
   theme: 'all',
   quality: 'all',
   hasText: 'all',
+  material: 'all',
 }
 
 /** 轴 → query 参数：未选的不发，选了的用后端认得的参数名。 */
@@ -37,6 +45,7 @@ export function preReviewQuery(filters: PreReviewFilters): Record<string, string
   if (filters.theme !== 'all') query.theme = filters.theme
   if (filters.quality !== 'all') query.quality = filters.quality
   if (filters.hasText !== 'all') query.has_text = filters.hasText === 'yes' ? 'true' : 'false'
+  if (filters.material !== 'all') query.material = filters.material
   return query
 }
 
@@ -46,7 +55,7 @@ function toSearch(params: Record<string, string>): string {
   return search.toString()
 }
 
-/** 列表请求的完整 query：status + limit + 三轴。 */
+/** 列表请求的完整 query：status + limit + 四轴。 */
 export function itemsQuery(
   status: string | undefined,
   limit: number,

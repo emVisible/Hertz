@@ -412,15 +412,19 @@ def test_filter_builder_reuses_the_authors_not_new_numbers() -> None:
 
 
 async def _seed(rows: list[dict]) -> list[str]:
-    """插合成行（status=discovered、非归档、未隔离），返回 id 列表。"""
+    """插合成行（非归档、未隔离），返回 id 列表。
+
+    `status` 默认 discovered，可用 `row["status"]` 覆盖——素材轴要证明
+    「后两段也能筛」，就得能种出 scored/downloaded 的行。
+    """
     ids: list[str] = []
     async with session_factory() as session:
         for row in rows:
             item = Item(
                 source=SOURCE,
                 source_id=row["source_id"],
-                status="discovered",
-                subreddit=row["subreddit"],
+                status=row.get("status", "discovered"),
+                subreddit=row.get("subreddit", "aww"),
                 title=row.get("title", row["source_id"]),
                 item_type=row.get("item_type", "video_raw"),
                 media_url=row.get("media_url", "https://v.redd.it/v034probe/DASHPlaylist.mpd"),
@@ -762,3 +766,208 @@ async def test_facets_endpoint(client, seeded) -> None:
         "/api/pipeline/items/facets", params={"status": "discovered", "theme": "???"}
     )
     assert bad.status_code == 422
+
+
+# ---------- 9. 素材类型轴（图文 / 视频 / 文字帖） ----------
+
+
+def test_material_tiers_map_to_item_types() -> None:
+    """档名 → item_type 的映射只写一份，且三档与 `ItemType` 严格对齐。
+
+    这是一道**互斥划分**（不是分级）：三档并起来必须恒等于全量，否则界面
+    「图文 100 / 视频 200 / 文字帖 50」加起来对不上总数，而用户没法知道差在哪。
+    """
+    from backend.models.item import ItemType
+    from backend.pipeline.quality import MATERIAL_TIERS
+
+    assert MATERIAL_TIERS == {
+        "image": ItemType.IMAGE_GALLERY,
+        "video": ItemType.VIDEO_RAW,
+        "text": ItemType.TEXT_ONLY,
+    }
+    # 覆盖性：Model 里没有第四种素材形态，否则「并起来恒等于分母」当场失效
+    assert {str(v) for v in MATERIAL_TIERS.values()} == {str(t) for t in ItemType}
+
+
+@pytest.mark.asyncio
+async def test_material_axis_is_a_partition(seeded) -> None:
+    """三档互斥、互补、并起来等于全量——与 quality 轴的关键区别。"""
+    ids = await _seed(
+        [
+            {"source_id": "m-img", "item_type": "image_gallery"},
+            {"source_id": "m-img2", "item_type": "image_gallery"},
+            {"source_id": "m-vid", "item_type": "video_raw"},
+            {"source_id": "m-txt", "item_type": "text_only"},
+        ]
+    )
+    pipe = _pipe()
+
+    async def hit(material: str) -> set[str]:
+        rows = await pipe.list_items(
+            status="discovered", source=SOURCE, material=material, limit=100
+        )
+        return {r["id"] for r in rows}
+
+    assert await hit("image") == {ids[0], ids[1]}
+    assert await hit("video") == {ids[2]}
+    assert await hit("text") == {ids[3]}
+    # 互斥 + 互补
+    image, video, text = await hit("image"), await hit("video"), await hit("text")
+    assert not ((image & video) or (image & text) or (video & text))
+    total = await pipe.list_items(status="discovered", source=SOURCE, limit=100)
+    assert len(image) + len(video) + len(text) == len(total) == 4
+
+
+@pytest.mark.asyncio
+async def test_material_none_keeps_everything(seeded) -> None:
+    """不传 material = 不加条件（默认必须是「全部」）。"""
+    await _seed(
+        [
+            {"source_id": "n-img", "item_type": "image_gallery"},
+            {"source_id": "n-txt", "item_type": "text_only"},
+        ]
+    )
+    assert len(await _pipe().list_items(status="discovered", source=SOURCE, limit=100)) == 2
+
+
+@pytest.mark.asyncio
+async def test_unknown_material_raises_valueerror(seeded) -> None:
+    """未知档位 → ValueError，不许静默空集（「名单没配」不能伪装成「今天没有图文」）。"""
+    await _seed([{"source_id": "o-1", "item_type": "image_gallery"}])
+    with pytest.raises(ValueError):
+        await _pipe().list_items(status="discovered", source=SOURCE, material="图文")
+    with pytest.raises(ValueError):
+        await _pipe().items_facets(status="discovered", source=SOURCE, material="image_gallery")
+    # 正样本对照：拼对的档位必须走得通（否则「报错」可以是任何原因造成的假绿）
+    assert len(await _pipe().list_items(status="discovered", source=SOURCE, material="image")) == 1
+
+
+@pytest.mark.asyncio
+async def test_facets_counts_inside_the_selected_material_pool(seeded) -> None:
+    """material 选定后，分面各格都在**那个池子**里数。
+
+    不这么做：用户选「图文」，看到的质量分布却是全库分布——数字说的不是
+    他正在看的那批数据，正是 facets 注释里警告的「数字与列表漂移」。
+    """
+    await _seed(
+        [
+            {"source_id": "p-img-hi", "item_type": "image_gallery", "subreddit": "aww",
+             "reddit_score": 1600, "upvote_ratio": 0.95},
+            {"source_id": "p-img-lo", "item_type": "image_gallery", "subreddit": "aww",
+             "reddit_score": 50, "upvote_ratio": 0.5},
+            {"source_id": "p-vid-hi", "item_type": "video_raw", "subreddit": "aww",
+             "reddit_score": 1600, "upvote_ratio": 0.95},
+        ]
+    )
+    pipe = _pipe()
+    plain = await pipe.items_facets(status="discovered", source=SOURCE)
+    assert plain["total"] == 3 and plain["hit"] == 3
+
+    img = await pipe.items_facets(status="discovered", source=SOURCE, material="image")
+    assert img["total"] == 3, "total 必须是不加轴的分母，不能跟着 material 缩"
+    assert img["hit"] == 2
+    assert img["by_quality"]["strict"] == 1, "strict 那格算的不是图文池"
+    # 图文池两条：1600/0.95 那条三档全中，50/0.5 那条一条都不中。
+    # 若 material 没生效，同为 1600/0.95 的视频条目会混进来，各档都 +1。
+    assert img["by_quality"] == {"loose": 1, "standard": 1, "strict": 1}, (
+        "视频那条混进了图文的质量分布"
+    )
+
+    vid = await pipe.items_facets(status="discovered", source=SOURCE, material="video")
+    assert vid["hit"] == 1 and vid["by_quality"]["strict"] == 1
+
+
+@pytest.mark.asyncio
+async def test_facets_shares_the_list_where_for_material(seeded) -> None:
+    """facets.hit 与 list_items 条数在带 material 时必须一致（同一份条件构造）。"""
+    await _seed(
+        [
+            {"source_id": "q-1", "item_type": "text_only", "subreddit": "aww"},
+            {"source_id": "q-2", "item_type": "video_raw", "subreddit": "aww"},
+            {"source_id": "q-3", "item_type": "image_gallery", "subreddit": "aww"},
+        ]
+    )
+    pipe = _pipe()
+    for material in ("image", "video", "text"):
+        listed = await pipe.list_items(
+            status="discovered", source=SOURCE, material=material, limit=100
+        )
+        facets = await pipe.items_facets(status="discovered", source=SOURCE, material=material)
+        assert facets["hit"] == len(listed), material
+
+
+@pytest.mark.asyncio
+async def test_material_filters_later_stages_not_only_discovered(seeded) -> None:
+    """**后两段也必须真的能筛**（用户要求三段都有）。
+
+    这是本轴存在的前提：界面在已评分/已下载未加工段画了同一个选择器，
+    后端就必须在那两个状态上照样生效——否则是「看着能筛、实际没发参数」。
+    """
+    await _seed(
+        [
+            {"source_id": "r-dl-img", "status": "downloaded", "item_type": "image_gallery"},
+            {"source_id": "r-dl-vid", "status": "downloaded", "item_type": "video_raw"},
+            {"source_id": "r-sc-txt", "status": "scored", "item_type": "text_only"},
+        ]
+    )
+    pipe = _pipe()
+    dl_img = await pipe.list_items(
+        status="downloaded", source=SOURCE, material="image", limit=100
+    )
+    assert [r["source_id"] for r in dl_img] == ["r-dl-img"]
+    dl_vid = await pipe.list_items(
+        status="downloaded", source=SOURCE, material="video", limit=100
+    )
+    assert [r["source_id"] for r in dl_vid] == ["r-dl-vid"]
+    # 已评分段同理
+    sc_txt = await pipe.list_items(
+        status="scored", source=SOURCE, material="text", limit=100
+    )
+    assert [r["source_id"] for r in sc_txt] == ["r-sc-txt"]
+    # 与前端一致的那条合并请求也要能筛
+    both = await pipe.list_items(
+        status="downloaded,scored", source=SOURCE, material="text", limit=100
+    )
+    assert [r["source_id"] for r in both] == ["r-sc-txt"]
+
+
+@pytest.mark.asyncio
+async def test_material_endpoint_passthrough_and_422(client, seeded) -> None:
+    """HTTP 层：参数透传 + 非法值 422（不吞成 200 空列表）。"""
+    await _seed(
+        [
+            {"source_id": "s-1", "item_type": "text_only", "subreddit": "aww"},
+            {"source_id": "s-2", "item_type": "video_raw", "subreddit": "aww"},
+        ]
+    )
+    resp = await client.get(
+        "/api/pipeline/items",
+        params={"status": "discovered", "source": SOURCE, "material": "text"},
+    )
+    assert resp.status_code == 200
+    assert [i["source_id"] for i in resp.json()] == ["s-1"]
+
+    bad = await client.get(
+        "/api/pipeline/items", params={"status": "discovered", "material": "图文"}
+    )
+    assert bad.status_code == 422, bad.status_code
+
+    facets = await client.get(
+        "/api/pipeline/items/facets",
+        params={"status": "discovered", "source": SOURCE, "material": "video"},
+    )
+    assert facets.status_code == 200 and facets.json()["hit"] == 1
+
+
+def test_material_axis_reuses_the_author_in_quality() -> None:
+    """`service_queries` 里的素材条件必须读 `quality.MATERIAL_TIERS`，
+    不许裸写 item_type 字符串（否则改档名只改一半）。"""
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "backend/pipeline/service_queries.py").read_text(
+        encoding="utf-8"
+    )
+    assert "MATERIAL_TIERS" in src, "素材轴没复用 quality 的作者"
+    for bare in ("item_type == \"image_gallery\"", "item_type == \"video_raw\"",
+                 "item_type == \"text_only\""):
+        assert bare not in src, f"筛选里裸写了 item_type：{bare}"

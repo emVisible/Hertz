@@ -110,3 +110,35 @@ describe('筛选参数真的进请求（不是只改本地 state）', () => {
     expect(facetsQuery('discovered', DEFAULT_PRE_FILTERS)).toContain('status=discovered')
   })
 })
+
+describe('preReviewQuery：素材类型轴', () => {
+  it('默认不发 material（缺省 = 不加条件 = 全部类型）', () => {
+    expect(preReviewQuery(DEFAULT_PRE_FILTERS)).not.toHaveProperty('material')
+    expect(DEFAULT_PRE_FILTERS.material).toBe('all')
+  })
+
+  it('三档各自发出后端认得的参数名（与 quality.MATERIAL_TIERS 对齐）', () => {
+    // 这里刻意写后端的档名 image/video/text——写 UI 中文（'图文'）过去
+    // 后端会 422，而 422 在界面上只表现为「筛出 0 条」。
+    expect(preReviewQuery(withFilters({ material: 'image' }))).toEqual({ material: 'image' })
+    expect(preReviewQuery(withFilters({ material: 'video' }))).toEqual({ material: 'video' })
+    expect(preReviewQuery(withFilters({ material: 'text' }))).toEqual({ material: 'text' })
+  })
+
+  it('material 与其余三轴叠加，互不覆盖', () => {
+    expect(
+      preReviewQuery(
+        withFilters({ theme: 'sentiment', quality: 'standard', hasText: 'yes', material: 'text' }),
+      ),
+    ).toEqual({ theme: 'sentiment', quality: 'standard', has_text: 'true', material: 'text' })
+  })
+
+  it('items/facets 两条请求都带 material（分面与列表不漂移）', async () => {
+    spyFetch()
+    const filters = withFilters({ material: 'video' })
+    await pipelineApi.items('discovered', 500, filters)
+    await pipelineApi.itemFacets('discovered', filters)
+    expect(fetched[0]).toContain('material=video')
+    expect(fetched[1]).toContain('material=video')
+  })
+})

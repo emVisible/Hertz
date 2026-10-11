@@ -135,64 +135,83 @@ export function PreReviewTab({
       >
         {/* 阶段子菜单（v0.8.8）：三个可导航分段——点击切换查看该阶段数据；
             待审核已移除（归审核页签）。分段控件风格：激活段填充高亮 */}
-        {/* 未评分筛选三轴（v0.34 A）：只在 discovered 段出现——轴是服务端条件，
-            另外两段（scored/downloaded）走的是同一份 list_items 但不带这套轴，
-            把选择器画在那两段上会变成「看着能筛、实际没发参数」的 UI 谎言。 */}
-        {preStage === 'discovered' && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-surface-2/20 px-3 py-2 text-xs">
-            <span className="text-text-disabled">{t('console.preFilter.title')}</span>
-            <Select
-              aria-label={t('console.preFilter.theme')}
-              value={p.preFilters.theme}
-              onChange={(e) => p.setPreFilters({ preTheme: e.target.value as never })}
-              options={[
-                { value: 'all', label: t('console.preFilter.themeAll') },
-                { value: 'sentiment', label: t('console.preFilter.themeSentiment') },
-              ]}
-              className="w-28"
-            />
-            <Select
-              aria-label={t('console.preFilter.quality')}
-              value={p.preFilters.quality}
-              onChange={(e) => p.setPreFilters({ preQuality: e.target.value as never })}
-              options={[
-                { value: 'all', label: t('console.preFilter.qualityAll') },
-                { value: 'loose', label: t('console.preFilter.qualityLoose') },
-                { value: 'standard', label: t('console.preFilter.qualityStandard') },
-                { value: 'strict', label: t('console.preFilter.qualityStrict') },
-              ]}
-              className="w-32"
-            />
-            <Select
-              aria-label={t('console.preFilter.hasText')}
-              value={p.preFilters.hasText}
-              onChange={(e) => p.setPreFilters({ preHasText: e.target.value as never })}
-              options={[
-                { value: 'all', label: t('console.preFilter.textAll') },
-                { value: 'yes', label: t('console.preFilter.textYes') },
-                { value: 'no', label: t('console.preFilter.textNo') },
-              ]}
-              className="w-28"
-            />
-            {/* total 与 hit 是两个数：把筛后当成全量，界面就分不清「筛没了」和「本来就没有」。 */}
-            {p.discoveredFacets && (
-              <span className="ml-auto font-mono text-[10px] text-text-secondary">
-                {t('console.preFilterProgress', {
-                  hit: p.discoveredFacets.hit,
-                  total: p.discoveredFacets.total,
-                })}
-                {/* 缺值单列：upvote_ratio 实测 17.2% 是采集缺省 0，不是零分赞 */}
-                {' · '}
-                {t('console.preFilterUnfilled', { n: p.discoveredFacets.unfilled })}
-                {' · '}
-                {t('console.preFilterWithText', {
-                  yes: p.discoveredFacets.with_text,
-                  no: p.discoveredFacets.without_text,
-                })}
-              </span>
-            )}
-          </div>
-        )}
+        {/* 筛选条（v0.34 A）：两条轴，分段而异——
+            「素材类型」三段都有（用户要求）：它是与阶段无关的「在筛什么素材」，
+            三段共用 store 里同一个值，所以切段不丢选择，且每段都真的发了参数
+            （usePipelineData 的 queueAll 查询带 material，见那里的注释）。
+            主题/质量/正文三轴只服务 discovered 段——它们是**未评分期的决策输入**
+            （质量轴靠 reddit_score/upvote_ratio，已评分之后那两个字段早就有结论了，
+            在后两段画出来就是拿一个已过期的判据过滤）。把选择器画在不读它的段上，
+            就是「看着能筛、实际没发参数」的 UI 谎言。 */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-surface-2/20 px-3 py-2 text-xs">
+          <span className="text-text-disabled">{t('console.preFilter.title')}</span>
+          <Select
+            aria-label={t('console.preFilter.material')}
+            value={p.preFilters.material}
+            onChange={(e) => p.setPreFilters({ preMaterial: e.target.value as never })}
+            options={[
+              { value: 'all', label: t('console.preFilter.materialAll') },
+              { value: 'image', label: t('console.preFilter.materialImage') },
+              { value: 'video', label: t('console.preFilter.materialVideo') },
+              { value: 'text', label: t('console.preFilter.materialText') },
+            ]}
+            className="w-32"
+          />
+          {preStage === 'discovered' && (
+            <>
+              <Select
+                aria-label={t('console.preFilter.theme')}
+                value={p.preFilters.theme}
+                onChange={(e) => p.setPreFilters({ preTheme: e.target.value as never })}
+                options={[
+                  { value: 'all', label: t('console.preFilter.themeAll') },
+                  { value: 'sentiment', label: t('console.preFilter.themeSentiment') },
+                ]}
+                className="w-28"
+              />
+              <Select
+                aria-label={t('console.preFilter.quality')}
+                value={p.preFilters.quality}
+                onChange={(e) => p.setPreFilters({ preQuality: e.target.value as never })}
+                options={[
+                  { value: 'all', label: t('console.preFilter.qualityAll') },
+                  { value: 'loose', label: t('console.preFilter.qualityLoose') },
+                  { value: 'standard', label: t('console.preFilter.qualityStandard') },
+                  { value: 'strict', label: t('console.preFilter.qualityStrict') },
+                ]}
+                className="w-32"
+              />
+              <Select
+                aria-label={t('console.preFilter.hasText')}
+                value={p.preFilters.hasText}
+                onChange={(e) => p.setPreFilters({ preHasText: e.target.value as never })}
+                options={[
+                  { value: 'all', label: t('console.preFilter.textAll') },
+                  { value: 'yes', label: t('console.preFilter.textYes') },
+                  { value: 'no', label: t('console.preFilter.textNo') },
+                ]}
+                className="w-28"
+              />
+            </>
+          )}
+          {/* total 与 hit 是两个数：把筛后当成全量，界面就分不清「筛没了」和「本来就没有」。 */}
+          {preStage === 'discovered' && p.discoveredFacets && (
+            <span className="ml-auto font-mono text-[10px] text-text-secondary">
+              {t('console.preFilterProgress', {
+                hit: p.discoveredFacets.hit,
+                total: p.discoveredFacets.total,
+              })}
+              {/* 缺值单列：upvote_ratio 实测 17.2% 是采集缺省 0，不是零分赞 */}
+              {' · '}
+              {t('console.preFilterUnfilled', { n: p.discoveredFacets.unfilled })}
+              {' · '}
+              {t('console.preFilterWithText', {
+                yes: p.discoveredFacets.with_text,
+                no: p.discoveredFacets.without_text,
+              })}
+            </span>
+          )}
+        </div>
 
         <div
           role="tablist"

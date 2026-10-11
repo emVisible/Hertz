@@ -2,7 +2,14 @@ import { useMemo } from 'react'
 import { useQuery, type Query } from '@tanstack/react-query'
 
 import { api, pipelineApi, type PipelineItem } from '../api'
-import type { PreHasText, PreQuality, PreReviewFilters, PreTheme } from '../core/preReviewFilter'
+import {
+  DEFAULT_PRE_FILTERS,
+  type PreHasText,
+  type PreMaterial,
+  type PreQuality,
+  type PreReviewFilters,
+  type PreTheme,
+} from '../core/preReviewFilter'
 import { useExecutionStore } from '../stores/execution'
 
 /** 三轴的写入形状：与 zustand pipeline 切片同名同键（不是 PreReviewFilters 的
@@ -11,6 +18,7 @@ export interface PreFilterPatch {
   preTheme?: PreTheme
   preQuality?: PreQuality
   preHasText?: PreHasText
+  preMaterial?: PreMaterial
 }
 
 // 轮询只是 SSE 的兜底：空闲时 15s 一次，流水线运行中 2s（AXIOM §7.2 性能预算）。
@@ -47,6 +55,7 @@ export function usePipelineData() {
     theme: store.pipeline.preTheme,
     quality: store.pipeline.preQuality,
     hasText: store.pipeline.preHasText,
+    material: store.pipeline.preMaterial,
   }
   const { data: discoveryAll = [], isError: stageError, refetch: refetchStage } = useQuery({
     queryKey: ['pipeline-stage', preFilters],
@@ -61,10 +70,22 @@ export function usePipelineData() {
     queryFn: () => pipelineApi.itemFacets('discovered', preFilters),
     refetchInterval: pollingInterval,
   })
+  // 预处理后两段（已评分未下载 / 已下载未加工）走这份查询。
+  // 素材类型轴也**必须随请求发送**：这两个分段的选择器与 discovered 段共用同一个
+  // store 值（用户在 discovered 选「图文」，切到已下载未加工应当仍是「图文」）。
+  // 不发参数 = 界面画了一个筛选器却只筛 discovered 段——那正是「看着能筛、
+  // 实际没发参数」的 UI 谎言（也是 v0.34 之前这两段不画选择器的原因）。
+  // 只带 `material`：主题/质量/正文三轴是**未评分期的决策输入**（还没有分数，
+  // 按质量筛已评分条目没有意义），界面也不在���两段画它们。素材类型与阶段无关，
+  // 所以它是唯一跨三段复用的轴。
   const { data: queueAll = [] } = useQuery({
-    queryKey: ['pipeline-queue'],
+    queryKey: ['pipeline-queue', store.pipeline.preMaterial],
     queryFn: () =>
-      pipelineApi.items('downloaded,scored,queued,approved,failed,rejected', 500),
+      pipelineApi.items(
+        'downloaded,scored,queued,approved,failed,rejected',
+        500,
+        { ...DEFAULT_PRE_FILTERS, material: preFilters.material },
+      ),
     refetchInterval: pollingInterval,
   })
   // 发布历史（v0.3.8）：已发布内容完整回到发布列表——不再只有最近 10 条

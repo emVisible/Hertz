@@ -1,7 +1,12 @@
 import { create } from 'zustand'
 
 import type { LogLine } from '../components/execution'
-import type { PreHasText, PreQuality, PreTheme } from '../core/preReviewFilter'
+import type {
+  PreHasText,
+  PreMaterial,
+  PreQuality,
+  PreTheme,
+} from '../core/preReviewFilter'
 
 /**
  * 执行工作台状态（Wave 7.0 缓存机制）：
@@ -40,12 +45,15 @@ export interface PipelineExecState {
   tab: string
   /** 预处理页的次级分段（v0.34：为跨页动线搬进 store，见 `PreStage` 注释） */
   preStage: PreStage
-  /** 未评分区筛选轴（v0.34 A）：与 tab/limit 同一作者——离开页面再回来要保住，
-   *  且必须随请求发送（服务端筛）。默认三轴全是「全部」：**不**默认情感，
+  /** 预处理页的筛选轴（v0.34 A）：与 tab/limit 同一作者——离开页面再回来要保住，
+   *  且必须随请求发送（服务端筛）。默认四轴全是「全部」：**不**默认情感，
    *  否则用户第一次打开会以为数据变少了。 */
   preTheme: PreTheme
   preQuality: PreQuality
   preHasText: PreHasText
+  /** 素材类型轴（图文 / 视频 / 文字帖）。三段共用同一个值——它是「在筛什么素材」，
+   *  不是某一段的局部视图；分段换了选择仍在，所以它属于 store 而非页内 state。 */
+  preMaterial: PreMaterial
   /** 采集进度（v0.8.2）：最近一次 collect 各源明细（可视化运维） */
   collectProgress: Array<{ channel: string; collected?: number; inserted?: number; cooldown_s?: number; error?: string }>
   /** 单条操作进行中（v0.11.3）：itemId → 操作信息——按钮转圈 + 防重复提交
@@ -97,6 +105,7 @@ export const useExecutionStore = create<ExecutionState>((set) => ({
     preTheme: 'all',
     preQuality: 'all',
     preHasText: 'all',
+    preMaterial: 'all',
     collectProgress: [],
     busy: {},
   },
