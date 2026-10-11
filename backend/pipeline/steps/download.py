@@ -70,6 +70,27 @@ async def _ytdlp_download(url: str, dest: Path) -> Path:
     return await asyncio.to_thread(_run)
 
 
+async def _ensure_output_dir(item, ctx) -> None:
+    """分配产物目录：**建目录与写 DB 必须同时发生**。
+
+    `next_output_slug` 的序号按「磁盘上已有的当日目录」递增。只把 `output_dir`
+    写进 DB 而不落盘，下一个条目就会又拿到同一个序号——实测 9 个 text_only
+    条目全被分到 `pipeline/2026-10-11-01`（该目录还不存在），制作时脚本/配音/
+    封面/成片写进同一个文件夹互相覆盖，用户看到的就是「下载成功了却什么都没有」。
+    视频分支此前只因下载器顺手建了目录才没暴露，三条分配路径一并收到这里。
+    """
+    root = Path(ctx.settings.data_dir) / "pipeline"
+    directory = root / next_output_slug(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    relative = f"pipeline/{directory.name}"
+    async with session_factory() as session:
+        row = await session.get(type(item), item.id)
+        if row is not None:
+            row.output_dir = relative
+            await session.commit()
+    item.output_dir = relative
+
+
 class DownloadStep(Pipe):
     name = "download"
     input_statuses: tuple[str, ...] = ("scored",)  # v0.8.6 评分先行
@@ -106,15 +127,8 @@ class DownloadStep(Pipe):
         # v0.11.7 情感故事产线：文字帖无媒体——分配产物目录后直接进入
         # downloaded（produce 走文字分支：脚本 → TTS → 图文合成）
         if (item.item_type or "") == "text_only":
-            root = Path(ctx.settings.data_dir) / "pipeline"
             if not item.output_dir:
-                slug = next_output_slug(root)
-                async with session_factory() as session:
-                    row = await session.get(type(item), item.id)
-                    if row is not None:
-                        row.output_dir = f"pipeline/{slug}"
-                        await session.commit()
-                item.output_dir = f"pipeline/{slug}"
+                await _ensure_output_dir(item, ctx)
             ctx.log(f"[download] text_only story — no media, skipping ({item.title[:40]})")
             return ProcessResult(status="downloaded", data={})
 
@@ -164,13 +178,7 @@ class DownloadStep(Pipe):
             _cookie_ok = False
         root = Path(ctx.settings.data_dir) / "pipeline"
         if not item.output_dir:
-            slug = next_output_slug(root)
-            async with session_factory() as session:
-                row = await session.get(type(item), item.id)
-                if row is not None:
-                    row.output_dir = f"pipeline/{slug}"
-                    await session.commit()
-            item.output_dir = f"pipeline/{slug}"
+            await _ensure_output_dir(item, ctx)
         directory = root / item.output_dir.split("/")[-1]
         dest = directory / "raw"
         ext = _ext_from(url)
@@ -214,14 +222,7 @@ class DownloadStep(Pipe):
 
         root = Path(ctx.settings.data_dir) / "pipeline"
         if not item.output_dir:
-            # 结构化命名：pipeline/2026-08-04-01（日期 + 当日第几次），并持久化供后续步骤复用
-            slug = next_output_slug(root)
-            async with session_factory() as session:
-                row = await session.get(type(item), item.id)
-                if row is not None:
-                    row.output_dir = f"pipeline/{slug}"
-                    await session.commit()
-            item.output_dir = f"pipeline/{slug}"
+            await _ensure_output_dir(item, ctx)
         directory = root / item.output_dir.split("/")[-1]
         dest = directory / "raw"
         ext = _ext_from(url)
