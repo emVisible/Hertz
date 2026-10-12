@@ -254,7 +254,11 @@ def _write_srt(out_path: Path, cues) -> Path:
     return out_path
 
 
-def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
+def srt_to_ass(
+    srt_path: Path,
+    out_path: Path,
+    size: tuple[int, int] | None = None,
+) -> Path:
     """SRT → ASS（无淡入淡出）。v0.11.4：两个修复——
     1) Events Format 行补上 Name 字段：旧版缺 Name（9 字段）而 Dialogue
     行为 10 值（含空 Name 槽），当前 ffmpeg 9.0.1 会把第 8 字段后的全部
@@ -263,7 +267,13 @@ def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
     一并去掉，字幕硬切）。
     v0.4 B1：样式参数读配置（字号/描边/加粗/对齐），设置页可调。
     v0.11.2：字体 → 霞鹜文楷（免费商用优雅楷体）；底部留白可配
-    （pipeline_subtitle_margin_bottom）。pipeline_subtitle_fade_ms 已休眠。"""
+    （pipeline_subtitle_margin_bottom）。pipeline_subtitle_fade_ms 已休眠。
+
+    v0.38：`size` 显式传入成片的真实像素尺寸。PlayRes 是 ASS 的**字幕坐标系**，
+    它必须等于视频像素——否则字号与边距按错误坐标系缩放（静默的视觉错误）。
+    竖屏合集的视频是 720x1280，若 PlayRes 还写 1280x720，字幕会被整体放大/缩小。
+    不传时回落到设置里的成片画幅（横屏场景仍然正确）。
+    """
     entries: list[tuple[int, int, str]] = []
     lines = srt_path.read_text(encoding="utf-8").splitlines()
     i = 0
@@ -284,9 +294,10 @@ def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
     alignment = int(getattr(settings, "pipeline_subtitle_alignment", 2))
     margin_v = int(getattr(settings, "pipeline_subtitle_margin_bottom", 64))
     family = subtitle_font_family()
-    # PlayRes 必须与成片像素尺寸一致（v0.37）：ASS 用它定义字幕坐标系，
+    # PlayRes 必须与成片像素尺寸一致（v0.37/v0.38）：ASS 用它定义字幕坐标系，
     # 不一致时字号与边距会按旧坐标系缩放——静默的视觉错误，没有任何日志。
-    w, h, _fps = target_resolution()
+    # 调用方知道真实尺寸时必须显式传入（竖屏合集的视频不是设置里的横屏）。
+    w, h = size or target_resolution()[:2]
     header = (
         f"[Script Info]\nScriptType: v4.00+\nPlayResX: {w}\nPlayResY: {h}\n"
         "WrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\n"

@@ -15,7 +15,11 @@ from pathlib import Path
 from backend.config import settings
 from backend.library.thumbnails import find_ffmpeg
 from backend.pipeline.producers.common import ProducerError, _run_cmd
-from backend.pipeline.producers.probe import probe_audio_duration, probe_duration
+from backend.pipeline.producers.probe import (
+    probe_audio_duration,
+    probe_duration,
+    video_stream_params,
+)
 from backend.pipeline.producers.resolution import target_resolution
 from backend.pipeline.producers.subtitles import (
     _subtitle_font,
@@ -142,8 +146,27 @@ async def compose_video(
     if target <= 0:
         raise ProducerError(f"cannot determine duration of {raw.name}")
 
-    # 成片画幅（权威源：producers/resolution.py）
-    w, h, fps = target_resolution()
+    # 成片画幅：跟随**输入视频的朝向**，而不是设置里的固定横屏（v0.38）。
+    #
+    # 装配层（assemble）按首片朝向决定输出：首片竖屏就出 720x1280。而这里原先
+    # 固定用 `target_resolution()`（默认 1280x720），于是竖屏视频被
+    # `force_original_aspect_ratio=decrease` 缩到 405x720、再 pad 到 1280x720
+    # ——**68% 的画面是纯黑边**。本仓素材大多是竖屏，所以这是**最常命中的形状**，
+    # 而成片看着就像「一大片黑里夹一条竖画面」。
+    #
+    # 设置里的宽高仍然有用：它决定横屏素材的成片尺寸，以及源分辨率读不出来时
+    # 的兜底。这里只在**朝向**上跟随输入——源本来就是 1080p 竖屏时也按比例缩到
+    # 设置的短边，而不是把 1080p 竖屏原样留着与其它产物规格不一致。
+    cfg_w, cfg_h, fps = target_resolution()
+    # 返回 (宽, 高, fps, 是否含音轨)；解析失败是 None
+    src = await video_stream_params(raw)
+    src_w, src_h = (src[0], src[1]) if src else (0, 0)
+    if not src_w or not src_h:
+        w, h = cfg_w, cfg_h
+    elif src_w >= src_h:
+        w, h = cfg_w, cfg_h                      # 横屏：按设置出
+    else:
+        w, h = cfg_h, cfg_w                      # 竖屏：宽高对调（与 assemble 同一口径）
 
     quality: dict = {"burn": "none", "audio_guard": "ok", "dropped": []}
     aformat = (
@@ -170,7 +193,10 @@ async def compose_video(
                     ass = Path(srt).with_suffix(".ass")
                     sub_file = Path(srt)
                     try:
-                        await asyncio.to_thread(srt_to_ass, Path(srt), ass)
+                        # PlayRes 用**本次真实出片尺寸**：竖屏合集的视频是
+                        # 720x1280，若 ASS 头里仍写 1280x720，字号与边距会按
+                        # 错误坐标系缩放——不报错，只是字幕大小/位置全错。
+                        await asyncio.to_thread(srt_to_ass, Path(srt), ass, (w, h))
                         sub_file = ass
                     except Exception:  # noqa: BLE001 — subtitles are best-effort
                         pass
@@ -197,7 +223,8 @@ async def compose_video(
                                 continue
                             end_t = min(end_t, target)
                             png = tmp_dir / f"cue_{i:03d}.png"
-                            _render_cue_png(text, png)
+                            # 同理：PNG 是全帧覆盖层，尺寸必须跟成片一致
+                            _render_cue_png(text, png, (w, h))
                             inputs += ["-loop", "1", "-t", str(target), "-i", str(png)]
                             dur = max(0.05, end_t - start_t)
                             fade_s = min(

@@ -758,3 +758,95 @@ def test_concat_output_is_timebase_normalised():
     assert "concat=n=2:v=1:a=0,settb=AVTB" in src, (
         "concat 之后未接 settb，混排合集仍会因时基不匹配而失败"
     )
+
+
+# ---------- 竖屏合集不能被塞进横屏画布（v0.38 回归） ----------
+
+@pytest.mark.asyncio
+async def test_compose_preserves_portrait_orientation(tmp_path):
+    """输入是竖屏，compose 就必须出竖屏。
+
+    ## 之前为什么坏
+
+    装配层（`assemble`）按**首片朝向**决定输出：首片竖屏就出 720x1280。而
+    `compose` 原先固定用 `target_resolution()`（默认 1280x720），于是竖屏视频被
+    `force_original_aspect_ratio=decrease` 缩到 405x720 再 pad 到 1280x720——
+    **68.4% 的画面是纯黑边**，成片看起来就是「一大片黑里夹一条竖画面」。
+
+    本仓素材大多是竖屏，所以这是最常命中的形状。而它没有任何报错：
+    ffmpeg 正常退出、时长正确、字幕正常烧录，只是**画面 2/3 是黑的**。
+    """
+    from backend.pipeline.producers.compose import compose_video
+
+    portrait = tmp_path / "portrait.mp4"
+    subprocess.run([
+        str(find_ffmpeg()), "-y", "-v", "error",
+        "-f", "lavfi", "-i", "testsrc=size=360x640:rate=30:duration=3",
+        # compose 始终构造音频分支，素材必须带音轨，否则 filtergraph 绑定失败
+        "-f", "lavfi", "-i", "sine=frequency=300:duration=3",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(portrait),
+    ], check=True)
+
+    srt = tmp_path / "s.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:03,000\n竖屏字幕\n", encoding="utf-8")
+
+    info = await compose_video(portrait, None, srt, tmp_path / "out.mp4")
+    assert (info["width"], info["height"]) == (720, 1280), (
+        f"竖屏输入应产出 720x1280，实际 {info['width']}x{info['height']}"
+    )
+
+    # 不能有整列纯黑——那是 pad 出来的边
+    frame = subprocess.run([
+        str(find_ffmpeg()), "-v", "error", "-ss", "1", "-i", str(tmp_path / "out.mp4"),
+        "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-",
+    ], capture_output=True, check=True).stdout
+    w, h = info["width"], info["height"]
+    rows = [frame[y * w : (y + 1) * w] for y in range(h)]
+    col_dark = [
+        all(rows[y][x] < 8 for y in range(0, h, 4)) for x in range(w)
+    ]
+    left = 0
+    while left < w and col_dark[left]:
+        left += 1
+    right = 0
+    while right < w and col_dark[w - 1 - right]:
+        right += 1
+    assert left + right == 0, f"出现整列纯黑：左 {left}px 右 {right}px（竖屏被 pad 进横屏了）"
+
+
+@pytest.mark.asyncio
+async def test_landscape_input_still_uses_configured_resolution(tmp_path):
+    """横屏输入仍按设置出片——本条修复只改「朝向」，不该动横屏行为。"""
+    from backend.pipeline.producers.compose import compose_video
+    from backend.pipeline.producers.resolution import target_resolution
+
+    landscape = tmp_path / "land.mp4"
+    subprocess.run([
+        str(find_ffmpeg()), "-y", "-v", "error",
+        "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=2",
+        "-f", "lavfi", "-i", "sine=frequency=300:duration=2",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(landscape),
+    ], check=True)
+
+    info = await compose_video(landscape, None, None, tmp_path / "out.mp4")
+    cfg_w, cfg_h, _ = target_resolution()
+    assert (info["width"], info["height"]) == (cfg_w, cfg_h)
+
+
+def test_ass_playres_matches_actual_output_size(tmp_path):
+    """竖屏时 ASS 的 PlayRes 必须跟着变成 720x1280。
+
+    PlayRes 是 ASS 的字幕坐标系：视频是竖屏而 PlayRes 写着 1280x720，
+    字号与边距会按错误坐标系缩放——**不报错**，只是字幕大小和位置全错。
+    """
+    from backend.pipeline.producers.subtitles import srt_to_ass
+
+    srt = tmp_path / "s.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:02,000\n竖屏字幕\n", encoding="utf-8")
+    ass = srt_to_ass(srt, tmp_path / "s.ass", (720, 1280)).read_text(encoding="utf-8")
+    assert "PlayResX: 720" in ass
+    assert "PlayResY: 1280" in ass
+
+    # 不传时回落到设置里的横屏（横屏场景仍然正确）
+    default_ass = srt_to_ass(srt, tmp_path / "d.ass").read_text(encoding="utf-8")
+    assert "PlayResX: 1280" in default_ass
