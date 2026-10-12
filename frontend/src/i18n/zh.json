@@ -1124,7 +1124,7 @@
       "dragHint": "拖拽排序",
       "gap": "间隙转场",
       "transition": "转场",
-      "transitionSeconds": "转场时长（秒）",
+      "transitionSeconds": "转场时长(秒)",
       "estimate": "预估时长 {{s}} 秒",
       "tooLong": "偏长",
       "pickFirst": "先从上面素材池里挑几段",
@@ -1158,7 +1158,13 @@
       "kb_create": "创建合集",
       "kb_back": "返回预处理",
       "draftRestored": "已恢复上次未完成的编排。",
-      "draftDiscard": "丢弃草稿"
+      "draftDiscard": "丢弃草稿",
+      "sourceMissing": "源已移除",
+      "incomingTransition": "入场转场",
+      "firstClipNoTransition": "首片",
+      "kb_undo": "撤销",
+      "kb_redo": "重做",
+      "create": "创建合集"
     }
   },
   "canvas": {

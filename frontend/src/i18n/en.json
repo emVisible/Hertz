@@ -1143,7 +1143,13 @@
       "kb_create": "Create compilation",
       "kb_back": "Back to preprocess",
       "draftRestored": "Restored your unfinished arrangement.",
-      "draftDiscard": "Discard draft"
+      "draftDiscard": "Discard draft",
+      "sourceMissing": "Source removed",
+      "incomingTransition": "In transition",
+      "firstClipNoTransition": "First clip",
+      "kb_undo": "Undo",
+      "kb_redo": "Redo",
+      "create": "Create compilation"
     }
   },
   "canvas": {

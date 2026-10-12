@@ -224,13 +224,68 @@ describe('i18n 目录', () => {
       'pages/settings/sections/GoalSection.tsx',
       'components/execution/TodayPick.tsx',
       'pages/execution/pipeline/InReviewTab.tsx',
+      'components/execution/CompilationWorkspace.tsx',
     ].map((rel) => readFileSync(join(SRC, rel), 'utf-8'))
+    /**
+     * 键名前缀**从目录本身推导**，而不是手写白名单。
+     *
+     * v0.36 手写的是 `console\.board|console\.approved|dashboard\.|settings\.goal|...`。
+     * 那份名单永远是「当初写它的人当时想到的命名空间」，于是新增的
+     * `console.compilation.*`（48 个键）整片没被扫到——`kb_undo` / `kb_redo`
+     * 两个键两个语言文件都缺，界面把 `console.compilation.kb_undo` 字面量直接
+     * 渲染出来，而上面所有守卫全绿。
+     *
+     * 从目录顶层键推导，新加命名空间自动纳入，不依赖任何人记得补名单。
+     */
+    // 前缀取「已知名录的前两段」（`console.compilation`），而不是只有顶层：
+    // `console.compilation.*` 的中间节点 `console.compilation` 本身在目录里是
+    // 一个对象、不是叶子，拿顶层键去 startsWith 会把这一整片漏掉——正是 v0.36 的病根。
+    const prefixes = new Set<string>()
+    for (const k of zh) {
+      const parts = k.split('.')
+      if (parts.length >= 2) prefixes.add(`${parts[0]}.${parts[1]}`)
+    }
     const used = panelFiles
-      .flatMap((text) => [...text.matchAll(/\b(?:console\.board|console\.approved|dashboard\.|settings\.goal|settings\.navGoal)[A-Za-z0-9]*/g)])
-      .map((m) => m[0])
-    expect(used.length, '一个看板键都没找到=正则或文件路径错了').toBeGreaterThan(20)
+      .flatMap((text) =>
+        // 后缀含 `_` 和 `.`：目录里本来就有 `console.dims.short_form` 这类下划线段，
+        // 只吃 `[A-Za-z0-9]*` 会在下划线处截断，报出一个并不存在的缺键。
+        [...text.matchAll(/\b([a-zA-Z][\w]*(?:\.[\w]+)+)/g)]
+          .map((m) => m[1])
+          // 必须**落在已知键集或已知前缀下**，否则会捞到 `trace.length` 这类
+          // 与 i18n 无关的点号文本——那是把正则放宽后的必然副作用。
+          .filter((k) => zh.has(k) || [...prefixes].some((p) => k.startsWith(`${p}.`)))
+          // 模板插值的**基串**（`` `console.compilation.kb_${label}` `` 里的
+          // `console.compilation.kb_`）不是键，是拼接底座。v0.36 就是把
+          // `kb_undo`/`kb_redo` 两个后缀漏在目录外，界面直接渲染出字面量——
+          // 静态扫描看不见这类拼��，所以上面那条动态键测试才必须单独存在。
+          .filter((k) => !k.endsWith('_')),
+      )
+    expect(used.length, '一个 i18n 键都没找到=正则或文件路径错了').toBeGreaterThan(20)
     const absent = [...new Set(used)].filter((k) => !zh.has(k))
     expect(absent, `界面引用了目录里没有的键：${absent.join(', ')}`).toEqual([])
+  })
+
+  it('动态拼接的键也必须在目录里（kb_* 这类模板插值最容易漏）', () => {
+    // 纯字面量扫描看不见 `` `console.compilation.kb_${label}` ``。而 parity
+    // 检查**结构上抓不到**它：两个语言文件一起缺同一个键时，它们依然「相等」。
+    // 所以这里直接枚举所有动态前缀，把可能的后缀全展开来验。
+    const zhSet = new Set(leafKeys(catalog('zh')))
+    const enSet = new Set(leafKeys(catalog('en')))
+    const namespaces = ['console.compilation.kb_', 'console.compilation.transition_']
+    const suffixes: Record<string, string[]> = {
+      'console.compilation.kb_': [
+        'select', 'moveUpDown', 'togglePick', 'transitionGap', 'remove',
+        'undo', 'redo', 'create', 'back',
+      ],
+      'console.compilation.transition_': ['cut', 'fade', 'wipe', 'dissolve', 'zoomin'],
+    }
+    for (const ns of namespaces) {
+      for (const suffix of suffixes[ns]) {
+        const key = `${ns}${suffix}`
+        expect(zhSet.has(key), `zh 缺动态键 ${key}`).toBe(true)
+        expect(enSet.has(key), `en 缺动态键 ${key}`).toBe(true)
+      }
+    }
   })
 
   it('每个叶子值都是字符串（数组/对象会让界面显示 [object Object]）', () => {

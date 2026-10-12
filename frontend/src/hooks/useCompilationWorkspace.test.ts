@@ -17,6 +17,7 @@ import type { CompilationSource } from '../api/pipeline'
 import {
   buildClips,
   estimateDuration,
+  gapKey,
   mixedOrientation,
   type GapMap,
 } from './useCompilationWorkspace'
@@ -130,5 +131,79 @@ describe('buildClips', () => {
   it('顺序即数组顺序', () => {
     const clips = buildClips(['c', 'a', 'b'], noGaps)
     expect(clips.map((c) => c.item_id)).toEqual(['c', 'a', 'b'])
+  })
+})
+
+/**
+ * 间隙键一致性（v0.37）——本轮错位 bug 的回归。
+ *
+ * ## 这个 bug 长什么样
+ *
+ * 转场下拉框的 `value` 读 `gaps[clipIds[idx-1]]`（这张卡**之前**的间隙），
+ * `onChange` 写 `gaps[s.id]`（这张卡**之后**的间隙）。同一个控件读写两个键：
+ * 用户改「第 1、2 段之间」的转场，实际改到了「第 2、3 段之间」。
+ *
+ * 界面不报错、不崩，只是结果悄悄不对——所以只能靠测试钉。
+ */
+describe('gapKey：间隙的唯一定义', () => {
+  const ids = ['a', 'b', 'c', 'd']
+
+  it('第 idx 段的入场转场，键是**前一段**的 id', () => {
+    expect(gapKey(ids, 0)).toBeNull()
+    expect(gapKey(ids, 1)).toBe('a')
+    expect(gapKey(ids, 2)).toBe('b')
+    expect(gapKey(ids, 3)).toBe('c')
+  })
+
+  it('首段与负下标都返回 null（没有入场转场）', () => {
+    expect(gapKey(ids, 0)).toBeNull()
+    expect(gapKey(ids, -1)).toBeNull()
+  })
+
+  it('空序列恒为 null', () => {
+    expect(gapKey([], 0)).toBeNull()
+    expect(gapKey([], 5)).toBeNull()
+  })
+
+  it('N 段恰好有 N-1 个间隙键（不多不少）', () => {
+    for (const n of [1, 2, 5, 30]) {
+      const seq = Array.from({ length: n }, (_, i) => `c${i}`)
+      const keys = seq.map((_, i) => gapKey(seq, i)).filter((k) => k !== null)
+      expect(keys).toHaveLength(Math.max(0, n - 1))
+      // 每个键都是序列里真实存在的 id —— 键不能凭空造出来
+      expect(new Set(keys).size).toBe(keys.length)
+      for (const k of keys) expect(seq).toContain(k as string)
+    }
+  })
+})
+
+describe('buildClips 与 gapKey 同源', () => {
+  it('按 gapKey 设的转场，正好落在 buildClips 读的那一段上', () => {
+    // 这是本次错位 bug 的等价形式：任何「按 idx 写、按另一套规则读」都会让它失败
+    const ids = ['a', 'b', 'c', 'd']
+    const gaps: GapMap = {}
+    const want = ['fade', 'wipe', 'dissolve'] as const
+    ids.forEach((_, idx) => {
+      const key = gapKey(ids, idx)
+      if (key !== null) gaps[key] = { transition: want[idx - 1], seconds: 0.5 }
+    })
+    const clips = buildClips(ids, gaps)
+    // 第 idx 段的 transition 必须等于「按 gapKey 写进去的那个」
+    ids.forEach((_, idx) => {
+      const key = gapKey(ids, idx)
+      expect(clips[idx].transition).toBe(key === null ? undefined : gaps[key]?.transition)
+    })
+    expect(clips.map((c) => c.transition)).toEqual([undefined, 'fade', 'wipe', 'dissolve'])
+  })
+
+  it('「改第 2 段的入场转场」不会影响第 3 段', () => {
+    // 错位 bug 的行为特征：改一处、别处跟着变
+    const ids = ['a', 'b', 'c']
+    let gaps: GapMap = { a: { transition: 'cut', seconds: 0.6 } }
+    const key = gapKey(ids, 1)
+    gaps = { ...gaps, [key as string]: { transition: 'fade', seconds: 0.6 } }
+    const clips = buildClips(ids, gaps)
+    expect(clips[1].transition).toBe('fade')
+    expect(clips[2].transition).toBe('cut')
   })
 })

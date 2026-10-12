@@ -48,7 +48,9 @@ export interface ShortcutContext {
   onRemove: (id: string) => void
   onToggle: (id: string) => void
   onSelect: (id: string | null) => void
-  onSetTransition: (leftId: string, index: number) => void
+  /** 设置第 idx 段的入场转场（传 transition 的枚举下标）。用序号而不是 id，
+   *  与 setGapFor 同一口径——UI 里再出现第二种写键方式就又有了错位的机会。 */
+  onSetTransition: (idx: number, index: number) => void
   onUndo: () => void
   onRedo: () => void
   onCreate: () => void
@@ -116,13 +118,12 @@ export function useCompilationShortcuts(ctx: ShortcutContext) {
         return
       }
 
-      // 数字键：作用于「选中项之前的那个间隙」。选中第 3 段 → 按 2 改的是
-      // 第 2、3 段之间的转场——这正是用户盯着看的位置。
+      // 数字键：改**选中项的入场转场**。第 1 段没有入场转场，所以按数字无效。
       if (/^[1-5]$/.test(e.key) && c.selected) {
         const idx = c.clipIds.indexOf(c.selected)
         if (idx > 0) {
           e.preventDefault()
-          c.onSetTransition(c.clipIds[idx - 1], Number(e.key) - 1)
+          c.onSetTransition(idx, Number(e.key) - 1)
         }
         return
       }

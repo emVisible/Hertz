@@ -47,20 +47,42 @@ const DEFAULT_TRANSITION_S = 0.6
 /** 单条合集的软上限：只警告不阻断（用户要长片时该让他做）。 */
 export const LONG_COMPILATION_S = 600
 
-/** 一个间隙的转场：键是「左片段 id」。 */
+/** 一个间隙的转场。键由 `gapKey` 决定——全代码库只此一个定义。 */
 export type GapMap = Record<string, { transition: CompilationTransition; seconds: number }>
+
+/**
+ * 第 `idx` 段的**入场转场**（播放它之前的那一下）存在哪个键下。
+ *
+ * ## 为什么必须是这个函数，而不是各处自己写 `clipIds[idx-1]`
+ *
+ * v0.37 出过一个真实的错位 bug：转场下拉框的 `value` 读 `gaps[clipIds[idx-1]]`
+ * （这张卡**之前**的间隙），`onChange` 却写 `gaps[s.id]`（这张卡**之后**的间隙）。
+ * 同一个控件读写两个键，于是「改第 1、2 段之间的转场」实际改到了第 2、3 段。
+ *
+ * 根因不是打错一个字，是**两套约定并存**：卡片读「之前」、写「之后」。只要 UI
+ * 还允许直接按 id 写 gap，这种错位随时会重新长出来。所以：
+ *
+ * - 读、写、时长预估、快捷键**全部**走这一个函数；
+ * - `setGapFor` 只接受「第几段」而不是 id，从 API 上就不给写错的机会。
+ *
+ * 首段没有入场转场 → null。
+ */
+export function gapKey(clipIds: readonly string[], idx: number): string | null {
+  if (idx <= 0 || idx >= clipIds.length) return null
+  return clipIds[idx - 1] ?? null
+}
 
 /** 把「片段顺序 + 间隙转场」编成请求体。首段无入场转场（服务端也会强制 cut）。 */
 export function buildClips(clipIds: string[], gaps: GapMap): CompilationClip[] {
-  return clipIds.map((id, i) =>
-    i === 0
-      ? { item_id: id }
-      : {
-          item_id: id,
-          transition: gaps[clipIds[i - 1]]?.transition ?? 'cut',
-          transition_s: gaps[clipIds[i - 1]]?.seconds ?? DEFAULT_TRANSITION_S,
-        },
-  )
+  return clipIds.map((id, i) => {
+    const key = gapKey(clipIds, i)
+    if (key === null) return { item_id: id }
+    return {
+      item_id: id,
+      transition: gaps[key]?.transition ?? 'cut',
+      transition_s: gaps[key]?.seconds ?? DEFAULT_TRANSITION_S,
+    }
+  })
 }
 
 /** 总时长：各段相加再扣掉转场重叠。返回 null 表示有段时长未知（宁可不给数也不给假的）。 */
@@ -71,11 +93,10 @@ export function estimateDuration(sources: Map<string, CompilationSource>, clipId
     if (d == null) return null
     total += d
   }
-  // 间隙键是**左片段 id**（与 buildClips、UI 的 setGap 同一口径）——
-  // 按右片段查会少算最后一个间隙，预估凭空偏长一个转场时长。
   clipIds.forEach((_, i) => {
-    if (i === 0) return
-    const gap = gaps[clipIds[i - 1]]
+    const key = gapKey(clipIds, i)
+    if (key === null) return
+    const gap = gaps[key]
     if (gap && gap.transition !== 'cut') total -= gap.seconds
   })
   return total
@@ -114,8 +135,17 @@ export function useCompilationWorkspace() {
   })
 
   const sources = useMemo(() => new Map(pool.map((s) => [s.id, s])), [pool])
-  const chosen = useMemo(
-    () => clipIds.map((id) => sources.get(id)).filter((s): s is CompilationSource => !!s),
+  /**
+   * 按 `clipIds` 顺序逐项解出，`source` 允许为 null。
+   *
+   * 之前这里是 `clipIds.map(...).filter(Boolean)`：某个片段的源条目不在候选里
+   * （文件被清理、条目被归档）时它被滤掉，于是**`chosen` 的下标与 `clipIds` 错开**，
+   * UI 里 `gaps[clipIds[idx-1]]` 拿到的就是另一个间隙。行号不再等于序号。
+   * 缺失源要留在列表里占住自己的位置（UI 显示「源已移除」并允许删除），
+   * 这样下标永远是下标。
+   */
+  const items = useMemo(
+    () => clipIds.map((id, idx) => ({ id, idx, source: sources.get(id) ?? null })),
     [clipIds, sources],
   )
 
@@ -127,6 +157,27 @@ export function useCompilationWorkspace() {
     () => mixedOrientation(sources, clipIds),
     [sources, clipIds],
   )
+
+  /** 把给定的一批 id 全部加入（已在的不动）——「全选」作用于**当前筛选结果**，
+   *  不是整个候选池：在搜「旅行」时点全选却把 300 条全加进来，是最容易被骂的 bug。 */
+  const addAll = useCallback((ids: string[]) => {
+    history.set((s) => {
+      const have = new Set(s.clipIds)
+      const add = ids.filter((id) => !have.has(id))
+      if (add.length === 0) return s
+      return { ...s, clipIds: [...s.clipIds, ...add] }
+    })
+  }, [history])
+
+  /** 反选：只作用于给定范围（同样是「当前筛选结果」）。 */
+  const invertAll = useCallback((ids: string[]) => {
+    history.set((s) => {
+      const scope = new Set(ids)
+      const out = s.clipIds.filter((id) => !scope.has(id))
+      const added = ids.filter((id) => !s.clipIds.includes(id))
+      return { ...s, clipIds: [...out, ...added] }
+    })
+  }, [history])
 
   const toggle = useCallback((id: string) => {
     history.set((s) => ({
@@ -146,12 +197,20 @@ export function useCompilationWorkspace() {
     })
   }, [history])
 
-  const reorderTo = useCallback((dragId: string, targetId: string) => {
+  /**
+   * 把 `dragId` 移到 `targetId` 的前面（`after=false`）或后面（`after=true`）。
+   *
+   * 拖拽期间 dragover 会连着触发几十次，所以每次都必须得出**正确**的落点：
+   * 去掉 dragId 之后在剩余序列里找 target 的下标，再按 `after` 偏移一位。
+   * 少偏移一位或者用过滤前的下标，结果就是「插到目标前面却跑到了它后面」。
+   */
+  const moveTo = useCallback((dragId: string, targetId: string, after: boolean) => {
     history.set((s) => {
       if (dragId === targetId) return s
       const next = s.clipIds.filter((x) => x !== dragId)
       const at = next.indexOf(targetId)
-      next.splice(at < 0 ? next.length : at, 0, dragId)
+      if (at < 0) return s
+      next.splice(after ? at + 1 : at, 0, dragId)
       return { ...s, clipIds: next }
     })
   }, [history])
@@ -164,29 +223,47 @@ export function useCompilationWorkspace() {
     })
   }, [history])
 
-  const setGap = useCallback((leftId: string, transition: CompilationTransition) => {
-    history.set((s) => ({
-      ...s,
-      gaps: {
-        ...s.gaps,
-        [leftId]: {
-          transition,
-          seconds: s.gaps[leftId]?.seconds
-            || TRANSITION_PRESETS.find((p) => p.value === transition)?.seconds
-            || DEFAULT_TRANSITION_S,
-        },
-      },
-    }))
-  }, [history])
+  /**
+   * 设置「第 idx 段入场」的转场。
+   *
+   * 只接受序号、不接受 id：调用方拿不到「该写哪个键」的决定权，也就没有写错的可能。
+   * 首段是 no-op（没有入场可言），而不是默默写到别的间隙上。
+   */
+  const setGapFor = useCallback(
+    (idx: number, transition: CompilationTransition) => {
+      history.set((s) => {
+        const key = gapKey(s.clipIds, idx)
+        if (key === null) return s
+        return {
+          ...s,
+          gaps: {
+            ...s.gaps,
+            [key]: {
+              transition,
+              // 沿用用户上次为这个间隙调过的时长；换预设时才回落到预设值
+              seconds: s.gaps[key]?.seconds
+                || TRANSITION_PRESETS.find((p) => p.value === transition)?.seconds
+                || DEFAULT_TRANSITION_S,
+            },
+          },
+        }
+      })
+    },
+    [history],
+  )
 
-  const setGapSeconds = useCallback((leftId: string, seconds: number) => {
-    history.set((s) => ({
-      ...s,
-      gaps: {
-        ...s.gaps,
-        [leftId]: { transition: s.gaps[leftId]?.transition ?? 'fade', seconds: seconds },
-      },
-    }))
+  const setGapSecondsFor = useCallback((idx: number, seconds: number) => {
+    history.set((s) => {
+      const key = gapKey(s.clipIds, idx)
+      if (key === null) return s
+      return {
+        ...s,
+        gaps: {
+          ...s.gaps,
+          [key]: { transition: s.gaps[key]?.transition ?? 'fade', seconds },
+        },
+      }
+    })
   }, [history])
 
   /** 一键把所有间隙设成同一种转场（替代 N 次手动）。 */
@@ -194,7 +271,11 @@ export function useCompilationWorkspace() {
     const seconds = TRANSITION_PRESETS.find((p) => p.value === transition)?.seconds ?? DEFAULT_TRANSITION_S
     history.set((s) => {
       const gaps: GapMap = {}
-      for (let i = 0; i < s.clipIds.length - 1; i += 1) gaps[s.clipIds[i]] = { transition, seconds }
+      // 第 0 段没有入场转场，所以从第 1 段开始
+      for (let i = 1; i < s.clipIds.length; i += 1) {
+        const key = gapKey(s.clipIds, i)
+        if (key !== null) gaps[key] = { transition, seconds }
+      }
       return { ...s, gaps }
     })
   }, [history])
@@ -232,10 +313,10 @@ export function useCompilationWorkspace() {
   }
 
   return {
-    pool, isLoading, sources, chosen, clipIds, gaps, selected,
+    pool, isLoading, sources, items, clipIds, gaps, selected,
     title, setTitle, outro, setOutro, saving, error, setError,
-    estimate, mixed, toggle, move, reorderTo, remove, setGap, setGapSeconds,
-    applyTransitionToAll, setSelected, create, reset,
+    estimate, mixed, toggle, move, moveTo, remove, addAll, invertAll,
+    setGapFor, setGapSecondsFor, applyTransitionToAll, setSelected, create, reset,
     undo: history.undo, redo: history.redo,
     canUndo: history.canUndo, canRedo: history.canRedo,
     hasDraft: draft.hasDraft, discardDraft: draft.discard,

@@ -35,9 +35,21 @@ const SRC = join(__dirname, '..')
  * 宁可名单短，也不要一份「需要豁免名单」的守卫：那种守卫迟早被绕过。
  */
 const ITEM_VARS = ['item', 'it', 'rowItem', 'row', 'i', 'clip', 'src']
+/**
+ * 匹配 `{item.status}`，但要求 `}` **紧跟字段名**。
+ *
+ * `{item.status}` 要抓，`{item.status ?? '-'}`、`{item?.status}`、
+ * `{item.status === 'x' ? …}` 不由它负责——那些形状要么不是直出，要么由调用方
+ * 自己处理，误报会让守卫被加豁免、加豁免之后守卫就废了。
+ *
+ * 允许字段名和 `}` 之间有换行：`.split('\n')` 逐行匹配时
+ * `{\n  item.status\n}` 会被整段跳过，而本仓库有 1556 行以 `{` 结尾——
+ * 换行包裹的表达式容器是这里的**主流写法**，不是边角情况。逐行扫的守卫漏的
+ * 恰恰是它最该抓的那一格。
+ */
 const ITEM_ENUM = new RegExp(
   `\\{\\s*(?:${ITEM_VARS.join('|')})\\.(?:status|item_type)\\s*\\}`,
-  'g',
+  'gs',
 )
 
 function tsxFiles(dir: string, out: string[] = []): string[] {
@@ -54,19 +66,15 @@ describe('条目枚举文案门禁', () => {
   it('没有任何 .tsx 直出条目 status / item_type', () => {
     const offenders: string[] = []
     for (const file of tsxFiles(SRC)) {
-      if (file.endsWith(join('core', 'itemLabels.ts'))) continue
-      readFileSync(file, 'utf-8')
-        .split('\n')
-        .forEach((line, i) => {
-          // `t(itemStatusKey(item.status))` 这类「枚举当参数」是允许的：
-          // 洗掉所有 Key()/Label() 调用，参数位就跟着一起没了。
-          const scrubbed = line.replace(/\w*(?:Key|Label)\([^)]*\)/g, 'X()')
-          if (scrubbed.match(ITEM_ENUM)) {
-            offenders.push(
-              `${file.replace(SRC, 'src')}:${i + 1}  ${line.trim().slice(0, 80)}`,
-            )
-          }
-        })
+      const raw = readFileSync(file, 'utf-8')
+      // 先洗掉 `t(itemStatusKey(item.status))` 这类「枚举当参数」的合法用法：
+      // Key()/Label() 调用整段替换，参数位跟着一起没了。
+      const scrubbed = raw.replace(/\w*(?:Key|Label)\([^)]*\)/g, 'X()')
+      for (const m of scrubbed.matchAll(ITEM_ENUM)) {
+        const lineNo = scrubbed.slice(0, m.index).split('\n').length
+        const line = scrubbed.split('\n')[lineNo - 1]?.trim().slice(0, 80) ?? ''
+        offenders.push(`${file.replace(SRC, 'src')}:${lineNo}  ${line}`)
+      }
     }
     expect(
       offenders,
@@ -74,6 +82,21 @@ describe('条目枚举文案门禁', () => {
         offenders.join('\n')
       }\n改法：t(itemStatusKey(x.status)) / t(itemTypeKey(x.item_type))`,
     ).toEqual([])
+  })
+
+  it('能抓到跨行包裹的表达式容器（守卫自身的回归）', () => {
+    // 这条是守卫的**自证**：v0.36 的版本 `.split('\n')` 逐行匹配，
+    // 于是 `{\n  item.status\n}` 被整段跳过——而本仓库有 1556 行以 `{` 结尾，
+    // 换行包裹是主流写法。也就是说守卫漏的恰恰是它最该抓的那一格。
+    // 没有这条，改回逐行匹配时不会有任何红灯提示。
+    const wrapped = [
+      'return (\n  <span>\n    {\n      item.status\n    }\n  </span>\n)',
+      'return <div>{\n  row.item_type\n}</div>',
+      'const x = (\n  <>\n    {clip.status}\n  </>\n)',
+    ]
+    for (const src of wrapped) {
+      expect(src.match(ITEM_ENUM), `没抓到跨行的：${src.replace(/\n/g, '\\n')}`).not.toBeNull()
+    }
   })
 
   it('不误伤已经过 i18n 的写法', () => {
