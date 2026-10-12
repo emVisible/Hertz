@@ -192,9 +192,7 @@ def test_no_hardcoded_comfyui_url_left_in_ai_layer():
     这条是防复发的：新加一处 ComfyUI 调用点时又顺手写一个字面量，
     「改设置不生效」就会重新长出来。
     """
-    from pathlib import Path as _P
-
-    root = _P(__file__).resolve().parents[1] / "backend"
+    root = Path(__file__).resolve().parents[1] / "backend"
     offenders = []
     for path in root.rglob("*.py"):
         if path.name == "config.py" or path.name == "templates.py":

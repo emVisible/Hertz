@@ -75,6 +75,40 @@ def _test_database():
     yield
 
 
+@pytest.fixture(autouse=True)
+async def _clear_collect_cooldown():
+    """每个测试**开始前**清掉采集冷却（v0.37）。
+
+    ## 病灶
+
+    `SourceState` 表里的 `cooldown_until` 是**持久**的：某个测试让 BeAmazed
+    采集失败，引擎写入 900 秒冷却，之后**所有**测试都打不出
+    `[collect] BeAmazed cooling down (896s left)`，采到 0 条。
+
+    ## 症状
+
+    `test_chain_text_story_to_queued` 90 秒超时，报「story-1 未在超时内进入
+    审核队列」。实际 story-1 在任何状态里都不存在——它**根本没被采集**。
+    日志里那句 `cooling down (896s left)` 距离报错隔着几十万行输出，
+    而且它长得像一条正常日志，不查根本不会注意到。
+
+    为什么之前没炸：这条测试单跑通过（干净库无冷却），与前面的测试组合才炸。
+    而「哪条测试写了冷却」又取决于执行顺序——典型的顺序依赖型幽灵。
+    """
+    # 必须在 setup 而不是 teardown：teardown 阶段 pytest-asyncio 已经把事件
+    # 循环关掉了，此时再碰 asyncpg 连接会抛
+    # "attached to a different loop" —— 报出来的错与冷却毫无关系，更难查。
+    from sqlalchemy import delete
+
+    from backend.models.pipeline import SourceState
+    from backend.models.session import session_factory
+
+    async with session_factory() as session:
+        await session.execute(delete(SourceState))
+        await session.commit()
+    yield
+
+
 @pytest.fixture
 async def client() -> AsyncClient:
     async with app.router.lifespan_context(app):
@@ -108,6 +142,19 @@ def _reset_pipeline_state():
     """
     from backend.factory.registry import ServiceRegistry
 
+    # 采集/发布/Telegram/体检的节流时间戳同样挂在**进程级单例**上
+    #（registry.py 的 `_last_auto_collect` 等四个）。它们不是「pipeline 的
+    # 后台任务状态」，但后果一样：前一个测试跑过一次 tick，下一个测试立刻
+    # 撞上 30 分钟间隔未到而直接跳过。
+    #
+    # 症状极隐蔽：`test_auto_collect_tick_calls_collect` 单跑通过、串跑报
+    # `assert 0 == 1`——因为 `calls["n"]` 是 0，tick 根本没被调用，
+    # 而报错的行离真正的原因隔了整条文件。
+    #
+    # 这个 fixture 本来就负责「单例状态跨测试泄漏防护」，节流时间戳属于同一类。
+    for attr in ("_last_auto_collect", "_last_auto_publish", "_last_tg_push", "_last_integrity"):
+        setattr(ServiceRegistry.get(), attr, 0.0)
+
     yield
     pipe = ServiceRegistry.get().pipeline
     pipe._task = None
@@ -115,6 +162,11 @@ def _reset_pipeline_state():
 
 
 # ---------- 网络隔离（v0.37） ----------
+
+def pytest_addoption(parser):
+    parser.addoption("--tb-no-block", action="store_true", default=False,
+                     help="临时关闭出站网络阻断（诊断用）")
+
 
 @pytest.fixture(autouse=True)
 def _block_real_network(request, monkeypatch):
@@ -139,11 +191,13 @@ def _block_real_network(request, monkeypatch):
     所以改成显式 opt-out：默认阻断，需要真实网络的测试自己声明 `allow_network`；
     本仓目前没有测试真需要它（governance 那条可以改成不打真网）。
     """
-    if "allow_network" in request.fixturenames:
+    if "allow_network" in request.fixturenames or request.config.getoption("--tb-no-block"):
+        yield
         return
     try:
         import httpx
     except ImportError:  # pragma: no cover
+        yield
         return
 
     from backend.infrastructure.net import is_loopback_url

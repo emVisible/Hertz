@@ -135,8 +135,20 @@ async def pipeline_env(client, remote_server, tmp_path):
     original_ai = engine.ai
     original_collector = engine.collector
     original_data_dir = settings.data_dir
+    original_sources = settings.pipeline_sources
 
     engine.ai = AIRouter(llm=ScoringLLM(), image=None, tts=None)
+    # 把采集源也钉死成一个（v0.37）。
+    #
+    # 这个 fixture 替换了默认 collector，但**没有限定 sources**——采集循环会
+    # 遍历 `settings.pipeline_sources` 的全部 10 个默认 subreddit，其余 9 个
+    # 源于是真的去请求 Reddit。测试自己起本地 HTTP 服务替代了媒体下载，
+    # 却漏了采集这一段，于是「离线测试」其实一直在联网。
+    #
+    # 平时只是慢；一旦有东西把出站网络挡掉（本仓现在默认挡），每个源都会抛
+    # 连接错误并走重试退避，`test_chain_text_story_to_queued` 从 0.66 秒
+    # 变成耗尽 90 秒超时——失败点离真正的原因隔了整条文件。
+    settings.pipeline_sources = ["BeAmazed"]
     settings.data_dir = tmp_path / "data"
     engine.collector = FakeRedditCollector(
         [
@@ -188,6 +200,7 @@ async def pipeline_env(client, remote_server, tmp_path):
     engine.ai = original_ai
     engine.collector = original_collector
     settings.data_dir = original_data_dir
+    settings.pipeline_sources = original_sources
 
 
 async def _wait_items(client, status: str, expected: int, timeout_s: float = 20.0):
@@ -260,6 +273,16 @@ async def test_chain_to_review_gate(client, pipeline_env) -> None:
     counts = (await client.get("/api/pipeline/items/counts")).json()
     assert counts.get("queued") == 2
     assert counts.get("failed") == 1
+
+    # 等这条链路彻底跑完再交棒（v0.37）。
+    #
+    # 上面的断言在 good-1/low-1 进 queued 时就成立，但整条 chain 还在后台继续
+    # 处理剩余条目。测试随即返回，后台任务继续占着 engine 单例——下一个测试
+    # 的 `/chain` 请求撞上它，表现为**从 0.66 秒变成耗尽 90 秒超时**，
+    # 而失败信息是「story-1 未在超时内进入审核队列」，与真正的原因隔了整条文件。
+    #
+    # 测试之间的时序耦合不会自己浮上来，只会变成一条极难查的超时。
+    await _wait_jobs_done(client, timeout_s=120)
     # v0.3.0 预过滤配置化：低分低比例（score=1/ratio=0.2）LLM 前直接拒绝
     rejected = (await client.get("/api/pipeline/items", params={"status": "rejected"})).json()
     assert any(i["source_id"] == "pref-1" for i in rejected)
@@ -360,6 +383,18 @@ async def test_single_flight_guard(client, pipeline_env) -> None:
     responses = await asyncio.gather(first, second)
     codes = sorted(r.status_code for r in responses)
     assert codes == [200, 409]
+
+    # v0.37：必须等这个 200 对应的后台任务跑完再返回。
+    #
+    # `/api/pipeline/run` 是 create_task 异步执行的，它占着**进程级单例**。
+    # 测试断言完就返回，任务继续跑并泄漏到下一个测试：紧邻的
+    # `test_chain_text_story_to_queued` 会从 0.66 秒变成耗尽 90 秒超时，
+    # 报错「story-1 未在超时内进入审核队列」——失败点与肇事者隔了 4 个测试，
+    # 日志里没有任何异常，单独跑还复现不了。
+    #
+    # 这正是这个测试的盲点：它验证「单飞保护」，却没管被保护的那个任务本身
+    # 跑完没有。
+    await _wait_jobs_done(client, timeout_s=120)
 
 
 async def _mk_item(**kw) -> str:
