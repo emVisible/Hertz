@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import pytest
@@ -351,3 +352,83 @@ async def test_plain_item_is_listed_as_compilation_source(client, clean_pool):
     assert ids[0] in {r["id"] for r in resp.json()}, (
         "普通条目没进候选列表——检查 items.clips 是否还带着 none_as_null"
     )
+
+
+# ---------- 片段探测：时长与画幅（v0.35） ----------
+
+@pytest.mark.asyncio
+async def test_sources_report_duration_and_dimensions(client, clean_pool, tmp_path):
+    """编排面板需要时长与画幅：前者给「预估总时长」，后者给「混排黑边」预警。
+
+    没有它们，这个面板是半盲的——用户按下创建之前完全不知道自己在拼多长、
+    也不知道横竖混排会出黑边（`assemble._resolve_target` 跟随首片朝向）。
+    """
+    from backend.library.thumbnails import find_ffmpeg
+
+    clip = tmp_path / "clip.mp4"
+    proc = await asyncio.create_subprocess_exec(
+        str(find_ffmpeg()), "-y", "-v", "error",
+        "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:duration=2",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(clip),
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    assert clip.exists()
+    async with session_factory() as session:
+        session.add(Item(
+            source=SOURCE, source_id="probe", status="downloaded",
+            item_type="video_raw", title="探测用", raw_path=str(clip),
+        ))
+        await session.commit()
+
+    resp = await client.get("/api/pipeline/compilations/sources")
+    assert resp.status_code == 200
+    rows = [r for r in resp.json() if r["title"] == "探测用"]
+    assert rows, "探测条目没出现在候选里"
+    assert rows[0]["duration_s"] == pytest.approx(2.0, abs=0.3)
+    assert (rows[0]["width"], rows[0]["height"]) == (320, 240)
+
+
+@pytest.mark.asyncio
+async def test_sources_probe_never_raises_on_missing_file(client, clean_pool):
+    """文件已被清理但条目还在列表里 → 返回未知，而不是整页 500。
+
+    编排面板要能开：素材文件可能没了，条目行还在。探测失败时界面显示「未知」
+    即可，把整个端点炸掉等于让编排功能不可用。
+    """
+    async with session_factory() as session:
+        session.add(Item(
+            source=SOURCE, source_id="ghost", status="downloaded",
+            item_type="video_raw", title="文件已不在", raw_path="/tmp/definitely-missing-xyz.mp4",
+        ))
+        await session.commit()
+
+    resp = await client.get("/api/pipeline/compilations/sources")
+    assert resp.status_code == 200
+    row = next(r for r in resp.json() if r["title"] == "文件已不在")
+    assert row["duration_s"] is None
+    assert row["width"] is None and row["height"] is None
+
+
+def test_probe_cache_key_includes_mtime_and_size(tmp_path):
+    """缓存键必须含 mtime+size：素材被重下（同名不同内容）时缓存要失效。
+
+    只按路径缓存会把「上一条素材的时长」显示给「新素材」——编排面板据此算出的
+    总时长就是错的，而且没有任何报错。
+    """
+    from backend.pipeline.service_compilation import _MEDIA_CACHE, probe_clip_media
+
+    async def run() -> None:
+        f = tmp_path / "cached.mp4"
+        f.write_bytes(b"\x00" * 100)
+        await probe_clip_media(f)          # 第一次：探测不到时长（不是媒体），但入缓存
+        entry = _MEDIA_CACHE.get(str(f))
+        assert entry is not None, "探测结果应当进缓存"
+        first_fingerprint = entry[0]
+
+        f.write_bytes(b"\x00" * 200)      # 改内容 → mtime/size 变
+        info = await probe_clip_media(f)
+        assert info is not None
+        assert _MEDIA_CACHE[str(f)][0] != first_fingerprint, "内容变了缓存却还命中"
+
+    asyncio.run(run())

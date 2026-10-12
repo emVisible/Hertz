@@ -70,7 +70,10 @@ export interface CompilationSource {
   item_type: string
   raw_path: string | null
   cover_path: string | null
+  /** 时长/画幅由后端 ffprobe 实时探测（文件被清理时为 null，界面显示「未知」） */
   duration_s: number | null
+  width: number | null
+  height: number | null
 }
 
 export interface CreateCompilationBody {

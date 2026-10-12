@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -33,6 +35,46 @@ logger = logging.getLogger(__name__)
 #: 单条合集的片段上限。filter_complex 随片段数线性膨胀，且总时长也随之线性增长
 #: （平台侧时长上限另由界面警告）。这是服务端**硬**上限——前端再怎么说也要拦。
 MAX_CLIPS = 30
+
+#: 编排面板的探测并发度。ffprobe 单文件 20–70ms（实测），16 并发下 200 条
+#: 约 0.4s；再高只是抢 CPU，且 Electron 单进程下会挤掉界面。
+PROBE_CONCURRENCY = 16
+
+#: 探测结果缓存（mtime+size → 时长/画幅）。文件不动就不必重探——编排面板
+#: 每次打开都要这份数据，而素材在下载后是完全静态的。
+_MEDIA_CACHE: dict[str, tuple[tuple, dict]] = {}
+_MEDIA_CACHE_MAX = 2000
+
+
+async def probe_clip_media(path: Path) -> dict:
+    """单文件时长 + 画幅；不可得时全 None（**不抛**）。
+
+    探测失败不该挡住编排——素材文件可能已被清理，但条目还在列表里；此时返回
+    未知，让界面显示「未知」而不是整页报错。
+    """
+    from backend.pipeline.producers.probe import probe_duration, video_stream_params
+
+    try:
+        stat = await asyncio.to_thread(path.stat)
+    except OSError:
+        return {"duration_s": None, "width": None, "height": None}
+    key = str(path)
+    fingerprint = (stat.st_mtime_ns, stat.st_size)
+    cached = _MEDIA_CACHE.get(key)
+    if cached and cached[0] == fingerprint:
+        return cached[1]
+
+    duration = await probe_duration(path)
+    params = await video_stream_params(path)
+    info = {
+        "duration_s": round(duration, 2) if duration > 0 else None,
+        "width": params[0] if params else None,
+        "height": params[1] if params else None,
+    }
+    if len(_MEDIA_CACHE) >= _MEDIA_CACHE_MAX:
+        _MEDIA_CACHE.clear()  # 素材被删/重下时整体失效，比 LRU 省事且不易错
+    _MEDIA_CACHE[key] = (fingerprint, info)
+    return info
 
 
 def normalize_clip_plan(
@@ -229,11 +271,25 @@ class CompilationOpsMixin:
             await session.commit()
             return {"id": str(item.id), "clips": item.clips}
 
-    async def compilation_sources(self) -> list[dict]:
+    async def compilation_sources(self, *, limit: int = 200) -> list[dict]:
         """可作为片段的条目（已下载、有 raw、非合集、非隔离非归档）。
 
         编排面板的选择器用这个列表——把「能不能当片段」的判据收在服务端一处，
         免得前端再写一遍状态判断、两边漂移。
+
+        ## 为什么这里带时长与画幅
+
+        两件事都只有实时探测才拿得到，而没有它们这个面板是**半盲**的：
+
+        1. **时长**——没有它就没有「预估总时长」，用户排 15 段时完全不知道自己
+           在拼多长的东西；转场还会让总时长变短（重叠），更算不出来。
+        2. **画幅**——`assemble._resolve_target` 按**首片朝向**决定输出画幅
+           （整批竖屏 pad 成 1280x720 会得到左右黑边）。于是横竖混排必然出
+           黑边，而用户在按下「创建」之前完全看不到这件事。
+
+        为什么不落库成列：ffprobe 实测单文件 20–70ms，200 条并发约 0.4s，
+        换来一个**不需要迁移、不改下载步骤**的方案。而下载时落列虽然更省算力，
+        却是为一个编排面板改全库写路径——代价与收益不成比例。
         """
         async with session_factory() as session:
             rows = (
@@ -247,17 +303,39 @@ class CompilationOpsMixin:
                         Item.archived.is_(False),
                     )
                     .order_by(Item.seq.desc().nulls_last())
-                    .limit(500)
+                    .limit(limit)
                 )
             ).scalars().all()
-            return [
-                {
-                    "id": str(r.id),
-                    "title": r.title,
-                    "item_type": r.item_type,
-                    "raw_path": r.raw_path,
-                    "cover_path": r.cover_path,
-                    "duration_s": None,  # 前端从 items 列表已有的信息拿，或留空
-                }
-                for r in rows
-            ]
+            items = list(rows)
+
+        out: list[dict] = []
+        semaphore = asyncio.Semaphore(PROBE_CONCURRENCY)
+
+        async def probe(row) -> dict:
+            async with semaphore:
+                resolved = files_resolve(row.raw_path) if row.raw_path else None
+                media = await probe_clip_media(resolved) if resolved else None
+            return {
+                "id": str(row.id),
+                "title": row.title,
+                "item_type": row.item_type,
+                "raw_path": row.raw_path,
+                "cover_path": row.cover_path,
+                "duration_s": (media or {}).get("duration_s"),
+                "width": (media or {}).get("width"),
+                "height": (media or {}).get("height"),
+            }
+
+        out = list(await asyncio.gather(*(probe(r) for r in items)))
+        return out
+
+
+def files_resolve(raw_path: str) -> Path:
+    """条目 raw_path（相对 data_dir）→ 绝对路径。
+
+    与 `producers/media._produce_item` 同口径（`files.resolve`）——探测必须
+    打在同一份文件上，否则探到的时长/画幅与真正会拼进去的不是同一个东西。
+    """
+    from backend.config import settings
+
+    return Path(settings.data_dir) / raw_path
