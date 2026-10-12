@@ -15,6 +15,7 @@ import {
 } from '../../../components/execution'
 import type { useBatchSelect } from '../../../hooks/useBatchSelect'
 import type { PipelineViewProps } from './shared'
+import { itemStatusKey } from '../../../core/itemLabels'
 
 // 异常区次级 tab（wave10，v0.33 加空壳池）：低分池｜异常｜空壳｜归档清理｜备用库
 export const EX_SUB_TABS = ['lowscore', 'exceptions', 'invalid', 'archive', 'backup'] as const
@@ -189,7 +190,7 @@ export function ExceptionsTab({
                 renderRow={(item) => (
                   <StageItemRow
                     item={item}
-                    badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
+                    badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{t(itemStatusKey(item.status))}</Badge>}
                     right={
                       <>
                         <Button
@@ -299,7 +300,7 @@ export function ExceptionsTab({
                 selectMode={archiveSel.mode}
                 selected={archiveSel.sel.has(item.id)}
                 onSelect={archiveSel.toggle}
-                badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
+                badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{t(itemStatusKey(item.status))}</Badge>}
               />
             )}
           />
@@ -363,7 +364,7 @@ export function ExceptionsTab({
                 selectMode={backupSel.mode}
                 selected={backupSel.sel.has(item.id)}
                 onSelect={backupSel.toggle}
-                badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>}
+                badge={<Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{t(itemStatusKey(item.status))}</Badge>}
                 right={
                   <>
                     <Button

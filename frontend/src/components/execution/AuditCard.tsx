@@ -8,6 +8,7 @@ import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, CopyButton, Icon } from '../ui'
 import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { ScoreDims } from './ScoreDims'
+import { itemStatusKey } from '../../core/itemLabels'
 
 /** 审核卡片（v0.3.2 重构：内容审核专用——发布元数据全部移到发布卡）：
  *  媒体（播放/换封面）+ 原始标题只读 + 源头审核链接 + 评分维度网格 +
@@ -133,7 +134,7 @@ export function AuditCard({
               {t(ITEM_TYPE_BADGE[item.item_type].labelKey)}
             </Badge>
           )}
-          <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>
+          <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{t(itemStatusKey(item.status))}</Badge>
           {/* v0.8.9 AXIOM 4.6：原片兜底交付（合成失败降级）——如实标注，不伪装完整成功 */}
           {(item.script_json as Record<string, unknown> | null)?.produced_degraded != null && (
             <span className="shrink-0 border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning">

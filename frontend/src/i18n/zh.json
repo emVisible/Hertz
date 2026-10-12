@@ -813,6 +813,8 @@
     "aiFollowDefault": "跟随默认（main → 首个可用模型）",
     "lowScore": "低分可复用",
     "stagePreReview": "预处理",
+    "unknownStatus": "未知状态",
+    "unknownType": "未知类型",
     "downloaded": "已下载",
     "downloadSkipped": "未下载：CDN 冷却/熔断中，稍后自动重试（详情看执行工作台日志）",
     "textNoMedia": "文字帖 · 无需下载",

@@ -11,6 +11,7 @@ import { Badge, Button, Icon } from '../../../components/ui'
 import {
   AuditCard,
   PipelineStage,
+  PIPELINE_ITEM_TONE,
   PublishCard,
   SortControl,
   StageItemRow,
@@ -20,6 +21,7 @@ import {
 } from '../../../components/execution'
 import type { useBatchSelect } from '../../../hooks/useBatchSelect'
 import type { PipelineViewProps } from './shared'
+import { itemStatusKey } from '../../../core/itemLabels'
 
 /** 审核页的次级分段（v0.34 D-218/D-219）：`待审`｜`已过审待发`｜`已发布`。
  *  补的是同一个洞：D-213 把「发布」tab 并进看板之后，`approved` 与 `published` 两类条目
@@ -323,7 +325,9 @@ function PublishedStage({ p }: { p: PipelineViewProps }) {
             item={item}
             badge={
               <span className="flex items-center gap-1.5">
-                <Badge tone="success">{item.status}</Badge>
+                <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>
+                  {t(itemStatusKey(item.status))}
+                </Badge>
                 {item.published_at && (
                   <span className="font-mono text-[10px] text-text-disabled">
                     {new Date(item.published_at).toLocaleString()}

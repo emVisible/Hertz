@@ -8,6 +8,7 @@ import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, Icon } from '../ui'
 import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
 import { normalizeOptions, ProduceOptionsPicker } from './ProduceOptionsPicker'
+import { itemStatusKey } from '../../core/itemLabels'
 
 /** 预处理卡片（v0.8.9）：仅服务「已下载未加工」阶段——大媒体 + 生产方式选择 +
  *  制作主操作（评分/下载已在紧凑行完成，步骤条与子 menu 重复已移除）。
@@ -106,7 +107,9 @@ export function PreReviewCard({
               {t('console.compilation.isCompilation')} · {item.clips.clips.length}
             </Badge>
           )}
-          <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>
+          <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>
+            {t(itemStatusKey(item.status))}
+          </Badge>
           {item.is_lowscore && (
             <span className="shrink-0 border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning">
               {t('console.lowScore')}

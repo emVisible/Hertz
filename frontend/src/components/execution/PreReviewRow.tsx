@@ -6,6 +6,7 @@ import type { PipelineItem } from '../../api'
 import { useExecutionStore } from '../../stores/execution'
 import { Badge, Button, Icon } from '../ui'
 import { ITEM_TYPE_BADGE, MediaThumb, PIPELINE_ITEM_TONE } from './PipelineStage'
+import { itemStatusKey } from '../../core/itemLabels'
 
 /** 预处理紧凑行（v0.8.9 三阶段差异化）：未评分/已评分子菜单用——
  *  大量条目时列表式浏览（信息密度优先），卡式仅保留给已下载未加工
@@ -61,7 +62,7 @@ export function PreReviewRow({
               {t(ITEM_TYPE_BADGE[item.item_type].labelKey)}
             </Badge>
           )}
-          <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>
+          <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{t(itemStatusKey(item.status))}</Badge>
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-text-secondary">
           <span className="border border-border px-1 py-px text-[10px]">r/{item.subreddit}</span>

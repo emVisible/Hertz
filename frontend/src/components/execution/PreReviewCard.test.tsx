@@ -48,6 +48,16 @@ afterEach(() => {
   })
 })
 
+/**
+ * 状态徽标（`t(itemStatusKey(status))`）与下载态标签（`t('console.downloaded')`）
+ * 在 status==='downloaded' 时会渲染出**同一个 key**——i18n 未初始化时两者都是
+ * `console.downloaded`，`getByText` 无法区分。所以给状态徽标加个 data-testid，
+ * 断言下载态标签时用 `queryAllByText(...).length` 排除徽标那一处。
+ */
+function downloadLabels() {
+  return screen.queryAllByText('console.downloaded')
+}
+
 describe('PreReviewCard 下载状态判据', () => {
   it('text_only 条目下载成功（status=downloaded）既不显示「待下载」也不谎报「已下载」', () => {
     // text_only 没有原始媒体是正常形态——下载步骤对它就是 no media, skipping，
@@ -65,7 +75,9 @@ describe('PreReviewCard 下载状态判据', () => {
     )
     expect(screen.getByText('console.textNoMedia')).toBeInTheDocument()
     expect(screen.queryByText('console.pendingDownload')).not.toBeInTheDocument()
-    expect(screen.queryByText('console.downloaded')).not.toBeInTheDocument()
+    // 状态徽标本身就渲染 console.downloaded（status=downloaded），这是对的；
+    // 要断的是**下载态标签**那一处不存在——即全页只有徽标这一处。
+    expect(downloadLabels()).toHaveLength(1)
   })
 
   it('有原始媒体的 video_raw 显示「已下载」', () => {
@@ -79,7 +91,8 @@ describe('PreReviewCard 下载状态判据', () => {
         onUploadCover={noop}
       />,
     )
-    expect(screen.getByText('console.downloaded')).toBeInTheDocument()
+    // 徽标 + 下载态标签两处都该在
+    expect(downloadLabels()).toHaveLength(2)
     expect(screen.queryByText('console.pendingDownload')).not.toBeInTheDocument()
   })
 
@@ -97,7 +110,7 @@ describe('PreReviewCard 下载状态判据', () => {
     // 这一段按 status 分组，理论不该出现这个态；真出现了要让人看见异常，
     // 而不是谎报已下载，也不复用「待下载」（那是 discovered 的说法）。
     expect(screen.getByText('console.rawMissing')).toBeInTheDocument()
-    expect(screen.queryByText('console.downloaded')).not.toBeInTheDocument()
+    expect(downloadLabels()).toHaveLength(1)   // 只剩状态徽标那一处
     expect(screen.queryByText('console.pendingDownload')).not.toBeInTheDocument()
   })
 

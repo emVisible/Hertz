@@ -798,6 +798,8 @@
     "aiFollowDefault": "Follow default (main → first available)",
     "lowScore": "Low score (reusable)",
     "stagePreReview": "Pre-process",
+    "unknownStatus": "Unknown status",
+    "unknownType": "Unknown type",
     "downloaded": "Downloaded",
     "downloadSkipped": "Not downloaded: CDN cooling down, auto-retry later (see execution log)",
     "textNoMedia": "Text post · nothing to download",

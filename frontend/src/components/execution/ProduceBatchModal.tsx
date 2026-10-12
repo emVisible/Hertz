@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import type { PipelineItem, ProduceOptions } from '../../api/pipeline'
 import { pipelineApi } from '../../api/pipeline'
 import { Button, Icon, Input, Modal, Select, useToast } from '../ui'
+import { itemStatusKey } from '../../core/itemLabels'
 import {
   DEFAULT_PRODUCE_OPTIONS,
   normalizeOptions,
@@ -235,7 +236,9 @@ export function ProduceBatchModal({
                     P{item.priority}
                   </span>
                 )}
-                <span className="shrink-0 font-mono text-[10px] text-text-disabled">{item.status}</span>
+                <span className="shrink-0 text-[10px] text-text-disabled">
+                  {t(itemStatusKey(item.status))}
+                </span>
               </li>
             )
           })}

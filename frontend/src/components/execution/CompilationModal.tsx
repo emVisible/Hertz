@@ -10,6 +10,7 @@ import type {
 import { pipelineApi } from '../../api/pipeline'
 import { Badge, Button, Icon, Input, Modal, Select, useToast } from '../ui'
 import { MediaThumb } from './PipelineStage'
+import { itemTypeKey } from '../../core/itemLabels'
 
 /** 转场档位与默认时长。与后端 `assemble.TRANSITIONS` 同名同默认值——
  *  界面写中文、请求发英文档名，两边靠这张表对齐。 */
@@ -234,7 +235,7 @@ export function CompilationModal({
                       <MediaThumb item={{ ...s, seq: null, status: 'downloaded' } as never} className="h-6 w-full" />
                     </span>
                     <span className="min-w-0 flex-1 truncate text-text-primary">{s.title}</span>
-                    <Badge tone="neutral">{s.item_type}</Badge>
+                    <Badge tone="neutral">{t(itemTypeKey(s.item_type))}</Badge>
                   </button>
                 </li>
               )
