@@ -1093,7 +1093,34 @@
     "workshop": "Workshop",
     "invalidPool": "Shell items (no media, no text)",
     "invalidPoolHint": "No downloadable media and too little text for the story pipeline. Excluded from pipeline counts and production steps, but kept in the library so re-collection dedupes.",
-    "invalidBadge": "shell"
+    "invalidBadge": "shell",
+    "compilation": {
+      "open": "Compose reel",
+      "title": "Multi-clip compilation",
+      "hint": "Stitch several downloaded clips into one video — the publisher uploads a single file per item, so publishing one-by-one hits platform rate limits. Source items stay untouched.",
+      "titlePlaceholder": "Compilation title (auto if empty)",
+      "pool": "Clip pool",
+      "picked": "{{n}} picked",
+      "loading": "Loading…",
+      "poolEmpty": "No usable downloaded material (needs downloaded + raw media)",
+      "sequence": "Order & transitions",
+      "dragHint": "Drag to reorder",
+      "gap": "Gap transition",
+      "transition": "Transition",
+      "transitionSeconds": "Transition seconds",
+      "estimate": "≈{{s}}s",
+      "tooLong": "long",
+      "pickFirst": "Pick clips from the pool above",
+      "noClips": "Pick at least 1 clip",
+      "created": "Compilation created ({{n}} clips) — produce it from “Downloaded”",
+      "outro": "Append an outro card",
+      "transition_cut": "Cut",
+      "transition_fade": "Dissolve",
+      "transition_wipe": "Wipe",
+      "transition_dissolve": "Noise",
+      "transition_zoomin": "Zoom",
+      "isCompilation": "Compilation"
+    }
   },
   "canvas": {
     "tool": {

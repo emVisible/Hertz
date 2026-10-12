@@ -41,6 +41,46 @@ export type ProduceModule = 'passthrough' | 'voice' | 'subtitle' | 'translate' |
 
 export type ProduceOptions = Record<ProduceModule, boolean>
 
+/** 转场档名（v0.35）：与后端 `producers/assemble.TRANSITIONS` 严格一致。
+ *  写界面上不认的值 → 后端 422 → 界面只表现为「建不出来」，所以这张表
+ *  就是契约本身。`cut` 是硬切（不过 xfade，走 concat，零成本）。 */
+export type CompilationTransition = 'cut' | 'fade' | 'wipe' | 'dissolve' | 'zoomin'
+
+export interface CompilationClip {
+  item_id: string
+  /** 首段没有「入场转场」可言，服务端强制落成 cut */
+  transition?: CompilationTransition | null
+  transition_s?: number | null
+}
+
+export interface CompilationOutro {
+  enabled: boolean
+  duration_s?: number | null
+  subtitle?: string | null
+}
+
+export interface CompilationPlan {
+  clips: CompilationClip[]
+  outro?: CompilationOutro | null
+}
+
+export interface CompilationSource {
+  id: string
+  title: string
+  item_type: string
+  raw_path: string | null
+  cover_path: string | null
+  duration_s: number | null
+}
+
+export interface CreateCompilationBody {
+  title?: string | null
+  clips?: CompilationClip[]
+  clip_ids?: string[]
+  outro?: CompilationOutro | null
+  channel_key?: string | null
+}
+
 export interface PipelineItem {
   id: string
   /** 入库自增序号（v0.3.1）：真实入库顺序——同批 created_at 相同 */
@@ -48,6 +88,10 @@ export interface PipelineItem {
   status: ItemStatus
   /** 生产方式模块集合（v0.3.3，预处理人工选择） */
   produce_options: ProduceOptions | null
+  /** 多素材合集编排（v0.35）：非合集条目恒为 null。这是「这条是不是合集」的
+   *  唯一契约——不暴露的话界面只能靠 source==="compilation" 猜，而那个判据
+   *  不在数据契约里（source 是采集来源语义，不是编排语义）。 */
+  clips: CompilationPlan | null
   item_type: string
   source: string
   source_url: string
@@ -392,6 +436,23 @@ export const pipelineApi = {
   /** 制作优先级落库（v0.26 运营面板）：按给定顺序赋 priority，首位最高。 */
   setPriority: (orderedIds: string[]) =>
     api.post<{ updated: number }>('/api/pipeline/items/priority', { ordered_ids: orderedIds }),
+
+  // ---------- 多素材合集编排（v0.35） ----------
+  /** 一个片段：引用哪条素材 + 从它入场时用什么转场。
+   *  档名与后端 `producers/assemble.TRANSITIONS` 一一对应——写中文过去会 422，
+   *  而 422 在界面上只表现为「建不出来」。 */
+  compilationSources: () =>
+    api.get<CompilationSource[]>('/api/pipeline/compilations/sources'),
+  createCompilation: (body: CreateCompilationBody) =>
+    api.post<{ id: string; title: string; status: string; clips: CompilationPlan }>(
+      '/api/pipeline/compilations',
+      body,
+    ),
+  updateCompilation: (id: string, clips: CompilationClip[], outro?: CompilationOutro) =>
+    api.put<{ id: string; clips: CompilationPlan }>(`/api/pipeline/compilations/${id}`, {
+      clips,
+      ...(outro ? { outro } : {}),
+    }),
   /** 生产方式预设模板（v0.4 B3）：命名组合一键套用。 */
   produceTemplates: () =>
     api.get<Array<{ id: string; name: string; options: ProduceOptions; builtin: boolean }>>(

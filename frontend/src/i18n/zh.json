@@ -1108,7 +1108,34 @@
     "workshop": "脚本工坊",
     "invalidPool": "空壳条目（无媒体无正文）",
     "invalidPoolHint": "这些条目既没有可下载媒体、正文也不够走文字产线，已从流水线计数与制作步骤里隔离；仍留在库里参与重复抓取判断。",
-    "invalidBadge": "空壳"
+    "invalidBadge": "空壳",
+    "compilation": {
+      "open": "编排合集",
+      "title": "多素材合集编排",
+      "hint": "把若干条已下载素材拼成一条成片——发布侧一次只能上传一个文件，逐条发会撞平台频率限制。源素材条目不受影响。",
+      "titlePlaceholder": "合集标题（留空自动生成）",
+      "pool": "素材池",
+      "picked": "已选 {{n}} 段",
+      "loading": "加载中…",
+      "poolEmpty": "没有可用的已下载素材（需已下载且有原始媒体）",
+      "sequence": "片段顺序与转场",
+      "dragHint": "拖拽排序",
+      "gap": "间隙转场",
+      "transition": "转场",
+      "transitionSeconds": "转场时长（秒）",
+      "estimate": "预估时长 {{s}} 秒",
+      "tooLong": "偏长",
+      "pickFirst": "先从上面素材池里挑几段",
+      "noClips": "至少选择 1 段素材",
+      "created": "合集已创建（{{n}} 段），去「已下载未加工」制作",
+      "outro": "片尾加一张结尾卡",
+      "transition_cut": "硬切",
+      "transition_fade": "淡入淡出",
+      "transition_wipe": "擦除",
+      "transition_dissolve": "溶解",
+      "transition_zoomin": "缩放",
+      "isCompilation": "合集"
+    }
   },
   "canvas": {
     "tool": {

@@ -98,6 +98,14 @@ export function PreReviewCard({
               {t(ITEM_TYPE_BADGE[item.item_type].labelKey)}
             </Badge>
           )}
+          {/* 合集标记（v0.35）：标清这是 N 段拼出来的成片，而不是一条原片。
+              不标的话它在列表里和普通条目长得一样，而它的产物要过装配这一步
+              ——用户按普通条目理解它，点制作前对「会重新编码一次」毫无预期。 */}
+          {item.clips && (
+            <Badge tone="primary">
+              {t('console.compilation.isCompilation')} · {item.clips.clips.length}
+            </Badge>
+          )}
           <Badge tone={PIPELINE_ITEM_TONE[item.status] ?? 'neutral'}>{item.status}</Badge>
           {item.is_lowscore && (
             <span className="shrink-0 border border-warning/50 px-1.5 py-0.5 text-[10px] leading-none text-warning">

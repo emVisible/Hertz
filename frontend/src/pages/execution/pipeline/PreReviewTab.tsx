@@ -1,6 +1,7 @@
 /** Pipeline 预处理 tab（v0.20 拆分，D-183）：三阶段子菜单导航 + 排序/批量操作。
  *  纯结构移动自 PipelineView（原 552-712 行段），零行为变化；state 留主壳经 props 下发。 */
 
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { Dispatch, SetStateAction } from 'react'
@@ -18,6 +19,7 @@ import {
   type SortSpec,
 } from '../../../components/execution'
 import { ProduceBatchModal } from '../../../components/execution/ProduceBatchModal'
+import { CompilationModal } from '../../../components/execution/CompilationModal'
 import type { PipelineViewProps } from './shared'
 import type { PreStage } from '../../../stores/execution'
 
@@ -51,6 +53,9 @@ export function PreReviewTab({
   setProduceBatchOpen,
 }: PreReviewTabProps) {
   const { t } = useTranslation()
+  /** 合集编排面板（v0.35）：页内 state——不进 store，因为它不是「跨页要记住的
+   *  偏好」，而是「这次开面板选几条」的一次性操作态。 */
+  const [compilationOpen, setCompilationOpen] = useState(false)
   /** 「捞入今日」（v0.34 D-218）：三段的行都挂，写点归 `p.setFocus`（唯一作者在 `usePipelineActions`）。 */
   const pick = (item: PipelineItem) => (
     <TodayPick item={item} onPick={(i, day) => void p.setFocus(i, { focus_date: day })} />
@@ -111,14 +116,28 @@ export function PreReviewTab({
                 </Button>
               )}
               {preStage === 'downloaded' && (
-                <Button
-                  size="sm"
-                  onClick={() => void p.produceBatch()}
-                  title={t('console.produce.batchProduceHint')}
-                >
-                  <Icon name="play" size={12} />
-                  {t('console.produce.batchProduce')}
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    onClick={() => void p.produceBatch()}
+                    title={t('console.produce.batchProduceHint')}
+                  >
+                    <Icon name="play" size={12} />
+                    {t('console.produce.batchProduce')}
+                  </Button>
+                  {/* 合集编排（v0.35）：入口只在已下载段——片段来源就是这一段
+                      （服务端只认 status=downloaded 且有 raw 的条目），放在别的
+                      段画出来就是「看着能建、必然 422」。 */}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setCompilationOpen(true)}
+                    title={t('console.compilation.hint')}
+                  >
+                    <Icon name="plans" size={12} />
+                    {t('console.compilation.open')}
+                  </Button>
+                </>
               )}
               <Button
                 size="sm"
@@ -293,6 +312,13 @@ export function PreReviewTab({
         onClose={() => setProduceBatchOpen(false)}
         items={[...p.stageDownloaded, ...p.stageScored]}
         onApply={(items, options) => void p.setProduceOptions(items, options)}
+      />
+      {/* key 变化即重建内部 state：每次打开都是干净的编排（合集 0.34
+          踩过「两个 effect 互相覆盖」的坑，见 CompilationModal 注释） */}
+      <CompilationModal
+        key={compilationOpen ? 'open' : 'closed'}
+        open={compilationOpen}
+        onClose={() => setCompilationOpen(false)}
       />
     </div>
   )
