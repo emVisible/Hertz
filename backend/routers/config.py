@@ -155,6 +155,8 @@ RUNTIME_ALLOWLIST = {
     "pipeline_video_width",
     "pipeline_video_height",
     "pipeline_video_fps",
+    # v0.37：node 22 路径（原先只认环境变量，设置页无从配置）
+    "node_bin",
 }
 
 SECRET_FIELDS = {

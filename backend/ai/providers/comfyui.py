@@ -16,12 +16,17 @@ from backend.ai.types import ImageResult
 class ComfyUIProvider:
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:8188",
+        # 默认取 settings（v0.37）：此前这里写死字面量，于是同一地址在
+        # 仓库里有 4 份副本，改设置只影响其中一份。
+        base_url: str | None = None,
         output_dir: Path | None = None,
         poll_interval: float = 2.0,
         timeout: float = 300.0,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        from backend.config import settings
+
+        resolved = (base_url or "").strip() or settings.comfyui_base_url
+        self.base_url = resolved.rstrip("/")
         self.output_dir = output_dir
         self.poll_interval = poll_interval
         self.timeout = timeout

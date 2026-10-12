@@ -27,11 +27,15 @@ import httpx
 from backend.config import settings as app_settings
 from backend.pipeline.collectors.base import RawPost, SourceCollector
 
+# 同一把尺子：quality.MIN_STORY_CHARS。v0.37 之前这里叫 _MIN_TEXT_CHARS
+# 并另抄一份 50，与 quality / ai_story 各执一词。
+from backend.pipeline.quality import MIN_STORY_CHARS as _MIN_TEXT_CHARS
+
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
-_MIN_TEXT_CHARS = 50
+
 _MAX_TEXT_CHARS = 4000
 _ATOM = "{http://www.w3.org/2005/Atom}"
 _CONTENT_NS = "{http://www.w3.org/2005/Atom}"

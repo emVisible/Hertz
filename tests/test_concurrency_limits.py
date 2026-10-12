@@ -160,3 +160,51 @@ def test_keychain_explicit_dir_still_wins():
         assert explicit._fallback_path == Path("/explicit/dir/secrets/master.key")
     finally:
         runtime_config.save(before)
+
+
+# ---------- comfyui_base_url 必须真的生效（v0.37） ----------
+
+def test_comfyui_base_url_falls_back_to_settings(tmp_path):
+    """provider 行的 base_url 为空时，必须回落到 settings 而不是写死字面量。
+
+    v0.37 之前 `ai/router.py` 两处写 `or "http://127.0.0.1:8188"`。
+    而 `settings.comfyui_base_url` **只在 registry 首次播种时读一次**——
+    老用户的 provider 行已经带着 base_url 落库，于是他在设置页改地址
+    完全无效，而界面上看不出任何异常。这正是「配了却不起作用」最难查的一种。
+    """
+    from backend.ai.providers.comfyui import ComfyUIProvider
+
+    before = dict(runtime_config.load())
+    try:
+        runtime_config.save({"comfyui_base_url": "http://10.0.0.9:9999"})
+        assert ComfyUIProvider().base_url == "http://10.0.0.9:9999"
+        # 显式传入的仍然优先
+        assert ComfyUIProvider("http://127.0.0.1:1234").base_url == "http://127.0.0.1:1234"
+        # 空串等价于不传
+        assert ComfyUIProvider("   ").base_url == "http://10.0.0.9:9999"
+    finally:
+        runtime_config.save(before)
+
+
+def test_no_hardcoded_comfyui_url_left_in_ai_layer():
+    """仓库里不该再剩写死的 ComfyUI 地址（模板播种那处除外，它就是模板默认值）。
+
+    这条是防复发的：新加一处 ComfyUI 调用点时又顺手写一个字面量，
+    「改设置不生效」就会重新长出来。
+    """
+    from pathlib import Path as _P
+
+    root = _P(__file__).resolve().parents[1] / "backend"
+    offenders = []
+    for path in root.rglob("*.py"):
+        if path.name == "config.py" or path.name == "templates.py":
+            continue  # 默认值本体与播种模板，本就该有这个字面量
+        for i, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            line = raw.strip()
+            # 跳过注释：解释「为什么本地服务必须直连」的那段文字里会提到这个
+            # 地址，那是文档不是代码。守卫要盯的是**会生效的字面量**。
+            if line.startswith("#"):
+                continue
+            if "127.0.0.1:8188" in line and "settings" not in line:
+                offenders.append(f"{path.relative_to(root)}:{i}")
+    assert not offenders, f"这些地方仍写死 ComfyUI 地址：{offenders}"

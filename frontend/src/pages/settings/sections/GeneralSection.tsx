@@ -160,6 +160,9 @@ export function GeneralSection({ form, set, save, dirty, pickPath }: SectionProp
         </div>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           <PathField label={t('settings.assetsRoot')} value={form.assets_root ?? ''} onChange={(v) => set('assets_root', v)} onBrowse={() => void pickPath("assets_root")} />
+          {/* node 22 路径（v0.37）：monoline 渲染要 node 22。原先只认环境变量
+              HERTZ_NODE22_BIN，设置页无从配置——自定义 venv 的用户只能去翻源码。 */}
+          <PathField label={t('settings.nodeBin')} value={form.node_bin ?? ''} onChange={(v) => set('node_bin', v)} onBrowse={() => void pickPath("node_bin")} />
         </div>
         <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">{t('settings.assetsRootHint')}</p>
       </section>

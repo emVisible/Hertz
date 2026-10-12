@@ -23,10 +23,15 @@ from backend.ai.types import ChatMessage
 from backend.config import settings as app_settings
 from backend.pipeline.collectors.base import RawPost, SourceCollector
 
+# 权威在 quality.MIN_STORY_CHARS——全仓只有一个「多长才算故事」的标准。
+# v0.37 之前这里另抄了一份 50，于是调阈值要改三处，漏一处就出现
+# 「评分认它、采集不认它」的条目。
+from backend.pipeline.quality import MIN_STORY_CHARS
+
 logger = logging.getLogger(__name__)
 
 # 单条故事下限：对齐 Reddit 文字帖入库门槛（v0.11.7 selftext ≥50 字）
-MIN_STORY_CHARS = 50
+
 MAX_STORY_CHARS = 1200
 
 _STORY_SYSTEM = (

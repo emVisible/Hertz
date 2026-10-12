@@ -214,6 +214,10 @@ class Settings(BaseSettings):
     # PlayRes 是字幕坐标系，两者不一致时字号与边距会静默缩放错，不报错。
     # 现在统一读 producers/resolution.py 这一个权威源。
     # 封面/标题卡不跟随：它们是独立交付物，规格与视频无关（见该模块注释）。
+    # Node 22 可执行文件路径（v0.37）：monoline 的 HyperFrames 渲染要 node 22。
+    # 原先只认环境变量 HERTZ_NODE22_BIN——它用了正确的 HERTZ_ 前缀却没在
+    # Settings 里声明，于是设置页没有输入框，用户只能改 shell 环境。
+    node_bin: str = ""
     pipeline_video_width: int = 1280
     pipeline_video_height: int = 720
     pipeline_video_fps: int = 30

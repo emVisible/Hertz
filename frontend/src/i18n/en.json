@@ -443,7 +443,9 @@
     "tieringHint": "Items at or above the premier threshold take the golden publishing slots and sort as premier/regular/filler. Leave the timezone blank to follow the system.",
     "tgWeekly": "Send weekly summary",
     "outputResolution": "Output resolution",
-    "outputResolutionHint": "Video and burned-in subtitles share these dimensions — the ASS subtitle coordinate system must match the video pixels, or font size and margins silently scale wrong. Covers and title cards do not follow: they have their own delivery spec."
+    "outputResolutionHint": "Video and burned-in subtitles share these dimensions — the ASS subtitle coordinate system must match the video pixels, or font size and margins silently scale wrong. Covers and title cards do not follow: they have their own delivery spec.",
+    "nodeBin": "Node 22 path (monoline render)",
+    "nodeBinHint": "Leave blank to auto-detect: setting → environment variable → nvm → system node."
   },
   "execution": {
     "modeStudio": "Studio",

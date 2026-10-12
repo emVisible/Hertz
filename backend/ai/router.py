@@ -28,6 +28,7 @@ from backend.ai.types import (
     ScoreResult,
     TitleResult,
 )
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -362,7 +363,6 @@ class TaskRouter:
     def _persona_suffix() -> str:
         """频道人设记忆（v0.18）：配置非空时拼到创作类 system prompt 尾部。
         只影响脚本与标题生成——翻译保持忠实不掺调性。"""
-        from backend.config import settings
 
         persona = str(getattr(settings, "channel_persona", "") or "").strip()
         return f"\n\n频道人设（务必遵守）：\n{persona}" if persona else ""
@@ -445,7 +445,10 @@ class TaskRouter:
 
         output_dir = self._registry.image_output_dir()
         provider = ComfyUIProvider(
-            base_url=resolved["base_url"] or "http://127.0.0.1:8188",
+            # 兜底取 settings 而不是写死字面量（v0.37）：`comfyui_base_url`
+            # 之前只在 registry 首次播种时读一次，老用户的 provider 行已带
+            # base_url，于是改设置对他们完全无效——而界面上看不出任何异常。
+            base_url=resolved["base_url"] or settings.comfyui_base_url,
             output_dir=output_dir,
         )
         try:
@@ -463,7 +466,7 @@ class TaskRouter:
             return False
         from backend.ai.providers.comfyui import ComfyUIProvider
 
-        provider = ComfyUIProvider(base_url=resolved["base_url"] or "http://127.0.0.1:8188")
+        provider = ComfyUIProvider(base_url=resolved["base_url"] or settings.comfyui_base_url)
         try:
             return await provider.is_reachable()
         finally:
@@ -488,7 +491,6 @@ class TaskRouter:
 
             provider = EdgeTTSProvider()
         try:
-            from backend.config import settings
 
             # 显式 voice 优先；否则用角色配置的音色（模型 key）
             return await provider.synthesize(

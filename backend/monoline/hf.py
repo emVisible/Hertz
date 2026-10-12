@@ -21,6 +21,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from backend.config import settings
+
 HF_VERSION = "0.8.63"
 
 # config quality（UI: draft/looks/delivery）→ producer /render vocab
@@ -75,8 +77,17 @@ def _lint_summary(data: dict) -> str:
 
 
 def resolve_node_bin() -> str:
-    """Node 22 解析：显式 env → nvm v22.14.0 → 系统 node（验 major）。"""
+    """Node 22 解析：settings → 环境变量 → nvm v22.14.0 → 系统 node（验 major）。
+
+    v0.37 之前只认环境变量 `HERTZ_NODE22_BIN`。它用了正确的 `HERTZ_` 前缀却
+    **没有在 Settings 里声明**，于是设置页没有对应输入框，用户只能在启动前
+    改 shell 环境。自定义 venv / 非标准安装位置的用户只能去翻源码。
+    现在 `settings.node_bin` 也能配，且环境变量仍然优先（保留 CI 的注入方式）。
+    """
     candidates = []
+    configured = (getattr(settings, "node_bin", "") or "").strip()
+    if configured:
+        candidates.append(configured)
     env_bin = os.environ.get("HERTZ_NODE22_BIN", "").strip()
     if env_bin:
         candidates.append(env_bin)
