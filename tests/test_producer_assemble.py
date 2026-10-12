@@ -502,3 +502,40 @@ def test_default_transition_is_quoted_in_the_api_error() -> None:
     from backend.pipeline.producers import assemble as asm
 
     assert asm.DEFAULT_TRANSITION_S == pytest.approx(0.32)
+
+
+# ---------- 启发式评分：文档与代码必须一致（v0.37） ----------
+
+def test_freshness_half_life_doc_matches_code() -> None:
+    """半衰期的文档与代码不许矛盾。
+
+    v0.37 之前模块文档写「7 天半衰期」，而代码是 259_200 秒 = 3 天，函数
+    docstring 也写 3 天——文档独自跑偏。下一个人读文档调参会得到与实际
+    评分完全不同的结果，且没有任何报错。
+
+    这里断言的是「文档里的天数与常量一致」，而不是把 3 写死：真要改成 7 天
+    时，应该改常量并让这条测试提醒同步文档。
+    """
+    import re
+
+    from backend.pipeline.producers import heuristic_score as hs
+
+    days = hs._FRESHNESS_HALF_LIFE_S / 86400
+    doc = Path(hs.__file__).read_text(encoding="utf-8")
+
+    # 模块文档与函数 docstring 都不许再提「N 天半衰期」以外的数字
+    claimed = set(re.findall(r"半衰期\s*(\d+)\s*天", doc))
+    assert claimed == {str(int(days))}, (
+        f"代码半衰期是 {days:.0f} 天，文档却声称 {sorted(claimed)} 天"
+    )
+
+
+def test_freshness_score_halves_at_the_named_constant() -> None:
+    """过了一个半衰期，信号恰好减半——常量名与行为对得上。"""
+    from backend.pipeline.producers import heuristic_score as hs
+
+    now = 1_700_000_000.0
+    fresh = hs._freshness_score(now - hs._FRESHNESS_HALF_LIFE_S, now)
+    assert fresh == pytest.approx(0.5, abs=1e-9)
+    # 两个半衰期 = 1/4；更新的内容分数更高
+    assert hs._freshness_score(now, now) == pytest.approx(1.0)

@@ -5,7 +5,7 @@
 
 信号源（全部零 API 成本）：
 - 社区认可：reddit_score / upvote_ratio / num_comments 归一化加权
-- 内容新鲜度：created_utc 衰减（越新越高分，7 天半衰期）
+- 内容新鲜度：created_utc 指数衰减（越新越高分，半衰期 3 天，见 _FRESHNESS_HALF_LIFE_S）
 - 标题吸引力：长度适中(20-80 字符) + 含数字/疑问/情感词加分
 - 类型匹配：video_raw 基础分 > text_only（视觉内容优先）
 
@@ -15,6 +15,13 @@
 import math
 import re
 from datetime import UTC, datetime
+
+#: 新鲜度半衰期（秒）= 3 天。
+#:
+#: v0.37 之前这个值是裸的 259_200，而**模块文档写着「7 天半衰期」**——两处矛盾。
+#: 代码与函数 docstring 都是 3 天，所以真相是 3 天、文档写错了。改成具名常量：
+#: 一个读不懂的魔数下次被「修正」时，没人会同时去改文档。
+_FRESHNESS_HALF_LIFE_S = 259_200
 
 # 各信号权重（合计 1.0）
 _W_COMMUNITY = 0.30
@@ -42,9 +49,9 @@ def _norm(value: float, lo: float, hi: float) -> float:
 
 
 def _freshness_score(created_utc: float, now_ts: float) -> float:
-    """指数衰减：半衰期 3 天（259200 秒）。"""
+    """指数衰减：半衰期 3 天。"""
     age_s = max(now_ts - created_utc, 0)
-    return math.pow(0.5, age_s / 259_200)
+    return math.pow(0.5, age_s / _FRESHNESS_HALF_LIFE_S)
 
 
 def _title_score(title: str) -> float:

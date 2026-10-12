@@ -706,3 +706,100 @@ async def test_buff_system(client, fake_ai) -> None:
 
     await client.delete(f"/api/plans/{plan['id']}")
     await client.delete(f"/api/buffs/{buff['id']}")
+
+
+# ---------- system 阶段的超时必须读阶段声明（v0.37） ----------
+
+def test_phase_timeout_uses_phase_declaration():
+    """`_phase_timeout` 读阶段自己的 timeout，而不是回落默认值。
+
+    v0.37 之前 `_run_system` 里写死 `asyncio.timeout(120)`。而 agent 阶段
+    （PhaseEngine 内）用的是 `phase.timeout` —— 于是 `build_brief` 声明的
+    `timeout=30` 被静默覆盖成 120。用户把阶段超时调成 60 秒不生效，
+    且没有任何提示；工序库是可编辑的，写死等于让那份编辑失效。
+    """
+    from backend.orchestration.engine import _phase_timeout
+    from backend.orchestration.phases import PhaseDef
+
+    assert _phase_timeout(PhaseDef(key="build_brief", name="x", description="x",
+                                   phase_type="system", timeout=30)) == 30
+    assert _phase_timeout(PhaseDef(key="director", name="x", description="x",
+                                   phase_type="agent", timeout=300)) == 300
+
+
+@pytest.mark.parametrize("phase_like", [None, type("P", (), {"timeout": 0})(),
+                                        type("P", (), {"timeout": None})(),
+                                        type("P", (), {"timeout": "abc"})()])
+def test_phase_timeout_falls_back_safely(phase_like):
+    """阶段没声明 timeout（或声明了垃圾值）时回落到 120，不能抛异常。
+
+    回落 120 而不是 300：这两个桥接步骤历史上就是 120，保证「无声明」时行为
+    与改动前一致。
+    """
+    from backend.orchestration.engine import _phase_timeout
+
+    assert _phase_timeout(phase_like) == 120
+
+
+def test_system_phases_are_not_timeout_overridden():
+    """回归守卫：阶段超时不得写成字面量，必须走 `_phase_timeout(phase)`。
+
+    **用 AST 而不是正则**。前两版都用正则，结果都栽在同一处：`_phase_timeout`
+    的文档字符串里正好举了 `asyncio.timeout(120)` 这个例子（说明它是从哪改来的），
+    逐行正则把它当成了违规行——一个为了记录历史而写的注释，让守卫永远红。
+    注释是文档不是代码；只有 AST 分得清这两件事。仓库里
+    `tests/test_shell_items.py` 早就是 AST 解析源码的，这也是本仓的既有做法。
+    """
+    import ast
+
+    path = Path(__file__).resolve().parents[1] / "backend/orchestration/engine.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+
+    literals: list[str] = []
+    via_phase = 0
+    for node in ast.walk(tree):
+        # `asyncio.timeout(<expr>)`
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "timeout"
+            and len(node.args) == 1
+        ):
+            continue
+        arg = node.args[0]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, (int, float)):
+            literals.append(f"line {node.lineno}: asyncio.timeout({arg.value})")
+        elif (
+            isinstance(arg, ast.Call)
+            and isinstance(arg.func, ast.Name)
+            and arg.func.id == "_phase_timeout"
+        ):
+            via_phase += 1
+
+    assert not literals, f"engine.py 里有写死的阶段超时 {literals}，会覆盖阶段声明的 timeout"
+    # 正向确认：两个 system 阶段确实走了 phase.timeout
+    assert via_phase == 2, f"走 _phase_timeout 的调用点应为 2 处，实际 {via_phase}"
+
+
+def test_content_pipeline_uses_configured_collect_limit():
+    """编排桥接的采集条数必须取 `pipeline_collect_limit`，不能写死。
+
+    v0.37 之前是 `service.run_chain(limit=10)`。而采集上限是可配的（默认 25）：
+    用户把上限调到 50，编排桥接仍只跑 10 条，没有任何提示。桥接步骤与常规
+    采集跑的是同一条链路，用同一个上限才对——两个数字含义相同却各自为政。
+    """
+    import ast
+
+    path = Path(__file__).resolve().parents[1] / "backend/orchestration/engine.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+
+    literals = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run_chain"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+    ]
+    assert not literals, f"engine.py:{literals} 给 run_chain 写了字面量条数"

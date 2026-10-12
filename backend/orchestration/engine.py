@@ -106,6 +106,25 @@ class RunResult:
         }
 
 
+def _phase_timeout(phase) -> int:
+    """阶段超时秒数：取阶段自己声明的值，缺失/非法时回落到 120。
+
+    回落 120 而非 300：这两个桥接步骤是单次 LLM 调用，历史上就是 120，
+    沿用它可保证「阶段没声明 timeout」时行为与改动前完全一致。
+
+    v0.37：这里原本是 `asyncio.timeout(120)` 写死在调用点。
+    agent 阶段（见 PhaseEngine 里 419 行那处）用的是 `phase.timeout`，
+    唯独两个 system 阶段写死——于是 `build_brief` 声明的 `timeout=30`
+    被静默覆盖成 120。用户把阶段超时调成 60 秒不生效，且没有任何提示。
+    而阶段库是可以在工序库里编辑的，写死等于让那份编辑失效。
+    """
+    try:
+        value = int(getattr(phase, "timeout", 0) or 0)
+    except (TypeError, ValueError):
+        return 120
+    return value if value > 0 else 120
+
+
 class PhaseEngine:
     def __init__(self, files: FileStore, hub: EventHub, ai: AIRouter | None = None) -> None:
         self.phases = None  # PhasesService (set by caller); index resolved lazily
@@ -458,12 +477,13 @@ class PhaseEngine:
     ) -> None:
         # system phase 也输出进度日志：长等待（LLM 分析 40s+）期间用户能看到"在跑"
         self._emit("log", None, message=f"[{phase.name}] 开始…")
+        # phase 一路传下去：system 阶段也要读自己声明的 timeout（v0.37）
         if key == "build_brief":
-            await self._build_brief(run_dir, topic, brief_excerpt, result)
+            await self._build_brief(run_dir, topic, brief_excerpt, result, phase=phase)
         elif key == "package":
             await self._package(
                 run_dir, topic, brief_excerpt, result,
-                mode=plan.mode, phase_order=plan.phase_order,
+                mode=plan.mode, phase_order=plan.phase_order, phase=phase,
             )
         elif key == "content_pipeline":
             await self._content_pipeline(run_dir, result)
@@ -471,7 +491,8 @@ class PhaseEngine:
             raise RuntimeError(f"unknown system phase '{key}'")
 
     async def _build_brief(
-        self, run_dir: Path, topic: str, brief_excerpt: str, result: PhaseResult
+        self, run_dir: Path, topic: str, brief_excerpt: str, result: PhaseResult,
+        *, phase=None,
     ) -> None:
         # 环境状态并入策略分析（原 preflight 职责）：LLM/图像可用性一目了然
         llm = bool(self.ai is not None and self.ai.llm_available)
@@ -488,7 +509,12 @@ class PhaseEngine:
                 templates=self._prompt_templates,
             )
             try:
-                async with asyncio.timeout(120):
+                # 用阶段自己声明的 timeout，不写死 120（v0.37）：
+                # agent 阶段走 419 行的 `phase.timeout`，唯独两个 system 阶段
+                # 写死 120，于是 `build_brief` 声明的 timeout=30 被静默覆盖——
+                # 用户把阶段超时调成 60 秒也不生效，且没有任何提示。
+                # 阶段库是可由用户在工序库里编辑的，写死等于让那份编辑失效。
+                async with asyncio.timeout(_phase_timeout(phase)):
                     # 策略分析走 fast 角色（便宜快速模型）：它只是"读懂输入产出分析"，
                     # 不需要 main 的强推理——避免 V3.2 长上下文 40s+ 卡住第一个阶段
                     candidate = (
@@ -576,6 +602,7 @@ class PhaseEngine:
     async def _package(
         self, run_dir: Path, topic: str, brief_excerpt: str, result: PhaseResult,
         mode: str = "text", phase_order: list[dict] | None = None, skip_gate: bool = False,
+        *, phase=None,
     ) -> str:
         # 终检闸门：产物不全则打包失败（原 quality_gate 职责，不再单独排队）；
         # 失败兜底路径（skip_gate）仍产出 final.md
@@ -608,7 +635,12 @@ class PhaseEngine:
                 mode=mode, templates=self._prompt_templates,
             )
             try:
-                async with asyncio.timeout(120):
+                # 用阶段自己声明的 timeout，不写死 120（v0.37）：
+                # agent 阶段走 419 行的 `phase.timeout`，唯独两个 system 阶段
+                # 写死 120，于是 `build_brief` 声明的 timeout=30 被静默覆盖——
+                # 用户把阶段超时调成 60 秒也不生效，且没有任何提示。
+                # 阶段库是可由用户在工序库里编辑的，写死等于让那份编辑失效。
+                async with asyncio.timeout(_phase_timeout(phase)):
                     candidate = (
                         await self.ai.chat_messages(messages, caller="orchestrator")
                     ).strip()
@@ -632,7 +664,15 @@ class PhaseEngine:
         from backend.factory.registry import ServiceRegistry  # deferred import
 
         service = ServiceRegistry.get().pipeline
-        steps_result = await service.run_chain(limit=10)
+        # limit 取 `pipeline_collect_limit`（v0.37）。原先写死 10，而采集上限是
+        # 可配的（默认 25）：用户把采集上限调到 50，编排桥接仍只跑 10 条，
+        # 且没有任何提示。桥接步��与常规采集跑的是同一条链路，用同一个上限
+        # 才是对的——否则两个数字含义相同却各自为政。
+        collect_limit = int(
+            getattr(getattr(service, "settings", None), "pipeline_collect_limit", 25) or 25
+        )
+        assert collect_limit > 0, "采集上限必须为正，否则 run_chain 会空跑"
+        steps_result = await service.run_chain(limit=collect_limit)
         lines = ["# 内容流水线\n"]
         for step, data in steps_result.items():
             summary = data.get("summary") or {}
