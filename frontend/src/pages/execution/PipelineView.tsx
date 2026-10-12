@@ -275,7 +275,7 @@ export function PipelineView(p: PipelineViewProps) {
       </div>
 
       {/* 内容区（当前部分，独立滚动）；key 化触发切换淡入（v0.2.6 消除抖动观感） */}
-      <div key={pTab} className="hz-fade-in min-h-0 flex-1 overflow-y-auto">
+      <div key={pTab} className="hz-fade-in flex min-h-0 flex-1 flex-col overflow-y-auto">
         {pTab === 'run' && <RunTab p={p} />}
 
         {pTab === 'workshop' && <ScriptWorkshop />}

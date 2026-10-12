@@ -1121,7 +1121,17 @@
       "transition_wipe": "Wipe",
       "transition_dissolve": "Noise",
       "transition_zoomin": "Zoom",
-      "isCompilation": "Compilation"
+      "isCompilation": "Compilation",
+      "back": "← Preprocess",
+      "poolSearch": "Search clips",
+      "selectAll": "Select all",
+      "invert": "Invert",
+      "transitionAll": "All transitions",
+      "transitionAllPick": "Set all to…",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "warnMixedFrame": "Mixed portrait/landscape: output follows the first clip, the other side gets black bars",
+      "warnTooLong": "Long compilation — you can still create it"
     }
   },
   "canvas": {

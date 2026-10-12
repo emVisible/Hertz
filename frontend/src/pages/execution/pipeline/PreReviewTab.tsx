@@ -1,8 +1,8 @@
 /** Pipeline 预处理 tab（v0.20 拆分，D-183）：三阶段子菜单导航 + 排序/批量操作。
  *  纯结构移动自 PipelineView（原 552-712 行段），零行为变化；state 留主壳经 props 下发。 */
 
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 
 import type { Dispatch, SetStateAction } from 'react'
 
@@ -19,7 +19,7 @@ import {
   type SortSpec,
 } from '../../../components/execution'
 import { ProduceBatchModal } from '../../../components/execution/ProduceBatchModal'
-import { CompilationModal } from '../../../components/execution/CompilationModal'
+import { CompilationWorkspace } from '../../../components/execution/CompilationWorkspace'
 import type { PipelineViewProps } from './shared'
 import type { PreStage } from '../../../stores/execution'
 
@@ -53,13 +53,34 @@ export function PreReviewTab({
   setProduceBatchOpen,
 }: PreReviewTabProps) {
   const { t } = useTranslation()
-  /** 合集编排面板（v0.35）：页内 state——不进 store，因为它不是「跨页要记住的
-   *  偏好」，而是「这次开面板选几条」的一次性操作态。 */
-  const [compilationOpen, setCompilationOpen] = useState(false)
+  /**
+   * 合集编排是**执行页的一个视图态**，不是另一个页面（v0.35）。
+   *
+   * 为什么不新开路由：离开执行页后 TabBar 里「预处理」就不再高亮，位置感丢失，
+   * 返回还得 navigate 兜底。用 query param（`?mode=pipeline&view=compile`）后：
+   * 预处理始终高亮、浏览器后退天然可用、URL 可收藏、刷新后仍在编排视图。
+   */
+  const [params, setParams] = useSearchParams()
+  const inCompile = params.get('view') === 'compile'
+  const setCompile = (on: boolean) => {
+    const next = new URLSearchParams(params)
+    if (on) next.set('view', 'compile')
+    else next.delete('view')
+    setParams(next, { replace: false })
+  }
   /** 「捞入今日」（v0.34 D-218）：三段的行都挂，写点归 `p.setFocus`（唯一作者在 `usePipelineActions`）。 */
   const pick = (item: PipelineItem) => (
     <TodayPick item={item} onPick={(i, day) => void p.setFocus(i, { focus_date: day })} />
   )
+  if (inCompile) {
+    return (
+      <CompilationWorkspace
+        onBack={() => setCompile(false)}
+        onCreated={() => setCompile(false)}
+      />
+    )
+  }
+
   return (
     <div className="p-4">
       <PipelineStage
@@ -131,7 +152,7 @@ export function PreReviewTab({
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => setCompilationOpen(true)}
+                    onClick={() => setCompile(true)}
                     title={t('console.compilation.hint')}
                   >
                     <Icon name="plans" size={12} />
@@ -312,13 +333,6 @@ export function PreReviewTab({
         onClose={() => setProduceBatchOpen(false)}
         items={[...p.stageDownloaded, ...p.stageScored]}
         onApply={(items, options) => void p.setProduceOptions(items, options)}
-      />
-      {/* key 变化即重建内部 state：每次打开都是干净的编排（合集 0.34
-          踩过「两个 effect 互相覆盖」的坑，见 CompilationModal 注释） */}
-      <CompilationModal
-        key={compilationOpen ? 'open' : 'closed'}
-        open={compilationOpen}
-        onClose={() => setCompilationOpen(false)}
       />
     </div>
   )

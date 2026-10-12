@@ -1136,7 +1136,17 @@
       "transition_wipe": "擦除",
       "transition_dissolve": "溶解",
       "transition_zoomin": "缩放",
-      "isCompilation": "合集"
+      "isCompilation": "合集",
+      "back": "← 预处理",
+      "poolSearch": "搜索素材标题",
+      "selectAll": "全选",
+      "invert": "反选",
+      "transitionAll": "全部转场",
+      "transitionAllPick": "统一设为…",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "warnMixedFrame": "混入横屏与竖屏：成片会按首片朝向输出，另一侧留黑边",
+      "warnTooLong": "总时长偏长，确认后仍可创建"
     }
   },
   "canvas": {
