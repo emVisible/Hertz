@@ -16,6 +16,7 @@ from backend.config import settings
 from backend.infrastructure.deps import font_file
 from backend.models import script_keys as sk
 from backend.pipeline.producers import translate_engine
+from backend.pipeline.producers.resolution import target_resolution
 
 logger = logging.getLogger(__name__)
 
@@ -283,8 +284,11 @@ def srt_to_ass(srt_path: Path, out_path: Path) -> Path:
     alignment = int(getattr(settings, "pipeline_subtitle_alignment", 2))
     margin_v = int(getattr(settings, "pipeline_subtitle_margin_bottom", 64))
     family = subtitle_font_family()
+    # PlayRes 必须与成片像素尺寸一致（v0.37）：ASS 用它定义字幕坐标系，
+    # 不一致时字号与边距会按旧坐标系缩放——静默的视觉错误，没有任何日志。
+    w, h, _fps = target_resolution()
     header = (
-        "[Script Info]\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\n"
+        f"[Script Info]\nScriptType: v4.00+\nPlayResX: {w}\nPlayResY: {h}\n"
         "WrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\n"
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "

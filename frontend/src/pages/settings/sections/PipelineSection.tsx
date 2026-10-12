@@ -20,6 +20,15 @@ import { ChannelsCard } from './ChannelsCard'
  * 并发任务族：字段名必须与后端 `factory/concurrency.DEFAULT_LIMITS` 的键
  * 一一对应（后端读 `settings.concurrency_<kind>`）。两边各写一份字面量就会漂。
  */
+/** 画幅档位：与后端 producers/resolution._ALLOWED_* 保持一致。 */
+const VIDEO_PRESETS = [
+  { label: '720p', w: 1280, h: 720, fps: 30 },
+  { label: '1080p', w: 1920, h: 1080, fps: 30 },
+  { label: '1440p', w: 2560, h: 1440, fps: 30 },
+  { label: '4K', w: 3840, h: 2160, fps: 30 },
+  { label: '1080p60', w: 1920, h: 1080, fps: 60 },
+] as const
+
 const CONCURRENCY_KINDS = ['llm', 'image', 'tts', 'download', 'pipeline'] as const
 const CONCURRENCY_DEFAULTS: Record<(typeof CONCURRENCY_KINDS)[number], number> = {
   llm: 4,
@@ -498,6 +507,34 @@ export function PipelineSection({
             {t('settings.autoPublishHint')}
           </p>
         </div>
+        {/* 成片画幅（v0.37）：原先 1280x720 写死在 5 个文件。其中 compose 的
+            实际输出与 subtitles 的 ASS PlayResX/Y 必须一致——ASS 用 PlayRes
+            定义字幕坐标系，两者漂了字号与边距会静默缩放错，不报任何错。 */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-xs font-medium text-text-primary">{t('settings.outputResolution')}</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-1">
+            <Select
+              label={t('settings.outputResolution')}
+              // 值用「宽x高@帧率」拼出来：三个字段是一个选择，一次改完。
+              // 拆成三个独立输入框的话，用户会配出 1280 宽 + 2160 高这种
+              // 不存在的组合，后端只能静默回落到默认。
+              value={`${form.pipeline_video_width ?? '1280'}x${form.pipeline_video_height ?? '720'}@${form.pipeline_video_fps ?? '30'}`}
+              onChange={(e) => {
+                const [dims, fps] = e.target.value.split('@')
+                const [w, hgt] = (dims ?? '1280x720').split('x')
+                set('pipeline_video_width', w ?? '1280')
+                set('pipeline_video_height', hgt ?? '720')
+                set('pipeline_video_fps', fps ?? '30')
+              }}
+              options={VIDEO_PRESETS.map((p) => ({
+                value: `${p.w}x${p.h}@${p.fps}`,
+                label: `${p.label} · ${p.fps}fps`,
+              }))}
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">{t('settings.outputResolutionHint')}</p>
+        </div>
+
         {/* 下载韧性（v0.37 补齐）：被 403 时的退避与熔断。这些参数原先存在且
             一直在读，但只有改 .env 才能动——而它们恰恰是「被限流了怎么办」的
             第一反应要去的地方。 */}

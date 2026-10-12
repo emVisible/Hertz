@@ -209,6 +209,14 @@ class Settings(BaseSettings):
     # 是应有的尊重。默认 True 保持既有行为，由设置页同步给主进程。
     clipboard_monitor_enabled: bool = True
     scheduler_timezone: str = ""
+    # 成片画幅（v0.37）。原先 1280x720 写死在 5 个文件共 8 处，其中
+    # compose 出的视频尺寸与 subtitles 的 ASS PlayResX/Y 必须一致——ASS 的
+    # PlayRes 是字幕坐标系，两者不一致时字号与边距会静默缩放错，不报错。
+    # 现在统一读 producers/resolution.py 这一个权威源。
+    # 封面/标题卡不跟随：它们是独立交付物，规格与视频无关（见该模块注释）。
+    pipeline_video_width: int = 1280
+    pipeline_video_height: int = 720
+    pipeline_video_fps: int = 30
     concurrency_llm: int = 4
     concurrency_image: int = 2
     concurrency_tts: int = 2

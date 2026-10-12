@@ -16,6 +16,7 @@ from backend.config import settings
 from backend.library.thumbnails import find_ffmpeg
 from backend.pipeline.producers.common import ProducerError, _run_cmd
 from backend.pipeline.producers.probe import probe_audio_duration, probe_duration
+from backend.pipeline.producers.resolution import target_resolution
 from backend.pipeline.producers.subtitles import (
     _subtitle_font,
     _wrap_lines,
@@ -69,16 +70,22 @@ async def subtitles_filter_available(ffmpeg: str) -> bool:
         _subtitles_available = True
     return _subtitles_available
 
-def _render_cue_png(text: str, out_path: Path, size: tuple[int, int] = (1280, 720)) -> Path:
+def _render_cue_png(text: str, out_path: Path, size: tuple[int, int] | None = None) -> Path:
     """透明全帧 PNG 字幕（v0.9 对齐原项目 edit.py _render_cue_png）：
     白字单程描边（stroke_width，比 8 向叠加干净）、底部留白可配、
     最多 4 行——Homebrew ffmpeg 无 libass 时中文字幕烧录的降级通道。
 
     v0.11.2：字体/字号/描边/底部留白全部跟随设置（与 ASS 路径一致），
     描边用 PIL stroke_width 单程绘制（淡而细，不再 8 向重影）。
+
+    v0.37：`size` 不传时取成片画幅。这张 PNG 要覆盖整帧，字号与边距是按
+    成片像素算的——固定 1280×720 而成片是 1080p 时，PNG 会被拉伸，字幕
+    位置随之偏移。
     """
     from PIL import Image, ImageDraw
 
+    if size is None:
+        size = target_resolution()[:2]
     font_size = int(getattr(settings, "pipeline_subtitle_font_size", 24))
     outline = int(getattr(settings, "pipeline_subtitle_outline", 1))
     margin_bottom = int(getattr(settings, "pipeline_subtitle_margin_bottom", 64))
@@ -113,7 +120,7 @@ async def compose_video(
     raw: Path, narration: Path | None, srt: Path | None, out: Path,
     *, muted: bool = False, narr_start: float = 0.0, narr_dur: float = 0.0,
 ) -> dict:
-    """ffmpeg 合成：720p + 字幕烧录三级降级 + 音频混流。
+    """ffmpeg 合成：成片画幅 + 字幕烧录三级降级 + 音频混流。
 
     字幕（v0.9 对齐原项目 edit.py）：libass（ASS 烧录）→ PNG overlay
     （透明 PNG 逐 cue 淡入淡出，规避无 libass 时中文乱码）→ 无字幕。
@@ -123,6 +130,9 @@ async def compose_video(
     amix normalize=0（不归一化）、统一 44100/fltp/stereo；特征无原声
     无旁白 → anullsrc 静音轨。合成后音频 < 视频 85% → 带 BGM 重混一次。
     v0.3.3：muted=True（静音模块）→ 跳过原声（无旁白则无音轨）。
+
+    v0.37：输出尺寸不再写死 720p，取 `producers.resolution.target_resolution()`——
+    它与 subtitles 的 ASS PlayResX/Y 同源，两者漂了就静默错位。
     """
     ffmpeg = find_ffmpeg()
     if ffmpeg is None:
@@ -131,6 +141,9 @@ async def compose_video(
     target = await probe_duration(raw) or 0.0
     if target <= 0:
         raise ProducerError(f"cannot determine duration of {raw.name}")
+
+    # 成片画幅（权威源：producers/resolution.py）
+    w, h, fps = target_resolution()
 
     quality: dict = {"burn": "none", "audio_guard": "ok", "dropped": []}
     aformat = (
@@ -146,8 +159,8 @@ async def compose_video(
             fc: list[str] = []
             next_idx = 1
             fc.append(
-                "[0:v]scale=1280:720:force_original_aspect_ratio=decrease,"
-                "pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p[base]"
+                f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+                f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,format=yuv420p[base]"
             )
             current = "base"
 
@@ -311,6 +324,6 @@ async def compose_video(
                     quality["dropped"].append("audio_short")
 
     return {
-        "path": str(out), "width": 1280, "height": 720,
+        "path": str(out), "width": w, "height": h,
         "quality": quality,
     }

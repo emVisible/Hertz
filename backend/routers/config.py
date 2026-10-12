@@ -151,6 +151,10 @@ RUNTIME_ALLOWLIST = {
     "backup_enabled",
     "backup_keep",
     "pipeline_integrity_minutes",
+    # v0.37：成片画幅（原先 5 个文件共 8 处写死 720p）
+    "pipeline_video_width",
+    "pipeline_video_height",
+    "pipeline_video_fps",
 }
 
 SECRET_FIELDS = {

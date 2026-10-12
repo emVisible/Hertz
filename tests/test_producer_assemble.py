@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import delete
 
+from backend.config import runtime_config
 from backend.library.thumbnails import find_ffmpeg
 from backend.pipeline.producers.assemble import (
     DEFAULT_TRANSITION_S,
@@ -539,3 +540,99 @@ def test_freshness_score_halves_at_the_named_constant() -> None:
     assert fresh == pytest.approx(0.5, abs=1e-9)
     # 两个半衰期 = 1/4；更新的内容分数更高
     assert hs._freshness_score(now, now) == pytest.approx(1.0)
+
+
+# ---------- 成片画幅：一个权威源，视频与字幕必须一致（v0.37） ----------
+
+@pytest.fixture
+def _clean_runtime():
+    before = dict(runtime_config.load())
+    yield
+    runtime_config.save(before)
+
+
+def test_resolution_defaults_preserved():
+    """不配置时必须与历史行为完全一致（1280x720@30）。"""
+    from backend.pipeline.producers.resolution import target_resolution
+
+    assert target_resolution() == (1280, 720, 30)
+
+
+@pytest.mark.parametrize(
+    ("w", "h", "fps", "expected"),
+    [
+        (1920, 1080, 30, (1920, 1080, 30)),
+        (3840, 2160, 60, (3840, 2160, 60)),
+    ],
+)
+def test_resolution_reads_settings(_clean_runtime, w, h, fps, expected):
+    from backend.pipeline.producers.resolution import target_resolution
+
+    runtime_config.save({
+        "pipeline_video_width": w, "pipeline_video_height": h, "pipeline_video_fps": fps,
+    })
+    assert target_resolution() == expected
+
+
+@pytest.mark.parametrize("bad", [0, -1, 1279, 99999, "abc", None])
+def test_resolution_rejects_nonsense(_clean_runtime, bad):
+    """非法档位回落到默认，而不是放行或抛异常。
+
+    放行 1279×721 会得到一台机器认不出的尺寸——比默认更糟；
+    抛异常则让整个产出流程挂掉——一个画质偏好不该有这么大杀伤力。
+    """
+    from backend.pipeline.producers.resolution import target_resolution
+
+    runtime_config.save({"pipeline_video_width": bad})
+    assert target_resolution()[0] == 1280
+
+
+def test_subtitle_playres_matches_video_resolution(_clean_runtime, tmp_path):
+    """ASS 的 PlayResX/Y 必须等于成片画幅。
+
+    这是本项存在的全部理由：ASS 用 PlayRes 定义字幕坐标系。视频 1080p 而
+    PlayRes 还写 1280×720 时，字号与边距会按旧坐标系缩放——**静默的视觉错误**，
+    没有任何日志、任何异常。
+    """
+    from backend.pipeline.producers.resolution import target_resolution
+    from backend.pipeline.producers.subtitles import srt_to_ass
+
+    runtime_config.save({
+        "pipeline_video_width": 1920, "pipeline_video_height": 1080, "pipeline_video_fps": 30,
+    })
+    w, h, _ = target_resolution()
+    srt = tmp_path / "s.srt"
+    srt.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n", encoding="utf-8"
+    )
+    ass = srt_to_ass(srt, tmp_path / "s.ass").read_text(encoding="utf-8")
+    assert f"PlayResX: {w}" in ass
+    assert f"PlayResY: {h}" in ass
+
+
+def test_assemble_target_follows_settings_at_call_time(_clean_runtime):
+    """`_resolve_target` 必须现读设置，不能用模块级常量冻结。
+
+    v0.37 最初写成 `DEFAULT_TARGET = target_resolution()`（模块级），那样进程
+    启动后用户再改设置就不生效——正是这一轮在消灭的「声明了却改了没用」。
+    """
+    from backend.pipeline.producers.assemble import _resolve_target
+
+    runtime_config.save({
+        "pipeline_video_width": 1920, "pipeline_video_height": 1080, "pipeline_video_fps": 30,
+    })
+    # 首片横屏 → 直接用配置的 1920x1080
+    assert _resolve_target((1920, 1080, 30, False)) == (1920, 1080, 30)
+    # 首片竖屏 → 宽高对调（既有语义不变）
+    assert _resolve_target((1080, 1920, 30, False)) == (1080, 1920, 30)
+
+
+def test_delivery_resolution_does_not_follow_video():
+    """封面/标题卡不跟随成片分辨率。
+
+    它们是独立交付物：要上传成图的封面有自己的规格，标题卡是一张 PNG，
+    都不烧字幕、也不与视频逐像素对齐。绑上去会让 1080p 机器生成巨大的封面图。
+    """
+    from backend.pipeline.producers.resolution import delivery_resolution
+
+    assert delivery_resolution() == (1280, 720)

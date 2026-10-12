@@ -49,6 +49,7 @@ from backend.pipeline.producers.probe import (
     probe_has_audio,
     video_stream_params,
 )
+from backend.pipeline.producers.resolution import target_resolution
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +69,6 @@ TRANSITION_CHOICES: tuple[str, ...] = tuple(TRANSITIONS)
 DEFAULT_TRANSITION_S = 0.32
 MIN_TRANSITION_S = 0.2
 MAX_TRANSITION_S = 3.0
-
-#: 默认目标画幅（横屏）。竖屏合集由 `_resolve_target` 按首片朝向改写。
-DEFAULT_TARGET = (1280, 720, 30)
 
 #: 归一后每段的音频口径（与 `compose.py` 同源，见 `_audio_chain`）。
 _AUDIO_RATE = 44100
@@ -103,7 +101,10 @@ def _resolve_target(first_params: tuple[int, int, float, bool] | None) -> tuple[
     强行 pad 成 1280x720 会得到左右两条黑边（9:16 → 16:9），观感比黑边更差。
     首片朝向是作者排第一段时的意图，比全局默认更能代表这条片子。
     """
-    width, height, fps = DEFAULT_TARGET
+    # 现读而非模块级常量（v0.37）：模块级 `DEFAULT_TARGET = target_resolution()`
+    # 会在进程启动时冻结，此后用户在设置页改分辨率不生效——那正是这一轮在
+    # 消灭的「声明了却改了没用」。权威源是 producers/resolution.py。
+    width, height, fps = target_resolution()
     if first_params is not None and first_params[0] < first_params[1]:
         # 首片是竖的 → 输出竖屏（宽高对调；fps 沿用默认，不继承素材的怪帧率）
         return height, width, fps

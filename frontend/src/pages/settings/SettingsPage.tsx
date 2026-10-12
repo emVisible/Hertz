@@ -61,6 +61,9 @@ interface ConfigData {
   pipeline_subtitle_alignment?: number
   pipeline_subtitle_fade_ms?: number
   pipeline_subtitle_margin_bottom?: number
+  pipeline_video_width?: number
+  pipeline_video_height?: number
+  pipeline_video_fps?: number
   pipeline_publish_windows?: string
   pipeline_publish_min_interval_min?: number
   pipeline_publish_jitter_min?: number
@@ -198,6 +201,9 @@ export function SettingsPage() {
       pipeline_subtitle_alignment: String(cfg.pipeline_subtitle_alignment ?? 2),
       pipeline_subtitle_fade_ms: String(cfg.pipeline_subtitle_fade_ms ?? 300),
       pipeline_subtitle_margin_bottom: String(cfg.pipeline_subtitle_margin_bottom ?? 64),
+      pipeline_video_width: String(cfg.pipeline_video_width ?? 1280),
+      pipeline_video_height: String(cfg.pipeline_video_height ?? 720),
+      pipeline_video_fps: String(cfg.pipeline_video_fps ?? 30),
       pipeline_publish_windows: cfg.pipeline_publish_windows ?? '10:00-12:00,18:00-20:00',
       pipeline_publish_min_interval_min: String(cfg.pipeline_publish_min_interval_min ?? 30),
       pipeline_publish_jitter_min: String(cfg.pipeline_publish_jitter_min ?? 5),

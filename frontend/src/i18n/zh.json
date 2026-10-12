@@ -456,7 +456,9 @@
     "premierScore": "premier 门槛分",
     "schedulerTimezone": "调度时区",
     "tieringHint": "评分达到 premier 门槛的条目会优先占用黄金发布时段，并按 premier/regular/filler 分层排序。调度时区留空表示跟随系统。",
-    "tgWeekly": "发送每周汇总"
+    "tgWeekly": "发送每周汇总",
+    "outputResolution": "成片画幅",
+    "outputResolutionHint": "视频与烧录字幕共用这一组尺寸——ASS 字幕坐标系必须与视频像素一致，否则字号与边距会静默缩放错。封面与标题卡不跟随，它们有各自的交付规格。"
   },
   "execution": {
     "modeStudio": "Studio 编排",
