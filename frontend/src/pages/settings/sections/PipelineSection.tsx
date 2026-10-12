@@ -11,9 +11,23 @@ import { api } from '../../../api'
 import { modelState, modelStateTone } from '../../../core/modelStatus'
 import { Badge, Button, Icon, Input, Select, useToast } from '../../../components/ui'
 import { SOURCE_CATALOG_NAMES, SOURCE_GROUPS } from '../../../constants/sources'
+ import { BILI_TIDS } from '../../../constants/bilibili'
 import { heading, sub, type SectionProps } from './shared'
 import { PublishStatusCard } from './settingsCards'
 import { ChannelsCard } from './ChannelsCard'
+
+/**
+ * 并发任务族：字段名必须与后端 `factory/concurrency.DEFAULT_LIMITS` 的键
+ * 一一对应（后端读 `settings.concurrency_<kind>`）。两边各写一份字面量就会漂。
+ */
+const CONCURRENCY_KINDS = ['llm', 'image', 'tts', 'download', 'pipeline'] as const
+const CONCURRENCY_DEFAULTS: Record<(typeof CONCURRENCY_KINDS)[number], number> = {
+  llm: 4,
+  image: 2,
+  tts: 2,
+  download: 3,
+  pipeline: 2,
+}
 
 /** 本地模型状态卡通用件（v0.32 S4）：就绪徽章 + 后台下载 + 轮询到就绪。
  *  翻译与转写两个引擎这件事的语义完全一致（只是端点与文案），复制两份轮询
@@ -304,6 +318,33 @@ export function PipelineSection({
           <p className="mt-1 text-xs leading-relaxed text-text-disabled">
             {t('settings.autoCollectHint')}
           </p>
+
+          {/* 评分预过滤（v0.37 补齐）：LLM 评分前的廉价门槛。先用 reddit 分和
+              点赞率把明显不行的挡掉，省下模型调用。原先只能改 .env。 */}
+          <div className="mt-4 border-t border-border/60 pt-3">
+            <p className="text-xs font-medium text-text-primary">{t('settings.prefilter')}</p>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <Input
+                label={t('settings.prefilterMinScore')}
+                type="number"
+                min={0}
+                value={form.pipeline_prefilter_min_reddit_score ?? '50'}
+                onChange={(e) => set('pipeline_prefilter_min_reddit_score', e.target.value)}
+              />
+              <Input
+                label={t('settings.prefilterMinRatio')}
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={form.pipeline_prefilter_min_upvote_ratio ?? '0.85'}
+                onChange={(e) => set('pipeline_prefilter_min_upvote_ratio', e.target.value)}
+              />
+            </div>
+            <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">
+              {t('settings.prefilterHint')}
+            </p>
+          </div>
           {/* 热点监控（v0.16 TrendRadar 精华）：rising 高频 + 三段词法预筛 */}
           <div className="mt-4 rounded-md border border-border/60 p-3">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -457,6 +498,229 @@ export function PipelineSection({
             {t('settings.autoPublishHint')}
           </p>
         </div>
+        {/* 下载韧性（v0.37 补齐）：被 403 时的退避与熔断。这些参数原先存在且
+            一直在读，但只有改 .env 才能动——而它们恰恰是「被限流了怎么办」的
+            第一反应要去的地方。 */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-xs font-medium text-text-primary">{t('settings.downloadResilience')}</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <Input
+              label={t('settings.downloadDelay')}
+              type="number"
+              step={0.1}
+              min={0}
+              value={form.pipeline_download_delay_seconds ?? '1.2'}
+              onChange={(e) => set('pipeline_download_delay_seconds', e.target.value)}
+            />
+            <Input
+              label={t('settings.coolingBase')}
+              type="number"
+              min={0}
+              value={form.pipeline_download_cooling_base_seconds ?? '300'}
+              onChange={(e) => set('pipeline_download_cooling_base_seconds', e.target.value)}
+            />
+            <Input
+              label={t('settings.coolingMax')}
+              type="number"
+              min={0}
+              value={form.pipeline_download_cooling_max_seconds ?? '7200'}
+              onChange={(e) => set('pipeline_download_cooling_max_seconds', e.target.value)}
+            />
+            <Input
+              label={t('settings.cdnCircuit403')}
+              type="number"
+              min={1}
+              value={form.pipeline_cdn_circuit_403 ?? '3'}
+              onChange={(e) => set('pipeline_cdn_circuit_403', e.target.value)}
+            />
+            <Input
+              label={t('settings.cdnCircuitCooldown')}
+              type="number"
+              min={0}
+              value={form.pipeline_cdn_circuit_cooldown ?? '600'}
+              onChange={(e) => set('pipeline_cdn_circuit_cooldown', e.target.value)}
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">
+            {t('settings.downloadResilienceHint')}
+          </p>
+        </div>
+
+        {/* 并发上限（v0.37）：原先写死在 factory/concurrency.py */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-xs font-medium text-text-primary">{t('settings.concurrency')}</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            {CONCURRENCY_KINDS.map((kind) => (
+              <Input
+                key={kind}
+                label={t(`settings.concurrency_${kind}`)}
+                type="number"
+                min={1}
+                value={form[`concurrency_${kind}`] ?? String(CONCURRENCY_DEFAULTS[kind])}
+                onChange={(e) => set(`concurrency_${kind}`, e.target.value)}
+              />
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">
+            {t('settings.concurrencyHint')}
+          </p>
+        </div>
+
+        {/* 发布排期窗口（v0.37 补齐）：字段与读取代码一直都在，只是从不在
+            allowlist 里——设置页渲染不出来，用户只能改 .env。窗口按**本地墙钟**
+            解释（见 schedule.next_slot），所以这里填的是用户所在时区的钟点。 */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-xs font-medium text-text-primary">{t('settings.publishWindow')}</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <Input
+              label={t('settings.publishWindows')}
+              value={form.pipeline_publish_windows ?? '10:00-12:00,18:00-20:00'}
+              onChange={(e) => set('pipeline_publish_windows', e.target.value)}
+              placeholder="10:00-12:00,18:00-20:00"
+            />
+            <Input
+              label={t('settings.publishMinInterval')}
+              type="number"
+              min={1}
+              value={form.pipeline_publish_min_interval_min ?? '30'}
+              onChange={(e) => set('pipeline_publish_min_interval_min', e.target.value)}
+            />
+            <Input
+              label={t('settings.publishJitter')}
+              type="number"
+              min={0}
+              value={form.pipeline_publish_jitter_min ?? '5'}
+              onChange={(e) => set('pipeline_publish_jitter_min', e.target.value)}
+            />
+            <Select
+              label={t('settings.biliDefaultTid')}
+              value={String(form.pipeline_bili_default_tid ?? '201')}
+              onChange={(e) => set('pipeline_bili_default_tid', e.target.value)}
+              options={BILI_TIDS.map((x) => ({ value: String(x.tid), label: `${x.tid} ${x.name}` }))}
+            />
+            <Input
+              label={t('settings.biliDtimeMinHours')}
+              type="number"
+              min={0}
+              step={0.5}
+              value={form.pipeline_bili_dtime_min_hours ?? '0'}
+              onChange={(e) => set('pipeline_bili_dtime_min_hours', e.target.value)}
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">
+            {t('settings.publishWindowHint')}
+          </p>
+        </div>
+
+        {/* 自动过审（v0.37 补齐）：超时未审的条目自动放行 */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-xs font-medium text-text-primary">{t('settings.autoApprove')}</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <Select
+              label={t('settings.autoApproveEnabled')}
+              value={form.pipeline_auto_approve ?? 'false'}
+              onChange={(e) => set('pipeline_auto_approve', e.target.value)}
+              options={[
+                { value: 'true', label: t('common.yes') },
+                { value: 'false', label: t('common.no') },
+              ]}
+            />
+            <Input
+              label={t('settings.autoApproveAfterHours')}
+              type="number"
+              min={1}
+              value={form.pipeline_auto_approve_after_hours ?? '12'}
+              onChange={(e) => set('pipeline_auto_approve_after_hours', e.target.value)}
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">
+            {t('settings.autoApproveHint')}
+          </p>
+        </div>
+
+        {/* RSS 订阅（v0.37 补齐）：collectors/rss.py 的报错文案一直叫用户
+            「请在设置页 pipeline_rss_feeds」——而设置页从来没有这个输入框。 */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-xs font-medium text-text-primary">{t('settings.rssFeeds')}</p>
+          <div className="mt-2 space-y-3">
+            <textarea
+              value={form.pipeline_rss_feeds ?? ''}
+              onChange={(e) => set('pipeline_rss_feeds', e.target.value)}
+              placeholder={'名称|https://example.com/feed.xml\n名称2|https://example.org/rss'}
+              className="h-24 w-full rounded-sm border border-border bg-surface-1 px-2 py-1.5 font-mono text-xs text-text-primary outline-none placeholder:text-text-disabled focus:border-primary"
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Select
+                label={t('settings.heuristicScoring')}
+                value={form.pipeline_heuristic_scoring ?? 'true'}
+                onChange={(e) => set('pipeline_heuristic_scoring', e.target.value)}
+                options={[
+                  { value: 'true', label: t('common.yes') },
+                  { value: 'false', label: t('common.no') },
+                ]}
+              />
+              <Input
+                label={t('settings.aiStoryPerTick')}
+                type="number"
+                min={0}
+                value={form.pipeline_ai_story_per_tick ?? '2'}
+                onChange={(e) => set('pipeline_ai_story_per_tick', e.target.value)}
+              />
+            </div>
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">{t('settings.rssFeedsHint')}</p>
+        </div>
+
+        {/* 评分成本闸门（v0.37 补齐）：LLM 评分的熔断阈值。
+            这两项的全部意义就是「用户能自己控制花多少钱」，把它们藏在 .env 里
+            等于这个闸门由不得用户。 */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-xs font-medium text-text-primary">{t('settings.scoreCostGate')}</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <Input
+              label={t('settings.scoreMaxPerRun')}
+              type="number"
+              min={0}
+              value={form.pipeline_score_max_per_run ?? '50'}
+              onChange={(e) => set('pipeline_score_max_per_run', e.target.value)}
+            />
+            <Input
+              label={t('settings.scoreMaxPerDay')}
+              type="number"
+              min={0}
+              value={form.pipeline_score_max_per_day ?? '100'}
+              onChange={(e) => set('pipeline_score_max_per_day', e.target.value)}
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">
+            {t('settings.scoreCostGateHint')}
+          </p>
+        </div>
+
+        {/* 内容分层门槛（v0.37）：v0.37 之前 content_tier 硬编码 8.0，这个字段
+            接在 StrategyConfig 上却从没渲染过——于是「调高 premier 门槛」这件事
+            根本无从下手。接线和 UI 必须同时做，只做一半等于假旋钮。 */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-xs font-medium text-text-primary">{t('settings.tiering')}</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <Input
+              label={t('settings.premierScore')}
+              type="number"
+              min={0}
+              step={0.5}
+              value={form.pipeline_strategy_premier_score ?? '8'}
+              onChange={(e) => set('pipeline_strategy_premier_score', e.target.value)}
+            />
+            <Input
+              label={t('settings.schedulerTimezone')}
+              value={form.scheduler_timezone ?? ''}
+              onChange={(e) => set('scheduler_timezone', e.target.value)}
+              placeholder="Asia/Shanghai"
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">{t('settings.tieringHint')}</p>
+        </div>
+
         {/* 发布策略引擎（v0.13）：健康度动态配额 + 内容分层 + 槽位约束。
             v0.13.1：全部阈值开放可调（AXIOM 可维护性）——基础 2 项平铺，
             高级 6 项折叠渐进披露 */}
@@ -555,6 +819,15 @@ export function PipelineSection({
               label={t('settings.tgEnabled')}
               value={form.telegram_enabled ?? 'false'}
               onChange={(e) => set('telegram_enabled', e.target.value)}
+              options={[
+                { value: 'true', label: t('common.yes') },
+                { value: 'false', label: t('common.no') },
+              ]}
+            />
+            <Select
+              label={t('settings.tgWeekly')}
+              value={form.telegram_weekly ?? 'true'}
+              onChange={(e) => set('telegram_weekly', e.target.value)}
               options={[
                 { value: 'true', label: t('common.yes') },
                 { value: 'false', label: t('common.no') },
@@ -693,6 +966,53 @@ export function PipelineSection({
               ] as Array<{ value: string; label: string }>
             }
           />
+          {/* 旁白（v0.37 补齐）：字幕语言一直可调，旁白语言与语速却只能改 .env。
+              旁白用什么语言、说多快，是内容调性的核心决定，不该藏在环境变量里。 */}
+          <Select
+            label={t('settings.narrationLang')}
+            value={form.pipeline_narration_lang ?? 'en-US'}
+            onChange={(e) => set('pipeline_narration_lang', e.target.value)}
+            options={[
+              { value: 'en-US', label: 'English' },
+              { value: 'zh-CN', label: '中文' },
+              { value: 'ja-JP', label: '日本語' },
+              { value: 'ko-KR', label: '한국어' },
+              { value: 'es-ES', label: 'Español' },
+              { value: 'fr-FR', label: 'Français' },
+              { value: 'de-DE', label: 'Deutsch' },
+            ] as Array<{ value: string; label: string }>}
+          />
+          <Input
+            label={t('settings.ttsRate')}
+            value={form.pipeline_tts_rate ?? '+0%'}
+            onChange={(e) => set('pipeline_tts_rate', e.target.value)}
+            placeholder="+0%"
+          />
+          <Input
+            label={t('settings.narrationMinWords')}
+            type="number"
+            min={0}
+            value={form.pipeline_narration_min_words ?? '6'}
+            onChange={(e) => set('pipeline_narration_min_words', e.target.value)}
+          />
+          <Input
+            label={t('settings.narrationMaxWords')}
+            type="number"
+            min={1}
+            value={form.pipeline_narration_max_words ?? '42'}
+            onChange={(e) => set('pipeline_narration_max_words', e.target.value)}
+          />
+          <Input
+            label={t('settings.narrationSilentBelow')}
+            type="number"
+            min={0}
+            step={0.5}
+            value={form.pipeline_narration_silent_below ?? '8'}
+            onChange={(e) => set('pipeline_narration_silent_below', e.target.value)}
+          />
+          <p className="col-span-full text-[10px] leading-relaxed text-text-disabled sm:col-span-2">
+            {t('settings.narrationHint')}
+          </p>
           <div>
             <label className="mb-0.5 block text-[11px] font-medium text-text-secondary">
               {t('settings.hfEndpoint')}

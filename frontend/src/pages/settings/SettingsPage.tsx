@@ -61,6 +61,42 @@ interface ConfigData {
   pipeline_subtitle_alignment?: number
   pipeline_subtitle_fade_ms?: number
   pipeline_subtitle_margin_bottom?: number
+  pipeline_publish_windows?: string
+  pipeline_publish_min_interval_min?: number
+  pipeline_publish_jitter_min?: number
+  pipeline_bili_dtime_min_hours?: number
+  pipeline_bili_default_tid?: number
+  pipeline_auto_approve?: boolean
+  pipeline_auto_approve_after_hours?: number
+  pipeline_score_max_per_run?: number
+  pipeline_score_max_per_day?: number
+  pipeline_narration_lang?: string
+  pipeline_tts_rate?: string
+  pipeline_narration_min_words?: number
+  pipeline_narration_max_words?: number
+  pipeline_narration_silent_below?: number
+  pipeline_enable_asr?: boolean
+  xinference_stt_base_url?: string
+  xinference_stt_model_id?: string
+  pipeline_download_delay_seconds?: number
+  pipeline_download_cooling_base_seconds?: number
+  pipeline_download_cooling_max_seconds?: number
+  pipeline_cdn_circuit_403?: number
+  pipeline_cdn_circuit_cooldown?: number
+  pipeline_prefilter_min_reddit_score?: number
+  pipeline_prefilter_min_upvote_ratio?: number
+  concurrency_llm?: number
+  concurrency_image?: number
+  concurrency_tts?: number
+  concurrency_download?: number
+  concurrency_pipeline?: number
+  pipeline_integrity_minutes?: number
+  pipeline_heuristic_scoring?: boolean
+  pipeline_ai_story_per_tick?: number
+  pipeline_rss_feeds?: string
+  pipeline_strategy_premier_score?: number
+  telegram_weekly?: boolean
+  scheduler_timezone?: string
   pipeline_subtitle_lang?: string
   pipeline_translate_source_lang?: string
   pipeline_tts_text_source?: string
@@ -162,6 +198,42 @@ export function SettingsPage() {
       pipeline_subtitle_alignment: String(cfg.pipeline_subtitle_alignment ?? 2),
       pipeline_subtitle_fade_ms: String(cfg.pipeline_subtitle_fade_ms ?? 300),
       pipeline_subtitle_margin_bottom: String(cfg.pipeline_subtitle_margin_bottom ?? 64),
+      pipeline_publish_windows: cfg.pipeline_publish_windows ?? '10:00-12:00,18:00-20:00',
+      pipeline_publish_min_interval_min: String(cfg.pipeline_publish_min_interval_min ?? 30),
+      pipeline_publish_jitter_min: String(cfg.pipeline_publish_jitter_min ?? 5),
+      pipeline_bili_dtime_min_hours: String(cfg.pipeline_bili_dtime_min_hours ?? 0),
+      pipeline_bili_default_tid: String(cfg.pipeline_bili_default_tid ?? 201),
+      pipeline_auto_approve: String(cfg.pipeline_auto_approve ?? false),
+      pipeline_auto_approve_after_hours: String(cfg.pipeline_auto_approve_after_hours ?? 12),
+      pipeline_score_max_per_run: String(cfg.pipeline_score_max_per_run ?? 50),
+      pipeline_score_max_per_day: String(cfg.pipeline_score_max_per_day ?? 100),
+      pipeline_narration_lang: cfg.pipeline_narration_lang ?? 'en-US',
+      pipeline_tts_rate: cfg.pipeline_tts_rate ?? '+0%',
+      pipeline_narration_min_words: String(cfg.pipeline_narration_min_words ?? 6),
+      pipeline_narration_max_words: String(cfg.pipeline_narration_max_words ?? 42),
+      pipeline_narration_silent_below: String(cfg.pipeline_narration_silent_below ?? 8),
+      pipeline_enable_asr: String(cfg.pipeline_enable_asr ?? true),
+      xinference_stt_base_url: cfg.xinference_stt_base_url ?? '',
+      xinference_stt_model_id: cfg.xinference_stt_model_id ?? '',
+      pipeline_download_delay_seconds: String(cfg.pipeline_download_delay_seconds ?? 1.2),
+      pipeline_download_cooling_base_seconds: String(cfg.pipeline_download_cooling_base_seconds ?? 300),
+      pipeline_download_cooling_max_seconds: String(cfg.pipeline_download_cooling_max_seconds ?? 7200),
+      pipeline_cdn_circuit_403: String(cfg.pipeline_cdn_circuit_403 ?? 3),
+      pipeline_cdn_circuit_cooldown: String(cfg.pipeline_cdn_circuit_cooldown ?? 600),
+      pipeline_prefilter_min_reddit_score: String(cfg.pipeline_prefilter_min_reddit_score ?? 50),
+      pipeline_prefilter_min_upvote_ratio: String(cfg.pipeline_prefilter_min_upvote_ratio ?? 0.85),
+      concurrency_llm: String(cfg.concurrency_llm ?? 4),
+      concurrency_image: String(cfg.concurrency_image ?? 2),
+      concurrency_tts: String(cfg.concurrency_tts ?? 2),
+      concurrency_download: String(cfg.concurrency_download ?? 3),
+      concurrency_pipeline: String(cfg.concurrency_pipeline ?? 2),
+      pipeline_integrity_minutes: String(cfg.pipeline_integrity_minutes ?? 720),
+      pipeline_heuristic_scoring: String(cfg.pipeline_heuristic_scoring ?? true),
+      pipeline_ai_story_per_tick: String(cfg.pipeline_ai_story_per_tick ?? 2),
+      pipeline_rss_feeds: cfg.pipeline_rss_feeds ?? '',
+      pipeline_strategy_premier_score: String(cfg.pipeline_strategy_premier_score ?? 8),
+      telegram_weekly: String(cfg.telegram_weekly ?? true),
+      scheduler_timezone: cfg.scheduler_timezone ?? '',
       pipeline_subtitle_lang: cfg.pipeline_subtitle_lang ?? 'zh-CN',
       pipeline_translate_source_lang: cfg.pipeline_translate_source_lang ?? 'en-US',
       pipeline_tts_text_source: cfg.pipeline_tts_text_source ?? 'script',

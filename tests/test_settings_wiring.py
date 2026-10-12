@@ -154,3 +154,86 @@ async def test_norms_patch_round_trips_through_runtime_yaml(client) -> None:
         runtime = Path(settings.data_dir) / "runtime.yaml"
         if runtime.exists():
             runtime.unlink()
+
+
+# ---------- 反向守卫：声明了却不给用户开关的字段（v0.37） ----------
+
+def _allowlist_keys() -> set[str]:
+    from backend.routers.config import RUNTIME_ALLOWLIST
+    return set(RUNTIME_ALLOWLIST)
+
+
+def _settings_fields() -> dict[str, object]:
+    from backend.config import Settings
+    return {n: f for n, f in Settings.model_fields.items()}
+
+
+#: 故意不放进设置页的字段，以及**为什么**。
+#:
+#: 这份清单是「不作为」的证明：没有它，被排除的字段看起来和遗漏的字段一模一样。
+#: 每条都要写清理由，否则下一个人会「顺手」把 secret_key 也放进去。
+_NOT_EXPOSED = {
+    "database_url": "连接凭据，且必须在建库前就位——运行期改它没有意义",
+    "secret_key": "签名密钥，暴露到设置页等于开了后门",
+    "backend_port": "启动期决定，改了必须重启并重启前端",
+    "frontend_port": "启动期决定，同上",
+    "ai_roles": "有独立的 PUT /api/ai/roles 端点与专门的 RolesManager 界面",
+    "runtime_config_path": "派生属性，不是可调项",
+}
+
+
+@pytest.mark.parametrize("field", sorted(_NOT_EXPOSED))
+def test_deliberately_excluded_fields_stay_excluded(field: str) -> None:
+    """被排除的字段不得出现在 allowlist 里。
+
+    一旦有人把 `secret_key` 之类加进 allowlist，`PATCH /api/config` 就能改掉它，
+    而 GET 又会把它剥掉——于是用户改了却读不到，或者更糟：某条路径不经 GET
+    直接用了新值。
+    """
+    assert field not in _allowlist_keys(), f"{field} 不该暴露给设置页"
+
+
+def test_every_allowlisted_field_exists_in_settings() -> None:
+    """allowlist 里不能有 Settings 里不存在的键——那种键写进 runtime.yaml
+    之后永远读不到（`_EffectiveSettings` 只在属性缺失时回落），是个静默黑洞。"""
+    fields = _settings_fields()
+    ghosts = sorted(_allowlist_keys() - set(fields))
+    assert not ghosts, f"allowlist 里有 Settings 不存在的键：{ghosts}"
+
+
+def test_every_allowlisted_field_has_a_ui_seed() -> None:
+    """能 PATCH 的字段就该在设置页有输入框，否则它仍然是半个假旋钮。
+
+    v0.37 之前有 32 个字段属于这个状态：代码一直在读、注释写着给用户调，
+    但既不在 allowlist 里所以设置页渲染不出来，用户只能改 .env。
+    本条守卫让「以后再加一个新配置」不会重蹈覆辙。
+    """
+    src = (ROOT / "frontend/src/pages/settings/SettingsPage.tsx").read_text(encoding="utf-8")
+    # 直接 PATCH、不经过主表单的字段（各自有专门的 UI 与即时生效语义）
+    immediate = {
+        "clipboard_monitor_enabled",  # GeneralSection 的开关卡片
+        "backup_enabled",             # 同上
+        "backup_keep",                 # 同上
+        "ai_model_prices",             # AiSection 有自己的 UI
+        "cost_currency",               # 同上
+        "cost_usd_rate",               # 同上
+        "cost_monthly_budget",         # 同上
+        # v0.37：模型与 provider 已迁到 ai_providers 表，由 ProviderManager /
+        # RolesManager 独立管理（见 ai/templates.py 模块注释：硬编码模型名会随
+        # 平台改名而失效）。这三个 deepseek_* / comfyui / llm_api_key 是 v3.0
+        # 迁移前留下的**种子字段**，运行时实际读的是 DB 里的 providers 行。
+        # 它们留在 allowlist 只是历史包袱，不是可调项。
+        "deepseek_api_key",
+        "deepseek_base_url",
+        "deepseek_model",
+        "comfyui_base_url",
+        "llm_api_key",
+        # xinference 的 key 与 base_url 是同一台服务的凭据，UI 只给 base_url
+        # 与 model_id；key 留作环境变量注入（与 deepseek_api_key 同类处理）。
+        "xinference_api_key",
+    }
+    missing = sorted(
+        k for k in _allowlist_keys()
+        if k not in immediate and f"{k}:" not in src
+    )
+    assert not missing, f"这些字段可写却没有任何输入框：{missing}"

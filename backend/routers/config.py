@@ -116,6 +116,41 @@ RUNTIME_ALLOWLIST = {
     "concurrency_pipeline",
     "scheduler_timezone",
     "clipboard_monitor_enabled",
+    # v0.37 批次一：发布调度与成本闸门。这些字段一直存在、代码一直在读，
+    # 但不在 allowlist 里 → PATCH 直接 400 → 设置页根本渲染不出来。
+    "pipeline_publish_windows",
+    "pipeline_publish_min_interval_min",
+    "pipeline_publish_jitter_min",
+    "pipeline_bili_dtime_min_hours",
+    "pipeline_bili_default_tid",
+    "pipeline_auto_approve",
+    "pipeline_auto_approve_after_hours",
+    "pipeline_score_max_per_run",
+    "pipeline_score_max_per_day",
+    # v0.37 批次二：旁白/TTS 与 ASR。注意这里的不对称——`pipeline_subtitle_lang`
+    # 和 `pipeline_tts_text_source` 一直有 UI，而 `pipeline_narration_lang`（旁白
+    # 用什么语言）和 `pipeline_tts_rate`（语速）没有。同一个功能的一半暴露、
+    # 一半藏起来，用户只会以为后者不存在。
+    "pipeline_narration_lang",
+    "pipeline_tts_rate",
+    "pipeline_narration_min_words",
+    "pipeline_narration_max_words",
+    "pipeline_narration_silent_below",
+    "pipeline_enable_asr",
+    "xinference_stt_base_url",
+    "xinference_stt_model_id",
+    "xinference_api_key",
+    # v0.37 批次三：下载韧性、采集门槛、并发上限、备份。
+    "pipeline_download_delay_seconds",
+    "pipeline_download_cooling_base_seconds",
+    "pipeline_download_cooling_max_seconds",
+    "pipeline_cdn_circuit_403",
+    "pipeline_cdn_circuit_cooldown",
+    "pipeline_prefilter_min_reddit_score",
+    "pipeline_prefilter_min_upvote_ratio",
+    "backup_enabled",
+    "backup_keep",
+    "pipeline_integrity_minutes",
 }
 
 SECRET_FIELDS = {

@@ -3,14 +3,44 @@
 
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { setLanguage } from '../../../i18n'
-import { Button, Icon, Select } from '../../../components/ui'
+import { Button, Icon, Input, Select } from '../../../components/ui'
 import { useThemeStore, type Theme } from '../../../stores/theme'
 import { api } from '../../../api/client'
 import { HealthDashboard } from '../HealthDashboard'
 import { PathField, type SectionProps } from './shared'
+
+/** /api/config 的形状：字段多且随版本增删，这里只声明本文件真正读到的。 */
+interface ConfigSnapshot {
+  clipboard_monitor_enabled?: boolean
+  backup_enabled?: boolean
+  backup_keep?: number
+}
+
+/**
+ * 即时生效的配置读写。
+ *
+ * 分成两个 hook 是因为它们做的事不同：`useConfigQuery` 只读（拿到当前值，
+ * 好让开关显示成正确的开/关），`useConfigPatch` 只写。写完之后让读的那份
+ * 失效重取，否则开关会停在旧状态——用户点了「关」，UI 还显示「开」。
+ */
+function useConfigQuery() {
+  return useQuery({
+    queryKey: ['config'],
+    queryFn: () => api.get<ConfigSnapshot>('/api/config'),
+  })
+}
+
+function useConfigPatch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (overrides: Record<string, unknown>) =>
+      api.patch('/api/config', { overrides }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['config'] }),
+  })
+}
 
 /**
  * 剪贴板监控开关。
@@ -23,10 +53,8 @@ import { PathField, type SectionProps } from './shared'
  */
 function ClipboardMonitorToggle() {
   const { t } = useTranslation()
-  const { data: cfg } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => api.get<{ clipboard_monitor_enabled?: boolean }>('/api/config'),
-  })
+  const { data: cfg } = useConfigQuery()
+  const { mutate: patch } = useConfigPatch()
   const [on, setOn] = useState(() => cfg?.clipboard_monitor_enabled ?? true)
 
   useEffect(() => {
@@ -44,7 +72,7 @@ function ClipboardMonitorToggle() {
     const next = !on
     setOn(next)
     window.electron?.setClipboardMonitor?.(next)
-    void api.patch('/api/config', { overrides: { clipboard_monitor_enabled: next } })
+    patch({ clipboard_monitor_enabled: next })
   }
 
   return (
@@ -76,6 +104,9 @@ export function GeneralSection({ form, set, save, dirty, pickPath }: SectionProp
   const { t } = useTranslation()
   const theme = useThemeStore((s) => s.theme)
   const setTheme = useThemeStore((s) => s.setTheme)
+  // 备份卡片要即时读当前值（不经过主表单 draft），所以自己取一份 config
+  const { data: cfg } = useConfigQuery()
+  const { mutate: patch } = useConfigPatch()
 
   return (
     <>
@@ -131,6 +162,34 @@ export function GeneralSection({ form, set, save, dirty, pickPath }: SectionProp
           <PathField label={t('settings.assetsRoot')} value={form.assets_root ?? ''} onChange={(v) => set('assets_root', v)} onBrowse={() => void pickPath("assets_root")} />
         </div>
         <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">{t('settings.assetsRootHint')}</p>
+      </section>
+
+      {/* 备份（v0.37）：DB 备份的开关与保留份数。这是数据安全项，不是流水线项，
+          所以放通用区而不是流水线页。 */}
+      <section className="border border-border bg-surface-1/60 p-4">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-text-primary">
+          <Icon name="folder" size={15} />
+          {t('settings.backup')}
+        </h2>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <Select
+            label={t('settings.backupEnabled')}
+            value={String(cfg?.backup_enabled ?? true)}
+            onChange={(e) => patch({ backup_enabled: e.target.value === 'true' })}
+            options={[
+              { value: 'true', label: t('common.yes') },
+              { value: 'false', label: t('common.no') },
+            ]}
+          />
+          <Input
+            label={t('settings.backupKeep')}
+            type="number"
+            min={1}
+            value={String(cfg?.backup_keep ?? 7)}
+            onChange={(e) => patch({ backup_keep: Number(e.target.value) })}
+          />
+        </div>
+        <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">{t('settings.backupHint')}</p>
       </section>
 
       <section className="border border-border bg-surface-1/60 p-4">
