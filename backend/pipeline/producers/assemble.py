@@ -65,7 +65,7 @@ TRANSITIONS: dict[str, str] = {
 TRANSITION_CHOICES: tuple[str, ...] = tuple(TRANSITIONS)
 
 #: 默认转场时长（秒）。下限/上限都在 `_clamp_transition` 二次钳制。
-DEFAULT_TRANSITION_S = 0.6
+DEFAULT_TRANSITION_S = 0.32
 MIN_TRANSITION_S = 0.2
 MAX_TRANSITION_S = 3.0
 

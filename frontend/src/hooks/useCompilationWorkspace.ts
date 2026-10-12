@@ -35,14 +35,36 @@ import { useCompilationDraft, useHistory } from './useCompilationDraft'
 /** 与后端 `assemble.TRANSITIONS` 同名同默认——界面发英文档名，后端才认。 */
 import type { DraftState } from './useCompilationDraft'
 
+/**
+ * 转场时长默认值与合法范围（v0.37）。
+ *
+ * ## 为什么所有预设共用同一个 0.32s
+ *
+ * 原本 fade=0.6 / wipe=0.5 / dissolve=0.6 / zoomin=0.7 各不相同。这个「讲究」
+ * 在编排面板上是负资产：用户切一次转场就换一次时长，**总时长跟着变**，
+ * 而他并没有要求这件事——于是「预估 3:12」在他换了两次转场后变成「3:09」，
+ * 他只会认为是面板算错了。统一默认值后，切转场不再动总时长。
+ *
+ * 需要调时长的用户可以自己拖那个输入框——那是有意识的行为，不该是默认。
+ *
+ * ## 范围与后端同源
+ *
+ * MIN/MAX 对应后端 `assemble.MIN_TRANSITION_S` / `MAX_TRANSITION_S`。
+ * 界面**不该**允许输入后端会钳制掉的数：填 0.1 会被后端抬回 0.2，
+ * 界面给的反馈与实际生效的不一致。
+ */
+export const MIN_TRANSITION_S = 0.2
+export const MAX_TRANSITION_S = 3
+export const DEFAULT_TRANSITION_S = 0.32
+
+/** 与后端 `assemble.TRANSITIONS` 同名——界面发英文档名，后端才认。 */
 export const TRANSITION_PRESETS: Array<{ value: CompilationTransition; seconds: number }> = [
   { value: 'cut', seconds: 0 },
-  { value: 'fade', seconds: 0.6 },
-  { value: 'wipe', seconds: 0.5 },
-  { value: 'dissolve', seconds: 0.6 },
-  { value: 'zoomin', seconds: 0.7 },
+  { value: 'fade', seconds: DEFAULT_TRANSITION_S },
+  { value: 'wipe', seconds: DEFAULT_TRANSITION_S },
+  { value: 'dissolve', seconds: DEFAULT_TRANSITION_S },
+  { value: 'zoomin', seconds: DEFAULT_TRANSITION_S },
 ]
-const DEFAULT_TRANSITION_S = 0.6
 
 /** 单条合集的软上限：只警告不阻断（用户要长片时该让他做）。 */
 export const LONG_COMPILATION_S = 600

@@ -22,6 +22,9 @@ from sqlalchemy import delete
 
 from backend.library.thumbnails import find_ffmpeg
 from backend.pipeline.producers.assemble import (
+    DEFAULT_TRANSITION_S,
+    MAX_TRANSITION_S,
+    MIN_TRANSITION_S,
     TRANSITION_CHOICES,
     _clamp_transition,
     assemble_clips,
@@ -77,8 +80,10 @@ def test_transition_registry_is_verified_subset() -> None:
         (5.0, 3.0, 1.5),       # 转场 > 片段时长 → 压到片段一半（offset 否则为负）
         (0.05, 10.0, 0.2),     # 过小 → 抬到下限
         (99.0, 30.0, 3.0),     # 过大 → 压到上限
-        ("abc", 10.0, 0.6),    # 非法值 → 默认值，不崩
-        (None, 10.0, 0.6),
+        # 非法值 → 默认值，不崩。期望值引用常量而不是写死 0.6：
+        # 写死的话默认值一改这两行仍然绿，但已经不再测任何东西。
+        ("abc", 10.0, DEFAULT_TRANSITION_S),
+        (None, 10.0, DEFAULT_TRANSITION_S),
     ],
 )
 def test_clamp_transition(given, seg_dur, expected) -> None:
@@ -477,3 +482,23 @@ def test_non_compilation_items_take_the_original_path() -> None:
         assert getattr(item, "clips", None), (
             f"{configured} 应被当作已配置的合集条目（由装配层报配置错误）"
         )
+
+
+def test_default_transition_within_legal_range() -> None:
+    """默认转场必须落在 [MIN, MAX] 内，且本身是合法的步进值。
+
+    默认值若越界，`_clamp_transition` 会在每次装配时把它悄悄改掉——用户填的和
+    实际生效的不是一个数，而没有任何提示。
+    """
+    assert MIN_TRANSITION_S <= DEFAULT_TRANSITION_S <= MAX_TRANSITION_S
+
+
+def test_default_transition_is_quoted_in_the_api_error() -> None:
+    """后端默认值与界面默认值必须一致，否则「不填」时两边算出不同总时长。
+
+    编排面板把 `transition_s` 显式发出去，通常用不到后端默认值；但任何漏填的
+    路径（老草稿、手工请求）都会走到这里。两边不一致 = 预估与成片不符。
+    """
+    from backend.pipeline.producers import assemble as asm
+
+    assert asm.DEFAULT_TRANSITION_S == pytest.approx(0.32)

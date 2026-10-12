@@ -16,9 +16,13 @@ import { describe, expect, it } from 'vitest'
 import type { CompilationSource } from '../api/pipeline'
 import {
   buildClips,
+  DEFAULT_TRANSITION_S,
   estimateDuration,
   gapKey,
+  MAX_TRANSITION_S,
+  MIN_TRANSITION_S,
   mixedOrientation,
+  TRANSITION_PRESETS,
   type GapMap,
 } from './useCompilationWorkspace'
 
@@ -205,5 +209,58 @@ describe('buildClips 与 gapKey 同源', () => {
     const clips = buildClips(ids, gaps)
     expect(clips[1].transition).toBe('fade')
     expect(clips[2].transition).toBe('cut')
+  })
+})
+
+/**
+ * 转场默认时长（v0.37）——统一成 0.32s。
+ *
+ * ## 为什么要统一
+ *
+ * 原本 fade=0.6 / wipe=0.5 / dissolve=0.6 / zoomin=0.7。于是用户切一次转场，
+ * 总时长就变一次，而**他并没有要求这件事**：「预估 3:12」变成「3:09」，
+ * 他只会认为面板算错。统一切换不再影响总时长；想调的人自己拖输入框。
+ */
+describe('转场默认时长', () => {
+  it('所有非硬切预设共用同一个默认值', () => {
+    const nonCut = TRANSITION_PRESETS.filter((p) => p.value !== 'cut')
+    expect(nonCut.length).toBeGreaterThan(0)
+    for (const p of nonCut) {
+      expect(p.seconds, `${p.value} 的默认时长与其他转场不一致`).toBe(DEFAULT_TRANSITION_S)
+    }
+  })
+
+  it('默认值是 0.32s（产品决策，改它必须先改这里）', () => {
+    expect(DEFAULT_TRANSITION_S).toBe(0.32)
+  })
+
+  it('硬切的时长是 0——它是「没有转场」，不是「零秒转场」', () => {
+    const cut = TRANSITION_PRESETS.find((p) => p.value === 'cut')
+    expect(cut?.seconds).toBe(0)
+  })
+
+  it('默认值落在输入框允许的范围内（填了也会被后端钳制掉 = 白填）', () => {
+    // 后端 assemble._clamp_transition 会把越界值改掉，界面给的反馈与实际
+    // 生效的不一致——用户填 0.1，出来的却是 0.2。
+    expect(DEFAULT_TRANSITION_S).toBeGreaterThanOrEqual(MIN_TRANSITION_S)
+    expect(DEFAULT_TRANSITION_S).toBeLessThanOrEqual(MAX_TRANSITION_S)
+  })
+
+  it('默认值在 number input 的 step 上是合法步进值', () => {
+    // step=0.1 时 0.32 不是合法值，点箭头/失焦会被浏览器悄悄改成 0.3 或 0.4。
+    // UI 里必须用 step=0.01；这里钉住这个前提。
+    const step = 0.01
+    expect(Number(((DEFAULT_TRANSITION_S / step) % 1).toFixed(6))).toBe(0)
+  })
+
+  it('切换转场不会改变预估总时长（各预设时长相同即自动成立）', () => {
+    const s = map([src('a', 10), src('b', 20)])
+    const withFade = estimateDuration(s, ['a', 'b'], {
+      a: { transition: 'fade', seconds: TRANSITION_PRESETS.find((p) => p.value === 'fade')!.seconds },
+    })
+    const withWipe = estimateDuration(s, ['a', 'b'], {
+      a: { transition: 'wipe', seconds: TRANSITION_PRESETS.find((p) => p.value === 'wipe')!.seconds },
+    })
+    expect(withFade).toBe(withWipe)
   })
 })

@@ -5,7 +5,10 @@ import type { CompilationSource, CompilationTransition } from '../../api/pipelin
 import { itemTypeKey } from '../../core/itemLabels'
 import { Button, Icon, Input, Select, useToast } from '../ui'
 import {
+  DEFAULT_TRANSITION_S,
   LONG_COMPILATION_S,
+  MAX_TRANSITION_S,
+  MIN_TRANSITION_S,
   TRANSITION_PRESETS,
   gapKey,
   useCompilationWorkspace,
@@ -327,16 +330,27 @@ function SequenceRow({
                 className="w-24"
               />
               {(gap?.transition ?? 'cut') !== 'cut' && (
+                <>
                 <Input
                   type="number"
-                  step={0.1}
-                  min={0.2}
-                  max={3}
-                  value={gap?.seconds ?? 0.6}
+                  // step 必须能落到 0.32：step=0.1 时 0.32 不是合法步进值，
+                  // 浏览器会在失焦/点箭头时把它悄悄改成 0.3 或 0.4。
+                  step={0.01}
+                  min={MIN_TRANSITION_S}
+                  max={MAX_TRANSITION_S}
+                  value={gap?.seconds ?? DEFAULT_TRANSITION_S}
                   onChange={(e) => onGapSeconds(Number(e.target.value))}
                   aria-label={t('console.compilation.transitionSeconds')}
-                  className="w-14"
+                  /**
+                   * `w-14`（56px）放不下：Input 自身 `px-3` 左右各吃掉 12px，
+                   * number input 的 spinner 再占约 16px，留给数字的只剩 16px，
+                   * `0.32` 直接被截。加宽到 `w-20`，并把左内边距收紧——
+                   * spinner 是内容的一部分，压它右边就行，压左边等于浪费。
+                   */
+                  className="w-20 [&_input]:pl-2 [&_input]:pr-5"
                 />
+                <span className="shrink-0 text-[10px] text-text-disabled">s</span>
+                </>
               )}
             </>
           )}
