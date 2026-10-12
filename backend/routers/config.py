@@ -106,6 +106,16 @@ RUNTIME_ALLOWLIST = {
     # v0.11.9：设置页保存全量 overrides 含此项——缺省会整体 400，
     # 导致「配置保存成功」但 runtime.yaml 未落盘（发布目标恒 NOOP）
     "pipeline_reddit_cookies_browser",
+    # v0.37：并发上限 / 调度时区 / 剪贴板监控开关。
+    # 并发上限原先写死在 factory/concurrency.py；调度时区写死 Asia/Shanghai；
+    # 剪贴板监控压根没有开关。三者都不该需要改源码才能调整。
+    "concurrency_llm",
+    "concurrency_image",
+    "concurrency_tts",
+    "concurrency_download",
+    "concurrency_pipeline",
+    "scheduler_timezone",
+    "clipboard_monitor_enabled",
 }
 
 SECRET_FIELDS = {

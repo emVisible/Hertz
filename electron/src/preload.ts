@@ -11,6 +11,9 @@ const windowApi = {
     ipcRenderer.invoke('dialog:pick-directory', currentPath ?? '') as Promise<string | null>,
   /** 自定义简约弹窗按钮回传（主进程按通道订阅，无默认 Electron 图标）。 */
   respondToDialog: (channel: string, id: string) => ipcRenderer.send(channel, id),
+  /** 剪贴板监控开关：对应 settings 的 `clipboard_monitor_enabled`。 */
+  setClipboardMonitor: (enabled: boolean) =>
+    ipcRenderer.send('clipboard:monitor', enabled),
   notifyDownloadDone: (name: string) => ipcRenderer.send('notify:download-done', name),
   notifyPublish: (title: string, ok: boolean) =>
     ipcRenderer.send('notify:publish', title, ok),

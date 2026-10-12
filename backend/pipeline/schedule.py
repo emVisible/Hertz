@@ -8,7 +8,11 @@
 - pipeline_publish_windows: 每日窗口，逗号分隔 "HH:MM-HH:MM"（默认 10:00-12:00,18:00-20:00）
 - pipeline_publish_min_interval_min: 相邻发布最小间隔（默认 30 分钟）
 - pipeline_publish_jitter_min: 槽位抖动上限（默认 5 分钟，防多机/多条目同时到点）
-- pipeline_publish_lookahead_days: 向前看天数（默认 1 = 只排当天，v0.11.5）
+
+`lookahead_days` **不是 settings 项**，而是本函数的显式参数（v0.37 起）：v0.11.5
+的产品决策是「只排当天」，全部生产调用点都传 1。此前它还是一个叫
+`pipeline_publish_lookahead_days` 的设置项，却零读取——用户改了完全没反应。
+保留为函数参数，需要跨天排期的调用方仍可显式传入。
 
 v0.11.5：默认只排**当天**（用户需求：定时发布不要定太久）；当天窗口
 全部错过时兜底 = 最早可用时刻 + 最小间隔（仍在当天）。窗口即流量高峰时段。

@@ -630,7 +630,11 @@ export function PipelineSection({
           <Input
             label={t('settings.subtitleMarginBottom')}
             type="number"
-            value={form.pipeline_subtitle_margin_bottom ?? '72'}
+            /** 不给 `?? '72'` 兜底：后端默认值是 64，而 72 这个数字来自一份早已
+             *  没人同步的旧稿。它永远不触发（setForm 无条件写入该键），却与后端
+             *  矛盾——哪天 setForm 漏了这个键，界面就会显示 72 并把它写回去。
+             *  宁可空着，也好过放一个错的数字。 */
+            value={form.pipeline_subtitle_margin_bottom ?? ''}
             onChange={(e) => set('pipeline_subtitle_margin_bottom', e.target.value)}
           />
         </div>

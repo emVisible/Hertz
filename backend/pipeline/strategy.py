@@ -179,12 +179,21 @@ def _tid_of(item) -> int:
     )
 
 
-def content_tier(item) -> str:
-    """premier(AI 分高潜)/regular/filler(lowscore)；无分直下条目按 regular。"""
+def content_tier(item, premier_score: float = 8.0) -> str:
+    """premier(AI 分高潜)/regular/filler(lowscore)；无分直下条目按 regular。
+
+    `premier_score` 是 premier 的门槛，**来自 `StrategyConfig.premier_score`**
+    （对应 settings 的 `pipeline_strategy_premier_score`）。
+
+    v0.37 之前这里是硬编码的 8.0，函数签名里根本没有这个参数——于是设置页调
+    `pipeline_strategy_premier_score` 时 `StrategyConfig` 确实变了，但 tier 判定
+    纹丝不动：用户调完没有任何效果，却看不出哪里没生效。**可配置的旋钮必须真的
+    接在判定上**，否则它比没有更糟。
+    """
     if bool(getattr(item, "is_lowscore", False)):
         return TIER_FILLER
     score = getattr(item, "score_total", None)
-    if score is not None and float(score) >= 8.0:
+    if score is not None and float(score) >= premier_score:
         return TIER_PREMIER
     return TIER_REGULAR
 
@@ -219,7 +228,12 @@ def plan_promotions(
 
     ranked = sorted(
         holding,
-        key=lambda it: (_TIER_ORDER[content_tier(it)], getattr(it, "seq", 0)),
+        # 门槛取 cfg.premier_score——排序是 tier 判定唯一真正影响行为的地方，
+        # 这里不传，用户调 premier_score 就真的完全不起作用。
+        key=lambda it: (
+            _TIER_ORDER[content_tier(it, cfg.premier_score)],
+            getattr(it, "seq", 0),
+        ),
     )
     allocated: list[datetime] = [dt for dt, _tid in existing_ready if dt is not None]
     last_by_tid: dict[int, datetime] = {

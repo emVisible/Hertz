@@ -10,6 +10,7 @@
 """
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -388,3 +389,61 @@ async def test_strategy_dry_run_records_shadow_plan(client) -> None:
     shadow = getattr(svc, "_shadow_plan", [])
     assert len(shadow) >= 1
     assert "scheduled_at" in shadow[0] and "title" in shadow[0]
+
+
+# ---------- premier 门槛真的接在判定上（v0.37） ----------
+
+def test_content_tier_respects_premier_threshold():
+    """`premier_score` 必须真的改变 tier 判定，而不只是被读进 StrategyConfig。
+
+    v0.37 之前 `content_tier` 里硬编码 8.0、签名里根本没有门槛参数。于是设置页
+    调 `pipeline_strategy_premier_score` 时配置变了、判定纹丝不动——用户调完
+    没有任何效果，却看不出哪里没生效。
+    """
+    item = SimpleNamespace(score_total=8.5, is_lowscore=False)
+    # 默认门槛 8.0 → premier
+    assert content_tier(item, 8.0) == TIER_PREMIER
+    # 门槛抬到 9.0 → 掉到 regular
+    assert content_tier(item, 9.0) == TIER_REGULAR
+    # 门槛压到 6.0 → 仍是 premier
+    assert content_tier(item, 6.0) == TIER_PREMIER
+
+
+def test_content_tier_threshold_does_not_override_lowscore():
+    """lowscore 永远 filler——门槛再低也不能把它抬成 premier。"""
+    item = SimpleNamespace(score_total=99.0, is_lowscore=True)
+    assert content_tier(item, 0.1) == TIER_FILLER
+
+
+def test_plan_promotions_orders_by_configured_premier_score():
+    """排序是 tier 判定唯一真正影响行为的地方：不传门槛，用户调设置就完全无效。
+
+    两条候选都够 premier 门槛（默认 8.0）：A=8.5、B=9.5。
+    - 门槛 8.0：B 和 A 都是 premier，按 seq 决定先后
+    - 门槛 9.0：B 是 premier、A 掉到 regular → **B 必须排到 A 前面**，
+      哪怕 A 的 seq 更小。这正是「调高 premier_score 让高潜条目优先」的意义。
+    """
+    now = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
+    hi = SimpleNamespace(seq=1, score_total=8.5, is_lowscore=False, bili_tid=1, seq_score=None)
+    lo = SimpleNamespace(seq=2, score_total=9.5, is_lowscore=False, bili_tid=2, seq_score=None)
+    holding = [hi, lo]
+
+    base = dict(
+        quota=2,
+        existing_ready=[],
+        now=now,
+        # 宽窗口 + 无间隔限制，让两条都能排进去（只考察排序，不考察窗口）
+        windows_raw="00:00-23:59",
+        min_interval_min=0,
+    )
+    cfg_lo = StrategyConfig(enabled=True, premier_score=8.0)
+    cfg_hi = StrategyConfig(enabled=True, premier_score=9.0)
+
+    order_default = [it.seq for it, _dt in plan_promotions(holding, cfg=cfg_lo, **base)]
+    order_raised = [it.seq for it, _dt in plan_promotions(holding, cfg=cfg_hi, **base)]
+
+    assert order_default == [1, 2], "同档时按 seq"
+    assert order_raised == [2, 1], (
+        f"premier_score 抬到 9.0 后高分条目应优先，实际 {order_raised}——"
+        "门槛没有接进排序"
+    )

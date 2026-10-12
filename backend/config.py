@@ -114,7 +114,12 @@ class Settings(BaseSettings):
     pipeline_publish_windows: str = "10:00-12:00,18:00-20:00"
     pipeline_publish_min_interval_min: int = 30
     pipeline_publish_jitter_min: int = 5
-    pipeline_publish_lookahead_days: int = 1  # v0.11.5：只排当天（用户需求）
+    # v0.37 删除了 pipeline_publish_lookahead_days：它全仓零读取，6 处调用点
+    # 都硬传 lookahead_days=1，且每处都带着同一条 v0.11.5 产品决策注释——
+    # 「只排当天，窗口满则保持 holding，次日再转，不因策略路径悄悄推到未来几天」。
+    # 那是刻意的约束，不是遗漏。把设置接到那些调用点上等于让用户能静默破坏它，
+    # 而一个改了不起作用的旋钮比没有旋钮更糟。lookahead 仍是 schedule.next_slot
+    # 的函数级参数，需要按天排期的调用方可以显式传。
     # 排期发布硬门槛（v0.9 对齐原项目 ensure_bilibili_dtime）：
     # B 站要求 dtime 提交后 ≥5 分钟（v0.11.5 修正：原 4h 过严）；
     # scheduled_at 不足时自动顺延
@@ -193,6 +198,22 @@ class Settings(BaseSettings):
     pipeline_subtitle_alignment: int = 2
     pipeline_subtitle_fade_ms: int = 300  # 字幕淡入淡出时长（ASS fad / PNG alpha fade）
     pipeline_subtitle_margin_bottom: int = 64  # 距视频底部留白（720p 口径）
+    # 并发上限（v0.37）：原先写死在 factory/concurrency.DEFAULT_LIMITS。付费 API
+    # 配高额度的用户被锁死在 4 并发、单核笔记本用户 3 个并发下载互相抢带宽，
+    # 而唯一解法是改源码。字段名与 ConcurrencyLimiter 的任务族名一一对应。
+    # 调度时区（v0.37）：空 = 系统本地。原先写死 Asia/Shanghai；现有作业全是
+    # IntervalTrigger 所以当时没出事，但一旦注册 CronTrigger 就会与
+    # pipeline.schedule 的本地墙钟窗口对不上。默认交给系统，别替用户做决定。
+    # 剪贴板监控（v0.37）：Electron 每 1.5s 读一次系统剪贴板，命中 B站/YouTube
+    # 链接就弹通知。原先无条件开启且无处可关——桌面应用持续读剪贴板，opt-out
+    # 是应有的尊重。默认 True 保持既有行为，由设置页同步给主进程。
+    clipboard_monitor_enabled: bool = True
+    scheduler_timezone: str = ""
+    concurrency_llm: int = 4
+    concurrency_image: int = 2
+    concurrency_tts: int = 2
+    concurrency_download: int = 3
+    concurrency_pipeline: int = 2
     # 下载韧性（v0.2.9，参考原项目 download.py）：条间延迟抖动 + CDN 403 熔断
     pipeline_download_delay_seconds: float = 1.2
     # 下载资源冷却（v0.3.6 冰川式）：按媒体域指数退避冻结，base 起步、max 封顶

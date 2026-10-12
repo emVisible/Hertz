@@ -326,6 +326,22 @@ function stopClipboardMonitor(): void {
   }
 }
 
+/**
+ * 剪贴板监控开关（v0.37）。
+ *
+ * 这个监控每 1.5s 读一次**系统剪贴板**并在命中 B 站/YouTube 链接时弹系统通知。
+ * 桌面应用持续读取用户剪贴板，opt-out 是应有的尊重——原先没有任何开关，
+ * 既不在设置里，也不在环境变量里。
+ *
+ * 开着时的状态由渲染进程在拿到 `/api/config` 后同步过来（见 preload 的
+ * `setClipboardMonitor`）：主进程不自己读 YAML/HTTP，避免它依赖后端已经起来了
+ * ——而 dev 模式下后端未必就绪。默认仍是开启，保持既有行为不变。
+ */
+ipcMain.on('clipboard:monitor', (_e, enabled: boolean) => {
+  if (enabled) startClipboardMonitor()
+  else stopClipboardMonitor()
+})
+
 // ---- 下载完成系统通知（HeartStone heritage） ----
 ipcMain.on('notify:download-done', (_e, name: string) => {
   if (!Notification.isSupported()) return
@@ -381,6 +397,7 @@ app.whenReady().then(async () => {
   registerWindowIpc()
   createWindow()
   setupAutoUpdate()
+  // 默认开启；真正的取值随后由渲染进程按 settings 同步过来
   startClipboardMonitor()
 
   if (app.isPackaged) {

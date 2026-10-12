@@ -17,6 +17,8 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
+from backend.config import settings
+
 logger = logging.getLogger(__name__)
 
 _SERVICE = "hertz-ai"
@@ -26,12 +28,32 @@ _KEYCHAIN_LABEL = "Hertz AI 底座主密钥"
 
 class KeychainCrypto:
     def __init__(self, data_dir: Path | None = None) -> None:
-        self._data_dir = data_dir or Path(os.environ.get("HERTZ_DATA_DIR", "data"))
-        self._fallback_path = self._data_dir / "secrets" / "master.key"
+        """
+        `data_dir` 不传时读 `settings.data_dir`——**不是** `os.environ`（v0.37）。
+
+        原来这里读 `HERTZ_DATA_DIR` 环境变量，于是用户在设置页把 `data_dir` 改掉
+        （settings 里有目录选择器，且它本身就在 runtime.yaml 里可改）之后，
+        非 macOS 上主密钥的回退路径**不会跟随**：新的 data_dir 下找不到 master.key，
+        于是生成一把新密钥，已存的密文全部解不开。这是静默的数据损坏——
+        用户只改了存储位置，却丢掉了所有 API Key。
+
+        `settings.data_dir` 是权威源：它同时读环境变量与 runtime.yaml
+        （`_EffectiveSettings`），所以启动期的 HERTZ_DATA_DIR 依然生效，
+        而运行期的修改也能跟上。与 `infrastructure/paths.py`、`storage.py` 同源。
+        """
+        self._data_dir = data_dir or Path(settings.data_dir)
+        # 延迟求值：data_dir 运行期可改，回退路径不能在构造时就钉死
+        self._explicit_dir = data_dir
         self._fernet: Fernet | None = None
         self._use_keychain = (
             shutil.which("security") is not None and os.uname().sysname == "Darwin"
         )
+
+    @property
+    def _fallback_path(self) -> Path:
+        """主密钥回退路径。每次读取都重算：显式传入的目录优先，否则跟随 settings。"""
+        base = self._explicit_dir or Path(settings.data_dir)
+        return base / "secrets" / "master.key"
 
     # ---------- key management ----------
 

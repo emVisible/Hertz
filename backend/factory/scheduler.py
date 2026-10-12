@@ -1,17 +1,49 @@
 """ScheduleManager — APScheduler wrapper with job audit hooks."""
 
 import inspect
+from datetime import tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from backend.config import settings
 from backend.infrastructure.logging import log_manager
+
+
+def _resolve_timezone() -> tzinfo | None:
+    """调度时区：默认**系统本地**，可由 `settings.scheduler_timezone` 覆盖。
+
+    v0.37 之前这里写死 `Asia/Shanghai`。要说清楚的是：**当时并没有真的出 bug**——
+    现有作业全是 `IntervalTrigger`（自动采集/发布/体检/备份…），间隔触发与时区无关。
+    所以这不是一次线上事故修复，而是拆掉一颗地雷：
+
+    - 一旦有人注册 `CronTrigger`（比如「每天 10:00 发」），墙钟就会按 CST 解释，
+      而 `schedule.next_slot` 解析发布窗口用的是系统本地时区
+      （`backend/pipeline/schedule.py` 的 `local_tz`）。两套时区会让「窗口」和
+      「触发」各说各话，而且没有任何报错。
+    - 写死一个时区默认等于替所有用户做了时区决定。发布窗口的语义本来就是
+      「本地墙钟高峰时段」（见 config.py 的中文注释），调度器理应同口径。
+
+    返回 `None` 表示交给 APScheduler 用系统本地。填了非法时区名也回落本地——
+    时区写错不该让整个调度器起不来。
+    """
+    name = (getattr(settings, "scheduler_timezone", "") or "").strip()
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        log_manager.get().warning(
+            "scheduler_timezone=%r 无法解析，回落系统本地时区", name
+        )
+        return None
 
 
 class ScheduleManager:
     def __init__(self) -> None:
-        self._scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
+        self._scheduler = AsyncIOScheduler(timezone=_resolve_timezone())
 
     def start(self) -> None:
         if not self._scheduler.running:

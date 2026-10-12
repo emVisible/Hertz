@@ -344,9 +344,17 @@ class PublishMixin:
         }
 
     def _serialize_with_tier(self, item) -> dict:
-        """序列化 + 内容分层标记（v0.13）。"""
+        """序列化 + 内容分层标记（v0.13）。
+
+        门槛必须与 `strategy.plan_promotions` 用同一个值——否则界面显示的 tier 和
+        实际排期用的 tier 不是一回事：用户看到 premier 却被排进 filler 槽位，
+        且没有任何报错。
+        """
         from backend.pipeline.strategy import content_tier
 
         data = self._serialize(item)
-        data["tier"] = content_tier(item)
+        premier = float(
+            getattr(self.engine.settings, "pipeline_strategy_premier_score", 8.0) or 8.0
+        )
+        data["tier"] = content_tier(item, premier)
         return data

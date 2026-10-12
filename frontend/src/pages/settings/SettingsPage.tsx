@@ -161,7 +161,7 @@ export function SettingsPage() {
       pipeline_subtitle_bold: String(cfg.pipeline_subtitle_bold ?? false),
       pipeline_subtitle_alignment: String(cfg.pipeline_subtitle_alignment ?? 2),
       pipeline_subtitle_fade_ms: String(cfg.pipeline_subtitle_fade_ms ?? 300),
-      pipeline_subtitle_margin_bottom: String(cfg.pipeline_subtitle_margin_bottom ?? 72),
+      pipeline_subtitle_margin_bottom: String(cfg.pipeline_subtitle_margin_bottom ?? 64),
       pipeline_subtitle_lang: cfg.pipeline_subtitle_lang ?? 'zh-CN',
       pipeline_translate_source_lang: cfg.pipeline_translate_source_lang ?? 'en-US',
       pipeline_tts_text_source: cfg.pipeline_tts_text_source ?? 'script',

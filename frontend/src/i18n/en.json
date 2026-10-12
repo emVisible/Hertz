@@ -383,7 +383,10 @@
     "translateModelDownload": "Download local MT model",
     "modelDownloading": "Downloading…",
     "modelChecking": "Checking…",
-    "modelStatusUnavailable": "Status query failed — retry on the right"
+    "modelStatusUnavailable": "Status query failed — retry on the right",
+    "privacy": "Privacy & system behaviour",
+    "clipboardMonitor": "Clipboard link detection",
+    "clipboardMonitorHint": "When on, the system clipboard is checked every 1.5s; copying a Bilibili or YouTube link pops a notification you can click to download. Turning it off stops reading immediately."
   },
   "execution": {
     "modeStudio": "Studio",
