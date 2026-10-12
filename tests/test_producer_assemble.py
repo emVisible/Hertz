@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -636,3 +637,124 @@ def test_delivery_resolution_does_not_follow_video():
     from backend.pipeline.producers.resolution import delivery_resolution
 
     assert delivery_resolution() == (1280, 720)
+
+
+# ---------- 硬切与转场混排：时基必须一致（v0.38 回归） ----------
+
+async def _make_busy_clip(path: Path, duration: int, idx: int) -> Path:
+    """造一段**画面内容逐帧变化**的素材。
+
+    冻结检测需要素材本身一直在动：纯色素材静止是正常的，那样测出来的「相邻
+    帧相同」分不清是真冻结还是本来就该相同。
+    """
+    ffmpeg = find_ffmpeg()
+    proc = await asyncio.create_subprocess_exec(
+        str(ffmpeg), "-y", "-v", "error",
+        "-f", "lavfi", "-i", f"testsrc=size=320x240:rate=30:duration={duration}",
+        "-vf", f"colorchannelmixer=rr={1 if idx % 2 else 0.6}:gg=1:bb={1 if idx % 3 else 0.5}",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "15", str(path),
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    return path
+
+
+def _frozen_frame_indices(out: Path, fps: int = 10) -> tuple[float, list[int]]:
+    """抽帧并返回 (时长, 帧间几乎无变化的帧下标)。"""
+    raw = out.with_suffix(".gray")
+    subprocess.run([
+        str(find_ffmpeg()), "-y", "-v", "error", "-i", str(out),
+        "-vf", f"fps={fps},scale=64:48", "-f", "rawvideo", "-pix_fmt", "gray", str(raw),
+    ], check=True)
+    data = raw.read_bytes()
+    n = 64 * 48
+    count = len(data) // n
+    if count < 2:
+        return 0.0, []
+    # 每帧抽样若干字节求平均差：素材本身在动，所以「相邻帧几乎无变化」只能是
+    # 时间轴被弥合（丢帧/重复帧）造成的真冻结。
+    step = 7
+    frozen: list[int] = []
+    for i in range(1, count):
+        a = data[(i - 1) * n : (i - 1) * n + n : step]
+        b = data[i * n : i * n + n : step]
+        if sum(abs(x - y) for x, y in zip(a, b)) / len(a) < 0.05:
+            frozen.append(i)
+    return count / fps, frozen
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "transitions"),
+    [
+        ("cut 在开头", ["cut", "dissolve", "zoomin", "wipe"]),
+        ("cut 在中间", ["dissolve", "cut", "dissolve", "zoomin"]),
+        ("cut 在末尾", ["dissolve", "zoomin", "wipe", "cut"]),
+        ("cut 交替", ["cut", "dissolve", "cut", "zoomin"]),
+        ("全不同", ["dissolve", "zoomin", "wipe", "fade"]),
+    ],
+)
+async def test_mixed_cut_and_transition_compiles(tmp_path, name, transitions):
+    """硬切与转场**混排**的合集必须能编出来，且没有冻结帧。
+
+    ## 之前为什么会坏
+
+    `xfade` 要求两个输入的时基一致。`fps=30` 单独用把时基定成 **1/30**，
+    而 `concat` 滤镜输出 **1/1000000**。于是混排时报：
+
+        First input link main timebase (1/1000000) do not match the
+        corresponding second input link xfade timebase (1/30)
+
+    **全硬切或全转场反而没事**（前者没有 xfade，后者没有 concat）——
+    这正是「有的能拼、有的拼不出来」的原因。
+
+    更隐蔽的是它有时**不报错**：时基碰巧对齐时 xfade 靠丢帧/重复帧弥合时间轴，
+    表现就是用户看到的「画面卡住不动」。所以本测试除了「能不能编出来」，
+    还要扫输出有没有冻结帧——只测前者会漏掉后者。
+    """
+    durations = [4, 3, 5, 2, 3]
+    paths = [
+        await _make_busy_clip(tmp_path / f"c{i}.mp4", d, i)
+        for i, d in enumerate(durations)
+    ]
+    plan = ["cut"] + transitions
+    clips = [
+        {"path": str(p), "transition": t, "transition_s": 0.6}
+        for p, t in zip(paths, plan)
+    ]
+    out = tmp_path / f"out_{name}.mp4"
+
+    info = await assemble_clips(clips, out)
+
+    expected = sum(durations) - 0.6 * sum(1 for t in transitions if t != "cut")
+    assert abs(info["duration_s"] - expected) < 0.15, (
+        f"{name}: 时长 {info['duration_s']:.2f}s，期望 {expected:.2f}s"
+    )
+    measured, frozen = _frozen_frame_indices(out)
+    assert not frozen, (
+        f"{name}: 第 {frozen[:5]} 帧附近出现冻结（相邻帧无变化）"
+    )
+    assert abs(measured - expected) < 0.3
+
+
+def test_normal_chain_pins_a_single_timebase():
+    """每段入口必须显式 `settb`——xfade 的时基一致性完全依赖它。
+
+    这是源码级守卫：`fps=30` 单独用会留下 1/30，`concat` 留下 1/1000000，
+    两者混在一起 xfade 就炸。把这条写成断言，比等一条 5 段素材的慢测试
+    更早发现问题。
+    """
+    from backend.pipeline.producers.assemble import _normal_chain
+
+    chain = _normal_chain(1280, 720, 30)
+    assert "settb=AVTB" in chain, f"归一链缺少 settb：{chain}"
+
+
+def test_concat_output_is_timebase_normalised():
+    """concat 之后也要补 settb——它输出 1/1000000，与 xfade 另一侧对不上。"""
+    from backend.pipeline.producers import assemble as asm
+
+    src = Path(asm.__file__).read_text(encoding="utf-8")
+    assert "concat=n=2:v=1:a=0,settb=AVTB" in src, (
+        "concat 之后未接 settb，混排合集仍会因时基不匹配而失败"
+    )

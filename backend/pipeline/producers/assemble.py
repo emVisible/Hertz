@@ -117,12 +117,31 @@ def _normal_chain(width: int, height: int, fps: int) -> str:
     - `force_original_aspect_ratio=decrease` + `pad`：保持比例塞进画布，
       不裁切不拉伸（拉伸就是 `-c copy` 那条路的后果）；
     - `setsar=1`：方形像素，否则不同 SAR 的素材拼完会比例失真；
-    - `fps=`：统一帧率，否则 concat 时帧率不同的片段会掉帧/变速。
+    - `fps=`：统一帧率，否则 concat 时帧率不同的片段会掉帧/变速；
+    - `settb=AVTB`：**xfade 要求两侧时基一致**（v0.38 修复，见下）。
+
+    ## 为什么必须显式settb
+
+    `fps=30` 单独用会把时基定成 **1/30**，而 `concat` 滤镜输出的是
+    **1/1000000**（微秒）。`xfade` 的两个输入时基不匹配时，ffmpeg 报：
+
+        First input link main timebase (1/1000000) do not match the
+        corresponding second input link xfade timebase (1/30)
+
+    于是**硬切与转场混排的合集直接编不出来**（全硬切或全转场反而没事——
+    前者没有 xfade，后者没有 concat），这正是「有的能拼有的不能」的原因。
+
+    更隐蔽的是它有时**不报错**：时基碰巧对齐时，xfade 会丢帧或重复帧来弥合
+    时间轴——表现就是**画面卡住不动**。用户描述的「有的画面会卡住」就是这个。
+
+    只在 `concat` 之后补 `settb` 不够（实测仍失败）：那条链一旦被后面的
+    xfade 污染，时基又对不回去了。**每段入口统一成 AVTB** 才能保证任意
+    「硬切/转场」混排都成立。
     """
     return (
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
-        f"setsar=1,fps={fps},format=yuv420p"
+        f"setsar=1,fps={fps},format=yuv420p,settb=AVTB"
     )
 
 
@@ -258,7 +277,9 @@ def _build_xfade_chain(
         if transition == "cut":
             # 硬切在 xfade 链里用 duration=0 的 xfade 表达不了，改用拼接——
             # 这里把当前结果与新段 concat（此时两者参数已一致）
-            chains.append(f"[{current_v}][v{i}]concat=n=2:v=1:a=0[x{i}]")
+            # concat 后补 settb：它输出 1/1000000，而 xfade 的另一侧是 1/30。
+            # 详见 _normal_chain 的说明——混排时这条是成败关键。
+            chains.append(f"[{current_v}][v{i}]concat=n=2:v=1:a=0,settb=AVTB[x{i}]")
             acc += probed[i][1]
         else:
             offset = max(0.0, acc - d)
