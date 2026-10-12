@@ -10,6 +10,7 @@ import {
   useCompilationWorkspace,
 } from '../../hooks/useCompilationWorkspace'
 import { MediaThumb } from './PipelineStage'
+import { TRANSITION_KEY_ORDER, useCompilationShortcuts } from '../../hooks/useCompilationShortcuts'
 
 /** 秒 → `1:05` / `12:03`。编排面板里时长到处都是，格式统一比每处各写一遍好。 */
 function fmtDuration(total: number | null): string {
@@ -58,6 +59,21 @@ export function CompilationWorkspace({
   const [dragId, setDragId] = useState<string | null>(null)
   const [poolFilter, setPoolFilter] = useState('')
 
+  const shortcuts = useCompilationShortcuts({
+    clipIds: ws.clipIds,
+    selected: ws.selected,
+    enabled: true,
+    onMove: ws.move,
+    onRemove: ws.remove,
+    onToggle: ws.toggle,
+    onSelect: ws.setSelected,
+    onSetTransition: (leftId, i) => ws.setGap(leftId, TRANSITION_KEY_ORDER[i]),
+    onUndo: ws.undo,
+    onRedo: ws.redo,
+    onCreate: handleCreate,
+    onBack: onBack,
+  })
+
   const pool = poolFilter.trim()
     ? ws.pool.filter((s) => s.title.toLowerCase().includes(poolFilter.trim().toLowerCase()))
     : ws.pool
@@ -92,8 +108,45 @@ export function CompilationWorkspace({
         <span className="ml-auto flex shrink-0 items-center gap-3 font-mono text-[11px] text-text-secondary">
           <span>{t('console.compilation.picked', { n: ws.clipIds.length })}</span>
           <span>{t('console.compilation.estimate', { s: fmtDuration(ws.estimate) })}</span>
+          <span className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={ws.undo}
+              disabled={!ws.canUndo}
+              title={t('console.compilation.undo')}
+              className="rounded px-1 hover:bg-surface-2 disabled:opacity-30"
+            >
+              <Icon name="undo" size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={ws.redo}
+              disabled={!ws.canRedo}
+              title={t('console.compilation.redo')}
+              className="rounded px-1 hover:bg-surface-2 disabled:opacity-30"
+            >
+              <Icon name="redo" size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => shortcuts.setHelpOpen((v) => !v)}
+              title={t('console.compilation.shortcuts')}
+              className="rounded px-1 text-xs hover:bg-surface-2"
+            >
+              ?
+            </button>
+          </span>
         </span>
       </div>
+
+      {ws.hasDraft && (
+        <div className="shrink-0 border-b border-border bg-primary/5 px-3 py-1 text-[11px] text-text-secondary">
+          {t('console.compilation.draftRestored')}{' '}
+          <button type="button" onClick={ws.discardDraft} className="underline hover:text-text-primary">
+            {t('console.compilation.draftDiscard')}
+          </button>
+        </div>
+      )}
 
       {/* 主体：左池 + 序列 */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -356,6 +409,45 @@ export function CompilationWorkspace({
           </div>
         </div>
       </div>
+
+      {shortcuts.helpOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => shortcuts.setHelpOpen(false)}
+        >
+          <div
+            className="w-80 rounded-md border border-border bg-surface-1 p-3 text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-medium text-text-primary">
+                {t('console.compilation.shortcuts')}
+              </span>
+              <button type="button" onClick={() => shortcuts.setHelpOpen(false)}>
+                <Icon name="close" size={12} />
+              </button>
+            </div>
+            <ul className="space-y-1">
+              {[
+                ['↑ ↓ / J K', 'select'],
+                ['⇧ ↑ ↓', 'moveUpDown'],
+                ['Space', 'togglePick'],
+                ['1…5', 'transitionGap'],
+                ['Del', 'remove'],
+                ['⌘/Ctrl + Z', 'undo'],
+                ['⌘/Ctrl + ⇧ + Z', 'redo'],
+                ['⌘/Ctrl + Enter', 'create'],
+                ['Esc', 'back'],
+              ].map(([k, label]) => (
+                <li key={k} className="flex items-center justify-between">
+                  <kbd className="rounded border border-border px-1 font-mono text-[10px]">{k}</kbd>
+                  <span className="text-text-secondary">{t(`console.compilation.kb_${label}`)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

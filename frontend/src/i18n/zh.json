@@ -1146,7 +1146,19 @@
       "moveUp": "上移",
       "moveDown": "下移",
       "warnMixedFrame": "混入横屏与竖屏：成片会按首片朝向输出，另一侧留黑边",
-      "warnTooLong": "总时长偏长，确认后仍可创建"
+      "warnTooLong": "总时长偏长，确认后仍可创建",
+      "undo": "撤销",
+      "redo": "重做",
+      "shortcuts": "快捷键",
+      "kb_select": "选中上/下一段",
+      "kb_moveUpDown": "上移/下移选中段",
+      "kb_togglePick": "加入/移出序列",
+      "kb_transitionGap": "改前一段的转场",
+      "kb_remove": "移除选中段",
+      "kb_create": "创建合集",
+      "kb_back": "返回预处理",
+      "draftRestored": "已恢复上次未完成的编排。",
+      "draftDiscard": "丢弃草稿"
     }
   },
   "canvas": {

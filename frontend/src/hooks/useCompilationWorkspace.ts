@@ -30,8 +30,11 @@ import type {
   CreateCompilationBody,
 } from '../api/pipeline'
 import { pipelineApi } from '../api/pipeline'
+import { useCompilationDraft, useHistory } from './useCompilationDraft'
 
 /** 与后端 `assemble.TRANSITIONS` 同名同默认——界面发英文档名，后端才认。 */
+import type { DraftState } from './useCompilationDraft'
+
 export const TRANSITION_PRESETS: Array<{ value: CompilationTransition; seconds: number }> = [
   { value: 'cut', seconds: 0 },
   { value: 'fade', seconds: 0.6 },
@@ -91,13 +94,19 @@ export function mixedOrientation(sources: Map<string, CompilationSource>, clipId
 export function useCompilationWorkspace() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [title, setTitle] = useState('')
-  const [clipIds, setClipIds] = useState<string[]>([])
-  const [gaps, setGaps] = useState<GapMap>({})
-  const [outro, setOutro] = useState(false)
+  // 编排数据全部走 history：title/clipIds/gaps/outro 是同一次排布的四个侧面，
+  // 分开存会各自进栈，于是「撤销」只撤销其中一半（改标题把顺序也撤了）。
+  const history = useHistory<DraftState>({ title: '', clipIds: [], gaps: {}, outro: false })
+  const { title, clipIds, gaps, outro } = history.present
+  const setTitle = (v: string) => history.set((s) => ({ ...s, title: v }))
+  const setOutro = (v: boolean) => history.set((s) => ({ ...s, outro: v }))
+
+  // 选中项不入历史：它不是排布的一部分，撤销它只会让人莫名其妙
   const [selected, setSelected] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const draft = useCompilationDraft({ title, clipIds, gaps, outro })
 
   const { data: pool = [], isLoading } = useQuery({
     queryKey: ['compilation-sources'],
@@ -120,65 +129,75 @@ export function useCompilationWorkspace() {
   )
 
   const toggle = useCallback((id: string) => {
-    setClipIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-  }, [])
+    history.set((s) => ({
+      ...s,
+      clipIds: s.clipIds.includes(id) ? s.clipIds.filter((x) => x !== id) : [...s.clipIds, id],
+    }))
+  }, [history])
 
   const move = useCallback((id: string, delta: number) => {
-    setClipIds((prev) => {
-      const i = prev.indexOf(id)
+    history.set((s) => {
+      const i = s.clipIds.indexOf(id)
       const j = i + delta
-      if (i < 0 || j < 0 || j >= prev.length) return prev
-      const next = [...prev]
-      ;[next[i], next[j]] = [next[j], next[i]]
-      return next
+      if (i < 0 || j < 0 || j >= s.clipIds.length) return s
+      const clipIds = [...s.clipIds]
+      ;[clipIds[i], clipIds[j]] = [clipIds[j], clipIds[i]]
+      return { ...s, clipIds }
     })
-  }, [])
+  }, [history])
 
   const reorderTo = useCallback((dragId: string, targetId: string) => {
-    setClipIds((prev) => {
-      if (dragId === targetId) return prev
-      const next = prev.filter((x) => x !== dragId)
+    history.set((s) => {
+      if (dragId === targetId) return s
+      const next = s.clipIds.filter((x) => x !== dragId)
       const at = next.indexOf(targetId)
       next.splice(at < 0 ? next.length : at, 0, dragId)
-      return next
+      return { ...s, clipIds: next }
     })
-  }, [])
+  }, [history])
 
   const remove = useCallback((id: string) => {
-    setClipIds((prev) => prev.filter((x) => x !== id))
-    setGaps((prev) => {
-      const next = { ...prev }
-      delete next[id]
-      return next
+    history.set((s) => {
+      const gaps = { ...s.gaps }
+      delete gaps[id]
+      return { ...s, clipIds: s.clipIds.filter((x) => x !== id), gaps }
     })
-  }, [])
+  }, [history])
 
   const setGap = useCallback((leftId: string, transition: CompilationTransition) => {
-    setGaps((prev) => ({
-      ...prev,
-      [leftId]: {
-        transition,
-        seconds: prev[leftId]?.seconds
-          || TRANSITION_PRESETS.find((p) => p.value === transition)?.seconds
-          || DEFAULT_TRANSITION_S,
+    history.set((s) => ({
+      ...s,
+      gaps: {
+        ...s.gaps,
+        [leftId]: {
+          transition,
+          seconds: s.gaps[leftId]?.seconds
+            || TRANSITION_PRESETS.find((p) => p.value === transition)?.seconds
+            || DEFAULT_TRANSITION_S,
+        },
       },
     }))
-  }, [])
+  }, [history])
 
   const setGapSeconds = useCallback((leftId: string, seconds: number) => {
-    setGaps((prev) => ({
-      ...prev,
-      [leftId]: { transition: prev[leftId]?.transition ?? 'fade', seconds: seconds },
+    history.set((s) => ({
+      ...s,
+      gaps: {
+        ...s.gaps,
+        [leftId]: { transition: s.gaps[leftId]?.transition ?? 'fade', seconds: seconds },
+      },
     }))
-  }, [])
+  }, [history])
 
   /** 一键把所有间隙设成同一种转场（替代 N 次手动）。 */
   const applyTransitionToAll = useCallback((transition: CompilationTransition) => {
     const seconds = TRANSITION_PRESETS.find((p) => p.value === transition)?.seconds ?? DEFAULT_TRANSITION_S
-    const next: GapMap = {}
-    for (let i = 0; i < clipIds.length - 1; i += 1) next[clipIds[i]] = { transition, seconds }
-    setGaps(next)
-  }, [clipIds.length])
+    history.set((s) => {
+      const gaps: GapMap = {}
+      for (let i = 0; i < s.clipIds.length - 1; i += 1) gaps[s.clipIds[i]] = { transition, seconds }
+      return { ...s, gaps }
+    })
+  }, [history])
 
   async function create(): Promise<boolean> {
     if (clipIds.length === 0) {
@@ -207,10 +226,7 @@ export function useCompilationWorkspace() {
   }
 
   function reset(initial?: string[]) {
-    setTitle('')
-    setClipIds(initial ?? [])
-    setGaps({})
-    setOutro(false)
+    history.reset({ title: '', clipIds: initial ?? [], gaps: {}, outro: false })
     setSelected(null)
     setError('')
   }
@@ -220,5 +236,8 @@ export function useCompilationWorkspace() {
     title, setTitle, outro, setOutro, saving, error, setError,
     estimate, mixed, toggle, move, reorderTo, remove, setGap, setGapSeconds,
     applyTransitionToAll, setSelected, create, reset,
+    undo: history.undo, redo: history.redo,
+    canUndo: history.canUndo, canRedo: history.canRedo,
+    hasDraft: draft.hasDraft, discardDraft: draft.discard,
   }
 }

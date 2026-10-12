@@ -1131,7 +1131,19 @@
       "moveUp": "Move up",
       "moveDown": "Move down",
       "warnMixedFrame": "Mixed portrait/landscape: output follows the first clip, the other side gets black bars",
-      "warnTooLong": "Long compilation — you can still create it"
+      "warnTooLong": "Long compilation — you can still create it",
+      "undo": "Undo",
+      "redo": "Redo",
+      "shortcuts": "Shortcuts",
+      "kb_select": "Select prev/next",
+      "kb_moveUpDown": "Move selected up/down",
+      "kb_togglePick": "Add / remove from sequence",
+      "kb_transitionGap": "Set previous gap transition",
+      "kb_remove": "Remove selected",
+      "kb_create": "Create compilation",
+      "kb_back": "Back to preprocess",
+      "draftRestored": "Restored your unfinished arrangement.",
+      "draftDiscard": "Discard draft"
     }
   },
   "canvas": {

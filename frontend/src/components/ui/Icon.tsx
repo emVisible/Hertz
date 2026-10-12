@@ -21,6 +21,9 @@ const PATHS = {
   'chevron-down': 'M6 9l6 6 6-6',
   'chevron-up': 'M6 15l6-6 6 6',
   'chevron-right': 'M9 18l6-6-6-6',
+  // 撤销/重做：弧线 + 箭头。与 chevron 同为 stroke-only，视觉重量一致
+  'undo': 'M3 10h11a5 5 0 010 10H9M3 10l4-4M3 10l4 4',
+  'redo': 'M21 10H10a5 5 0 000 10h5M21 10l-4-4M21 10l-4 4',
   'chevron-left': 'M15 18l-6-6 6-6',
   plus: 'M12 5v14M5 12h14',
   check: 'M20 6L9 17l-5-5',
