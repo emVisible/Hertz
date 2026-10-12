@@ -95,7 +95,14 @@ class PrepOpsMixin:
                 raise InvalidItemStateError(
                     f"cannot produce item in state {item.status}"
                 )
-            if not item.raw_path and (item.item_type or "") != "text_only":
+            # 「没有 raw」不等于「没下载」——合集条目（v0.35）天生就没有 raw_path，
+            # 它的成片由 clips 现场装配出来。此前这里只放行 text_only，于是**任何
+            # 合集都产不出来**，报的还是「item not downloaded yet — run download
+            # first」：一个关于合集持有者的、彻底误导的结论（合集根本不需要下载）。
+            #
+            # 判据是「有没有 clips」而不是「item_type 是不是 video_raw」——
+            # 合集的 item_type 就是 video_raw（产物确实是视频），靠类型判断必然漏。
+            if not item.raw_path and not item.clips and (item.item_type or "") != "text_only":
                 raise InvalidItemStateError(
                     "item not downloaded yet — run download first"
                 )

@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from pathlib import Path
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from backend.models.item import Item
 from backend.models.session import session_factory
@@ -432,3 +433,100 @@ def test_probe_cache_key_includes_mtime_and_size(tmp_path):
         assert _MEDIA_CACHE[str(f)][0] != first_fingerprint, "内容变了缓存却还命中"
 
     asyncio.run(run())
+
+
+# ---------- 合集必须真的能产出来（v0.38 回归） ----------
+
+@pytest.mark.asyncio
+async def test_compilation_item_can_be_produced(client, clean_pool, tmp_path):
+    """从「建合集」一路走到「产出成片」——合集此前**根本产不出来**。
+
+    ## 这个 bug 为什么能活下来
+
+    `produce_one` 的前置校验是「没有 raw_path 就先下载」。而合集条目
+    （v0.35 引入）天生 `raw_path=None` —— 它的成片由 clips 现场装配。
+    于是校验把它判成「没下载」，报：
+
+        item not downloaded yet — run download first
+
+    对合集持有者来说这是一句彻底误导的话：合集根本不需要下载。
+
+    之前所有测试都只测到 `assemble_clips` 这个**纯函数**——它当然能跑通，
+    因为那条路径压根不经过 produce 的前置校验。**单测覆盖了装配，却没覆盖
+    「条目能不能走到装配」**，于是这个洞一直在。
+
+    判据用「有没有 clips」而不是 item_type：合集的 item_type 就是
+    `video_raw`（产物确实是视频），靠类型判断必然漏。
+    """
+
+    from backend.library.thumbnails import find_ffmpeg
+    from backend.models.item import ItemStatus
+
+    raw = tmp_path / "src.mp4"
+    proc = await asyncio.create_subprocess_exec(
+        str(find_ffmpeg()), "-y", "-v", "error",
+        "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:duration=2",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(raw),
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    assert raw.exists()
+
+    raw2 = tmp_path / "src2.mp4"
+    proc2 = await asyncio.create_subprocess_exec(
+        str(find_ffmpeg()), "-y", "-v", "error",
+        "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:duration=1",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(raw2),
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc2.wait()
+
+    async with session_factory() as session:
+        # 两条不同的源：同一条素材在一条合集里只能用一次（后端会 422，那是对的）
+        session.add(Item(
+            source=SOURCE, source_id="prod-src-1", status=ItemStatus.DOWNLOADED,
+            item_type="video_raw", title="可产出的源 1", raw_path=str(raw),
+        ))
+        session.add(Item(
+            source=SOURCE, source_id="prod-src-2", status=ItemStatus.DOWNLOADED,
+            item_type="video_raw", title="可产出的源 2", raw_path=str(raw2),
+        ))
+        await session.commit()
+
+    ids = await _source_ids(2)
+    r = await client.post("/api/pipeline/compilations", json={
+        "title": "端到端合集",
+        "clips": [{"item_id": ids[0]}, {"item_id": ids[1]}],
+    })
+    assert r.status_code == 200, r.text
+    cid = r.json()["id"]
+
+    # 合集条目确实没有 raw_path（这正是过去被误判的原因）
+    async with session_factory() as session:
+        comp = await session.get(Item, uuid.UUID(cid))
+        assert comp.raw_path is None
+        assert comp.clips, "合集条目必须带 clips"
+        assert comp.item_type == "video_raw"
+
+    # 真正去产出——这一步过去直接抛 "item not downloaded yet"
+    p = await client.post(f"/api/pipeline/items/{cid}/produce")
+    assert p.status_code == 200, p.text
+
+    async with session_factory() as session:
+        comp = await session.get(Item, uuid.UUID(cid))
+        assert comp.status != ItemStatus.FAILED, f"合集产出失败：{comp.error}"
+        assert comp.video_path, "合集应产出成片"
+        assert await asyncio.to_thread(Path(comp.video_path).exists)
+
+
+async def _source_ids(n: int) -> list[str]:
+    async with session_factory() as session:
+        rows = (await session.execute(
+            select(Item).where(
+                Item.source == SOURCE,
+                Item.raw_path.isnot(None),
+                Item.source_id.in_(["prod-src-1", "prod-src-2"]),
+            ).order_by(Item.source_id)
+        )).scalars().all()
+        assert len(rows) == n, f"期望 {n} 条源，实际 {len(rows)}"
+        return [str(r.id) for r in rows]
