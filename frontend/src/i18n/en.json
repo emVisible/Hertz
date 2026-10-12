@@ -1211,7 +1211,9 @@
       "firstClipNoTransition": "First clip",
       "kb_undo": "Undo",
       "kb_redo": "Redo",
-      "create": "Create compilation"
+      "create": "Create compilation",
+      "sourceLoading": "Loading…",
+      "blockMissingSource": "{n} segment(s) are no longer available as sources (file cleaned up or item state changed) — remove them or pick different clips before creating"
     }
   },
   "canvas": {

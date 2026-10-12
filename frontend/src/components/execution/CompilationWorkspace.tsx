@@ -202,6 +202,7 @@ function SequenceRow({
   id,
   idx,
   source,
+  state,
   selected,
   gap,
   firstPortrait,
@@ -219,6 +220,7 @@ function SequenceRow({
   id: string
   idx: number
   source: CompilationSource | null
+  state: 'ready' | 'loading' | 'missing'
   selected: boolean
   gap?: { transition: CompilationTransition; seconds: number }
   firstPortrait: boolean | null
@@ -289,7 +291,9 @@ function SequenceRow({
           </span>
         ) : (
           <span className="flex h-[90px] w-40 shrink-0 items-center justify-center rounded-sm border border-dashed border-border text-[10px] text-text-disabled">
-            {t('console.compilation.sourceMissing')}
+            {/* 加载中就说加载中。此前一律显示「源已移除」，等于在候选列表
+                还没查回来时就替用户断言他的文件没了。 */}
+            {state === 'loading' ? t('console.compilation.sourceLoading') : t('console.compilation.sourceMissing')}
           </span>
         )}
 
@@ -426,6 +430,12 @@ export function CompilationWorkspace({
     : ws.pool
 
   async function handleCreate() {
+    // 按钮已禁用，这里是最后一道：键盘快捷键（⌘Enter）也会走到这里，
+    // 两条入口必须给出同一个结论，否则快捷键就成了绕过校验的后门。
+    if (!ws.canCreate) {
+      if (ws.clipIds.length === 0) toast(t('console.compilation.noClips'), 'error')
+      return
+    }
     const ok = await ws.create()
     if (ok) {
       toast(t('console.compilation.created', { n: ws.clipIds.length }), 'success')
@@ -558,6 +568,7 @@ export function CompilationWorkspace({
                 id={item.id}
                 idx={item.idx}
                 source={item.source}
+                state={item.state}
                 selected={ws.selected === item.id}
                 gap={item.idx > 0 ? ws.gaps[gapKey(ws.clipIds, item.idx) as string] : undefined}
                 firstPortrait={firstPortrait}
@@ -588,6 +599,12 @@ export function CompilationWorkspace({
 
           {/* 底栏：预警 + 主操作 */}
           <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
+            {/* 有片段查不到时，把原因摆在按钮旁边而不是等提交后吃后端的 400 */}
+            {ws.missingIds.length > 0 && (
+              <span className="text-[11px] text-error">
+                {t('console.compilation.blockMissingSource', { n: ws.missingIds.length })}
+              </span>
+            )}
             {ws.mixed && (
               <span className="text-[11px] text-warning">
                 {t('console.compilation.warnMixedFrame')}
@@ -606,7 +623,7 @@ export function CompilationWorkspace({
             <Button
               size="sm"
               loading={ws.saving}
-              disabled={ws.clipIds.length === 0}
+              disabled={!ws.canCreate}
               onClick={handleCreate}
               icon={<Icon name="play" size={12} />}
             >

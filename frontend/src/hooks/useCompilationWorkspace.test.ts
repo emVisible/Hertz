@@ -264,3 +264,77 @@ describe('转场默认时长', () => {
     expect(withFade).toBe(withWipe)
   })
 })
+
+/**
+ * 缺失源的判定（v0.38）。
+ *
+ * ## 这条 bug 的形状
+ *
+ * 候选列表是异步查回来的，`pool` 在拿到响应前是 `[]`。而 `items` 此前是
+ * `sources.get(id) ?? null`，UI 一见 null 就渲染「源已移除」——于是**每次进面板
+ * 的最初几百毫秒里，已经在序列里的片段都被冤枉成文件丢了**。
+ *
+ * 那是关于用户自己数据的假结论，用户会当真：他会去磁盘上找文件，或者以为
+ * 软件坏了。加载中不是缺失——只有查过了、确实查不到，才是缺失。
+ */
+describe('missingIds：加载中不算缺失', () => {
+  const ID_A = 'a'
+  const ID_B = 'b'
+
+  /** 复刻 items 的状态推导，避免测试直接依赖 React 渲染。 */
+  function states(
+    clipIds: string[],
+    pool: CompilationSource[],
+    isLoading: boolean,
+  ): ('ready' | 'loading' | 'missing')[] {
+    const byId = new Map(pool.map((s) => [s.id, s]))
+    return clipIds.map((id) => {
+      const source = byId.get(id) ?? null
+      return source ? 'ready' : isLoading ? 'loading' : 'missing'
+    })
+  }
+
+  it('加载中且池为空 → 标 loading，不标 missing', () => {
+    expect(states([ID_A, ID_B], [], true)).toEqual(['loading', 'loading'])
+  })
+
+  it('加载完成后仍查不到 → 才是 missing', () => {
+    expect(states([ID_A, ID_B], [], false)).toEqual(['missing', 'missing'])
+  })
+
+  it('加载完成且查到了 → ready', () => {
+    expect(states([ID_A], [src(ID_A, 10)], false)).toEqual(['ready'])
+  })
+
+  it('部分查不到 → 只把查不到的算 missing', () => {
+    const got = states([ID_A, ID_B], [src(ID_A, 10)], false)
+    expect(got).toEqual(['ready', 'missing'])
+  })
+
+  it('中途从 loading 变 missing 是允许的——它就是真相浮现', () => {
+    // 先 loading 后 missing：候选列表回来了，这条确实不在里面
+    expect(states([ID_A], [], true)).toEqual(['loading'])
+    expect(states([ID_A], [], false)).toEqual(['missing'])
+  })
+})
+
+/** 创建闸门：缺任何一段就不能建。 */
+describe('canCreate', () => {
+  function canCreate(clipCount: number, missingCount: number): boolean {
+    return clipCount > 0 && missingCount === 0
+  }
+
+  it('空序列不能建', () => {
+    expect(canCreate(0, 0)).toBe(false)
+  })
+
+  it('有片段且无缺失 → 可以建', () => {
+    expect(canCreate(3, 0)).toBe(true)
+  })
+
+  it('有缺失片段 → 不能建（哪怕其余都正常）', () => {
+    // 后端 create_compilation 本来就会拒（缺条目/无 raw/状态不对都 ValueError），
+    // 前端不该让用户按下一个必然失败的按钮、再从服务端拿回一句「片段不存在」。
+    expect(canCreate(3, 1)).toBe(false)
+  })
+})

@@ -167,8 +167,30 @@ export function useCompilationWorkspace() {
    * 这样下标永远是下标。
    */
   const items = useMemo(
-    () => clipIds.map((id, idx) => ({ id, idx, source: sources.get(id) ?? null })),
-    [clipIds, sources],
+    () => clipIds.map((id, idx) => {
+      const source = sources.get(id) ?? null
+      return {
+        id,
+        idx,
+        source,
+        // **加载中不等于缺失**（v0.38）。
+        //
+        // 候选列表是异步查回来的，`pool` 在拿到响应前是空数组。此前 `source`
+        // 为 null 就一律渲染「源已移除」——于是每次进面板的最初几百毫秒里，
+        // 已经在序列里的片段会被**冤枉成文件丢了**。用户看到的是一个关于
+        // 他自己数据的、彻头彻尾的假结论。
+        //
+        // 这里显式区分三种状态，让 UI 只在确实查过了之后才下结论。
+        state: source ? 'ready' as const : isLoading ? 'loading' as const : 'missing' as const,
+      }
+    }),
+    [clipIds, sources, isLoading],
+  )
+
+  /** 确实查过、且确实查不到的片段。加载中一律不算。 */
+  const missingIds = useMemo(
+    () => items.filter((it) => it.state === 'missing').map((it) => it.id),
+    [items],
   )
 
   const estimate = useMemo(
@@ -334,8 +356,18 @@ export function useCompilationWorkspace() {
     setError('')
   }
 
+  /**
+   * 能不能创建。后端 `create_compilation` 本来就会拒绝缺条目/状态不对/无 raw
+   * 的组合（前端只是不该让用户走到那一步才吃一个错误 toast）。
+   *
+   * `missingIds` 非空时禁用：让用户对着一个必然失败的提交按钮点下去，
+   * 再从服务端拿回一句「片段不存在」，那是把校验责任推给了用户。
+   */
+  const canCreate = clipIds.length > 0 && missingIds.length === 0
+
   return {
     pool, isLoading, sources, items, clipIds, gaps, selected,
+    missingIds, canCreate,
     title, setTitle, outro, setOutro, saving, error, setError,
     estimate, mixed, toggle, move, moveTo, remove, addAll, invertAll,
     setGapFor, setGapSecondsFor, applyTransitionToAll, setSelected, create, reset,

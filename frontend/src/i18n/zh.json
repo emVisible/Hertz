@@ -1226,7 +1226,9 @@
       "firstClipNoTransition": "首片",
       "kb_undo": "撤销",
       "kb_redo": "重做",
-      "create": "创建合集"
+      "create": "创建合集",
+      "sourceLoading": "载入中…",
+      "blockMissingSource": "有 {n} 段素材已不在候选列表（文件被清理或条目状态变了），无法创建——请移除这些段或换素材"
     }
   },
   "canvas": {
