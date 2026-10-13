@@ -67,6 +67,9 @@ _whisper_key = ""
 _whisper_lock = asyncio.Lock()
 
 _WHISPER_ALERT_KEY = "whisper_model_download"
+# 「还没下载」与「下载失败」是两回事，告警键必须分开，否则下载成功一次会把
+# 「未就绪」的提示一起复位掉。
+_WHISPER_MISSING_ALERT_KEY = "whisper_model_missing"
 
 
 class AsrUnavailableError(RuntimeError):
@@ -139,6 +142,7 @@ async def ensure_model(force: bool = False) -> Path | None:
         )
         return None
     alerts.reset(_WHISPER_ALERT_KEY)  # 成功后复位，让下次失败仍可告警一次
+    alerts.reset(_WHISPER_MISSING_ALERT_KEY)  # 同理：模型到位后「未就绪」提示才可再次触发
     return d
 
 
@@ -156,6 +160,12 @@ async def _get_whisper():
 
     缓存键含「档位 @ 目录」：设置页改了档位或数据目录，下一次转写就重建——
     S4 之前没有这层失效，切档位只在重启后生效，且模型悄悄落在 `~/.cache`。
+
+    **未就绪时立刻抛，绝不隐式下载**（v0.35 修，见 D-227）：此前这里调
+    `ensure_model()`，于是一次转写请求会悄悄去拉 148MB。后果有两层：网络慢或不通时
+    接口长时间无响应（产物级门禁实测：首调 68.3s 越过 sim 的 60s 预算返回 000，
+    而契约要求 200 或 502）；以及「点一次转写就下载」这件事用户根本不知情。
+    下载的入口只有一个——设置 → 流水线 的「下载转写模型」。
     """
     global _whisper_model, _whisper_key
     name = whisper_model_name()
@@ -167,14 +177,20 @@ async def _get_whisper():
             return _whisper_model
         if not _WHISPER_IMPORTED:
             raise AsrUnavailableError("faster-whisper 不可用 — 执行 uv sync 安装主依赖")
-        model_dir = await ensure_model()
-        if model_dir is None:
+        if not paths.whisper_model_ready(name):
+            # 只报一次：产线在批量转写时不会把同一个提示刷满告警
+            alerts.notify_once(
+                _WHISPER_MISSING_ALERT_KEY,
+                f"🟠 本地转写模型（{name}）还没下载\n\n"
+                "转写已降级（产线走旁白翻译，工坊接口回 502）。"
+                "设置 → 流水线 点「下载转写模型」后即可恢复原声转写。",
+            )
             raise AsrUnavailableError(
-                f"whisper 模型未就绪且下载失败（{name}）"
-                "——设置 → 流水线 可切换下载端点后重试"
+                f"whisper 模型未就绪（{name}）"
+                "——设置 → 流水线 点「下载转写模型」后重试"
             )
         model = await asyncio.to_thread(
-            WhisperModel, str(model_dir), device="cpu", compute_type="int8"
+            WhisperModel, str(paths.whisper_model_dir(name)), device="cpu", compute_type="int8"
         )
         _whisper_model, _whisper_key = model, key
         return model

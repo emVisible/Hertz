@@ -348,13 +348,21 @@ async def test_ensure_model_failure_alerts_once_and_returns_none(
     assert "ConnectError" in sent[0]
 
 
+def _write_whisper_model(name: str = "base") -> Path:
+    """把某一档模型的核心文件铺出来——就绪探测认的是文件在不在，不认文件内容。"""
+    d = paths.whisper_model_dir(name)
+    d.mkdir(parents=True, exist_ok=True)
+    for f in paths.WHISPER_CORE_FILES:
+        (d / f).write_bytes(b"stub")
+    return d
+
+
 @pytest.mark.asyncio
 async def test_get_whisper_loads_from_app_data_dir(isolated_data_dir, monkeypatch) -> None:
     """加载路径必须是我们自己下载的目录——并且构造参数按实测签名钉住。"""
     from backend.pipeline.producers import asr
 
-    d = paths.whisper_model_dir("base")
-    d.mkdir(parents=True)
+    d = _write_whisper_model("base")
 
     seen: dict = {}
 
@@ -365,11 +373,6 @@ async def test_get_whisper_loads_from_app_data_dir(isolated_data_dir, monkeypatc
 
     monkeypatch.setattr(asr, "WhisperModel", fake_model)
     monkeypatch.setattr(asr, "_WHISPER_IMPORTED", True)
-
-    async def fake_ensure(force: bool = False):
-        return d
-
-    monkeypatch.setattr(asr, "ensure_model", fake_ensure)
     monkeypatch.setattr(asr, "_whisper_model", None)
     monkeypatch.setattr(asr, "_whisper_key", "")
 
@@ -386,15 +389,65 @@ async def test_get_whisper_loads_from_app_data_dir(isolated_data_dir, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_get_whisper_missing_model_fails_fast_without_downloading(
+    isolated_data_dir, monkeypatch
+) -> None:
+    """模型未就绪 → 立刻 AsrUnavailableError，且**一次网络都不该发生**。
+
+    v0.35 的修法：`_get_whisper` 不再调 `ensure_model()`。此前一次转写请求会悄悄
+    拉 148MB——产物级门禁实测首调 68.3s 越过 sim 的 60s 预算返回 000（契约要求
+    200 或 502），而且「点一次转写就下载」用户完全不知情。下载入口只有设置页那一个。
+    """
+    from backend.pipeline.producers import asr
+
+    called: list[bool] = []
+
+    async def spy_ensure(force: bool = False):
+        called.append(force)
+        return paths.whisper_model_dir("base")
+
+    monkeypatch.setattr(asr, "ensure_model", spy_ensure)
+    monkeypatch.setattr(asr, "_WHISPER_IMPORTED", True)
+    monkeypatch.setattr(asr, "_whisper_model", None)
+    monkeypatch.setattr(asr, "_whisper_key", "")
+    monkeypatch.setattr(
+        asr.alerts, "notify_once", lambda *a, **k: None
+    )  # 告警去 Telegram，不是本判据要验的东西
+
+    with pytest.raises(asr.AsrUnavailableError) as exc:
+        await asr._get_whisper()
+
+    # 文案必须指得出路（设置页入口），而不是只说「不可用」
+    assert "下载转写模型" in str(exc.value)
+    assert called == [], "未就绪路径仍在触发下载——这正是 v0.35 要拆掉的行为"
+
+
+@pytest.mark.asyncio
+async def test_get_whisper_missing_model_is_the_only_path_that_raises(
+    isolated_data_dir, monkeypatch
+) -> None:
+    """对照组：把核心文件铺齐，同一个调用就必须成功（防止修成「一律拒绝」）。"""
+    from backend.pipeline.producers import asr
+
+    _write_whisper_model("base")
+    monkeypatch.setattr(asr, "_WHISPER_IMPORTED", True)
+    monkeypatch.setattr(asr, "WhisperModel", lambda path, **_k: object())
+    monkeypatch.setattr(asr, "_whisper_model", None)
+    monkeypatch.setattr(asr, "_whisper_key", "")
+
+    model = await asr._get_whisper()
+    assert model is not None
+    assert asr._whisper_key.endswith(str(paths.whisper_model_dir("base")))
+
+
+@pytest.mark.asyncio
 async def test_switching_size_rebuilds_model(isolated_data_dir, monkeypatch) -> None:
     from backend.pipeline.producers import asr
 
     built: list[str] = []
 
-    async def fake_ensure(force: bool = False):
-        return paths.whisper_model_dir(asr.whisper_model_name())
-
-    monkeypatch.setattr(asr, "ensure_model", fake_ensure)
+    _write_whisper_model("base")
+    _write_whisper_model("small")
     monkeypatch.setattr(asr, "_WHISPER_IMPORTED", True)
     monkeypatch.setattr(
         asr, "WhisperModel", lambda path, **_k: built.append(str(path)) or object()
