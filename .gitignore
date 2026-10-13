@@ -39,3 +39,6 @@ Thumbs.db
 # ---- 打包固化产物（v0.21 P0，CI/本地重建） ----
 electron/backend-dist/
 build/pyinstaller/
+
+# 嵌套克隆的外部仓库：不属于 Hertz，且 git add -A 会把它们当 gitlink 收进来
+mdsea/
