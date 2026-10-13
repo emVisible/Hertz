@@ -18,7 +18,6 @@ from backend.models.pipeline import ResourceCooldown
 from backend.models.session import session_factory
 from backend.pipeline.publish_reliability import (
     COOLDOWN_PREFIX,
-    PublishThrottledError,
     backoff_seconds,
     clear_cooldown,
     cooldown_domain,
@@ -240,3 +239,123 @@ def test_cooldown_domain_is_namespaced() -> None:
     """限速与下载侧的冷却共用一张表，必须靠前缀区分用途。"""
     assert cooldown_domain("bilibili") == "publish:bilibili"
     assert cooldown_domain("bilibili") != "cdn.example.com"
+
+# ---------- 发布期查重：文字故事线此前完全没有闸（v0.38） ----------
+
+@pytest.fixture
+async def clean_items():
+    """清掉本文件造的条目——共享库，残留会串到别的文件。"""
+    from sqlalchemy import delete
+
+    from backend.models.item import Item
+    from backend.models.session import session_factory
+
+    async def _clean():
+        async with session_factory() as session:
+            await session.execute(
+                delete(Item).where(Item.source == "test"))
+            await session.commit()
+
+    await _clean()
+    yield
+    await _clean()
+
+
+async def _mk_item(**kw) -> str:
+    from backend.models.item import Item
+    from backend.models.session import session_factory
+
+    async with session_factory() as session:
+        row = Item(source="test", item_type="text_only", **kw)
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+        return str(row.id)
+
+
+@pytest.mark.asyncio
+async def test_published_title_duplicate_detected(clean_items):
+    """同标题的条目已经发出去了 → 判重。
+
+    这是 AI 原创故事通道唯一的一道闸：文字故事的 phash 显式为 None，发布闸里的
+    `if item.phash:` 对它不成立。
+    """
+    from backend.models.item import ItemStatus
+    from backend.pipeline.dedupe import find_published_title_duplicate
+
+    await _mk_item(source_id="pub-dup-1", status=ItemStatus.PUBLISHED, title="他在末班车上第一次哭了")
+
+    assert await find_published_title_duplicate("他在末班车上第一次哭了") is True
+    # 大小写与标点差异不应让它漏
+    assert await find_published_title_duplicate("他在末班车上第一次哭了！") is True
+    # 不同标题不算
+    assert await find_published_title_duplicate("另一个人讲的完全不同的故事") is False
+
+
+@pytest.mark.asyncio
+async def test_unpublished_item_does_not_trip_title_gate(clean_items):
+    """只比「已发布」——未发布的同标题条目不该拦住这一条。"""
+    from backend.models.item import ItemStatus
+    from backend.pipeline.dedupe import find_published_title_duplicate
+
+    await _mk_item(source_id="not-pub-1", status=ItemStatus.APPROVED, title="这一篇稿子还没有发出去")
+    assert await find_published_title_duplicate("这一篇稿子还没有发出去") is False
+
+
+@pytest.mark.asyncio
+async def test_title_gate_ignores_itself_on_republish(clean_items):
+    """重新发布同一条（改标题重发）不能被自己挡住。"""
+    import uuid as _uuid
+
+    from backend.models.item import ItemStatus
+    from backend.pipeline.dedupe import find_published_title_duplicate
+
+    rid = _uuid.UUID(await _mk_item(
+        source_id="self-pub-1", status=ItemStatus.PUBLISHED, title="同一个标题在这里"))
+
+    assert await find_published_title_duplicate("同一个标题在这里") is True
+    assert await find_published_title_duplicate("同一个标题在这里", exclude_id=rid) is False
+
+
+@pytest.mark.asyncio
+async def test_publish_gate_blocks_text_story_duplicate(clean_items):
+    """端到端：文字故事（phash=None）撞上已发布同名标题 → 发布被拒。
+
+    没有这条，用户会把重复内容真的发出去——账号是资产，重复投稿的代价
+    （限流乃至封号）远高于少发一条。
+
+    走的 target 是 `noop`：查询它自己就会跳过上传，我们只验**闸**。
+    """
+    from backend.factory.registry import ServiceRegistry
+    from backend.models.item import ItemStatus
+
+    await _mk_item(source_id="gate-dup", status=ItemStatus.PUBLISHED, title="同一个故事的两份稿子")
+    dup_id = await _mk_item(
+        source_id="gate-dup-2", status=ItemStatus.APPROVED, title="同一个故事的两份稿子")
+
+    svc = ServiceRegistry.get().pipeline
+    with pytest.raises(ValueError, match="duplicate detected"):
+        await svc.publish_one(dup_id, target="noop")
+
+
+def test_publish_gate_keeps_title_check_outside_phash_branch():
+    """标题指纹闸必须在 `if item.phash:` **之外**（源码级守卫）。
+
+    文字故事的 phash 显式为 None，而发布闸原本写成 `if item.phash: ...`——把闸
+    放在这个分支里，等于对整条文字产线（以及 AI 原创故事这条战略通道）**零查重**。
+
+    这类错误没有任何运行时报错：功能只是「悄悄不见了」，所以只能靠源码守卫钉住。
+    """
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parents[1] / "backend/pipeline/service_publish.py"
+    ).read_text(encoding="utf-8")
+    title_gate = src.index("find_published_title_duplicate")
+    phash_gate = src.index("find_phash_duplicate")
+    # 标题闸在文本上位于 phash 闸之后，且不在它的 if 分支缩进内
+    assert title_gate > phash_gate, "标题闸应独立于 phash 闸"
+    line = src[:title_gate].rsplit("\n", 1)[-1]
+    assert not line.lstrip().startswith(("if ", "elif ")), (
+        f"标题闸被条件包住了（{line.strip()!r}）——phash 为空的条目会绕过它"
+    )

@@ -9,7 +9,7 @@
 import re
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, true
 
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
@@ -40,6 +40,52 @@ def hamming_distance(a: str, b: str) -> int:
         xor = int(ca, 16) ^ int(cb, 16)
         distance += xor.bit_count()
     return distance
+
+
+async def find_published_title_duplicate(
+    title: str, exclude_id: object | None = None,
+) -> bool:
+    """**已发布**条目里有没有同标题指纹的——发布期的第二道闸（v0.38）。
+
+    ## 为什么需要它（phash 闸有个大洞）
+
+    发布闸原先是 `if item.phash: ...`。而文字故事的 phash 是**显式置空**的
+    （`producers/story.py`：「无原始画面，phash 无意义」），于是对整条文字产线
+    ——包括 AI 原创故事这条战略通道——**发布期零查重**。
+
+    评分阶段确实有标题指纹查重，但那是**另一次调用、另一些行**：
+    它比的是「近 7 天内 `score_total` 非空的条目」，而发布期真正该问的是
+    「这条是不是已经发出去了」。条目一旦发布就不再被评分，那道闸也就再也够不着它。
+
+    ## 与 phash 闸的关系
+
+    两道闸互补，不重复：phash 抓**同画面**（同一素材被发两次，标题可能完全不同），
+    标题指纹抓**同内容**（画面不同但标题一致，例如同一故事的两个译本）。
+    两道都要过。
+
+    ## 扫描范围比评分期那道宽
+
+    不限 `score_total`，因为要判的是「已经发出去过」，与它有没有分无关。
+    只看 PUBLISHED——那是「重复投稿」真正成立的范围。
+    """
+    key = normalize_title_key(title)
+    if len(key) < TITLE_MIN_LEN:
+        return False
+    cutoff = datetime.now(UTC) - timedelta(days=TITLE_WINDOW_DAYS)
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(Item.title)
+                .where(
+                    Item.created_at >= cutoff,
+                    Item.status == ItemStatus.PUBLISHED,
+                    Item.id != exclude_id if exclude_id is not None else true(),
+                )
+                .order_by(Item.created_at.desc())
+                .limit(TITLE_SCAN_LIMIT)
+            )
+        ).scalars().all()
+    return any(normalize_title_key(t) == key for t in rows if t)
 
 
 async def find_title_duplicate(title: str) -> bool:

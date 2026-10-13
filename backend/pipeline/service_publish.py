@@ -104,6 +104,20 @@ class PublishMixin:
                         f"duplicate detected: phash {item.phash} already published "
                         f"(近源成片已发布，禁止重复投稿)"
                     )
+
+            # 标题指纹闸（v0.38）：**与画面无关**，所以 phash 为空时照样有闸。
+            #
+            # 之前这道闸整个不存在于发布期，而文字故事的 phash 是显式置空的
+            # （producers/story.py「无原始画面，phash 无意义」）——于是 AI 原创
+            # 故事这条战略通道**发布期零查重**。账号是资产，重复投稿的代价
+            # （限流乃至封号）远高于少发一条。
+            from backend.pipeline.dedupe import find_published_title_duplicate
+
+            if await find_published_title_duplicate(item.title, exclude_id=item.id):
+                raise ValueError(
+                    "duplicate detected: 标题与已发布条目相同"
+                    "（内容重复，禁止重复投稿）"
+                )
             if selfmade:
                 script = dict(item.script_json or {})
                 script[sk.BILI_COPYRIGHT] = 1

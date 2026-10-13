@@ -13,11 +13,11 @@ LLM Provider（fast 池）。产出与 Reddit 文字帖同构的 RawPost
 选题提示注入 prompt；栏目化绑定（人设/题材池）在 M2 栏目实体接入。
 """
 
+import hashlib
 import json
 import logging
 import re
 import time
-import uuid
 
 from backend.ai.types import ChatMessage
 from backend.config import settings as app_settings
@@ -107,7 +107,16 @@ class AIStoryCollector(SourceCollector):
             title, story = await self._generate_once(ctx, theme, system_prompt)
             posts.append(
                 RawPost(
-                    source_id=uuid.uuid4().hex[:16],
+                    # 由**内容哈希**派生，不再随机（v0.38）。
+                    #
+                    # `(source, source_id)` 是应用级去重的主键，此前这里发的是
+                    # `uuid4()` ——所以**这条通道的去重从未生效过**：同一个故事
+                    # 被重新生成一次，就是一条全新的条目。
+                    # 改成标题+正文哈希后，同样的内容会落到同一个 source_id，
+                    # 采集层直接判重；标题略有差异的情形由发布期的标题指纹闸兜。
+                    source_id=hashlib.sha256(
+                        f"{title}\n{story}".encode()
+                    ).hexdigest()[:16],
                     title=title,
                     source_url="",
                     author="ai-original",
