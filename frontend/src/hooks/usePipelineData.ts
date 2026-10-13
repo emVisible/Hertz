@@ -82,7 +82,9 @@ export function usePipelineData() {
     queryKey: ['pipeline-queue', store.pipeline.preMaterial],
     queryFn: () =>
       pipelineApi.items(
-        'downloaded,scored,queued,approved,failed,rejected',
+        // v0.39：加 skipped——否则跳过的条目在界面上彻底消失。
+        // 「静默消失」和「谎报失败」是同一种偷懒的两面：真相被藏起来了。
+        'downloaded,scored,queued,approved,failed,rejected,skipped',
         500,
         { ...DEFAULT_PRE_FILTERS, material: preFilters.material },
       ),
@@ -172,6 +174,7 @@ export function usePipelineData() {
     stageApproved: stageGroups.approved ?? [],
     stageFailed: stageGroups.failed ?? [],
     stageRejected: stageGroups.rejected ?? [],
+    stageSkipped: stageGroups.skipped ?? [],
     stagePublished,
     tab,
     setTab: (v: string) => setPipeline({ tab: v }),

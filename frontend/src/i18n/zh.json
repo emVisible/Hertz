@@ -898,7 +898,7 @@
     "pendingProduce": "待制作",
     "hasCover": "有封面",
     "emptyPreReview": "暂无预处理数据",
-    "stageExceptions": "异常",
+    "stageExceptions": "异常内容（failed / rejected / skipped）",
     "rescheduleUpdated": "已更新 {{n}} 条过期排期为新的推荐时间",
     "tidAuto": "自动",
     "dims": {
@@ -1244,7 +1244,12 @@
     },
     "retryClassOverBudget": "有 {n} 条已超出重试上限，未自动重试。确认无误可点「强制重试」。",
     "retriedClassWithSkipped": "已重试 {n} 条，另有 {k} 条超出重试上限被跳过。",
-    "retryClassForce": "强制重试（无视重试上限）"
+    "retryClassForce": "强制重试（无视重试上限）",
+    "skipped": "已跳过",
+    "publishAnyway": "仍然发布",
+    "publishAnywayHint": "判重可能误判。确认与已发布内容确实不同再强行发布。",
+    "publishAnywayConfirm": "「{title}」与已发布内容重复（系统判定）。\n确认这是误判、仍要发布吗？重复投稿可能触发平台限流。",
+    "publishedAnyway": "已强制发布"
   },
   "canvas": {
     "tool": {

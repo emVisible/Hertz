@@ -36,6 +36,7 @@ export type ItemStatus =
   | 'published'
   | 'rejected'
   | 'failed'
+  | 'skipped'
 
 export type ProduceModule = 'passthrough' | 'voice' | 'subtitle' | 'translate' | 'mute'
 
@@ -478,9 +479,10 @@ export const pipelineApi = {
     api.delete<{ ok: boolean }>(`/api/pipeline/produce-templates/${id}`),
   updateMeta: (id: string, meta: Record<string, string | number | null>) =>
     api.put<{ id: string; ok: boolean }>(`/api/pipeline/items/${id}/meta`, meta),
-  publish: (id: string, selfmade = false, target = '', now = false) =>
+  /** `force=true` 无视判重闸（v0.39）：phash 容差会误判，人可以推翻它。 */
+  publish: (id: string, selfmade = false, target = '', now = false, force = false) =>
     api.post<{ id: string; status: string; noop?: boolean }>(
-      `/api/pipeline/items/${id}/publish?selfmade=${selfmade ? 1 : 0}&target=${encodeURIComponent(target)}&now=${now ? 1 : 0}`,
+      `/api/pipeline/items/${id}/publish?selfmade=${selfmade ? 1 : 0}&target=${encodeURIComponent(target)}&now=${now ? 1 : 0}&force=${force ? 1 : 0}`,
     ),
   /** 随机抽帧封面（v0.11.5）：视频内随机一帧 → 覆盖 cover_path。 */
   randomCover: (id: string) =>

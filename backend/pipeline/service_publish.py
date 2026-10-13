@@ -15,6 +15,7 @@ from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.pipeline.base import StepContext
 from backend.pipeline.board_store import clear_focus
+from backend.pipeline.dedupe import DuplicateContentError
 from backend.pipeline.errors import ItemNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -65,10 +66,56 @@ class PublishMixin:
             await session.commit()
         return {"id": str(item_id), "ok": True}
 
+    async def _assert_not_duplicate(self, item, *, force: bool) -> None:
+        """发布期判重闸（v0.39）。命中抛 `DuplicateContentError`。
+
+        **命中不是故障**：不投稿是系统的正确裁决，所以异常类型走 409 冲突，
+        由调用方落成 `skipped` 终态，而不是 FAILED。
+
+        `force=True` 是**人的**出口（phash 容差会误判——画面相近但不同的两条，
+        汉明距离也可能很小，此前这种误判把内容永久挡死且无从申诉）。自动发布
+        永不 force：系统的自动循环没资格推翻自己的规则。
+
+        两道闸互补：phash 抓**同画面**（同一素材被发两次，标题可能完全不同），
+        标题指纹抓**同内容**（画面不同但标题一致，例如同一故事的两个译本）。
+        """
+        if force:
+            return
+        from backend.pipeline.dedupe import (
+            DuplicateContentError,
+            find_phash_match,
+            find_published_title_match,
+        )
+
+        if item.phash:
+            match = await find_phash_match(item.phash, exclude_id=item.id)
+            if match is not None:
+                raise DuplicateContentError(
+                    f"近源成片已发布，禁止重复投稿（命中 #{match['id']}"
+                    f"{((' ' + match['title']) if match.get('title') else '')}）",
+                    matched_id=match["id"], matched_title=match.get("title"),
+                    gate="phash",
+                )
+
+        # 标题指纹闸（v0.38）：**与画面无关**，所以 phash 为空时照样有闸。
+        #
+        # 这道闸此前整个不存在于发布期，而文字故事的 phash 是显式置空的
+        # （producers/story.py「无原始画面，phash 无意义」）——于是 AI 原创故事
+        # 这条战略通道**发布期零查重**。账号是资产，重复投稿的代价（限流乃至
+        # 封号）远高于少发一条。
+        tmatch = await find_published_title_match(item.title, exclude_id=item.id)
+        if tmatch is not None:
+            raise DuplicateContentError(
+                f"标题与已发布条目相同，禁止重复投稿（命中 #{tmatch['id']}"
+                f"{((' ' + tmatch['title']) if tmatch.get('title') else '')}）",
+                matched_id=tmatch["id"], matched_title=tmatch.get("title"),
+                gate="title",
+            )
+
     async def publish_one(
         self, item_id: uuid.UUID, *,
         selfmade: bool = False, target: str | None = None, now: bool = False,
-        auto: bool = False,
+        auto: bool = False, force: bool = False,
     ) -> dict:
         """单条发布（审核通过后的人工操作）：执行 publisher 并落发布结果。
 
@@ -89,35 +136,40 @@ class PublishMixin:
             item = await session.get(Item, item_id)
             if item is None:
                 raise ItemNotFoundError(item_id)
-            if item.status not in (ItemStatus.APPROVED, ItemStatus.PUBLISHED):
+            # v0.39：`force` 额外允许从 `skipped` 终态发布——那是判重裁决的
+            # 出口，只能从那个状态发起（其它终态不放行：FAILED 的问题不是重复，
+            # REJECTED 是人的决定，不该被 force 顺手抹掉）。
+            allowed = (ItemStatus.APPROVED, ItemStatus.PUBLISHED)
+            if force:
+                allowed = allowed + (ItemStatus.SKIPPED,)
+            if item.status not in allowed:
                 raise InvalidItemStateError(
                     f"cannot publish item in state {item.status}"
                 )
-            # phash 去重闸门（v0.2.1，参考原项目 block_publish_duplicates）：
-            # 同源成片已被发布过 → 拒绝发布，避免重复投稿。
-            # v0.3.0：汉明距离 ≤5 容差（抽帧抖动/编码差异下同视频 phash 可翻转几位）
-            if item.phash:
-                from backend.pipeline.dedupe import find_phash_duplicate
-
-                if await find_phash_duplicate(item.phash, exclude_id=item.id):
-                    raise ValueError(
-                        f"duplicate detected: phash {item.phash} already published "
-                        f"(近源成片已发布，禁止重复投稿)"
-                    )
-
-            # 标题指纹闸（v0.38）：**与画面无关**，所以 phash 为空时照样有闸。
+            # 判重闸门（v0.39 统一）：命中抛 DuplicateContentError（409 冲突），
+            # 由调用方决定**跳过**——它不是故障。
             #
-            # 之前这道闸整个不存在于发布期，而文字故事的 phash 是显式置空的
-            # （producers/story.py「无原始画面，phash 无意义」）——于是 AI 原创
-            # 故事这条战略通道**发布期零查重**。账号是资产，重复投稿的代价
-            # （限流乃至封号）远高于少发一条。
-            from backend.pipeline.dedupe import find_published_title_duplicate
-
-            if await find_published_title_duplicate(item.title, exclude_id=item.id):
-                raise ValueError(
-                    "duplicate detected: 标题与已发布条目相同"
-                    "（内容重复，禁止重复投稿）"
+            # `force=True` 是**人的**出口：phash 容差会误判（画面相近但不同的
+            # 两条，汉明距离也可能很小），此前这种误判把内容永久挡死且无从申诉。
+            # 自动发布永远不 force——系统的自动循环没有资格推翻自己的规则。
+            try:
+                await self._assert_not_duplicate(item, force=force)
+            except DuplicateContentError as exc:
+                # 落终态（v0.39）：**在这里**记录「跳过」，手动与自动两条路径共用
+                # 同一处语义。写在各自的调用方里，迟早会写歪其中一个。
+                item.status = ItemStatus.SKIPPED
+                item.error = f"publish skipped: {exc}"
+                item.error_class = ""  # 不是失败分类，别进失败看板
+                item.scheduled_at = None  # 排期对它已无意义，别留着占日历
+                await session.commit()
+                self.hub.publish(
+                    "pipeline",
+                    {"type": "item", "item_id": str(item.id), "status": "skipped",
+                     "reason": exc.message, "gate": exc.gate,
+                     "matched_id": exc.matched_id},
                 )
+                raise
+
             if selfmade:
                 script = dict(item.script_json or {})
                 script[sk.BILI_COPYRIGHT] = 1

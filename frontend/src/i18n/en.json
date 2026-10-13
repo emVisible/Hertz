@@ -883,7 +883,7 @@
     "pendingProduce": "Pending produce",
     "hasCover": "Has cover",
     "emptyPreReview": "Nothing in pre-process",
-    "stageExceptions": "Exceptions",
+    "stageExceptions": "Exceptions (failed / rejected / skipped)",
     "rescheduleUpdated": "Updated {{n}} expired schedules to fresh recommended slots",
     "tidAuto": "auto",
     "dims": {
@@ -1229,7 +1229,12 @@
     },
     "retryClassOverBudget": "{n} items are over the retry limit and were not retried. Use “Force retry” if you are sure.",
     "retriedClassWithSkipped": "Retried {n}; {k} skipped for exceeding the retry limit.",
-    "retryClassForce": "Force retry (ignore the retry limit)"
+    "retryClassForce": "Force retry (ignore the retry limit)",
+    "skipped": "Skipped",
+    "publishAnyway": "Publish anyway",
+    "publishAnywayHint": "Dedupe can misjudge. Publish only if you are sure it differs.",
+    "publishAnywayConfirm": "\"{title}\" looks like already-published content.\nPublish anyway? Duplicate posts may get rate-limited.",
+    "publishedAnyway": "Published anyway"
   },
   "canvas": {
     "tool": {

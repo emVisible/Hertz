@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, true
 
+from backend.errors import HertzError
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 
@@ -23,6 +24,28 @@ TITLE_SCAN_LIMIT = 400
 PHASH_MAX_DISTANCE = 5
 
 _PUNCT_RE = re.compile(r"[\W_]+", re.UNICODE)
+
+
+class DuplicateContentError(HertzError):
+    """发布期判重命中（v0.39）。
+
+    **这不是故障**，是系统的正确裁决：这条内容与已发布（或在途）的某条重复，
+    按 B 闸规则不投稿。此前它以 `ValueError` 抛出，最终被 auto tick 当成
+    「发布失败」落库——用户于是看到一条他从未发布过的内容被标成发布失败，
+    它还混进失败看板与失败分类分布，并占掉重试预算去反复撞这道**确定性**的闸。
+
+    继承 `HertzError` 走 409：语义上就是冲突，不是 5xx 故障。
+
+    带 `matched_id` 是为了可追溯——「为什么跳过我」必须有答案，光说「重复了」
+    等于让人自己去猜撞上了哪条。
+    """
+
+    def __init__(self, message: str, *, matched_id: str | None = None,
+                 matched_title: str | None = None, gate: str = "phash") -> None:
+        super().__init__("duplicate_content", message)
+        self.matched_id = matched_id
+        self.matched_title = matched_title
+        self.gate = gate
 
 
 def normalize_title_key(title: str) -> str:
@@ -68,14 +91,23 @@ async def find_published_title_duplicate(
     不限 `score_total`，因为要判的是「已经发出去过」，与它有没有分无关。
     只看 PUBLISHED——那是「重复投稿」真正成立的范围。
     """
+    match = await find_published_title_match(title, exclude_id=exclude_id)
+    return match is not None
+
+
+async def find_published_title_match(title: str, exclude_id=None):
+    """v0.39：命中则返回那条已发布条目（id + 标题），否则 None。
+
+    与 phash 闸同一个理由：判重命中时要能回答「撞上了哪一条」。
+    """
     key = normalize_title_key(title)
     if len(key) < TITLE_MIN_LEN:
-        return False
+        return None
     cutoff = datetime.now(UTC) - timedelta(days=TITLE_WINDOW_DAYS)
     async with session_factory() as session:
         rows = (
             await session.execute(
-                select(Item.title)
+                select(Item.id, Item.title)
                 .where(
                     Item.created_at >= cutoff,
                     Item.status == ItemStatus.PUBLISHED,
@@ -84,8 +116,11 @@ async def find_published_title_duplicate(
                 .order_by(Item.created_at.desc())
                 .limit(TITLE_SCAN_LIMIT)
             )
-        ).scalars().all()
-    return any(normalize_title_key(t) == key for t in rows if t)
+        ).all()
+    for rid, rtitle in rows:
+        if rtitle and normalize_title_key(rtitle) == key:
+            return {"id": str(rid), "title": rtitle}
+    return None
 
 
 async def find_title_duplicate(title: str) -> bool:
@@ -110,18 +145,38 @@ async def find_title_duplicate(title: str) -> bool:
     return any(normalize_title_key(t) == key for t in rows if t)
 
 
-async def find_phash_duplicate(phash: str, exclude_id=None) -> bool:
-    """汉明距离 ≤5 的已入库 phash 判重（QUEUED/APPROVED/PUBLISHED/REJECTED）。"""
+async def find_phash_match(phash: str, exclude_id=None):
+    """返回汉明距离 ≤PHASH_MAX_DISTANCE 的那条（QUEUED/APPROVED/PUBLISHED/REJECTED）。
+
+    v0.39：返回**命中项**而不是 bool。判重命中时要能回答「撞上了哪一条」——
+    只说「重复了」等于让人自己猜。
+
+    ⚠️ 容差 `PHASH_MAX_DISTANCE` 会误判：画面相近但不同的两条（例如同系列
+    的固定机位空镜）汉明距离可以很小。这类误判此前没有任何出口（内容被永久
+    挡住），现在由 `publish_one(force=True)` 兜底。
+    """
     if not phash or len(phash) < 16:
-        return False
+        return None
     statuses = (
         ItemStatus.QUEUED, ItemStatus.APPROVED, ItemStatus.PUBLISHED, ItemStatus.REJECTED
     )
     async with session_factory() as session:
-        stmt = select(Item.phash).where(
+        stmt = select(Item.id, Item.phash, Item.title).where(
             Item.phash.isnot(None), Item.phash != "", Item.status.in_(statuses)
         )
         if exclude_id is not None:
             stmt = stmt.where(Item.id != exclude_id)
-        rows = (await session.execute(stmt)).scalars().all()
-    return any(hamming_distance(phash, p) <= PHASH_MAX_DISTANCE for p in rows if p)
+        rows = (await session.execute(stmt)).all()
+    for rid, rphash, rtitle in rows:
+        if rphash and hamming_distance(phash, rphash) <= PHASH_MAX_DISTANCE:
+            return {"id": str(rid), "title": rtitle, "phash": rphash}
+    return None
+
+
+async def find_phash_duplicate(phash: str, exclude_id=None) -> bool:
+    """汉明距离 ≤PHASH_MAX_DISTANCE 的已入库 phash 判重（QUEUED/APPROVED/PUBLISHED/REJECTED）。
+
+    v0.39：保留 bool 形态供既有调用/测试使用；需要知道撞上了谁时用
+    `find_phash_match`。
+    """
+    return await find_phash_match(phash, exclude_id=exclude_id) is not None

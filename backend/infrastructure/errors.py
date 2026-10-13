@@ -18,6 +18,10 @@ _CODE_STATUS = {
     "not_found": 404,
     "already_running": 409,
     "invalid_plan": 422,
+    # 发布期判重命中（v0.39）：409 冲突——不是 5xx 故障，是「这条与已发内容重复」。
+    # 早先它走 ValueError → 502「发布失败」，于是用户看到一条他从未发布过的
+    # 内容被告知「发布失败」。
+    "duplicate_content": 409,
 }
 
 

@@ -197,9 +197,9 @@ export function ExceptionsTab({
                 </div>
               )}
               <StageList
-                items={[...p.stageRejected, ...p.stageFailed]}
+                items={[...p.stageRejected, ...p.stageFailed, ...p.stageSkipped]}
                 emptyText={t('console.noExceptions')}
-                total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0)}
+                total={(p.counts.rejected ?? 0) + (p.counts.failed ?? 0) + (p.counts.skipped ?? 0)}
                 renderRow={(item) => (
                   <StageItemRow
                     item={item}
@@ -216,7 +216,20 @@ export function ExceptionsTab({
                         >
                           {t('console.retranslate')}
                         </Button>
-                        {item.status === 'failed' ? (
+                        {item.status === 'skipped' ? (
+                          /* 跳过的条目不给「重试」：判重是**确定性**判定，
+                             重试一万次还是撞同一道闸。给的是推翻它的出口。 */
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            loading={p.busy[item.id]?.action === 'retry'}
+                            disabled={!!p.busy[item.id]}
+                            onClick={() => void p.publishAnyway(item)}
+                            title={t('console.publishAnywayHint')}
+                          >
+                            {t('console.publishAnyway')}
+                          </Button>
+                        ) : item.status === 'failed' ? (
                           <Button
                             size="sm"
                             variant="ghost"

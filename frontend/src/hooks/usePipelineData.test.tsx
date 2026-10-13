@@ -40,6 +40,10 @@ const wrapper = ({ children }: { children: ReactNode }) => {
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>
 }
 
+/** 已评分/未加工段的请求状态列表。v0.39 加了 skipped：判重跳过的条目
+ *  也在这段里，否则它在界面上彻底消失（静默消失和谎报失败一样会藏住真相）。 */
+const QUEUE_STATUS = 'downloaded,scored,queued,approved,failed,rejected,skipped'
+
 describe('usePipelineData 的三轴接缝', () => {
   beforeEach(() => {
     itemsCalls.length = 0
@@ -111,14 +115,13 @@ describe('usePipelineData 的三轴接缝', () => {
     const { result } = renderHook(() => usePipelineData(), { wrapper })
     await waitFor(() => expect(itemsCalls.length).toBeGreaterThan(0))
 
-    const queueStatus = 'downloaded,scored,queued,approved,failed,rejected'
     // 先确认默认时后两段请求确实带着默认 axes（而不是压根没传第三参）
-    const before = itemsCalls.filter((c) => c[0] === queueStatus).pop()
+    const before = itemsCalls.filter((c) => c[0] === QUEUE_STATUS).pop()
     expect(before?.[2]).toMatchObject({ material: 'all' })
 
     act(() => result.current.setPreFilters({ preMaterial: 'video' }))
     await waitFor(() => {
-      const after = itemsCalls.filter((c) => c[0] === queueStatus).pop()
+      const after = itemsCalls.filter((c) => c[0] === QUEUE_STATUS).pop()
       expect(after?.[2]).toMatchObject({ material: 'video' })
     })
   })
@@ -131,7 +134,7 @@ describe('usePipelineData 的三轴接缝', () => {
     )
     await waitFor(() => {
       const queue = itemsCalls
-        .filter((c) => c[0] === 'downloaded,scored,queued,approved,failed,rejected')
+        .filter((c) => c[0] === QUEUE_STATUS)
         .pop()
       expect(queue?.[2]).toMatchObject({ material: 'image', theme: 'all' })
     })

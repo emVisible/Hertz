@@ -172,6 +172,22 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
     await runStepOnly(stepName, channel)
   }
 
+  /** 强制发布被判重跳过的条目（v0.39）——**人的**决定。
+   *
+   *  判重是系统的裁决，但 phash 容差会误判（画面相近但不同的两条）。没有这个
+   *  出口时，误判 = 内容永久失去，而系统还反复告诉用户「这是重复」。
+   */
+  async function publishAnyway(item: PipelineItem) {
+    if (!window.confirm(t('console.publishAnywayConfirm', { title: item.title }))) return
+    try {
+      await withBusy(item, 'retry', () => pipelineApi.publish(item.id, false, '', false, true))
+      toast(t('console.publishedAnyway'), 'success')
+      refresh()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   async function act(
     item: PipelineItem,
     action: 'approve' | 'reject' | 'retry' | 'requeue' | 'retranslate',
@@ -463,6 +479,7 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
     uploadCover,
     randomCover,
     retryClass,
+    publishAnyway,
     backToPrep,
     rescheduleExpired,
     setProduceOptions,

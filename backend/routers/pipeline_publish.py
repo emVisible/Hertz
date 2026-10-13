@@ -78,12 +78,24 @@ async def set_publish_stats(item_id: uuid.UUID, body: PublishStatsBody) -> dict:
 
 
 @router.post("/items/{item_id}/publish")
-async def publish_item(item_id: uuid.UUID, selfmade: int = 0, target: str = "", now: int = 0):
+async def publish_item(
+    item_id: uuid.UUID, selfmade: int = 0, target: str = "", now: int = 0,
+    force: int = 0,
+):
     """发布：404/409 由全局 handler 映射；执行失败（缺 cookie/文件等）→ 502。
-    v0.11.5：now=1（立即发布）→ 清除 scheduled_at 按当前时间上传。"""
+    v0.11.5：now=1（立即发布）→ 清除 scheduled_at 按当前时间上传。
+
+    v0.39：`force=1` 无视判重闸。phash 容差会误判（画面相近但不同的两条，
+    汉明距离也可能很小），此前这种误判把内容永久挡死且无从申诉——系统的
+    自动循环没资格推翻自己的规则，但**人**可以，且必须能。
+
+    判重命中走 409（DuplicateContentError），不再是 502「发布失败」：
+    他从未发布过任何东西，不该被告知发布失败。
+    """
     try:
         return await _pipe().publish_one(
-            item_id, selfmade=bool(selfmade), target=target.strip() or None, now=bool(now)
+            item_id, selfmade=bool(selfmade), target=target.strip() or None,
+            now=bool(now), force=bool(force),
         )
     except HertzError:
         raise

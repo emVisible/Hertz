@@ -12,9 +12,12 @@ retry/backoff/sleep——一次网络抖动 = 一次已经被消费掉的调度�
 
 from __future__ import annotations
 
+from uuid import UUID, uuid4
+
 import pytest
 from sqlalchemy import select
 
+from backend.config import runtime_config
 from backend.models.item import Item, ItemStatus
 from backend.models.pipeline import ResourceCooldown
 from backend.models.session import session_factory
@@ -342,7 +345,11 @@ async def test_publish_gate_blocks_text_story_duplicate(clean_items):
         source_id="gate-dup-2", status=ItemStatus.APPROVED, title="同一个故事的两份稿子")
 
     svc = ServiceRegistry.get().pipeline
-    with pytest.raises(ValueError, match="duplicate detected"):
+    # v0.39：判重命中改抛 DuplicateContentError（409 冲突），不再是 ValueError。
+    # 断言文案里必须带上「重复」——文案是这个错误唯一会被人看到的东西。
+    from backend.pipeline.dedupe import DuplicateContentError
+
+    with pytest.raises(DuplicateContentError, match="重复投稿"):
         await svc.publish_one(dup_id, target="noop")
 
 
@@ -359,8 +366,11 @@ def test_publish_gate_keeps_title_check_outside_phash_branch():
     src = (
         Path(__file__).resolve().parents[1] / "backend/pipeline/service_publish.py"
     ).read_text(encoding="utf-8")
-    title_gate = src.index("find_published_title_duplicate")
-    phash_gate = src.index("find_phash_duplicate")
+    # v0.39：闸门抽进 `_assert_not_duplicate`，函数名也换成了带命中项的
+    # `*_match` 版本（返回撞上了哪条，而不是一个 bool）。守卫跟着改名，
+    # 它要护的**性质**没变。
+    title_gate = src.index("find_published_title_match")
+    phash_gate = src.index("find_phash_match")
     # 标题闸在文本上位于 phash 闸之后，且不在它的 if 分支缩进内
     assert title_gate > phash_gate, "标题闸应独立于 phash 闸"
     line = src[:title_gate].rsplit("\n", 1)[-1]
@@ -442,6 +452,17 @@ def test_auto_publish_branch_does_not_hardcode_publish_class():
         "发布失败又退回写死 publish——失败看板将无法回答「为什么发不出去」"
     )
     assert "classify_error(" in src, "应当用 classify_error 归类"
+
+
+def _uniq(prefix: str) -> str:
+    """每次运行都不重名的标题。
+
+    发布期标题指纹闸会扫**全库**的 PUBLISHED 行（那正是「重复投稿」成立的
+    范围）。共享测试库里别的文件漏下的已发布行会撞上固定标题——于是这条测试
+    在单跑时绿、全量时红，且红的原因与被测行为无关。唯一的标题把这种
+    交叉污染从判据里彻底移除。
+    """
+    return f"{prefix} {uuid4().hex[:12]}"
 
 
 async def _clear_failed(*classes: str) -> None:
@@ -527,7 +548,6 @@ async def test_failure_distribution_counts_publish_only(client, clean_items):
     不加限定，界面上的「近 7 天发布失败」会报出「视频处理失败 ×4」——
     一个会说谎的指标比没有指标更糟，它让人去查错的方向。
     """
-    from backend.models.item import Item, ItemStatus
 
     async with session_factory() as session:
         # 制作阶段挂掉的 ffmpeg：error 没有发布前缀，只有它该被排除
@@ -549,3 +569,167 @@ async def test_failure_distribution_counts_publish_only(client, clean_items):
     assert "ffmpeg" not in dist, (
         f"非发布阶段的失败混进了发布失败分布：{dist}"
     )
+
+
+# ---------- 判重命中是「跳过」，不是「发布失败」（v0.39） ----------
+
+@pytest.mark.asyncio
+async def test_auto_publish_duplicate_is_skipped_not_failed(clean_items):
+    """用户报的现象：从未发布过的内容被提示「发布失败：duplicate detected」。
+
+    判重命中是**系统的正确裁决**——不投稿就是对的。把它记成 FAILED 会同时
+    骗过四处：条目状态、失败看板、失败分类分布、重试预算。而重试预算花在这
+    上尤其荒谬：闸的结论是**确定性**的，重试一万次还是同一条近源成片。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from backend.factory.registry import ServiceRegistry
+    from backend.pipeline.publish_queue import PHASE_READY
+
+    svc = ServiceRegistry.get().pipeline
+    before = dict(runtime_config.load())
+    try:
+        runtime_config.save({
+            "pipeline_auto_publish": True,
+            "pipeline_auto_promote_daily": 0,
+            "pipeline_auto_publish_daily_limit": 10,
+        })
+        # 画面闸：待发布条目**自己也要有 phash**，否则闸根本走不到
+        await _mk_item(source_id="dup-pub", status=ItemStatus.PUBLISHED,
+                       title=_uniq("已发布的原片"), phash="a1b2c3d4e5f60718")
+        dup = await _mk_item(
+            source_id="dup-new", status=ItemStatus.APPROVED, title=_uniq("近源新片"),
+            phash="a1b2c3d4e5f60718",
+            scheduled_at=datetime.now(UTC) - timedelta(minutes=1),
+        )
+        await svc.enqueue(UUID(dup), PHASE_READY)
+
+        result = await svc.auto_publish_tick()
+
+        assert result["failed"] == 0, "判重不是失败"
+        assert result["skipped"] == 1, f"应记为跳过，实际 {result}"
+
+        async with session_factory() as session:
+            row = (await session.execute(
+                select(Item).where(Item.source_id == "dup-new"))).scalar_one()
+            assert row.status == ItemStatus.SKIPPED, f"实际 {row.status}"
+            assert row.retry_count == 0, "确定性判定不该消耗重试预算"
+            assert row.error_class == "", "不是失败分类，不该进失败看板"
+
+        # 关键：它不会再被 due 查询捞起（只捞 APPROVED），所以下一轮不会重复处理
+        result2 = await svc.auto_publish_tick()
+        assert result2["skipped"] == 0, "跳过的条目不该被反复捞起"
+    finally:
+        runtime_config.save(before)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_publish_returns_409_not_502(client, clean_items):
+    """手动点发布撞判重：409 冲突，不是 502「发布失败」。
+
+    他从未上传过任何东西。502 会让界面把这件事显示成红色故障，并诱导用户
+    去查 cookie、检查网络、重试——而正确答案是「这条和已发布的内容重复」。
+    """
+    await _mk_item(source_id="dup-pub2", status=ItemStatus.PUBLISHED,
+                   title=_uniq("原片二"), phash="0123456789abcdef")
+    iid = await _mk_item(source_id="dup-new2", status=ItemStatus.APPROVED,
+                         title=_uniq("新片二"), phash="0123456789abcdef")
+
+    r = await client.post(f"/api/pipeline/items/{iid}/publish")
+    assert r.status_code == 409, f"判重应是 409 冲突，实际 {r.status_code} {r.text[:120]}"
+    body = r.json()
+    assert body.get("code") == "duplicate_content"
+
+    # 条目落终态 skipped，且不占重试预算
+    async with session_factory() as session:
+        row = (await session.execute(
+            select(Item).where(Item.source_id == "dup-new2"))).scalar_one()
+        assert row.status == ItemStatus.SKIPPED, f"实际 {row.status}"
+        assert row.retry_count == 0, "确定性判定不该消耗重试预算"
+        assert row.error_class == "", "不是失败分类，不该进失败看板"
+
+
+@pytest.mark.asyncio
+async def test_skipped_item_absent_from_failure_board(client, clean_items):
+    """跳过不得出现在失败分类分布里——那正是「为什么发不出去」的答案位。"""
+
+    await _mk_item(source_id="dup-pub3", status=ItemStatus.PUBLISHED,
+                   title=_uniq("原片三"), phash="aaaabbbbccccdddd")
+    iid = await _mk_item(source_id="dup-new3", status=ItemStatus.APPROVED,
+                         title=_uniq("新片三"), phash="aaaabbbbccccdddd")
+    await client.post(f"/api/pipeline/items/{iid}/publish")
+
+    # 对着**真实**出口断言（先前写成 `/board?view=exceptions`，而那条路由根本
+    # 不存在——断言因此恒真，是条假绿测试）。
+    counts = (await client.get("/api/pipeline/failures")).json()
+    assert "publish" not in counts, f"跳过混进了失败分类看板：{counts}"
+
+    failed_items = (await client.get("/api/pipeline/items?status=failed&limit=100")).json()
+    assert not any(i.get("source_id") == "dup-new3" for i in failed_items), \
+        "跳过的条目被当成失败条目列了出来"
+
+    # 但它必须**看得见**——静默消失和谎报失败一样，都是把真相藏起来。
+    skipped_items = (await client.get("/api/pipeline/items?status=skipped&limit=100")).json()
+    assert any(i.get("source_id") == "dup-new3" for i in skipped_items), \
+        "跳过的条目无处可查：它既不是失败，也没出现在任何地方"
+
+
+@pytest.mark.asyncio
+async def test_force_overrides_duplicate_gate(client, clean_items):
+    """误判要有人能推翻：phash 容差会把画面相近但不同的两条判成重复。
+
+    没有出口时，误判等于永久失去这条内容——用户只能看着它卡住，且系统
+    反复告诉他「这是重复」。`force=1` 是**人的**决定。
+    """
+
+    await _mk_item(source_id="dup-pub4", status=ItemStatus.PUBLISHED,
+                   title=_uniq("原片四"), phash="1111222233334444")
+    iid = await _mk_item(source_id="dup-new4", status=ItemStatus.APPROVED,
+                         title=_uniq("新片四"), phash="1111222233334444")
+
+    r = await client.post(f"/api/pipeline/items/{iid}/publish?force=1")
+    assert r.status_code == 200, f"force 应放行，实际 {r.status_code} {r.text[:120]}"
+    async with session_factory() as session:
+        row = (await session.execute(
+            select(Item).where(Item.source_id == "dup-new4"))).scalar_one()
+        assert row.status == ItemStatus.PUBLISHED
+
+
+@pytest.mark.asyncio
+async def test_force_publish_from_skipped_state(client, clean_items):
+    """跳过是终态，但 force 要能从**那个状态**发起——否则出口只存在于文档里。
+
+    误判发生时，条目已经在 `skipped`。若 force 只接受 APPROVED，用户看到的
+    就是一个关不掉的死结：内容被挡住，而「仍然发布」按钮永远报错。
+    """
+    from backend.models.item import Item, ItemStatus
+
+    await _mk_item(source_id="dup-pub5", status=ItemStatus.PUBLISHED,
+                   title=_uniq("原片五"), phash="5555666677778888")
+    iid = await _mk_item(source_id="dup-new5", status=ItemStatus.APPROVED,
+                         title=_uniq("新片五"), phash="5555666677778888")
+
+    assert (await client.post(f"/api/pipeline/items/{iid}/publish")).status_code == 409
+    r = await client.post(f"/api/pipeline/items/{iid}/publish?force=1")
+    assert r.status_code == 200, f"跳过态应能强制发布，实际 {r.status_code} {r.text[:120]}"
+    async with session_factory() as session:
+        row = (await session.execute(
+            select(Item).where(Item.source_id == "dup-new5"))).scalar_one()
+        assert row.status == ItemStatus.PUBLISHED
+
+
+@pytest.mark.asyncio
+async def test_force_does_not_resurrect_rejected_or_failed(clean_items):
+    """force 只放行「判重跳过」，不该顺手复活其它终态。
+
+    FAILED 的问题不是重复（可能是 cookie 过期），REJECTED 是人的决定。
+    一个「什么都能强推」的开关等于没有状态机。
+    """
+    from backend.errors import HertzError
+    from backend.factory.registry import ServiceRegistry
+
+    svc = ServiceRegistry.get().pipeline
+    for src, st in (("force-rej", "rejected"), ("force-fail", "failed")):
+        iid = await _mk_item(source_id=src, status=st, title=_uniq(src))
+        with pytest.raises(HertzError):
+            await svc.publish_one(UUID(iid), force=True)

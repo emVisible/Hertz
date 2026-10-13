@@ -20,6 +20,7 @@ const STATUS_KEYS: Record<string, string> = {
   published: 'console.published',
   rejected: 'console.rejected',
   failed: 'console.failed',
+  skipped: 'console.skipped',
 }
 
 /** 素材类型（对齐后端 `models/item.ItemType`）。 */

@@ -27,6 +27,8 @@ export interface PipelineViewProps {
   stageApproved: ReturnType<typeof usePipelineExecution>['stageApproved']
   stageFailed: ReturnType<typeof usePipelineExecution>['stageFailed']
   stageRejected: ReturnType<typeof usePipelineExecution>['stageRejected']
+  /** v0.39：判重跳过的条目（终态，但不是故障） */
+  stageSkipped: ReturnType<typeof usePipelineExecution>['stageSkipped']
   stagePublished: ReturnType<typeof usePipelineExecution>['stagePublished']
   tab: string
   setTab: (v: string) => void
@@ -50,6 +52,8 @@ export interface PipelineViewProps {
   // `queue_phase` 字段与后端 `POST /items/{id}/queue` 都还在，只是界面上喂不进去。
   /** v0.38：force=true 无视重试上限——人的决定，与系统自动循环不同。 */
   retryClass: (cls: string, n: number, force?: boolean) => void
+  /** v0.39：强制发布被判重跳过的条目（人的决定） */
+  publishAnyway: (item: PipelineItem) => void
   backToPrep: (item: PipelineItem) => void
   batchAction: (action: 'approve' | 'reject' | 'back_to_prep' | 'requeue', ids: string[]) => void
   rescheduleExpired: () => Promise<void>
@@ -95,7 +99,7 @@ export const PIPELINE_TABS = [
   { id: 'workshop', labelKey: 'console.workshop' },
   { id: 'preReview', labelKey: 'console.stagePreReview', countKeys: ['discovered', 'downloaded', 'scored'] },
   { id: 'inReview', labelKey: 'console.stageAudit', countKeys: ['queued'] },
-  { id: 'exceptions', labelKey: 'console.stageExceptions', countKeys: ['failed', 'rejected'] },
+  { id: 'exceptions', labelKey: 'console.stageExceptions', countKeys: ['failed', 'rejected', 'skipped'] },
 ] satisfies Array<{
   id: PipelineTabId
   labelKey: string

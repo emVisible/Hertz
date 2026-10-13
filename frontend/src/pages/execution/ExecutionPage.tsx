@@ -94,6 +94,7 @@ export function ExecutionPage() {
           statusJob={pipeline.status?.job ?? ''}
           counts={pipeline.counts}
           stageError={pipeline.stageError}
+          stageSkipped={pipeline.stageSkipped}
           refetchStage={pipeline.refetchStage}
           preFilters={pipeline.preFilters}
           discoveredFacets={pipeline.discoveredFacets}
@@ -123,6 +124,7 @@ export function ExecutionPage() {
           uploadCover={pipeline.uploadCover}
           randomCover={pipeline.randomCover}
           retryClass={pipeline.retryClass}
+          publishAnyway={pipeline.publishAnyway}
           backToPrep={pipeline.backToPrep}
           batchAction={pipeline.batchAction}
           rescheduleExpired={pipeline.rescheduleExpired}

@@ -5,6 +5,7 @@
 """
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
 
@@ -201,12 +202,11 @@ async def test_auto_publish_failure_marks_failed_not_blocking() -> None:
     from datetime import UTC, datetime, timedelta
 
     svc = _svc()
-    # bad：phash 与已发布条目重复 → publish_one 去重闸门抛错（tick 标记 failed）
-    await _make_item(
-        status=ItemStatus.PUBLISHED, source_id="dup-1",
-        phash="a" * 32,
-    )
-    bad = await _make_item(source_id="bad-1", phash="a" * 32)
+    # v0.39：这条测试的本意是「**失败**不阻塞后续条目」，不是「判重会失败」。
+    # 此前它靠「phash 重复」制造失败，等于把「判重=失败」这个 v0.39 判定为
+    # bug 的语义焊进了断言里——修 bug 就得删测试，而它护的「失败隔离」是
+    # 真价值，不该跟着删。所以改成用**真正的**发布失败。
+    bad = await _make_item(source_id="bad-1")
     await svc.enqueue(bad.id, PHASE_READY)
     good = await _make_item(source_id="good-1")
     await svc.enqueue(good.id, PHASE_READY)
@@ -223,12 +223,30 @@ async def test_auto_publish_failure_marks_failed_not_blocking() -> None:
         "pipeline_auto_promote_daily": 0,
         "pipeline_auto_publish_daily_limit": 5,
     })
-    result = await svc.auto_publish_tick()
+    # 只有 bad 真的发布失败（传输层错误）；good 正常走完
+    from backend.pipeline.publishers.router import PUBLISHERS
+
+    original = PUBLISHERS["noop"].publish
+
+    async def _flaky(ctx, item, *a, **kw):
+        if getattr(item, "source_id", "") == "bad-1":
+            # 403 = cookie 过期：明确不可重试，且能被 classify_error 认出来。
+            # （没选 502：分类器不认它，会落进 publish 桶——那是另一件事，
+            #  不该混在这条测试里顺手改掉。）
+            raise RuntimeError("HTTP Error 403: Forbidden")
+        return await original(ctx, item, *a, **kw)
+
+    PUBLISHERS["noop"].publish = _flaky
+    try:
+        result = await svc.auto_publish_tick()
+    finally:
+        PUBLISHERS["noop"].publish = original
+
     assert result["failed"] == 1
     assert result["published"] == 1  # 单条失败不阻塞后续
     bad_row = await _fetch(bad.id)
     assert bad_row.status == ItemStatus.FAILED
-    assert bad_row.error_class == "publish"
+    assert bad_row.error_class == "blocked", "按文本归类，不是一律写死 publish"
     good_row = await _fetch(good.id)
     assert good_row.status == ItemStatus.PUBLISHED
     assert (good_row.publish_json or {}).get("auto") is True
@@ -329,3 +347,44 @@ async def test_set_priority_assigns_descending_and_pending_respects_it() -> None
 async def test_priority_endpoint_validation(client) -> None:
     empty = await client.post("/api/pipeline/items/priority", json={"ordered_ids": []})
     assert empty.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_auto_publish_duplicate_skipped_not_blocking() -> None:
+    """判重跳过的条目同样不得阻塞后续——它是「不投稿」，不是「发不出去」。
+
+    与 `test_auto_publish_failure_marks_failed_not_blocking` 同一条性质：
+    一条条目的结果不能决定后面的条目能不能发。区别只在**结果叫什么**：
+    跳过 vs 失败。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    svc = _svc()
+    before = dict(runtime_config.load())
+    try:
+        runtime_config.save({
+            "pipeline_auto_publish": True,
+            "pipeline_auto_promote_daily": 0,
+            "pipeline_auto_publish_daily_limit": 5,
+        })
+        await _make_item(status=ItemStatus.PUBLISHED, source_id="dupp-1", phash="b" * 32)
+        dup = await _make_item(source_id="dupx-1", phash="b" * 32,
+                               title=f"近源新片 {uuid4().hex[:8]}")
+        await svc.enqueue(dup.id, PHASE_READY)
+        good = await _make_item(source_id="goodx-1", title=f"正常条目 {uuid4().hex[:8]}")
+        await svc.enqueue(good.id, PHASE_READY)
+        async with session_factory() as session:
+            dup_row = await session.get(Item, dup.id)
+            dup_row.scheduled_at = datetime.now(UTC) - timedelta(minutes=5)
+            good_row = await session.get(Item, good.id)
+            good_row.scheduled_at = datetime.now(UTC) - timedelta(minutes=1)
+            await session.commit()
+
+        result = await svc.auto_publish_tick()
+        assert result["skipped"] == 1
+        assert result["failed"] == 0, "跳过不是失败"
+        assert result["published"] == 1, "跳过的条目不阻塞后续"
+        assert (await _fetch(dup.id)).status == ItemStatus.SKIPPED
+        assert (await _fetch(good.id)).status == ItemStatus.PUBLISHED
+    finally:
+        runtime_config.save(before)

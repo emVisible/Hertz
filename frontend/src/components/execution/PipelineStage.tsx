@@ -16,6 +16,9 @@ export const PIPELINE_ITEM_TONE: Record<string, BadgeTone> = {
   published: 'success',
   rejected: 'error',
   failed: 'error',
+  // v0.39：跳过的条目**不是故障**（判重命中=不投稿就是对的）。
+  // 涂成 error 会重新骗一次人——用户刚被「发布失败」骗过一次。
+  skipped: 'neutral',
 }
 
 /** 条目类型徽章（v0.8）：视频/图片/文本——标题旁一眼区分，方便工作流筛选。 */

@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from backend.models import script_keys as sk
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
+from backend.pipeline.dedupe import DuplicateContentError
 from backend.pipeline.errors import classify_error
 from backend.pipeline.helpers import _auto_tid as helpers_auto_tid
 from backend.pipeline.publish_reliability import PublishThrottledError
@@ -262,7 +263,8 @@ class PromotionMixin:
 
         settings = self.engine.settings
         if not bool(getattr(settings, "pipeline_auto_publish", False)):
-            return {"enabled": False, "promoted": 0, "published": 0, "failed": 0}
+            return {"enabled": False, "promoted": 0, "published": 0, "failed": 0,
+                    "skipped": 0}
         now = datetime.now(UTC)
         local_day = now.astimezone(datetime.now().astimezone().tzinfo).date().isoformat()
         promoted = 0
@@ -280,7 +282,7 @@ class PromotionMixin:
             strategy_state = await self._current_account_state(now)
             daily_limit = daily_quota(strategy_state, cfg=self._strategy_cfg())
         used = await self._auto_published_today_count(now)
-        published = failed = 0
+        published = failed = skipped = 0
         while used < daily_limit:
             async with session_factory() as session:
                 due = (
@@ -304,6 +306,23 @@ class PromotionMixin:
                     used += 1
                 except InvalidItemStateError:
                     continue  # 并发（手动/其他 tick）已发布/状态迁移
+                except DuplicateContentError as dup:
+                    # v0.39：判重命中 → **跳过**，不是失败。
+                    #
+                    # 此前它掉进下面的兜底 except，被标成 FAILED + 写上
+                    # 「auto publish failed: duplicate detected…」——用户看到一条
+                    # 他从未发布过的内容被告知「发布失败」。代价还不止于此：
+                    #   · 混进失败看板与失败分类分布，占掉「为什么发不出去」的答案位
+                    #   · retry_count +1，把重试预算花在**确定性**的判定上——
+                    #     闸的结论不会变，重试一万次还是同一条近源成片
+                    #
+                    # 终态由 publish_one 统一落库（手动/自动同一处语义），这里只计数。
+                    skipped += 1
+                    logger.info(
+                        "[publish] 条目 #%s 因判重跳过（gate=%s）：%s",
+                        item.id, dup.gate, dup,
+                    )
+                    continue
                 except PublishThrottledError:
                     # v0.38：目标被限流 → **跳过，不标 FAILED**。
                     # 条目没坏、只是现在发不出去；标 FAILED 会让「今天还有几条
@@ -362,6 +381,9 @@ class PromotionMixin:
         return {
             "enabled": True, "promoted": promoted,
             "published": published, "failed": failed,
+            # v0.39：判重跳过数与失败严格分开——「发不出去」和「不该发」是
+            # 两个不同的问题，混在一个数里就都答不清了。
+            "skipped": skipped,
             "used_today": used, "daily_limit": daily_limit,
             # v0.13：策略相位与证据（前端状态卡直显；关闭时为 None）
             "strategy_phase": strategy_state.phase if strategy_state else None,

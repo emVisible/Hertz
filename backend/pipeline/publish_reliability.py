@@ -114,6 +114,18 @@ def is_retryable(error: BaseException | str) -> bool:
     从 `errors.classify_error`（若能 import）取类别，取不到就退回文本判定。
     两条路都判不出来时**保守地不重试**——对永久性失败重试是纯浪费。
     """
+    # 类型先判（v0.39）。判重命中此前只能靠 `PERMANENT_HINTS` 里的
+    # 「duplicate detected」子串识别——文案一改（改成中文、带命中 id）这道
+    # 判定就静默失效，靠它守护的东西会变成「碰巧不重试」。**类型判定不受
+    # 文案影响**，这才是该用的工具。
+    try:
+        from backend.pipeline.dedupe import DuplicateContentError
+
+        if isinstance(error, DuplicateContentError):
+            return False
+    except ImportError:  # pragma: no cover — dedupe 总是可导入
+        pass
+
     text = str(error).lower()
     # 永久性先判：显式清单优先于一切启发式，否则下面的兜底会把它们捞回来
     if any(h in text for h in PERMANENT_HINTS):

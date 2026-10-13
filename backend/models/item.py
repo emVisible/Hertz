@@ -36,6 +36,14 @@ class ItemStatus(StrEnum):
     PUBLISHED = "published"
     REJECTED = "rejected"
     FAILED = "failed"
+    # v0.39：系统判定**不可发布**（判重命中）。终态，但不是故障：
+    # 条目没坏、流程没错，只是内容与已发布的重复。
+    #
+    # 此前这类条目被标成 FAILED，于是用户看到「发布失败：duplicate detected」——
+    # 而他从未发布过任何东西；同时它混进失败看板、进了失败分类分布、
+    # 还占掉重试预算去反复撞一道**确定性**的闸（永远不会变的判定）。
+    # 「跳过」是它本来就该有的名字。
+    SKIPPED = "skipped"
 
 
 class ItemType(StrEnum):
