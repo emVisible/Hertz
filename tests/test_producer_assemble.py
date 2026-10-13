@@ -660,12 +660,18 @@ async def _make_busy_clip(path: Path, duration: int, idx: int) -> Path:
 
 
 def _frozen_frame_indices(out: Path, fps: int = 10) -> tuple[float, list[int]]:
-    """抽帧并返回 (时长, 帧间几乎无变化的帧下标)。"""
+    """抽帧并返回 (时长, 帧间几乎无变化的帧下标)。
+
+    同步函数：`subprocess.run` 在这里不占事件循环——它跑完之后测试就结束了，
+    没有别的协程需要推进（ASYNC221 只在 async 函数里才是问题）。
+    """
     raw = out.with_suffix(".gray")
-    subprocess.run([
-        str(find_ffmpeg()), "-y", "-v", "error", "-i", str(out),
-        "-vf", f"fps={fps},scale=64:48", "-f", "rawvideo", "-pix_fmt", "gray", str(raw),
-    ], check=True)
+    subprocess.run(
+        [str(find_ffmpeg()), "-y", "-v", "error", "-i", str(out),
+         "-vf", f"fps={fps},scale=64:48",
+         "-f", "rawvideo", "-pix_fmt", "gray", str(raw)],
+        check=True,
+    )
     data = raw.read_bytes()
     n = 64 * 48
     count = len(data) // n
@@ -678,7 +684,7 @@ def _frozen_frame_indices(out: Path, fps: int = 10) -> tuple[float, list[int]]:
     for i in range(1, count):
         a = data[(i - 1) * n : (i - 1) * n + n : step]
         b = data[i * n : i * n + n : step]
-        if sum(abs(x - y) for x, y in zip(a, b)) / len(a) < 0.05:
+        if sum(abs(x - y) for x, y in zip(a, b, strict=True)) / len(a) < 0.05:
             frozen.append(i)
     return count / fps, frozen
 
@@ -720,7 +726,7 @@ async def test_mixed_cut_and_transition_compiles(tmp_path, name, transitions):
     plan = ["cut"] + transitions
     clips = [
         {"path": str(p), "transition": t, "transition_s": 0.6}
-        for p, t in zip(paths, plan)
+        for p, t in zip(paths, plan, strict=True)
     ]
     out = tmp_path / f"out_{name}.mp4"
 
@@ -779,8 +785,9 @@ async def test_compose_preserves_portrait_orientation(tmp_path):
     from backend.pipeline.producers.compose import compose_video
 
     portrait = tmp_path / "portrait.mp4"
-    subprocess.run([
-        str(find_ffmpeg()), "-y", "-v", "error",
+    await asyncio.to_thread(
+        subprocess.run,
+        [str(find_ffmpeg()), "-y", "-v", "error",
         "-f", "lavfi", "-i", "testsrc=size=360x640:rate=30:duration=3",
         # compose 始终构造音频分支，素材必须带音轨，否则 filtergraph 绑定失败
         "-f", "lavfi", "-i", "sine=frequency=300:duration=3",
@@ -796,10 +803,17 @@ async def test_compose_preserves_portrait_orientation(tmp_path):
     )
 
     # 不能有整列纯黑——那是 pad 出来的边
-    frame = subprocess.run([
-        str(find_ffmpeg()), "-v", "error", "-ss", "1", "-i", str(tmp_path / "out.mp4"),
-        "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-",
-    ], capture_output=True, check=True).stdout
+    frame = (
+        await asyncio.to_thread(
+            subprocess.run,
+            [
+                str(find_ffmpeg()), "-v", "error", "-ss", "1",
+                "-i", str(tmp_path / "out.mp4"), "-frames:v", "1",
+                "-f", "rawvideo", "-pix_fmt", "gray", "-",
+            ],
+            capture_output=True, check=True,
+        )
+    ).stdout
     w, h = info["width"], info["height"]
     rows = [frame[y * w : (y + 1) * w] for y in range(h)]
     col_dark = [
@@ -821,8 +835,9 @@ async def test_landscape_input_still_uses_configured_resolution(tmp_path):
     from backend.pipeline.producers.resolution import target_resolution
 
     landscape = tmp_path / "land.mp4"
-    subprocess.run([
-        str(find_ffmpeg()), "-y", "-v", "error",
+    await asyncio.to_thread(
+        subprocess.run,
+        [str(find_ffmpeg()), "-y", "-v", "error",
         "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=2",
         "-f", "lavfi", "-i", "sine=frequency=300:duration=2",
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(landscape),

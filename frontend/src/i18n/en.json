@@ -1221,7 +1221,8 @@
       "kb_redo": "Redo",
       "create": "Create compilation",
       "sourceLoading": "Loading…",
-      "blockMissingSource": "{n} segment(s) are no longer available as sources (file cleaned up or item state changed) — remove them or pick different clips before creating"
+      "blockMissingSource": "{n} segment(s) are no longer available as sources (file cleaned up or item state changed) — remove them or pick different clips before creating",
+      "draftPruned": "Restored your previous arrangement. {n} segment(s) were no longer available (file cleaned up or item state changed) and have been removed."
     }
   },
   "canvas": {

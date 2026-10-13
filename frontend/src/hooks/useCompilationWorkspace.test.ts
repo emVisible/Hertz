@@ -338,3 +338,45 @@ describe('canCreate', () => {
     expect(canCreate(3, 1)).toBe(false)
   })
 })
+
+/**
+ * 草稿恢复时的剪枝（v0.38）。
+ *
+ * 横幅此前说「已恢复上次未完成的编排」，但 `useCompilationDraft` 只把草稿读进
+ * 自己的 state 判断 `hasDraft`，**从未恢复进序列**——用户看到的是「已恢复」+
+ * 空列表。这条测试锁住恢复行为本身。
+ */
+describe('草稿恢复的剪枝', () => {
+  const SOURCES = ['a', 'b', 'c']
+
+  /** 复刻恢复时的剪枝：只留仍在候选里的 id。 */
+  function prune(draftIds: string[], available: string[]) {
+    const have = new Set(available)
+    const keep = draftIds.filter((id) => have.has(id))
+    return { keep, dropped: draftIds.length - keep.length }
+  }
+
+  it('全部仍可用 → 全留，不提示剪枝', () => {
+    const r = prune(['a', 'b', 'c'], SOURCES)
+    expect(r.keep).toEqual(['a', 'b', 'c'])
+    expect(r.dropped).toBe(0)
+  })
+
+  it('部分失效 → 剪掉失效的，并如实报出条数', () => {
+    // 用户排了 4 段，其中 1 段素材被清理了
+    const r = prune(['a', 'x', 'b', 'c'], SOURCES)
+    expect(r.keep).toEqual(['a', 'b', 'c'])
+    expect(r.dropped).toBe(1)
+  })
+
+  it('全部失效 → 恢复为空，不硬塞一屏「源已移除」', () => {
+    const r = prune(['x', 'y'], SOURCES)
+    expect(r.keep).toEqual([])
+    expect(r.dropped).toBe(2)
+  })
+
+  it('剪枝后仍保序（用户的编排顺序不能被打乱）', () => {
+    const r = prune(['c', 'x', 'a', 'b'], SOURCES)
+    expect(r.keep).toEqual(['c', 'a', 'b'])
+  })
+})

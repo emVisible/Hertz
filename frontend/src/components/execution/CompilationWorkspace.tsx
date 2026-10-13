@@ -502,12 +502,17 @@ export function CompilationWorkspace({
         </span>
       </div>
 
-      {ws.hasDraft && (
-        <div className="shrink-0 border-b border-border bg-primary/5 px-3 py-1 text-[11px] text-text-secondary">
-          {t('console.compilation.draftRestored')}{' '}
-          <button type="button" onClick={ws.discardDraft} className="underline hover:text-text-primary">
-            {t('console.compilation.draftDiscard')}
-          </button>
+      {/*
+        v0.38：横幅此前**在说谎**——`hasDraft` 只表示「localStorage 里有草稿」，
+        而草稿从未被恢复进序列，用户看到的是「已恢复」+ 空列表。
+
+        现在真的会恢复（见 useCompilationWorkspace 的恢复逻辑），所以这里的措辞
+        也必须跟着改：恢复完成后再喊「已恢复」是废话，而**剪掉了哪几条**才是
+        用户此刻真正需要知道的事。
+      */}
+      {ws.prunedCount > 0 && (
+        <div className="shrink-0 border-b border-border bg-warning/10 px-3 py-1 text-[11px] text-warning">
+          {t('console.compilation.draftPruned', { n: ws.prunedCount })}
         </div>
       )}
 

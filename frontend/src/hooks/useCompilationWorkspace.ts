@@ -19,7 +19,7 @@
  * P1 定下的行为，不是 bug——但用户按下「创建」之前完全看不到它，而那意味
  * 着返工重排。预警就是把这个「事后才发现」提前到现在。
  */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
@@ -166,6 +166,52 @@ export function useCompilationWorkspace() {
    * 缺失源要留在列表里占住自己的位置（UI 显示「源已移除」并允许删除），
    * 这样下标永远是下标。
    */
+  /**
+   * 草稿恢复（v0.38）。
+   *
+   * 此前 `useCompilationDraft` 只把草稿读进自己的 state 用于判断 `hasDraft`，
+   * **从未把它恢复进工作区序列**——于是横幅写着「已恢复上次未完成的编排」，
+   * 用户看到的却是一个空序列。横幅在撒谎。
+   *
+   * ## 为什么在「候选列表加载完之后」才恢复
+   *
+   * 候选是异步查回来的，加载完成前 `sources` 是空 Map，此时无法判断哪些 id 还有效。
+   * 提前恢复 = 把一堆已经失效的 id 灌进序列，用户看到的是一屏「源已移除」。
+   *
+   * ## 失效 id 剪掉而不是留着
+   *
+   * 留着的话，用户会对着一个**永远创建不了**的序列（v0.38 的闸会拦），
+   * 还得自己一条条去删。剪掉并如实告诉他剪了几条，两头都不吃亏：
+   * 不静默丢工作，也不留一个死序列。
+   *
+   * 只在「当前序列为空」时恢复——用户已经排的东西不该被草稿覆盖。
+   */
+  const [restored, setRestored] = useState(false)
+  const [prunedCount, setPrunedCount] = useState(0)
+  useEffect(() => {
+    if (restored || isLoading || !draft.draft) return
+    if (clipIds.length > 0) return          // 已经在排了，不覆盖
+    const ids = draft.draft.clipIds
+    if (ids.length === 0) return
+    const keep = ids.filter((id) => sources.has(id))
+    setRestored(true)
+    if (keep.length === 0) return
+    const dropped = ids.length - keep.length
+    setPrunedCount(dropped)
+    // 间隙按新键收口：剪掉的片段会让后续片段的前驱变样，
+    // 原样搬运会留下指向已删片段的孤儿键（gapKey 取不到就当硬切，不崩，但不准）
+    const gaps = { ...draft.draft.gaps }
+    for (const id of ids) {
+      if (!sources.has(id)) delete gaps[id]
+    }
+    history.reset({
+      title: draft.draft.title,
+      clipIds: keep,
+      gaps,
+      outro: draft.draft.outro,
+    })
+  }, [restored, isLoading, draft.draft, sources, clipIds.length, history])
+
   const items = useMemo(
     () => clipIds.map((id, idx) => {
       const source = sources.get(id) ?? null
@@ -374,5 +420,7 @@ export function useCompilationWorkspace() {
     undo: history.undo, redo: history.redo,
     canUndo: history.canUndo, canRedo: history.canRedo,
     hasDraft: draft.hasDraft, discardDraft: draft.discard,
+    // 恢复了草稿，但其中有 id 已经不在候选里（素材被清理/状态变了）
+    prunedCount,
   }
 }

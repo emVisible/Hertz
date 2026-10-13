@@ -283,7 +283,10 @@ async def test_published_title_duplicate_detected(clean_items):
     from backend.models.item import ItemStatus
     from backend.pipeline.dedupe import find_published_title_duplicate
 
-    await _mk_item(source_id="pub-dup-1", status=ItemStatus.PUBLISHED, title="他在末班车上第一次哭了")
+    await _mk_item(
+        source_id="pub-dup-1", status=ItemStatus.PUBLISHED,
+        title="他在末班车上第一次哭了",
+    )
 
     assert await find_published_title_duplicate("他在末班车上第一次哭了") is True
     # 大小写与标点差异不应让它漏
@@ -298,7 +301,10 @@ async def test_unpublished_item_does_not_trip_title_gate(clean_items):
     from backend.models.item import ItemStatus
     from backend.pipeline.dedupe import find_published_title_duplicate
 
-    await _mk_item(source_id="not-pub-1", status=ItemStatus.APPROVED, title="这一篇稿子还没有发出去")
+    await _mk_item(
+        source_id="not-pub-1", status=ItemStatus.APPROVED,
+        title="这一篇稿子还没有发出去",
+    )
     assert await find_published_title_duplicate("这一篇稿子还没有发出去") is False
 
 

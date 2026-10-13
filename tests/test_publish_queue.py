@@ -34,9 +34,17 @@ _CREATED: list = []
 async def _make_item(**kw) -> Item:
     defaults = dict(
         status=ItemStatus.APPROVED, source="reddit", source_id="q-1",
-        title="queue item", reddit_score=100, upvote_ratio=0.9,
+        reddit_score=100, upvote_ratio=0.9,
     )
     defaults.update(kw)
+    # 标题默认按 source_id 派生，而不是全体共用一个 "queue item"。
+    #
+    # v0.38 加了发布期的标题指纹闸（文字故事线的 phash 为空，此前那里零查重），
+    # 而这份夹具造出的多条条目标题完全相同 → 后一条发布被闸拦下。日限类测试
+    # 于是测到的是「闸拦住了」而不是「日限生效」，报出一个与被测行为无关的数。
+    #
+    # 夹具造出的条目本来就该彼此不同——同名条目在真实世界里就是重复内容。
+    defaults.setdefault("title", f"队列条目 {defaults['source_id']}")
     async with session_factory() as session:
         item = Item(**defaults)
         session.add(item)
