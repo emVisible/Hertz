@@ -675,6 +675,45 @@ export function PipelineSection({
           </p>
         </div>
 
+        {/* 发布可靠性（v0.38）：链路终点此前完全裸奔——一次网络抖动
+            = 一个已经被消费掉的调度槽位，那天的发布窗口直接损失。 */}
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <p className="text-xs font-medium text-text-primary">{t('settings.publishReliability')}</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <Input
+              label={t('settings.publishMaxAttempts')}
+              type="number"
+              min={1}
+              max={10}
+              value={form.pipeline_publish_max_attempts ?? '3'}
+              onChange={(e) => set('pipeline_publish_max_attempts', e.target.value)}
+            />
+            <Input
+              label={t('settings.publishRetryBase')}
+              type="number"
+              step={0.5}
+              min={0}
+              value={form.pipeline_publish_retry_base_seconds ?? '5'}
+              onChange={(e) => set('pipeline_publish_retry_base_seconds', e.target.value)}
+            />
+            <Input
+              label={t('settings.publishCooldown')}
+              type="number"
+              min={0}
+              value={form.pipeline_publish_cooldown_seconds ?? '900'}
+              onChange={(e) => set('pipeline_publish_cooldown_seconds', e.target.value)}
+            />
+            <Input
+              label={t('settings.publishCooldownMax')}
+              type="number"
+              min={0}
+              value={form.pipeline_publish_cooldown_max_seconds ?? '3600'}
+              onChange={(e) => set('pipeline_publish_cooldown_max_seconds', e.target.value)}
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">{t('settings.publishReliabilityHint')}</p>
+        </div>
+
         {/* RSS 订阅（v0.37 补齐）：collectors/rss.py 的报错文案一直叫用户
             「请在设置页 pipeline_rss_feeds」——而设置页从来没有这个输入框。 */}
         <div className="mt-4 border-t border-border/60 pt-3">

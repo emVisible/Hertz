@@ -62,6 +62,10 @@ interface ConfigData {
   pipeline_subtitle_fade_ms?: number
   pipeline_subtitle_margin_bottom?: number
   node_bin?: string
+  pipeline_publish_max_attempts?: number
+  pipeline_publish_retry_base_seconds?: number
+  pipeline_publish_cooldown_seconds?: number
+  pipeline_publish_cooldown_max_seconds?: number
   pipeline_video_width?: number
   pipeline_video_height?: number
   pipeline_video_fps?: number
@@ -203,6 +207,10 @@ export function SettingsPage() {
       pipeline_subtitle_fade_ms: String(cfg.pipeline_subtitle_fade_ms ?? 300),
       pipeline_subtitle_margin_bottom: String(cfg.pipeline_subtitle_margin_bottom ?? 64),
       node_bin: cfg.node_bin ?? '',
+      pipeline_publish_max_attempts: String(cfg.pipeline_publish_max_attempts ?? 3),
+      pipeline_publish_retry_base_seconds: String(cfg.pipeline_publish_retry_base_seconds ?? 5),
+      pipeline_publish_cooldown_seconds: String(cfg.pipeline_publish_cooldown_seconds ?? 900),
+      pipeline_publish_cooldown_max_seconds: String(cfg.pipeline_publish_cooldown_max_seconds ?? 3600),
       pipeline_video_width: String(cfg.pipeline_video_width ?? 1280),
       pipeline_video_height: String(cfg.pipeline_video_height ?? 720),
       pipeline_video_fps: String(cfg.pipeline_video_fps ?? 30),

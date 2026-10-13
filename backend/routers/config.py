@@ -157,6 +157,11 @@ RUNTIME_ALLOWLIST = {
     "pipeline_video_fps",
     # v0.37：node 22 路径（原先只认环境变量，设置页无从配置）
     "node_bin",
+    # v0.38：发布可靠性（重试 + 限速熔断）
+    "pipeline_publish_max_attempts",
+    "pipeline_publish_retry_base_seconds",
+    "pipeline_publish_cooldown_seconds",
+    "pipeline_publish_cooldown_max_seconds",
 }
 
 SECRET_FIELDS = {

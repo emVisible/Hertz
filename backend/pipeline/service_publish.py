@@ -121,8 +121,32 @@ class PublishMixin:
         publisher = PUBLISHERS.get(target)
         if publisher is None:
             raise RuntimeError(f"unknown publish target '{target}'")
+
+        # 限速熔断闸（v0.38）：目标被冻结时**不发也不标失败**——条目没坏，
+        # 只是现在发不出去。自动发布 tick 收到 PublishThrottledError 会跳过，
+        # 下一个 tick 自然重试。noop 是本地记���，不该被熔断挡住。
+        if target != "noop":
+            from backend.pipeline.publish_reliability import (
+                PublishThrottledError,
+                cooldown_left,
+            )
+
+            left = await cooldown_left(target)
+            if left > 0:
+                raise PublishThrottledError(
+                    f"发布目标 {target} 处于限速冷却中，还有 {left:.0f} 秒"
+                )
+
         try:
-            result = await publisher.publish(ctx, item)
+            if target == "noop":
+                result = await publisher.publish(ctx, item)
+                attempts = 1
+            else:
+                from backend.pipeline.publish_reliability import publish_with_retry
+
+                result, attempts = await publish_with_retry(
+                    lambda: publisher.publish(ctx, item), target=target,
+                )
         except Exception:
             # 告警（v0.22 A2）：真实发布（非 noop）失败推送 Telegram，best-effort
             if target != "noop":
@@ -132,6 +156,7 @@ class PublishMixin:
 
                 asyncio.ensure_future(push_alert(
                     f"🔴 发布失败 [{target}] {item.title[:60]}\n"
+                    f"尝试 {attempts} 次后仍失败\n"
                     f"item: {item_id}"
                 ))
             raise
@@ -166,6 +191,9 @@ class PublishMixin:
             "id": str(item_id),
             "status": "published",
             "result": result,
+            # v0.38：实际尝试了几次。1 = 一次成功，>1 = 有过瞬时失败被重试救回。
+            # 长期看这个数能回答「发布链路现在抖不抖」。
+            "attempts": attempts,
             # v0.3.8：noop 目标标记外提——前端直接判断，无需穿透 result
             "noop": bool(result.get("noop")),
         }

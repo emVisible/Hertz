@@ -15,6 +15,7 @@ from backend.models import script_keys as sk
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.pipeline.helpers import _auto_tid as helpers_auto_tid
+from backend.pipeline.publish_reliability import PublishThrottledError
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +294,7 @@ class PromotionMixin:
                 ).scalars().all()
             if not due:
                 break
+            throttled = False
             for item in due:
                 try:
                     await self.publish_one(item.id, auto=True)
@@ -300,6 +302,14 @@ class PromotionMixin:
                     used += 1
                 except InvalidItemStateError:
                     continue  # 并发（手动/其他 tick）已发布/状态迁移
+                except PublishThrottledError:
+                    # v0.38：目标被限流 → **跳过，不标 FAILED**。
+                    # 条目没坏、只是现在发不出去；标 FAILED 会让「今天还有几条
+                    # 没发出去」这个最该被回答的问题失去答案，而且下一轮
+                    # 不会再捞它（只有 APPROVED 会被 due 查询捞到）。
+                    # 熔断期内剩下的条目一并跳过：继续撞只会加深限流。
+                    throttled = True
+                    continue
                 except Exception as exc:  # noqa: BLE001 — 单条失败标记 failed，不阻塞
                     async with session_factory() as session:
                         row = await session.get(Item, item.id)
@@ -309,6 +319,9 @@ class PromotionMixin:
                             row.error_class = "publish"
                             await session.commit()
                             failed += 1
+                if throttled:
+                    logger.info("[publish] 目标限速中，本轮剩余条目留待下个 tick")
+                    break
         # 跨天遗留：仍 ready 但排期已过（昨天发满未发）→ 重排当天窗口
         if daily_limit > 0:
             async with session_factory() as session:

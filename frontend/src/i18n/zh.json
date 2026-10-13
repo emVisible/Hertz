@@ -460,7 +460,13 @@
     "outputResolution": "成片画幅",
     "outputResolutionHint": "视频与烧录字幕共用这一组尺寸——ASS 字幕坐标系必须与视频像素一致，否则字号与边距会静默缩放错。封面与标题卡不跟随，它们有各自的交付规格。",
     "nodeBin": "Node 22 路径（monoline 渲染）",
-    "nodeBinHint": "留空则自动按设置项 → 环境变量 → nvm → 系统 node 顺序查找。"
+    "nodeBinHint": "留空则自动按设置项 → 环境变量 → nvm → 系统 node 顺序查找。",
+    "publishReliability": "发布可靠性",
+    "publishMaxAttempts": "最多尝试次数",
+    "publishRetryBase": "重试退避起步(秒)",
+    "publishCooldown": "限速冷却(秒)",
+    "publishCooldownMax": "冷却上限(秒)",
+    "publishReliabilityHint": "上传遇到限流或网络抖动时按指数退避重试。连续撞到限流就冻结该目标一段时间（连撞越久等越久），一次成功即解冻。403/404 属永久失败不重试——那是 cookie 过期，重试只会加重封禁。"
   },
   "execution": {
     "modeStudio": "Studio 编排",

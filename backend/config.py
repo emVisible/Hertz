@@ -150,6 +150,14 @@ class Settings(BaseSettings):
     pipeline_strategy_premier_score: float = 8.0  # AI 分 ≥ 此值优先占黄金槽
     # 自动过审（v0.2.1，参考原项目 auto_approve）：默认关闭；
     # 开启后停留审核队列超过 N 小时的条目自动 approve（人工审核仍是默认路径）
+    # 发布可靠性（v0.38）：瞬时失败重试 + 发布侧限速记忆。
+    # 此前 service_publish 全文无 retry/backoff/sleep——一次网络抖动就等于
+    # 一次**已经被消费掉的调度槽位**，那天的发布窗口直接损失，且无人补发。
+    pipeline_publish_max_attempts: int = 3
+    pipeline_publish_retry_base_seconds: float = 5.0
+    # 限速熔断：命中 rate_limit 后冻结该目标的发布，指数退避到上限
+    pipeline_publish_cooldown_seconds: int = 900
+    pipeline_publish_cooldown_max_seconds: int = 3600
     pipeline_auto_approve: bool = False
     pipeline_auto_approve_after_hours: int = 12
     # B站默认分区 tid（审核未显式设置时使用；0 = 不传，用账号默认）
