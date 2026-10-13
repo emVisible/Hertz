@@ -44,6 +44,13 @@ Hertz 是一个本地优先的短视屏内容工厂，覆盖完整生产生命�
 **工作台**
 - Studio 多阶段编排、灵感画布、下载管理与素材库（标签系统）
 
+**图文工坊 / MD Studio**
+- 面向 agent 已生成 Markdown 的排版导出工作站：一颗纯 TS 渲染内核（`@hertz/mdcore`）+ 三个平台适配器
+- 微信：渲染态样式内联（编辑器会剥掉 class/`<style>`/CSS 变量）、代码块空格加固、外链自动转文末参考、一键复制富文本
+- 小红书：测量式分页（二分断点 / 跨页重复表头 / 中文避头尾）、3:4 卡片图组导出 ZIP、自动封面、品牌页脚二维码位
+- 知乎：降级渲染器（表格转图 / 公式转 MathJax 源码 / 有序列表转文本编号）
+- 9 套内置主题（每平台各含真深色款）、色盘一键换色（由单一主色派生整套）、微调随排版稿入库
+
 **平台能力**
 - 零配置打包：后端 PyInstaller 固化 + 内嵌 PostgreSQL 首启自动供给 +
   GitHub Releases 自动更新通道
@@ -54,6 +61,7 @@ Hertz 是一个本地优先的短视屏内容工厂，覆盖完整生产生命�
 ```
 Electron 壳（自动更新 / 内嵌 PostgreSQL 托管）
 ├── 前端   React 19 · Vite · TanStack Query · Tailwind          :3000
+│   └── @hertz/mdcore  纯 TS 排版内核（IR → 主题 → 平台适配 → 导出）
 └── 后端   FastAPI · SQLAlchemy async · PostgreSQL               :8787
     ├── Pipeline      collectors → steps → producers → publishers
     │                 （多源路由 / 栏目化 / 发布策略引擎）
@@ -103,9 +111,10 @@ backend/
   infrastructure/   存储、日志、鉴权原语、telemetry、备份
   routers/          覆于领域服务之上的薄 HTTP 层
 frontend/src/
-  pages/            execution · dashboard · assets · plans · settings · cost
+  pages/            execution · dashboard · mdstudio · monoline · assets · plans · settings · cost
   components/       UI 组件库、执行域视图、应用壳
   hooks/stores/     usePipelineExecution、zustand stores
+packages/mdcore/    纯 TS 排版内核：解析 → IR → 主题 → 平台适配 → 导出
 electron/           主进程、preload、打包配置、内嵌 PG
 docs/               用户指南 · 路线图 · 决策记录 · AI 底座设计
 scripts/            dev 启动器、verify 门禁、后端固化、迁移

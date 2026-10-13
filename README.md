@@ -44,6 +44,13 @@ and an installer that requires zero configuration on a fresh machine.
 **Workspace**
 - Studio multi-phase orchestration, inspiration canvas, download manager & asset library with tagging
 
+**MD Studio (图文工坊)**
+- Top-level layout & export workstation for agent-written Markdown: one pure-TS rendering core (`@hertz/mdcore`), three platform adapters
+- WeChat: render-state style inlining (no `class`/`<style>`/CSS vars survive the editor), code-block whitespace hardening, external links converted to end-of-article references, one-click rich-text copy
+- Xiaohongshu: measurement-based pagination (binary-split break points, table header repeat across pages, CJK line-break rules), 3:4 card export as PNG set / ZIP, auto cover page, brand footer with QR slot
+- Zhihu: degradation renderer (tables → image, formulas → MathJax source, ordered lists → text numbering)
+- 9 built-in themes (each platform has a true dark variant), one-click palette recolour derived from a single accent colour, per-draft overrides persisted in the `layouts` table
+
 **Platform**
 - Zero-config packaging: backend frozen via PyInstaller, embedded PostgreSQL auto-provisioned on first launch, auto-update channel via GitHub Releases
 - Optional system dependencies only for advanced paths (ffmpeg falls back to a bundled build; `biliup` needed solely for Bilibili uploading)
@@ -53,6 +60,7 @@ and an installer that requires zero configuration on a fresh machine.
 ```
 Electron shell (auto-update, embedded PostgreSQL supervisor)
 ├── Frontend   React 19 · Vite · TanStack Query · Tailwind        :3000
+│   └── @hertz/mdcore  pure-TS layout core (IR → theme → platform → export)
 └── Backend    FastAPI · SQLAlchemy async · PostgreSQL            :8787
     ├── Pipeline      collectors → steps → producers → publishers
     │                 (multi-source router, columns, strategy engine)
@@ -103,9 +111,10 @@ backend/
   infrastructure/   storage, logging, auth primitives, telemetry, backup
   routers/          thin HTTP layer over domain services
 frontend/src/
-  pages/            execution · dashboard · assets · plans · settings · cost
+  pages/            execution · dashboard · mdstudio · monoline · assets · plans · settings · cost
   components/       ui kit, execution views, app shell
   hooks/stores/     usePipelineExecution, zustand stores
+packages/mdcore/    pure-TS layout core: parse → IR → theme → platform → export
 electron/           main process, preload, builder config, embedded PG
 docs/               user guide · roadmap · decision records · AI base design
 scripts/            dev launcher, verify gate, backend freeze, migrations

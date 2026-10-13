@@ -7,7 +7,13 @@
 
 ## [Unreleased]
 
-（暂无未发布变更。原先挂在本段的三条 v0.34 工作面——未评分三轴筛选 A、情感供给链 C-code、看板 B——已全部并入下面的 `[v0.34.0]`。）
+**图文工坊 / MD Studio（顶级新模块）**
+- 新增 `@hertz/mdcore` 纯 TS 排版内核（pnpm workspace 包）：markdown → LayoutIR → 主题 → 平台适配 → 导出，可在 node+jsdom 下测试
+- 三平台适配：微信渲染态样式内联 + 清洗器对抗 + 外链转脚注 + 一键复制；小红书测量式分页（二分断点 / 跨页重复表头 / 中文避头尾）+ 3:4 卡片图组 ZIP + 自动封面 + 品牌页脚二维码位；知乎降级渲染（表格转图 / 公式转源码 / 有序列表转文本编号）
+- 导出：snapdom 主 + modern-screenshot 兜底，就绪闸门（字体/图片/双 rAF/像素 checksum）、缩放降级、长图 ≤8192px 切片拼接
+- 9 套内置主题（每平台各含真深色款）、色盘一键换色（主色派生整套）、微调随稿入库
+- 后端新增 `layout` 域（`/api/layout` CRUD + docs/Studio 导入，wave33 迁移）；前端新增 `/mdstudio` 三栏工作站页与侧边导航项
+- 设计文档：`docs/superpowers/specs/2026-10-13-mdcore-design.md`（含 §9-§10 真浏览器验收读数与限度）
 
 ## [v0.34.0] - 2026-09-30
 
