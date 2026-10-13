@@ -1,0 +1,62 @@
+import { describe, expect, it } from 'vitest';
+import { applyTheme, getTheme, listThemes, parseToIR } from '../index';
+
+describe('theme 注册表', () => {
+  it('内置主题至少含墨滴/晚风两套微信向', () => {
+    const list = listThemes();
+    const ids = list.map((t) => t.id);
+    expect(ids).toContain('modi');
+    expect(ids).toContain('wanfeng');
+    for (const t of list) {
+      expect(t.name).toBeTruthy();
+      expect(t.platform).toBeTruthy();
+    }
+  });
+
+  it('getTheme 返回完整主题对象，未知 id 抛错', () => {
+    const theme = getTheme('modi');
+    expect(theme.tokens.color).toBeTruthy();
+    expect(theme.tokens.fontFamily).toBeTruthy();
+    expect(theme.tokens.fontSize).toBeTruthy();
+    expect(theme.tokens.lineHeight).toBeTruthy();
+    expect(theme.tokens.radius).toBeTruthy();
+    expect(() => getTheme('no-such-theme')).toThrow();
+  });
+});
+
+describe('applyTheme', () => {
+  const ir = parseToIR('# 标题\n\n正文段落。\n');
+
+  it('返回挂好样式的 DOM 容器', () => {
+    const el = applyTheme(ir, 'modi');
+    expect(el).toBeInstanceOf(HTMLElement);
+    expect(el.querySelector('h1')?.textContent).toBe('标题');
+    expect(el.querySelector('p')?.textContent).toBe('正文段落。');
+    // token 落进内联样式
+    const theme = getTheme('modi');
+    expect(el.style.fontFamily).toContain(theme.tokens.fontFamily.split(',')[0].trim());
+    expect(el.style.fontSize).toBe(theme.tokens.fontSize);
+  });
+
+  it('overrides 主色覆盖后产物 style 是新色值', () => {
+    const base = getTheme('modi');
+    const el = applyTheme(ir, base, { color: '#ff6600' });
+    const h1 = el.querySelector('h1');
+    expect(h1).not.toBeNull();
+    const applied = (h1 as HTMLElement).style.color.toLowerCase();
+    // jsdom 可能把 hex 规范化为 rgb()，两种字面形式都接受
+    expect(applied === '#ff6600' || applied === 'rgb(255, 102, 0)').toBe(true);
+    expect(applied).not.toBe(base.tokens.color.toLowerCase());
+  });
+
+  it('overrides 字号覆盖后容器 style 是新字号', () => {
+    const el = applyTheme(ir, 'modi', { fontSize: '18px' });
+    expect(el.style.fontSize).toBe('18px');
+  });
+
+  it('主题对象与主题 id 两种入参等价', () => {
+    const byId = applyTheme(ir, 'wanfeng');
+    const byObj = applyTheme(ir, getTheme('wanfeng'));
+    expect(byId.innerHTML).toBe(byObj.innerHTML);
+  });
+});

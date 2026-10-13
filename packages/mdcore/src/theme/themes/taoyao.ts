@@ -1,0 +1,100 @@
+import type { Theme } from '../types';
+
+/**
+ * 「桃夭」—— 小红书向主打款：品牌红主色、大字标题、紧凑行距。
+ * card / cardBody / cardFooter 键位供 paginate 页壳与 xhs 品牌页脚使用（3:4 卡片向）。
+ */
+export const taoyao: Theme = {
+  id: 'taoyao',
+  name: '桃夭',
+  platform: 'xhs',
+  tokens: {
+    color: '#ff2442',
+    fontFamily:
+      "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+    fontSize: '30px',
+    lineHeight: '1.55',
+    radius: '12px',
+  },
+  styles: {
+    card: { 'background-color': '#fff5f6', color: '#2b2b2b' },
+    cardBody: {},
+    cardFooter: {
+      color: '#b0808a',
+      'font-size': '22px',
+      'line-height': '1.4',
+    },
+    h1: {
+      'font-size': '54px',
+      'font-weight': 'bold',
+      'text-align': 'center',
+      color: '${color}',
+      margin: '0 0 32px',
+      'line-height': '1.3',
+    },
+    h2: {
+      'font-size': '40px',
+      'font-weight': 'bold',
+      color: '${color}',
+      margin: '40px 0 20px',
+      'line-height': '1.35',
+    },
+    h3: { 'font-size': '34px', 'font-weight': 'bold', color: '#333333', margin: '32px 0 16px' },
+    para: { margin: '0 0 24px' },
+    link: { color: '${color}', 'text-decoration': 'none' },
+    strong: { 'font-weight': 'bold', color: '${color}' },
+    inlineCode: {
+      'font-family': "Menlo, Monaco, Consolas, 'Courier New', monospace",
+      'font-size': '0.85em',
+      'background-color': '#ffe4e8',
+      color: '${color}',
+      padding: '2px 8px',
+      'border-radius': '${radius}',
+    },
+    pre: {
+      'background-color': '#2b2b2b',
+      color: '#f5f5f5',
+      padding: '24px 28px',
+      'border-radius': '${radius}',
+      'font-family': "Menlo, Monaco, Consolas, 'Courier New', monospace",
+      'font-size': '24px',
+      'line-height': '1.5',
+      margin: '0 0 24px',
+    },
+    quote: {
+      'border-left': '8px solid ${color}',
+      'background-color': '#ffecef',
+      color: '#555555',
+      padding: '16px 24px',
+      margin: '0 0 24px',
+    },
+    table: { 'border-collapse': 'collapse', width: '100%', margin: '0 0 24px' },
+    th: {
+      border: '2px solid #f3c2cb',
+      'background-color': '#ffe4e8',
+      'font-weight': 'bold',
+      padding: '12px 18px',
+      'text-align': 'left',
+    },
+    td: { border: '2px solid #f3c2cb', padding: '12px 18px' },
+    image: { 'max-width': '100%', 'border-radius': '${radius}', display: 'block', margin: '0 auto 24px' },
+    callout: {
+      'border-left': '8px solid ${color}',
+      'background-color': '#ffecef',
+      padding: '20px 24px',
+      'border-radius': '${radius}',
+      margin: '0 0 24px',
+    },
+    'callout-warning': { 'border-left-color': '#d97706', 'background-color': '#fdf6ec' },
+    'callout-danger': { 'border-left-color': '#dc2626', 'background-color': '#fdecec' },
+    formula: { margin: '24px 0', 'text-align': 'center', 'overflow-x': 'auto' },
+    hr: { border: 'none', 'border-top': '2px dashed #f3c2cb', margin: '40px 0' },
+    'hljs-keyword': { color: '#c678dd' },
+    'hljs-string': { color: '#98c379' },
+    'hljs-comment': { color: '#7f848e', 'font-style': 'italic' },
+    'hljs-number': { color: '#d19a66' },
+    'hljs-title': { color: '#61afef' },
+    'hljs-attr': { color: '#d19a66' },
+    'hljs-built_in': { color: '#e6c07b' },
+  },
+};
