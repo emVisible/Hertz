@@ -1,95 +1,42 @@
-import type { Theme } from '../types';
+import type { Theme, ThemeTokens } from '../types';
+import { baseStyles } from './base';
 
-/** 「墨滴」—— 微信向清爽款：浅色底、墨色正文、青绿主色 */
+/** 微信向清爽款：青绿主色、左边条标题、短短的分隔线。正文两端对齐，不缩进（移动端缩进反而不习惯）。 */
+const tokens: ThemeTokens = {
+  color: '#0f766e',
+  fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+  fontSize: '16px',
+  lineHeight: '1.8',
+  radius: '6px',
+  ink: '#2b2b2b',
+  inkSoft: '#5a5a5a',
+  muted: '#8c8c8c',
+  headInk: '#12241c',
+  quoteInk: '#4a4a4a',
+  canvasBg: '#ffffff',
+  codeBg: '#f6f6f4',
+  codeInk: '#2b2b2b',
+  imgRadius: '6px',
+  letterSpacing: '0.02em',
+  paraSpacing: '1em',
+  sectionSpacing: '1.6em',
+  align: 'justify',
+
+  // 样式开关：决定 derivedSlots 产出哪一套装饰（主题不手写装饰槽，见 base.ts 头注）
+  headingStyle: 'left-bar',
+  quoteStyle: 'left-bar',
+  strongStyle: 'color',
+  codeBar: 'lang',
+  tableStyle: 'card',
+  listStyle: 'marker-color',
+  hrStyle: 'short',
+};
+
 export const modi: Theme = {
   id: 'modi',
   name: '墨滴',
   platform: 'wechat',
-  tokens: {
-    color: '#0f766e',
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
-    fontSize: '16px',
-    lineHeight: '1.8',
-    radius: '6px',
-  },
-  styles: {
-    container: {
-      color: '#2b2b2b',
-      'background-color': '#ffffff',
-      padding: '0 8px',
-    },
-    h1: {
-      'font-size': '22px',
-      'font-weight': 'bold',
-      'text-align': 'center',
-      color: '${color}',
-      margin: '24px 0 16px',
-    },
-    h2: {
-      'font-size': '19px',
-      'font-weight': 'bold',
-      color: '${color}',
-      'border-left': '4px solid ${color}',
-      'padding-left': '10px',
-      margin: '28px 0 14px',
-    },
-    h3: { 'font-size': '17px', 'font-weight': 'bold', color: '${color}', margin: '24px 0 12px' },
-    para: { margin: '0 0 16px', 'text-align': 'justify' },
-    link: { color: '${color}', 'text-decoration': 'underline' },
-    strong: { 'font-weight': 'bold', color: '${color}' },
-    inlineCode: {
-      'font-family': "Menlo, Monaco, Consolas, 'Courier New', monospace",
-      'font-size': '0.9em',
-      'background-color': '#f0f7f5',
-      color: '${color}',
-      padding: '2px 4px',
-      'border-radius': '${radius}',
-    },
-    pre: {
-      'background-color': '#f6f8fa',
-      padding: '14px 16px',
-      'border-radius': '${radius}',
-      'font-family': "Menlo, Monaco, Consolas, 'Courier New', monospace",
-      'font-size': '13px',
-      'line-height': '1.6',
-      margin: '0 0 16px',
-    },
-    quote: {
-      'border-left': '4px solid ${color}',
-      'background-color': '#f7fafa',
-      color: '#555555',
-      padding: '10px 16px',
-      margin: '0 0 16px',
-    },
-    table: { 'border-collapse': 'collapse', width: '100%', margin: '0 0 16px' },
-    th: {
-      border: '1px solid #d8e2e0',
-      'background-color': '#eef5f3',
-      'font-weight': 'bold',
-      padding: '8px 12px',
-      'text-align': 'left',
-    },
-    td: { border: '1px solid #d8e2e0', padding: '8px 12px' },
-    image: { 'max-width': '100%', 'border-radius': '${radius}', display: 'block', margin: '0 auto 16px' },
-    callout: {
-      'border-left': '4px solid ${color}',
-      'background-color': '#f0f7f5',
-      padding: '12px 16px',
-      'border-radius': '${radius}',
-      margin: '0 0 16px',
-    },
-    'callout-warning': { 'border-left-color': '#d97706', 'background-color': '#fdf6ec' },
-    'callout-danger': { 'border-left-color': '#dc2626', 'background-color': '#fdecec' },
-    formula: { margin: '16px 0', 'text-align': 'center', 'overflow-x': 'auto' },
-    hr: { border: 'none', 'border-top': '1px solid #e2e8f0', margin: '32px 0' },
-    // hljs → 内联色（微信清洗器剥 class，颜色必须落 style）
-    'hljs-keyword': { color: '#c678dd' },
-    'hljs-string': { color: '#98c379' },
-    'hljs-comment': { color: '#7f848e', 'font-style': 'italic' },
-    'hljs-number': { color: '#d19a66' },
-    'hljs-title': { color: '#61afef' },
-    'hljs-attr': { color: '#d19a66' },
-    'hljs-built_in': { color: '#e6c07b' },
-  },
+  dark: undefined,
+  tokens,
+  styles: baseStyles(),
 };

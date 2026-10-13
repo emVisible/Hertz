@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyTheme, cjkNumeral, parseToIR } from '../index';
+import { applyTheme, cjkNumeral, getTheme, parseToIR } from '../index';
 import type { Theme, ThemeTokens } from './types';
 
 /**
@@ -28,11 +28,18 @@ describe('容器基线', () => {
     expect(el.style.overflowWrap).toBe('break-word');
   });
 
-  it('主题显式给了 container 背景色时不让 canvasBg 覆盖它（卡片有自己的底）', () => {
-    // 墨滴显式声明了 container 白底 → canvasBg 不该压上去
-    expect(render('正文。', { canvasBg: '#123456' }, 'modi').style.backgroundColor).toBe('rgb(255, 255, 255)');
-    // 桃夭没声明 container → canvasBg 生效
-    expect(render('正文。', { canvasBg: '#123456' }, 'taoyao').style.backgroundColor).toBe('rgb(18, 52, 86)');
+  it('画布底色由 canvasBg token 统管；主题自己声明了 container 底色时以它为准', () => {
+    // 结构基座统一把 container 底色接到 canvasBg 上——一处真相源，主题不各写一份
+    expect(render('正文。', { canvasBg: '#123456' }, 'modi').style.backgroundColor).toBe('rgb(18, 52, 86)');
+    expect(render('正文。', {}, 'wanfeng').style.backgroundColor).toBe('rgb(23, 24, 28)');
+    // 自定义主题（设计器产物）显式写了 container 底色时，canvasBg 不压它
+    const custom = {
+      ...getTheme('modi'),
+      styles: { ...getTheme('modi').styles, container: { 'background-color': '#fefefe' } },
+    };
+    expect(applyTheme(parseToIR('正文。'), custom, { canvasBg: '#123456' }).style.backgroundColor).toBe(
+      'rgb(254, 254, 254)',
+    );
   });
 });
 
@@ -68,6 +75,21 @@ describe('标题：prefix / content 两层真元素', () => {
     expect(h2.style.display).toBe('inline-block');
     expect(h2.style.backgroundColor).toBe('rgb(255, 209, 102)');
     expect(h2.style.color).toBe('rgb(27, 27, 27)'); // 浅主色上必须深字
+  });
+});
+
+describe('字号阶梯用 em（换字号不换比例）', () => {
+  it('标题/正文比值与主题字号无关：30px 小红书卡片与 16px 微信正文是同一套层级', () => {
+    const big = render('# 标题\n\n正文。', { fontSize: '30px' }, 'taoyao');
+    const small = render('# 标题\n\n正文。', { fontSize: '16px' }, 'modi');
+    const h1Of = (el: HTMLElement) => el.querySelector('h1') as HTMLElement;
+    // 阶梯用 em：两套主题的标题都是 1.7em，实际像素随正文走（30px 时标题 51px）
+    expect(h1Of(big).style.fontSize).toBe('1.7em');
+    expect(h1Of(small).style.fontSize).toBe(h1Of(big).style.fontSize);
+    expect(big.style.fontSize).toBe('30px');
+    expect(small.style.fontSize).toBe('16px');
+    // 阶梯写成 px 时这条立刻红：27px/30px 与 27px/16px 是两套层级
+    expect(h1Of(small).style.fontSize).not.toBe('27px');
   });
 });
 
