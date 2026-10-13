@@ -16,8 +16,29 @@ import { moan } from './themes/moan';
  */
 const THEMES: Theme[] = [modi, wanfeng, taoyao, qingning, mucheng, xueshu, qingjian, yehang, moan];
 
-export function listThemes(): Array<Pick<Theme, 'id' | 'name' | 'platform' | 'dark'>> {
-  return THEMES.map(({ id, name, platform, dark }) => ({ id, name, platform, dark }));
+/**
+ * 主题目录（给界面用）：id/name/platform/dark + 主色。
+ *
+ * 主色入列是有用的：`InspectorPanel` 的色块本来要 `getTheme(id)` 逐个 try/catch
+ * 才拿得到主色，界面渲染 9 次就有 9 次抛错的可能；目录里直接带上就没这些。
+ */
+export interface ThemeSummary {
+  id: string;
+  name: string;
+  platform: ThemePlatform;
+  dark?: boolean;
+  /** 主色（色块、色盘派生预览、accentInk 自检都用它） */
+  color: string;
+}
+
+export function listThemes(): ThemeSummary[] {
+  return THEMES.map(({ id, name, platform, dark, tokens }) => ({
+    id,
+    name,
+    platform,
+    dark,
+    color: tokens.color,
+  }));
 }
 
 export function getTheme(id: string): Theme {

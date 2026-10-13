@@ -262,7 +262,10 @@ function flattenLists(root: HTMLElement): void {
       idx += 1;
       const p = doc.createElement('p');
       for (const attr of Array.from(li.attributes)) p.setAttribute(attr.name, attr.value);
-      p.appendChild(doc.createTextNode(ordered ? `${idx}. ` : '• '));
+      // 渲染层已自绘序号时不再补文本前缀（否则序号出现两次），见 wechat.ts 同处说明
+      if (!li.querySelector('.mdcore-marker')) {
+        p.appendChild(doc.createTextNode(ordered ? `${idx}. ` : '• '));
+      }
       const nested: Element[] = [];
       for (const node of Array.from(li.childNodes)) {
         if (node.nodeType === 1 && /^(UL|OL)$/.test((node as Element).tagName)) {

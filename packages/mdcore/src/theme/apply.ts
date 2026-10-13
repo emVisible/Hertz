@@ -1,20 +1,39 @@
 import katex from 'katex';
 import hljs from 'highlight.js';
 import type { IRBlock, InlineNode, LayoutIR } from '../ir/types';
-import { themeWithOverrides } from './derive';
-import type { StyleProps, Theme, ThemeOverrides, ThemeTokens } from './types';
+import { resolveThemeSlots } from './derive';
+import { getTheme } from './index';
+import type { ResolvedTokens, StyleProps, Theme, ThemeOverrides } from './types';
 
 /**
- * applyTheme(ir, theme, overrides?) → 挂好样式的 DOM 容器（§2 theme/）。
+ * applyTheme(ir, theme, overrides) → 挂好样式的 DOM 容器（§2 theme/）。
  * 预览与导出共用同一渲染态 DOM（§1 铁律 3）：本函数产物即画布 DOM，
  * 也是微信内联快照源、snapdom 截图源。
+ *
+ * v0.36 的排版规矩（三条，都会影响产物结构，所以写在这里而不是设计文档里）：
+ *
+ * 1. **装饰一律真元素，不用伪元素**。微信清洗器剥 `<style>`，而我们的内联走
+ *    `getComputedStyle` —— 伪元素的 content/背景永远读不出来。也就是说
+ *    `h2::before { content: '01' }` 在公众号里就是没有。所以：编号、列表符号、
+ *    三圆点分隔线、引用大引号全部是**渲染期物化出来的真实节点**（带
+ *    `data-mdcore-deco`），三个平台都带着。
+ * 2. **em 化节奏**。段距/章节距是 em，字号一改间距跟着缩放（px 间距在 30px 的
+ *    小红书卡片与 16px 的微信正文上是两套比例）。
+ * 3. **标题装饰分两处挂**。撑满整行的（左边条/下划线/药丸/双线）挂 `<h*>`；
+ *    贴着文字的（荧光笔渐变）挂 `<span class="mdcore-h-content">` 并配
+ *    `box-decoration-break: clone`——否则标题折行时渐变只染第一行。
  */
 
 interface RenderContext {
   doc: Document;
-  tokens: ThemeTokens;
+  tokens: ResolvedTokens;
   styles: Record<string, StyleProps>;
+  /** section-number 样式下的章节计数器（CSS counter 不可移植 → 渲染期物化） */
+  sections: { n: number };
 }
+
+/** 纯装饰节点的标记：分页断点二分不能把它当正文切（否则会切进 “ 里） */
+const DECO = 'data-mdcore-deco';
 
 export function applyTheme(
   ir: LayoutIR,
@@ -23,16 +42,27 @@ export function applyTheme(
   doc: Document = globalThis.document,
 ): HTMLElement {
   if (!doc) throw new Error('@hertz/mdcore: applyTheme 需要 DOM 环境（浏览器或 jsdom）');
-  const resolved = themeWithOverrides(theme, overrides);
-  const tokens: ThemeTokens = { ...resolved.tokens, ...overrides };
-  const styles = resolveStyles(resolved, tokens);
-  const ctx: RenderContext = { doc, tokens, styles };
+  const { tokens, styles } = resolveThemeSlots(
+    typeof theme === 'string' ? getTheme(theme) : theme,
+    overrides,
+  );
+  const ctx: RenderContext = { doc, tokens, styles, sections: { n: 0 } };
 
   const container = doc.createElement('section');
+  container.className = 'mdcore-doc';
   applyProps(container, styles.container);
   container.style.setProperty('font-family', tokens.fontFamily);
   container.style.setProperty('font-size', tokens.fontSize);
   container.style.setProperty('line-height', tokens.lineHeight);
+  container.style.setProperty('letter-spacing', tokens.letterSpacing);
+  if (!styles.container?.['background-color']) {
+    container.style.setProperty('background-color', tokens.canvasBg);
+  }
+  container.style.setProperty('color', tokens.ink);
+  // 中文断行三条：标点不开行首（避头尾）、长串不撑破、正常文本不孤字
+  container.style.setProperty('line-break', 'strict');
+  container.style.setProperty('word-break', 'break-word');
+  container.style.setProperty('overflow-wrap', 'break-word');
 
   for (const [index, block] of ir.entries()) {
     const el = renderBlock(block, ctx);
@@ -46,22 +76,6 @@ export function applyTheme(
   return container;
 }
 
-/** styles 值中的 `${token}` 占位替换为 overrides 后的 token 字面值（CSS 变量不进产物） */
-function resolveStyles(theme: Theme, tokens: ThemeTokens): Record<string, StyleProps> {
-  const out: Record<string, StyleProps> = {};
-  for (const [key, props] of Object.entries(theme.styles)) {
-    const resolvedProps: StyleProps = {};
-    for (const [prop, value] of Object.entries(props)) {
-      resolvedProps[prop] = value.replace(/\$\{(\w+)\}/g, (_, name: string) => {
-        const hit = (tokens as unknown as Record<string, string>)[name];
-        return hit ?? value;
-      });
-    }
-    out[key] = resolvedProps;
-  }
-  return out;
-}
-
 /**
  * 解析某个 style 键（含 ${token} 替换）—— 供 paginate/xhs 给页壳、页脚等非 IR 元素
  * 挂主题样式（卡片 card / 品牌页脚 cardFooter 等键位）。
@@ -71,9 +85,8 @@ export function resolveThemedProps(
   overrides: ThemeOverrides,
   key: string,
 ): StyleProps {
-  const resolved = themeWithOverrides(theme, overrides);
-  const tokens: ThemeTokens = { ...resolved.tokens, ...overrides };
-  return resolveStyles(resolved, tokens)[key] ?? {};
+  const { styles } = resolveThemeSlots(typeof theme === 'string' ? getTheme(theme) : theme, overrides);
+  return styles[key] ?? {};
 }
 
 function applyProps(el: HTMLElement, props: StyleProps | undefined): void {
@@ -83,19 +96,70 @@ function applyProps(el: HTMLElement, props: StyleProps | undefined): void {
   }
 }
 
+/** 装饰节点：带 deco 标记 + aria-hidden，微信/分页/读屏都当它不存在 */
+function deco(doc: Document, tag: 'span' | 'section', className: string): HTMLElement {
+  const el = doc.createElement(tag);
+  el.className = className;
+  el.setAttribute(DECO, '');
+  el.setAttribute('aria-hidden', 'true');
+  return el;
+}
+
+/** 中文数字序号（一 二 三 … 十、十一…），给 cjk-numeral 列表用 */
+export function cjkNumeral(n: number): string {
+  const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  if (n <= 0) return digits[0];
+  if (n < 10) return digits[n];
+  if (n === 10) return '十';
+  if (n < 20) return `十${digits[n - 10]}`;
+  if (n < 100) {
+    const tens = Math.floor(n / 10);
+    const ones = n % 10;
+    return `${digits[tens]}十${ones ? digits[ones] : ''}`;
+  }
+  const hundreds = Math.floor(n / 100);
+  const rest = n % 100;
+  if (rest === 0) return `${digits[hundreds]}百`;
+  const restText = rest < 10 ? `零${digits[rest]}` : cjkNumeral(rest);
+  return `${digits[hundreds]}百${restText}`;
+}
+
 function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
-  const { doc, styles } = ctx;
+  const { doc, styles, tokens } = ctx;
   switch (block.type) {
     case 'heading': {
       const el = doc.createElement(`h${block.level}`);
       applyProps(el, styles[`h${block.level}`]);
-      appendInlines(el, block.children, ctx);
+      // 章节节奏：标题前距比段距大一档，且用 em（字号改大时跟着缩放）
+      el.style.setProperty('margin-top', tokens.sectionSpacing);
+      const prefix = deco(doc, 'span', 'mdcore-h-prefix');
+      applyProps(prefix, styles.headingPrefix);
+      if (tokens.headingStyle === 'section-number' && block.level === 2) {
+        ctx.sections.n += 1;
+        prefix.textContent = String(ctx.sections.n).padStart(2, '0');
+      }
+      const content = doc.createElement('span');
+      content.className = 'mdcore-h-content';
+      applyProps(content, styles.headingContent);
+      appendInlines(content, block.children, ctx);
+      el.appendChild(prefix);
+      el.appendChild(content);
       return el;
     }
 
     case 'para': {
       const el = doc.createElement('p');
       applyProps(el, styles.para);
+      // 节奏 token 直接落到元素上：改 paraSpacing 必须看得见（主题里没写 margin 也要生效）
+      el.style.setProperty('margin-bottom', tokens.paraSpacing);
+      if (tokens.indent !== '0') el.style.setProperty('text-indent', tokens.indent);
+      if (tokens.measure !== 'none') el.style.setProperty('max-width', tokens.measure);
+      // 正文两端对齐 + 避免孤字尾行（微信/小红书正文观感提升最省事的一处）
+      if (tokens.align === 'justify') {
+        el.style.setProperty('text-align', 'justify');
+        el.style.setProperty('text-justify', 'inter-ideograph');
+      }
+      el.style.setProperty('text-wrap', 'pretty');
       appendInlines(el, block.children, ctx);
       return el;
     }
@@ -103,24 +167,67 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
     case 'list': {
       const el = doc.createElement(block.ordered ? 'ol' : 'ul');
       applyProps(el, styles.list);
-      for (const item of block.items) {
+      // 自绘序号 → 关掉浏览器 marker（否则两套符号叠着；微信扁平化时它也会被补一个前缀）
+      el.style.setProperty('list-style', 'none');
+      el.style.setProperty('padding-left', tokens.paraSpacing);
+      const numeral = tokens.listStyle === 'cjk-numeral';
+      block.items.forEach((item, i) => {
         const li = doc.createElement('li');
         applyProps(li, styles.listItem);
-        appendInlines(li, item, ctx);
+        const marker = doc.createElement('span');
+        marker.className = 'mdcore-marker';
+        applyProps(marker, styles.listMarker);
+        marker.textContent = numeral
+          ? cjkNumeral(i + 1)
+          : block.ordered
+            ? `${i + 1}.`
+            : '•';
+        li.appendChild(marker);
+        const span = doc.createElement('span');
+        span.className = 'mdcore-li-content';
+        appendInlines(span, item, ctx);
+        li.appendChild(span);
         el.appendChild(li);
-      }
+      });
       return el;
     }
 
     case 'code': {
+      // 代码卡片：头部（语言标签 / Mac 三色点）+ 代码体。
+      // 为什么要包一层：语言标签与卡片圆角是"排版"，不是"代码"；不包就没地方挂。
+      const wrap = doc.createElement('section');
+      wrap.className = 'mdcore-code';
+      applyProps(wrap, styles.codeCard);
+      if (tokens.codeBar !== 'none') {
+        const head = doc.createElement('div');
+        head.className = 'mdcore-code-head';
+        applyProps(head, styles.codeHead);
+        if (tokens.codeBar === 'mac') {
+          const dots = deco(doc, 'span', 'mdcore-code-dots');
+          for (const c of ['#ff5f57', '#febc2e', '#28c840']) {
+            const dot = doc.createElement('span');
+            dot.className = 'mdcore-code-dot';
+            dot.style.setProperty('background-color', c);
+            dots.appendChild(dot);
+          }
+          head.appendChild(dots);
+        }
+        const lang = doc.createElement('span');
+        lang.className = 'mdcore-code-lang';
+        applyProps(lang, styles.codeLang);
+        lang.textContent = block.lang ?? '';
+        head.appendChild(lang);
+        wrap.appendChild(head);
+      }
       const pre = doc.createElement('pre');
       applyProps(pre, styles.pre);
       const code = doc.createElement('code');
       applyProps(code, styles.code);
       code.textContent = block.code;
       pre.appendChild(code);
+      wrap.appendChild(pre);
       highlightCode(code, block.lang, ctx);
-      return pre;
+      return wrap;
     }
 
     case 'table': {
@@ -137,8 +244,13 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
       thead.appendChild(headTr);
       table.appendChild(thead);
       const tbody = doc.createElement('tbody');
-      for (const row of block.rows) {
+      block.rows.forEach((row, rowIndex) => {
         const tr = doc.createElement('tr');
+        // 斑马纹只能逐行写死：产物里没有 <style>，nth-child 那条规则不存在
+        if (rowIndex % 2 === 1) {
+          tr.className = 'mdcore-row-even';
+          applyProps(tr, styles.tbodyEven);
+        }
         for (const cell of row) {
           const td = doc.createElement('td');
           applyProps(td, styles.td);
@@ -146,7 +258,7 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
           tr.appendChild(td);
         }
         tbody.appendChild(tr);
-      }
+      });
       table.appendChild(tbody);
       return table;
     }
@@ -154,23 +266,48 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
     case 'quote': {
       const el = doc.createElement('blockquote');
       applyProps(el, styles.quote);
-      for (const child of block.blocks) {
+      // 嵌套层级：引用套引用要有层级差（参考仓库 multiquote-N 的做法）
+      block.blocks.forEach((child, i) => {
         const childEl = renderBlock(child, ctx);
-        if (childEl) el.appendChild(childEl);
+        if (!childEl) return;
+        const depth = i > 0 && child.type === 'quote' ? 2 : 0;
+        if (depth) {
+          childEl.classList.add('mdcore-quote-l2');
+          applyProps(childEl, styles.quoteL2 ?? {});
+        }
+        el.appendChild(childEl);
+      });
+      if (tokens.quoteStyle === 'quote-mark') {
+        const mark = deco(doc, 'span', 'mdcore-quote-mark');
+        applyProps(mark, styles.quoteMark);
+        mark.textContent = '“';
+        el.insertBefore(mark, el.firstChild);
       }
       return el;
     }
 
     case 'image': {
+      const figure = doc.createElement('figure');
+      figure.className = 'mdcore-figure';
+      applyProps(figure, styles.figure);
       const img = doc.createElement('img');
       img.setAttribute('src', block.src);
       img.setAttribute('alt', block.alt);
       applyProps(img, styles.image);
-      return img;
+      figure.appendChild(img);
+      // alt 作图注：有图注才生成figcaption（空 alt 不占位）
+      if (block.alt && styles.figcaption) {
+        const cap = doc.createElement('figcaption');
+        applyProps(cap, styles.figcaption);
+        cap.textContent = block.alt;
+        figure.appendChild(cap);
+      }
+      return figure;
     }
 
     case 'callout': {
       const el = doc.createElement('section');
+      el.className = `mdcore-callout mdcore-callout-${block.variant}`;
       applyProps(el, styles.callout);
       applyProps(el, styles[`callout-${block.variant}`]);
       for (const child of block.blocks) {
@@ -191,6 +328,16 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
     }
 
     case 'hr': {
+      if (tokens.hrStyle === 'dots') {
+        const el = deco(doc, 'section', 'mdcore-hr-dots');
+        applyProps(el, styles.hr);
+        for (let i = 0; i < 3; i += 1) {
+          const dot = deco(doc, 'span', 'mdcore-hr-dot');
+          applyProps(dot, styles.hrDot);
+          el.appendChild(dot);
+        }
+        return el;
+      }
       const el = doc.createElement('hr');
       applyProps(el, styles.hr);
       return el;

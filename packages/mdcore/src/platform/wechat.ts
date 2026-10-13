@@ -198,7 +198,12 @@ function flattenStructure(root: HTMLElement): void {
       const idx = parent ? Array.from(parent.children).filter((c) => c.tagName === 'LI').indexOf(el) : 0;
       const p = doc.createElement('p');
       for (const attr of Array.from(el.attributes)) p.setAttribute(attr.name, attr.value);
-      p.appendChild(doc.createTextNode(ordered ? `${idx + 1}. ` : '• '));
+      // 渲染层已经自绘了序号（`<span class="mdcore-marker">`，这样序号能跟主色、
+      // 能用中文数字、能跨页续接隐藏）。这里再补一个 `• `/`1. ` 就是**两套符号**。
+      // 判定用类名而不是样式：类名在 stripUnsafe 之前还在。
+      if (!el.querySelector('.mdcore-marker')) {
+        p.appendChild(doc.createTextNode(ordered ? `${idx + 1}. ` : '• '));
+      }
       while (el.firstChild) p.appendChild(el.firstChild);
       el.replaceWith(p);
       return;

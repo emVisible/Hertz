@@ -19,8 +19,12 @@ function blockHeight(el: HTMLElement): number {
     const head = el.querySelector('thead') ? 1 : 0;
     return (head + el.querySelectorAll('tbody tr').length) * LINE_H;
   }
-  if (el.matches('pre')) return (el.textContent ?? '').split('\n').length * LINE_H;
-  if (el.matches('img')) return IMG_H;
+  // v0.36：代码块外面套了 .mdcore-code 卡片壳，图片变成 figure > img + figcaption
+  if (el.matches('pre') || el.querySelector('pre')) {
+    const code = el.querySelector('code');
+    return ((code ?? el).textContent ?? '').split('\n').length * LINE_H;
+  }
+  if (el.matches('img') || el.querySelector('img')) return IMG_H;
   const len = (el.textContent ?? '').length;
   return Math.max(1, Math.ceil(len / CPL)) * LINE_H;
 }
@@ -163,6 +167,34 @@ describe('paginate：强制分页边界（画布拖动边界写回的通道）',
       expect(pages.length, `breaks=${JSON.stringify(breaks)}`).toBe(1);
       expect(pageBodies(pages)[0].children.length).toBe(3);
     }
+  });
+});
+
+describe('paginate：新结构回归（v0.36 渲染层改造）', () => {
+  it('超高代码块被卡片壳包住后仍能拆分、文本守恒（结构改动曾让整块消失）', () => {
+    // v0.36 起 `pre` 被包进 .mdcore-code 卡片壳（挂圆角与语言标签）。若拆分逻辑
+    // 只认顶层 pre，textBox 会返回 null → splitText 走 `el.remove()` → **整段代码
+    // 从产物里消失**（分页数还是对的，只有内容没了，jsdom 不看内容就看不出来）。
+    const code = Array.from({ length: 30 }, (_, i) => `line-${i}`).join('\n');
+    const pages = run(`\`\`\`ts\n${code}\n\`\`\`\n`, 260);
+    expect(pages.length).toBeGreaterThan(1);
+    const joined = pageBodies(pages)
+      .map((b) => Array.from(b.children).map((c) => c.querySelector('code')?.textContent ?? '').join(''))
+      .join('');
+    expect(joined.replace(/\s+/g, ' ').trim()).toBe(code.replace(/\s+/g, ' '));
+    // 续页不再重复一遍语言标签（它是"从哪开始"的标记，不是内容）
+    expect(pages.slice(1).every((page) => page.querySelector('.mdcore-code-head') === null)).toBe(true);
+  });
+
+  it('断点二分不切进装饰节点（章节序号/引用大引号不是正文）', () => {
+    // 装饰文字如果进了 textIndex，断点可能落在 “ 里，下一页开头挂一个孤引号
+    const md = '> ' + '字'.repeat(120);
+    const pages = run(md, 100);
+    const bodies = pageBodies(pages);
+    for (const body of bodies.slice(1)) {
+      expect(body.textContent?.startsWith('“')).toBe(false);
+    }
+    expect(bodies.map((b) => b.textContent ?? '').join('')).toBe('字'.repeat(120));
   });
 });
 

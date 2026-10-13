@@ -10,8 +10,10 @@ const CPL = 10;
 
 function blockHeight(el: HTMLElement): number {
   if (el.matches('h1,h2,h3,h4,h5,h6')) return 40;
-  const len = (el.textContent ?? '').length;
-  return Math.max(1, Math.ceil(len / CPL)) * LINE_H;
+  // v0.36：代码块套了卡片壳（图注也会带进 textContent），按代码本体算行数
+  const code = el.querySelector('code');
+  const body = code ? code.textContent ?? '' : el.textContent ?? '';
+  return Math.max(1, Math.ceil(body.length / CPL)) * LINE_H;
 }
 
 function mockMeasurer(contentHeight: number): Measurer {

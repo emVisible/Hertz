@@ -16,8 +16,30 @@
 export { createMarkdownParser, getMarkdownParser } from './parse/markdown';
 export { parseToIR, tokensToIR, convertInline } from './ir/parseToIR';
 export type { IRBlock, IRBlockType, InlineNode, LayoutIR, LineRange } from './ir/types';
-export { applyTheme, resolveThemedProps } from './theme/apply';
-export { deriveTheme, themeWithOverrides } from './theme/derive';
+export { applyTheme, cjkNumeral, resolveThemedProps } from './theme/apply';
+export { deriveTheme, derivedSlots, mergeSlots, resolveThemeSlots, themeWithOverrides } from './theme/derive';
+export {
+  CODE_BARS,
+  HEADING_STYLES,
+  HR_STYLES,
+  LIST_STYLES,
+  QUOTE_STYLES,
+  STRONG_STYLES,
+  TABLE_STYLES,
+  TOKEN_DEFAULTS,
+  declaredTokens,
+  resolveTokens,
+} from './theme/types';
+export type {
+  CodeBar,
+  HeadingStyle,
+  HrStyle,
+  ListStyle,
+  QuoteStyle,
+  ResolvedTokens,
+  StrongStyle,
+  TableStyle,
+} from './theme/types';
 export { deepen, hexToHsl, hslToHex, isHexColor, withAlpha } from './theme/color';
 export {
   darkThemeFor,

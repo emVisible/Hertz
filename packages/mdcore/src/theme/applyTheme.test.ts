@@ -38,15 +38,15 @@ describe('applyTheme', () => {
     expect(el.style.fontSize).toBe(theme.tokens.fontSize);
   });
 
-  it('overrides 主色覆盖后产物 style 是新色值', () => {
+  it('overrides 主色覆盖后产物 style 是新色值（装饰层，不是标题字色）', () => {
+    // v0.36 起标题字色回到 headInk（主色留给装饰），所以「换色生效」要验装饰：
+    // 墨滴默认 headingStyle=left-bar → 左边条应换成新主色，而标题字色仍是墨色。
     const base = getTheme('modi');
     const el = applyTheme(ir, base, { color: '#ff6600' });
-    const h1 = el.querySelector('h1');
-    expect(h1).not.toBeNull();
-    const applied = (h1 as HTMLElement).style.color.toLowerCase();
-    // jsdom 可能把 hex 规范化为 rgb()，两种字面形式都接受
-    expect(applied === '#ff6600' || applied === 'rgb(255, 102, 0)').toBe(true);
-    expect(applied).not.toBe(base.tokens.color.toLowerCase());
+    const h1 = el.querySelector('h1') as HTMLElement;
+    const bar = h1.style.borderLeft;
+    expect(bar).toContain('rgb(255, 102, 0)'); // jsdom 把 hex 规范化为 rgb()
+    expect(h1.style.color === '#ff6600' || h1.style.color === 'rgb(255, 102, 0)').toBe(false);
   });
 
   it('overrides 字号覆盖后容器 style 是新字号', () => {

@@ -85,26 +85,28 @@ describe('zhihuPayload：公式降级', () => {
   });
 });
 
+/** 数一数 payload 里某标签出现了多少次（结构断言用，比字符串相邻更耐改） */
+function countTags(html: string, tag: string): number {
+  return html.toLowerCase().split(`<${tag}`).length - 1;
+}
+
 describe('zhihuPayload：列表降级', () => {
-  it('有序列表 → 保留 1. 文本编号的 p 序列', async () => {
-    const { html } = await zhihuPayload(renderAndAttach('1. 一\n2. 二\n3. 三\n'));
+  it('有序列表 → 每项一个 p，序号是 p 里的自绘 span', async () => {
+    const { html, text } = await zhihuPayload(renderAndAttach('1. 一\n2. 二\n3. 三\n'));
     expect(html.toLowerCase()).not.toContain('<ol');
     expect(html.toLowerCase()).not.toContain('<li');
-    const i1 = html.indexOf('1. 一');
-    const i2 = html.indexOf('2. 二');
-    const i3 = html.indexOf('3. 三');
-    expect(i1).toBeGreaterThan(-1);
-    expect(i2).toBeGreaterThan(i1);
-    expect(i3).toBeGreaterThan(i2);
-    // 编号是 p 的文本内容
-    expect(html).toMatch(/<p[^>]*>1\. 一/);
+    expect(countTags(html, 'p')).toBe(3);
+    expect(html).toMatch(/<span[^>]*>1\.<\/span>/);
+    // 序号只出现一次（适配器不补文本前缀）
+    expect((text.match(/\d\./g) ?? []).length).toBe(3);
   });
 
-  it('无序列表 → • 前缀 p', async () => {
-    const { html } = await zhihuPayload(renderAndAttach('- 甲\n- 乙\n'));
+  it('无序列表 → 每项一个 p，自绘 •', async () => {
+    const { html, text } = await zhihuPayload(renderAndAttach('- 甲\n- 乙\n'));
     expect(html.toLowerCase()).not.toContain('<ul');
-    expect(html).toContain('• 甲');
-    expect(html).toContain('• 乙');
+    expect(countTags(html, 'p')).toBe(2);
+    expect(html).toMatch(/<span[^>]*>•<\/span>/);
+    expect((text.match(/•/g) ?? []).length).toBe(2);
   });
 
   it('嵌套列表拍平为同级 p 序列（序保持）', async () => {

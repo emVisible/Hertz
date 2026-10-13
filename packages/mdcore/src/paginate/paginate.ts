@@ -82,10 +82,21 @@ function isHeading(el: Element | null): boolean {
   return !!el && /^H[1-6]$/.test(el.tagName);
 }
 
-/** 可以按字拆分的块，返回承载文字的那个元素 */
+/** 代码块的最外层：v0.36 起 `pre` 被包进 `.mdcore-code` 卡片壳（挂圆角与语言标签） */
+function isCodeBlock(el: HTMLElement): boolean {
+  return el.matches('pre') || !!el.querySelector('pre');
+}
+
+/**
+ * 可以按字拆分的块，返回承载文字的那个元素。
+ *
+ * `pre` 藏在代码卡片壳里（v0.36），所以这里必须**下钻一层**——否则 `textBox` 返回
+ * null，`splitText` 会走 `el.remove()` 把整块代码丢掉（内容消失而不是分页）。
+ */
 function textBox(el: HTMLElement): HTMLElement | null {
   if (el.matches('p, blockquote, ul, ol, li')) return el;
-  if (el.matches('pre')) return el.querySelector('code') ?? el;
+  const pre = el.matches('pre') ? el : el.querySelector('pre');
+  if (pre) return pre.querySelector('code') ?? pre;
   return null;
 }
 
@@ -95,7 +106,13 @@ interface TextIndex {
   text: string;
 }
 
-/** 收集元素里所有文字节点，以及每个节点在全文中的起始位置 */
+/**
+ * 收集元素里所有文字节点，以及每个节点在全文中的起始位置。
+ *
+ * 跳过 `data-mdcore-deco` 子树里的文字：章节序号、列表符号、引用大引号、三圆点是
+ * 渲染期物化出来的装饰（伪元素过不了微信清洗器，只能用真节点），它们不是正文——
+ * 不跳过的话断点会切进 “ 里，下一页开头挂一个孤零零的引号。
+ */
 function textIndex(root: HTMLElement, doc: Document): TextIndex {
   const SHOW_TEXT = 4; // NodeFilter.SHOW_TEXT（不依赖全局 NodeFilter）
   const nodes: Array<{ node: Text; start: number }> = [];
@@ -104,8 +121,11 @@ function textIndex(root: HTMLElement, doc: Document): TextIndex {
   let current = walker.nextNode();
   while (current) {
     const n = current as Text;
-    nodes.push({ node: n, start: total });
-    total += n.data.length;
+    const deco = (n.parentElement as HTMLElement | null)?.closest('[data-mdcore-deco]');
+    if (!deco || deco === root) {
+      nodes.push({ node: n, start: total });
+      total += n.data.length;
+    }
     current = walker.nextNode();
   }
   return { nodes, total, text: nodes.map((n) => n.node.data).join('') };
@@ -167,7 +187,7 @@ function splitText(el: HTMLElement, fits: () => boolean, doc: Document): HTMLEle
 
   let k = best;
   if (k > 0) {
-    k = el.matches('pre') ? codeBreak(idx.text, k) : adjustBreak(idx.text, k);
+    k = isCodeBlock(el) ? codeBreak(idx.text, k) : adjustBreak(idx.text, k);
   }
   // 这一页只能放下零星几个字时，干脆整块移到下一页
   if (k <= 0 || idx.text.slice(0, k).trim().length < 2) {
@@ -178,11 +198,13 @@ function splitText(el: HTMLElement, fits: () => boolean, doc: Document): HTMLEle
 
   put(k);
   let rest = k;
-  while (rest < idx.total && /\s/.test(idx.text[rest]) && !el.matches('pre')) rest++;
+  while (rest < idx.total && /\s/.test(idx.text[rest]) && !isCodeBlock(el)) rest++;
 
   const tail = el.cloneNode(true) as HTMLElement;
   tail.classList.add('mdcore-cont');
   tail.removeAttribute('id');
+  // 续页不再重复一遍语言标签/Mac 三色点：它是"这一页从哪开始"的标记，不是内容
+  tail.querySelector('.mdcore-code-head')?.remove();
   textBox(tail)?.replaceChildren(slice(doc, src, idx, rest, false));
   el.classList.add('mdcore-split');
   return tail;

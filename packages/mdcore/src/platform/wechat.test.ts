@@ -88,14 +88,19 @@ describe('wechatPayload：渲染态快照内联产物', () => {
 
   it('结构扁平化：无 ul/li/div，只剩微信安全标签', () => {
     const md = '- 甲\n- 乙\n\n1. 一\n2. 二\n';
-    const { html } = wechatPayload(renderAndAttach(md));
+    const { html, text } = wechatPayload(renderAndAttach(md));
     expect(html.toLowerCase()).not.toContain('<ul');
     expect(html.toLowerCase()).not.toContain('<ol');
     expect(html.toLowerCase()).not.toContain('<li');
     expect(html.toLowerCase()).not.toContain('<div');
-    // 列表项被拍平为 p 并保留可读前缀
-    expect(html).toContain('• ');
-    expect(html).toContain('1. ');
+    // 列表项被拍平为 p；序号由渲染层自绘成 span（序号才能跟主色/用中文数字）
+    expect(html).toMatch(/<span[^>]*>•<\/span>/);
+    expect(html).toMatch(/<span[^>]*>1\.<\/span>/);
+    // **序号只有一个**：适配器不得再补一份文本前缀（v0.36 之前正是两套符号叠着）
+    const bullets = (text.match(/•/g) ?? []).length;
+    expect(bullets, `无序序号出现 ${bullets} 次`).toBe(2);
+    const numerals = (text.match(/\d\./g) ?? []).length;
+    expect(numerals, `有序序号出现 ${numerals} 次`).toBe(2);
   });
 
   it('源画布 DOM 不被改动', () => {
