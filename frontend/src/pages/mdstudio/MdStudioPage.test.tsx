@@ -116,4 +116,50 @@ describe('MdStudioPage smoke', () => {
     await waitFor(() => expect(calls.remove?.length).toBe(1))
     expect(calls.remove[0][0]).toBe(DOC.id)
   })
+
+  it('色盘预设 → overrides.color 落稿（整套配色由主色派生，单一通道）', async () => {
+    render(<MdStudioPage />, { wrapper })
+    const swatches = await screen.findAllByLabelText('mdstudio.inspector.palettePick')
+    expect(swatches.length).toBeGreaterThanOrEqual(6)
+    fireEvent.click(swatches[1])
+    await waitFor(() => expect(calls.update?.length).toBe(1), { timeout: 3000 })
+    expect(calls.update[0][1]).toMatchObject({ overrides: { color: '#0f766e' } })
+  })
+
+  it('深色预览开关 = 切到该平台真深色主题（夜航），不是滤镜近似', async () => {
+    docData = { ...DOC, platform: 'xhs', theme_id: 'taoyao' }
+    listData = [{ id: DOC.id, title: DOC.title, platform: 'xhs', theme_id: 'taoyao', updated_at: DOC.updated_at }]
+    render(<MdStudioPage />, { wrapper })
+    const mount = await screen.findByTestId('mdstudio-canvas-mount')
+    // 卡片节点在 缩放槽 > 缩放层 > 卡片 的最内层，按导出坐标系宽 1242px 认它
+    const cardOf = (): HTMLElement | null =>
+      Array.from(mount.querySelectorAll<HTMLElement>('*')).find((d) => d.style.width === '1242px') ?? null
+    await waitFor(() => expect(cardOf()).not.toBeNull())
+    const lightBg = cardOf()!.style.backgroundColor
+    const toggle = await screen.findByRole('button', { name: 'mdstudio.canvas.dark' })
+    fireEvent.click(toggle)
+    // 150ms 重排 debounce 后应换成夜航（#10131c），且预览开关不改稿
+    await waitFor(() => expect(cardOf()!.style.backgroundColor).toBe('rgb(16, 19, 28)'), { timeout: 3000 })
+    // jsdom 把 #10131c 规范化为 rgb()——这就是夜航的 card 底色
+    expect(lightBg).not.toBe('rgb(16, 19, 28)')
+    expect(calls.update ?? []).toHaveLength(0)
+  })
+
+  it('主题自带的字号/行距会出现在下拉里（不被就近档位谎报）', async () => {
+    docData = { ...DOC, platform: 'xhs', theme_id: 'taoyao' }
+    listData = [{ id: DOC.id, title: DOC.title, platform: 'xhs', theme_id: 'taoyao', updated_at: DOC.updated_at }]
+    render(<MdStudioPage />, { wrapper })
+    // 桃夭 tokens: fontSize 30px / lineHeight 1.55，都不在预设档位里
+    const size = (await screen.findByLabelText('mdstudio.inspector.fontSize')) as HTMLSelectElement
+    const lh = (await screen.findByLabelText('mdstudio.inspector.lineHeight')) as HTMLSelectElement
+    expect(size.value).toBe('30px')
+    expect(Array.from(size.options).map((o) => o.value)).toContain('30px')
+    expect(lh.value).toBe('1.55')
+  })
+
+  it('小红书平台显示二维码上传入口', async () => {    docData = { ...DOC, platform: 'xhs', theme_id: 'taoyao' }
+    listData = [{ id: DOC.id, title: DOC.title, platform: 'xhs', theme_id: 'taoyao', updated_at: DOC.updated_at }]
+    render(<MdStudioPage />, { wrapper })
+    expect(await screen.findByTestId('mdstudio-qr-input')).toBeInTheDocument()
+  })
 })

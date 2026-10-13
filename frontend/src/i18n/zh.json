@@ -65,16 +65,26 @@
     },
     "canvas": {
       "zoom": "缩放",
-      "dark": "深色预览"
+      "dark": "深色预览",
+      "emptyHint": "在这里编辑 Markdown 源文，排版会即时出现在这里。"
+    },
+    "theme": {
+      "darkBadge": "深色"
     },
     "inspector": {
       "theme": "主题",
       "tune": "微调",
       "color": "主色",
+      "palettePick": "用主色 {{color}}",
       "fontSize": "字号",
       "lineHeight": "行距",
       "footer": "署名",
       "footerPlaceholder": "卡片页脚署名",
+      "qr": "二维码",
+      "qrPick": "选择二维码图片",
+      "qrReplace": "替换二维码",
+      "qrRemove": "移除二维码",
+      "qrTooLarge": "二维码图片超过 200KB，请压缩后再试",
       "pages": "页数 {{count}} / {{max}}",
       "pageOverflow": "超出上限，建议精简或拆分",
       "export": "导出"

@@ -65,16 +65,26 @@
     },
     "canvas": {
       "zoom": "Zoom",
-      "dark": "Dark preview"
+      "dark": "Dark preview",
+      "emptyHint": "Edit the Markdown source on the left — the layout updates here instantly."
+    },
+    "theme": {
+      "darkBadge": "Dark"
     },
     "inspector": {
       "theme": "Theme",
       "tune": "Fine-tune",
       "color": "Primary color",
+      "palettePick": "Use primary {{color}}",
       "fontSize": "Font size",
       "lineHeight": "Line height",
       "footer": "Footer",
       "footerPlaceholder": "Card footer text",
+      "qr": "QR code",
+      "qrPick": "Choose QR image",
+      "qrReplace": "Replace QR",
+      "qrRemove": "Remove QR",
+      "qrTooLarge": "QR image exceeds 200KB, compress it first",
       "pages": "Pages {{count}} / {{max}}",
       "pageOverflow": "Over the limit — trim or split",
       "export": "Export"

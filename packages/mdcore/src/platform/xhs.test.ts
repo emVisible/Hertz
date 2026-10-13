@@ -25,9 +25,10 @@ function mockMeasurer(contentHeight: number): Measurer {
 }
 
 describe('xhs 主题', () => {
-  it('注册 3 套 platform=xhs 主题，且带卡片/页脚位样式', () => {
+  it('注册 4 套 platform=xhs 主题（3 亮 + 1 深色「夜航」），且带卡片/页脚位样式', () => {
     const xhsThemes = listThemes().filter((t) => t.platform === 'xhs');
-    expect(xhsThemes.length).toBe(3);
+    expect(xhsThemes.length).toBe(4);
+    expect(xhsThemes.filter((t) => t.dark === true).map((t) => t.id)).toEqual(['yehang']);
     for (const { id } of xhsThemes) {
       const theme = getTheme(id);
       expect(theme.styles.card).toBeTruthy();
@@ -84,6 +85,24 @@ describe('xhsCards', () => {
       expect(footer!.textContent).toContain(`${i + 1} / 3`);
     });
   });
+
+  it('品牌二维码位：qr 传入时每页页脚渲染 eager img，不传则无', () => {
+    const md = '正文一。\n\n正文二。';
+    const withQr = xhsCards(parseToIR(md), {
+      footer: 'young',
+      qr: 'data:image/png;base64,AAAA',
+      measurer: mockMeasurer(CONTENT_H),
+    });
+    const withoutQr = xhsCards(parseToIR(md), { footer: 'young', measurer: mockMeasurer(CONTENT_H) });
+    withQr.pages.forEach((page) => {
+      const img = page.querySelector('.mdcore-xhs-footer-qr');
+      expect(img).not.toBeNull();
+      expect(img!.getAttribute('src')).toBe('data:image/png;base64,AAAA');
+      expect(img!.getAttribute('loading')).toBe('eager');
+    });
+    expect(withoutQr.pages[0].querySelector('.mdcore-xhs-footer-qr')).toBeNull();
+  });
+
 
   it('卡片容器按 3:4 页尺寸挂样式', () => {
     const ir = parseToIR('正文。');

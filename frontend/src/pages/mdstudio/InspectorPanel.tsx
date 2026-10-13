@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { getTheme, listThemes, XHS_MAX_PAGES, type ThemeOverrides } from '@hertz/mdcore'
 
 import type { LayoutPlatform } from '../../api'
-import { Button, Icon, Input, Select, TabBar } from '../../components/ui'
+import { Button, Icon, Input, Select, TabBar, useToast } from '../../components/ui'
 import type { XhsRenderInfo } from './CanvasPanel'
 
 export type ExportAction = 'copy-wechat' | 'copy-zhihu' | 'copy-caption' | 'zip' | 'longimage'
@@ -16,17 +16,32 @@ export type ExportAction = 'copy-wechat' | 'copy-zhihu' | 'copy-caption' | 'zip'
 const FONT_SIZES = ['14px', '15px', '16px', '17px', '18px']
 const LINE_HEIGHTS = ['1.5', '1.6', '1.75', '1.9', '2.0']
 
+/** 主题自带的值必须出现在选项里：否则 Select 显示的是「离它最近的那档」，
+ *  等于谎报当前行距（墨滴 1.8 会被显示成 1.5，小红书主题 30px 会被显示成 18px）。 */
+function optionsWith(values: string[], current: string): Array<{ value: string; label: string }> {
+  const all = values.includes(current) ? values : [...values, current]
+  return [...all]
+    .sort((a, b) => parseFloat(a) - parseFloat(b))
+    .map((v) => ({ value: v, label: v }))
+}
+/** 二维码 dataURL 直接进 cover JSON，200KB 是「够放一张二维码、又不撑爆行」的上限 */
+const QR_MAX_BYTES = 200 * 1024
+/** 色盘预设（§4 doocs/md 式一键换色：选中即 overrides.color，整套由主色派生） */
+const PALETTE = ['#c24d2c', '#0f766e', '#2f4b7c', '#7c3aed', '#b91c1c', '#d4a24c', '#0891b2', '#334155']
+
 interface InspectorPanelProps {
   platform: LayoutPlatform
   themeId: string
   overrides: ThemeOverrides
   footer: string
+  qr: string | null
   xhsInfo: XhsRenderInfo
   exporting: ExportAction | null
   onPlatformChange: (p: LayoutPlatform) => void
   onThemeChange: (id: string) => void
   onOverridesChange: (o: ThemeOverrides) => void
   onFooterChange: (f: string) => void
+  onQrChange: (qr: string | null) => void
   onExport: (action: ExportAction) => void
 }
 
@@ -35,15 +50,18 @@ export function InspectorPanel({
   themeId,
   overrides,
   footer,
+  qr,
   xhsInfo,
   exporting,
   onPlatformChange,
   onThemeChange,
   onOverridesChange,
   onFooterChange,
+  onQrChange,
   onExport,
 }: InspectorPanelProps) {
   const { t } = useTranslation()
+  const toast = useToast()
   const themes = listThemes().filter((th) => th.platform === platform)
   const currentTheme = (() => {
     try {
@@ -99,6 +117,11 @@ export function InspectorPanel({
                 />
                 <span className={`flex-1 text-xs ${active ? 'font-medium text-text-primary' : 'text-text-primary'}`}>
                   {th.name}
+                  {th.dark && (
+                    <span className="ml-1.5 rounded border border-border bg-surface-2 px-1 text-[10px] text-text-secondary">
+                      {t('mdstudio.theme.darkBadge')}
+                    </span>
+                  )}
                 </span>
                 {active && <Icon name="check" size={12} className="shrink-0 text-primary" />}
               </button>
@@ -113,6 +136,21 @@ export function InspectorPanel({
             <label htmlFor="mdstudio-color" className="text-xs font-medium text-text-secondary">
               {t('mdstudio.inspector.color')}
             </label>
+            <div className="flex flex-wrap gap-1.5" data-testid="mdstudio-palette">
+              {PALETTE.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  title={preset}
+                  aria-label={t('mdstudio.inspector.palettePick', { color: preset })}
+                  onClick={() => onOverridesChange({ ...overrides, color: preset })}
+                  className={`h-6 w-6 rounded-full border transition-transform duration-150 hover:scale-110 ${
+                    color.toLowerCase() === preset ? 'border-primary ring-1 ring-primary/40' : 'border-black/10'
+                  }`}
+                  style={{ backgroundColor: preset }}
+                />
+              ))}
+            </div>
             <div className="flex items-center gap-2">
               <input
                 id="mdstudio-color"
@@ -127,13 +165,13 @@ export function InspectorPanel({
           <Select
             label={t('mdstudio.inspector.fontSize')}
             value={fontSize}
-            options={FONT_SIZES.map((v) => ({ value: v, label: v }))}
+            options={optionsWith(FONT_SIZES, fontSize)}
             onChange={(e) => onOverridesChange({ ...overrides, fontSize: e.target.value })}
           />
           <Select
             label={t('mdstudio.inspector.lineHeight')}
             value={lineHeight}
-            options={LINE_HEIGHTS.map((v) => ({ value: v, label: v }))}
+            options={optionsWith(LINE_HEIGHTS, lineHeight)}
             onChange={(e) => onOverridesChange({ ...overrides, lineHeight: e.target.value })}
           />
         </div>
@@ -155,6 +193,53 @@ export function InspectorPanel({
               placeholder={t('mdstudio.inspector.footerPlaceholder')}
               onChange={(e) => onFooterChange(e.target.value)}
             />
+            {/* 品牌二维码位：读成 dataURL 存 cover.qr（导出时同源、无跨域，体积上限 200KB） */}
+            <div className="mt-3 flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-text-secondary">{t('mdstudio.inspector.qr')}</span>
+              <div className="flex items-center gap-2">
+                {qr && (
+                  <img
+                    src={qr}
+                    alt=""
+                    className="h-10 w-10 shrink-0 rounded border border-border bg-white object-contain"
+                    data-testid="mdstudio-qr-preview"
+                  />
+                )}
+                <label className="flex h-8 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded border border-border bg-surface-2 text-xs text-text-secondary transition-colors hover:border-primary hover:text-primary">
+                  <Icon name="upload" size={12} />
+                  {qr ? t('mdstudio.inspector.qrReplace') : t('mdstudio.inspector.qrPick')}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    data-testid="mdstudio-qr-input"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      if (file.size > QR_MAX_BYTES) {
+                        toast(t('mdstudio.inspector.qrTooLarge'), 'error')
+                        e.target.value = ''
+                        return
+                      }
+                      const reader = new FileReader()
+                      reader.onload = () => onQrChange(String(reader.result ?? ''))
+                      reader.readAsDataURL(file)
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+                {qr && (
+                  <button
+                    type="button"
+                    onClick={() => onQrChange(null)}
+                    className="flex h-8 w-8 items-center justify-center rounded border border-border text-text-secondary transition-colors hover:border-error hover:text-error"
+                    title={t('mdstudio.inspector.qrRemove')}
+                  >
+                    <Icon name="trash" size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

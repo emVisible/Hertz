@@ -17,10 +17,14 @@ export { createMarkdownParser, getMarkdownParser } from './parse/markdown';
 export { parseToIR, tokensToIR, convertInline } from './ir/parseToIR';
 export type { IRBlock, IRBlockType, InlineNode, LayoutIR, LineRange } from './ir/types';
 export { applyTheme, resolveThemedProps } from './theme/apply';
+export { deriveTheme, themeWithOverrides } from './theme/derive';
+export { deepen, hexToHsl, hslToHex, isHexColor, withAlpha } from './theme/color';
 export {
+  darkThemeFor,
   defaultThemeFor,
   getTheme,
   listThemes,
+  moan,
   modi,
   mucheng,
   qingjian,
@@ -29,6 +33,7 @@ export {
   taoyao,
   wanfeng,
   xueshu,
+  yehang,
 } from './theme/index';
 export type { StyleProps, Theme, ThemeOverrides, ThemePlatform, ThemeTokens } from './theme/types';
 export { copyToClipboard, toWechatClipboardPayload } from './platform/wechat';

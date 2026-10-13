@@ -40,6 +40,7 @@ interface DraftState {
   theme_id: string
   overrides: ThemeOverrides
   footer: string
+  qr: string | null
 }
 
 type SaveState = 'saved' | 'dirty' | 'saving'
@@ -51,8 +52,9 @@ function draftFromDoc(doc: LayoutDoc): DraftState {
     platform: doc.platform,
     theme_id: doc.theme_id || defaultThemeFor(doc.platform).id,
     overrides: doc.overrides as ThemeOverrides,
-    // footer 存 cover.footer（封面/品牌位 JSON 槽）
+    // footer / qr 存 cover JSON 槽（封面/品牌位，§6 模型预留位）
     footer: typeof doc.cover?.footer === 'string' ? doc.cover.footer : '',
+    qr: typeof doc.cover?.qr === 'string' ? doc.cover.qr : null,
   }
 }
 
@@ -135,7 +137,7 @@ export function MdStudioPage() {
           platform: snapshot.platform,
           theme_id: snapshot.theme_id,
           overrides: snapshot.overrides,
-          cover: { footer: snapshot.footer },
+          cover: { footer: snapshot.footer, qr: snapshot.qr },
         })
         .then((doc) => {
           loadedDocRef.current = doc
@@ -238,7 +240,12 @@ export function MdStudioPage() {
         await navigator.clipboard.writeText(xhsCaption(ir))
         toast(t('mdstudio.export.copiedCaption'), 'success')
       } else if (action === 'zip') {
-        const res = xhsCards(ir, { theme: draft.theme_id, overrides: draft.overrides, footer: draft.footer })
+        const res = xhsCards(ir, {
+          theme: draft.theme_id,
+          overrides: draft.overrides,
+          footer: draft.footer,
+          qr: draft.qr,
+        })
         const blob = await exportZip(res.pages)
         downloadBlob(blob, `${name}-xhs.zip`)
         toast(t('mdstudio.export.done'), 'success')
@@ -327,7 +334,7 @@ export function MdStudioPage() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-x-auto">
         {/* 左栏：排版稿列表 + 导入 + 源文轻编辑 */}
         <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-surface-1">
           <div className="min-h-0 flex-1">
@@ -368,7 +375,7 @@ export function MdStudioPage() {
         </aside>
 
         {/* 中栏：平台感知画布 */}
-        <section className="flex min-w-0 flex-1 flex-col">
+        <section className="flex min-w-[360px] flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-2 px-3 py-2">
             <Select
               aria-label={t('mdstudio.canvas.zoom')}
@@ -381,8 +388,7 @@ export function MdStudioPage() {
               onChange={(e) => setZoom(Number(e.target.value))}
               className="w-24"
             />
-            {/* 深色预览：微信预览切真深色主题「晚风」；xhs/zhihu 暂无深色主题，
-                容器套深底 + 内容反色滤镜近似（切片 E 做逐主题深色款） */}
+            {/* 深色预览：切到该平台真深色主题（晚风/夜航/墨案），只改预览不改稿 */}
             <ToggleChip active={dark} onClick={() => setDark((v) => !v)} title={t('mdstudio.canvas.dark')}>
               <Icon name="moon" size={11} /> {t('mdstudio.canvas.dark')}
             </ToggleChip>
@@ -394,7 +400,6 @@ export function MdStudioPage() {
               className={`mx-auto w-fit rounded-lg border border-border p-3 shadow-md ${
                 dark ? 'bg-[#1c1f28]' : 'bg-surface-1'
               }`}
-              style={dark && draft?.platform !== 'wechat' ? { filter: 'invert(0.92) hue-rotate(180deg)' } : undefined}
             >
               {renderDraft && (
                 <CanvasPanel
@@ -403,8 +408,10 @@ export function MdStudioPage() {
                   themeId={renderDraft.theme_id}
                   overrides={renderDraft.overrides}
                   footer={renderDraft.footer}
+                  qr={renderDraft.qr}
                   zoom={zoom}
                   dark={dark}
+                  emptyHint={t('mdstudio.canvas.emptyHint')}
                   mountRef={mountRef}
                   onXhsInfo={handleXhsInfo}
                 />
@@ -421,12 +428,14 @@ export function MdStudioPage() {
               themeId={draft.theme_id}
               overrides={draft.overrides}
               footer={draft.footer}
+              qr={draft.qr}
               xhsInfo={xhsInfo}
               exporting={exporting}
               onPlatformChange={changePlatform}
               onThemeChange={(id) => patchDraft({ theme_id: id })}
               onOverridesChange={(o) => patchDraft({ overrides: o })}
               onFooterChange={(f) => patchDraft({ footer: f })}
+              onQrChange={(q) => patchDraft({ qr: q })}
               onExport={(a) => void runExport(a)}
             />
           )}

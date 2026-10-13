@@ -67,11 +67,11 @@ fonts/      cn-font-split 构建期中文分片 + unicode-range CSS；
 
 ## 4. 主题系统
 
-- 主题 = TS 对象 `{ id, name, platform 调优, tokens{主色/字体/字号/行距/圆角}, styles{元素→CSS} }`。
-- 内置 8 套（微信 3 / 小红书 3 / 知乎 2）。
-- 色盘一键换色：选主色派生整套（doocs/md 式）。
-- 微调 overrides（主色/字号/行距/圆角）随排版稿入库 = 「我的主题」。
-- 品牌位：页脚署名文本 + 二维码图片（上传存 data/assets，稿内引用路径）。
+- 主题 = TS 对象 `{ id, name, platform 调优, dark?, tokens{主色/字体/字号/行距/圆角}, styles{元素→CSS} }`。
+- 内置 **9 套**：微信 2（墨滴 / 晚风·深色）、小红书 4（桃夭 / 青柠 / 暮橙 / 夜航·深色）、知乎 3（学术 / 清简 / 墨案·深色）。每平台至少一套真深色，预览深色开关 = 切真深色主题（不是反色滤镜）。
+- 色盘一键换色：`deriveTheme(base, primary)` 由主色派生整套（9 条规则见 `packages/mdcore/src/theme/derive.ts` 头注，与 `derive.test.ts` 一对一钉住）；`overrides.color` 是**单一通道**——合法 hex 自动走派生，非法值按普通 token 覆盖不炸。右栏 8 个预设色块 + 自定义取色器。
+- 微调 overrides（主色/字号/行距）随排版稿入库 = 「我的主题」。字号/行距下拉必须并入主题自带值，否则会把「1.8」显示成最近档「1.5」。
+- 品牌位：页脚署名文本 + 二维码。**决策变更（实现时定）**：二维码走前端 FileReader → dataURL 存 `cover.qr`（200KB 上限），**不建后端 assets 端点、不落 data/assets**。理由：导出截图时 dataURL 天然同源、无跨域污染 canvas 风险，且省掉一整套文件存储/白名单/清理逻辑；代价是二维码体积进 DB 行（≤200KB，可接受）。
 
 ## 5. 前端页面 pages/mdstudio/
 
@@ -112,3 +112,19 @@ fonts/      cn-font-split 构建期中文分片 + unicode-range CSS；
 - **E 打磨**：色盘、品牌位、深色预览、性能预算核验。
 
 每片验收 = 对应测试绿 + 在 Electron dev 里人工走通该平台导出。
+
+## 9. 实现后自检（2026-10-13，切片 E）
+
+门禁读数（本机，串行复跑）：`@hertz/mdcore` 88 条 vitest、`hertz-frontend` 210 条 vitest、后端 796 条 pytest，两包 `tsc --noEmit` 干净。成对变异各跑过一次：拿掉 `deriveTheme` 规则 9 → 2 条派生断言精确红；拿掉跨页重复表头 / 避头尾 → 对应分页断言红。
+
+真浏览器观感核验（临时探针页 `frontend/public/mdcore-preview.html` + `src/tmp-preview/entry.ts`，看完即删）：微信墨滴、色盘派生（#7c3aed 整套跟随）、晚风深色、知乎墨案深色、小红书桃夭 3:4 卡片组全部在 Chromium 里渲染正常，控制台零报错。**代价：探针取的是渲染态，不是导出产物。**
+
+产品层量矩形时抓出并修掉的两个真缺陷：
+1. 窄窗下中栏塌缩到 ~9px、缩放控件浮到右栏上——三栏容器改 `overflow-x-auto` + 中栏 `min-w-[360px]`（修后量得 canvas x=320 w=360、容器 scrollWidth 904 > clientWidth 810，即改为横向滚动而非压塌）；
+2. 字号/行距下拉不含主题自带值，导致小红书主题 30px 被显示成 18px、墨滴行距 1.8 被显示成 1.5——`optionsWith()` 把当前值并进档位，并补一条断言钉住。
+
+已知限度（未做/未证，接手者按需处理）：
+- **导出产物未在真浏览器里跑通一次**：snapdom 截图、ZIP 下载、剪贴板 payload 都只有 jsdom 层的逻辑断言与注入式 mock，真实像素与真实剪贴板要在 Electron dev 里人工点一次四个导出按钮。
+- **中文字体分片（cn-font-split）未接**：现在依赖系统字体栈（PingFang 等），导出走系统字体没问题，但要内置跨机一致的中文衬线就得补构建期分片。
+- 性能预算（单页 <500ms、20 页+ZIP <5s）未在真机量过。
+- 主题 9 套而非 §4 原写的 8 套（多出的一套是每平台深色款之一），§4 已按实现改写。

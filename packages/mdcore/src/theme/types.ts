@@ -32,6 +32,8 @@ export interface Theme {
   name: string;
   /** 平台调优（微信/小红书/知乎/generic） */
   platform: ThemePlatform;
+  /** 深色款：预览深色开关优先切到同平台深色主题，而非滤镜近似 */
+  dark?: boolean;
   tokens: ThemeTokens;
   styles: Record<string, StyleProps>;
 }

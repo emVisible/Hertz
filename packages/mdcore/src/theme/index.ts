@@ -6,16 +6,18 @@ import { qingning } from './themes/qingning';
 import { mucheng } from './themes/mucheng';
 import { xueshu } from './themes/xueshu';
 import { qingjian } from './themes/qingjian';
+import { yehang } from './themes/yehang';
+import { moan } from './themes/moan';
 
 /**
  * 内置主题注册表。设计 §4 共 8 套（微信 3 / 小红书 3 / 知乎 2）；
  * 切片 A 落微信向 2 套，切片 B 落小红书向 3 套（桃夭/青柠/暮橙），
  * 切片 C 落知乎向 2 套（学术/清简）。
  */
-const THEMES: Theme[] = [modi, wanfeng, taoyao, qingning, mucheng, xueshu, qingjian];
+const THEMES: Theme[] = [modi, wanfeng, taoyao, qingning, mucheng, xueshu, qingjian, yehang, moan];
 
-export function listThemes(): Array<Pick<Theme, 'id' | 'name' | 'platform'>> {
-  return THEMES.map(({ id, name, platform }) => ({ id, name, platform }));
+export function listThemes(): Array<Pick<Theme, 'id' | 'name' | 'platform' | 'dark'>> {
+  return THEMES.map(({ id, name, platform, dark }) => ({ id, name, platform, dark }));
 }
 
 export function getTheme(id: string): Theme {
@@ -38,4 +40,9 @@ export function defaultThemeFor(platform: ThemePlatform): Theme {
   return theme;
 }
 
-export { modi, wanfeng, taoyao, qingning, mucheng, xueshu, qingjian };
+export { modi, wanfeng, taoyao, qingning, mucheng, xueshu, qingjian, yehang, moan };
+
+/** 某平台的深色款（预览深色开关用）；没有则 undefined（宿主退回滤镜近似） */
+export function darkThemeFor(platform: ThemePlatform): Theme | undefined {
+  return THEMES.find((t) => t.platform === platform && t.dark === true);
+}

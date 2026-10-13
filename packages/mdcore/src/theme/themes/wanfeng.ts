@@ -5,6 +5,7 @@ export const wanfeng: Theme = {
   id: 'wanfeng',
   name: '晚风',
   platform: 'wechat',
+  dark: true,
   tokens: {
     color: '#e8a04c',
     fontFamily:

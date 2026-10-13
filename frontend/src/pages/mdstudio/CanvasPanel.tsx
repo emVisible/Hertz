@@ -8,7 +8,14 @@
  */
 
 import { useEffect, type RefObject } from 'react'
-import { applyTheme, parseToIR, xhsCards, XHS_CARD, type ThemeOverrides } from '@hertz/mdcore'
+import {
+  applyTheme,
+  darkThemeFor,
+  parseToIR,
+  xhsCards,
+  XHS_CARD,
+  type ThemeOverrides,
+} from '@hertz/mdcore'
 
 import type { LayoutPlatform } from '../../api'
 
@@ -26,9 +33,12 @@ interface CanvasPanelProps {
   themeId: string
   overrides: ThemeOverrides
   footer: string
+  qr: string | null
   /** 0.5 / 0.75 / 1 */
   zoom: number
   dark: boolean
+  /** 空稿提示（i18n 由宿主传入） */
+  emptyHint: string
   /** 画布挂载点 */
   mountRef: RefObject<HTMLDivElement | null>
   onXhsInfo: (info: XhsRenderInfo) => void
@@ -40,8 +50,10 @@ export function CanvasPanel({
   themeId,
   overrides,
   footer,
+  qr,
   zoom,
   dark,
+  emptyHint,
   mountRef,
   onXhsInfo,
 }: CanvasPanelProps) {
@@ -50,17 +62,25 @@ export function CanvasPanel({
     if (!host) return
     host.innerHTML = ''
     if (!sourceMd.trim()) {
+      // 空稿也要有反馈：留一行提示，避免中栏看起来像坏了
+      const hint = document.createElement('div')
+      hint.textContent = emptyHint
+      hint.style.setProperty('color', 'var(--hz-text-disabled)')
+      hint.style.setProperty('font-size', '13px')
+      hint.style.setProperty('padding', '48px 12px')
+      hint.style.setProperty('text-align', 'center')
+      host.appendChild(hint)
       onXhsInfo({ pageCount: 0, overflow: false })
       return
     }
     try {
       const ir = parseToIR(sourceMd)
-      // 深色预览（切片 D 简单正确方案）：微信有真深色主题「晚风」，预览时直接换主题，
-      // 不改稿本身；xhs / zhihu 暂无深色主题，由外层容器深底 + 内容反色滤镜近似
-      // （见 MdStudioPage 画布外框，切片 E 做逐主题深色款）。
-      const previewTheme = dark && platform === 'wechat' ? 'wanfeng' : themeId
+      // 深色预览：优先切到该平台的真深色主题（晚风/夜航/墨案），只影响预览不改稿；
+      // 平台无深色款时保持原主题，由外层容器深底近似（见 MdStudioPage 画布外框）。
+      const darkPreset = dark ? darkThemeFor(platform) : undefined
+      const previewTheme = darkPreset?.id ?? themeId
       if (platform === 'xhs') {
-        const result = xhsCards(ir, { theme: previewTheme, overrides, footer })
+        const result = xhsCards(ir, { theme: previewTheme, overrides, footer, qr })
         onXhsInfo({ pageCount: result.pageCount, overflow: result.overflow })
         const scale = XHS_DISPLAY_SCALE * zoom
         const band = document.createElement('div')
@@ -109,7 +129,7 @@ export function CanvasPanel({
       onXhsInfo({ pageCount: 0, overflow: false })
     }
     // overrides 对象随 draft 变更重建，引用即变更信号
-  }, [sourceMd, platform, themeId, overrides, footer, zoom, dark, mountRef, onXhsInfo])
+  }, [sourceMd, platform, themeId, overrides, footer, qr, zoom, dark, emptyHint, mountRef, onXhsInfo])
 
   // 宿主 div 不进 React children——渲染态 DOM 由上面 effect 全权管理
   return <div ref={mountRef} data-testid="mdstudio-canvas-mount" className="min-h-0" />

@@ -1,0 +1,91 @@
+import type { Theme } from '../types';
+
+/**
+ * 「夜航」—— 小红书向深色款：深夜蓝底、月白正文、冷青主色。
+ * card / cardBody / cardFooter 键位供 paginate 页壳与品牌页脚使用（3:4 卡片向）。
+ */
+export const yehang: Theme = {
+  id: 'yehang',
+  name: '夜航',
+  platform: 'xhs',
+  dark: true,
+  tokens: {
+    color: '#6ea8fe',
+    fontFamily:
+      "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+    fontSize: '30px',
+    lineHeight: '1.55',
+    radius: '12px',
+  },
+  styles: {
+    card: { 'background-color': '#10131c', color: '#e6e8ef' },
+    cardBody: {},
+    cardFooter: { color: '#5d6478', 'font-size': '22px', 'line-height': '1.4' },
+    h1: {
+      'font-size': '54px',
+      'font-weight': 'bold',
+      'text-align': 'center',
+      color: '${color}',
+      margin: '0 0 32px',
+      'line-height': '1.3',
+    },
+    h2: { 'font-size': '40px', 'font-weight': 'bold', color: '${color}', margin: '40px 0 20px', 'line-height': '1.35' },
+    h3: { 'font-size': '34px', 'font-weight': 'bold', color: '#dfe3ee', margin: '32px 0 16px' },
+    para: { margin: '0 0 24px' },
+    link: { color: '${color}', 'text-decoration': 'none' },
+    strong: { 'font-weight': 'bold', color: '${color}' },
+    inlineCode: {
+      'font-family': "Menlo, Monaco, Consolas, 'Courier New', monospace",
+      'font-size': '0.85em',
+      'background-color': '#1d2333',
+      color: '${color}',
+      padding: '2px 8px',
+      'border-radius': '${radius}',
+    },
+    pre: {
+      'background-color': '#080a12',
+      color: '#e6e8ef',
+      padding: '24px 28px',
+      'border-radius': '${radius}',
+      'font-family': "Menlo, Monaco, Consolas, 'Courier New', monospace",
+      'font-size': '24px',
+      'line-height': '1.5',
+      margin: '0 0 24px',
+    },
+    quote: {
+      'border-left': '8px solid ${color}',
+      'background-color': '#1a2030',
+      color: '#c3c9d9',
+      padding: '16px 24px',
+      margin: '0 0 24px',
+    },
+    table: { 'border-collapse': 'collapse', width: '100%', margin: '0 0 24px' },
+    th: {
+      border: '2px solid #2c3550',
+      'background-color': '#1d2333',
+      'font-weight': 'bold',
+      padding: '12px 18px',
+      'text-align': 'left',
+    },
+    td: { border: '2px solid #2c3550', padding: '12px 18px' },
+    image: { 'max-width': '100%', 'border-radius': '${radius}', display: 'block', margin: '0 auto 24px' },
+    callout: {
+      'border-left': '8px solid ${color}',
+      'background-color': '#1a2030',
+      padding: '20px 24px',
+      'border-radius': '${radius}',
+      margin: '0 0 24px',
+    },
+    'callout-warning': { 'border-left-color': '#e0a458', 'background-color': '#2a2318' },
+    'callout-danger': { 'border-left-color': '#e06c75', 'background-color': '#2b1a1d' },
+    formula: { margin: '24px 0', 'text-align': 'center', 'overflow-x': 'auto', color: '#e6e8ef' },
+    hr: { border: 'none', 'border-top': '2px dashed #2c3550', margin: '40px 0' },
+    'hljs-keyword': { color: '#c678dd' },
+    'hljs-string': { color: '#98c379' },
+    'hljs-comment': { color: '#7f848e', 'font-style': 'italic' },
+    'hljs-number': { color: '#d19a66' },
+    'hljs-title': { color: '#61afef' },
+    'hljs-attr': { color: '#d19a66' },
+    'hljs-built_in': { color: '#e6c07b' },
+  },
+};

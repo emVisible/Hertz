@@ -24,12 +24,18 @@ export const XHS_CARD = {
 /** 小红书单篇图集页数上限 */
 export const XHS_MAX_PAGES = 18;
 
+/** 带二维码时页脚预留加宽（88px 图 + 上下留白） */
+const QR_FOOTER_SPACE = 128;
+const QR_SIZE = '88px';
+
 export interface XhsOptions {
   /** 缺省用第一套 platform=xhs 的内置主题（桃夭） */
   theme?: Theme | string;
   overrides?: ThemeOverrides;
   /** 品牌页脚署名 */
   footer?: string;
+  /** 品牌二维码（dataURL 或同源 URL），渲染在页脚右侧并加宽页脚预留区 */
+  qr?: string | null;
   /** 缺省 true：首块是 heading 时第一页做封面 */
   cover?: boolean;
   /** 缺省 18 */
@@ -63,7 +69,7 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
       padding: {
         top: XHS_CARD.padding,
         right: XHS_CARD.padding,
-        bottom: XHS_CARD.padding + XHS_CARD.footerSpace,
+        bottom: XHS_CARD.padding + (opts.qr ? QR_FOOTER_SPACE : XHS_CARD.footerSpace),
         left: XHS_CARD.padding,
       },
     },
@@ -73,7 +79,7 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
 
   if (opts.cover !== false && pages.length) applyCover(pages[0]);
   pages.forEach((page, i) => {
-    page.appendChild(makeFooter(doc, theme, overrides, opts.footer, i, pages.length));
+    page.appendChild(makeFooter(doc, theme, overrides, opts.footer, i, pages.length, opts.qr));
   });
 
   const max = opts.maxPages ?? XHS_MAX_PAGES;
@@ -103,7 +109,7 @@ function applyCover(page: HTMLElement): void {
   first.style.setProperty('width', '100%');
 }
 
-/** 品牌页脚：署名 + 页码，绝对定位在页脚预留区（不进测量流） */
+/** 品牌页脚：署名 + 页码（+ 可选二维码），绝对定位在页脚预留区（不进测量流） */
 function makeFooter(
   doc: Document,
   theme: Theme,
@@ -111,6 +117,7 @@ function makeFooter(
   footerText: string | undefined,
   index: number,
   total: number,
+  qr?: string | null,
 ): HTMLElement {
   const el = doc.createElement('div');
   el.className = 'mdcore-xhs-footer';
@@ -132,6 +139,23 @@ function makeFooter(
   num.textContent = `${index + 1} / ${total}`;
   el.appendChild(brand);
   el.appendChild(num);
+  if (qr) {
+    const img = doc.createElement('img');
+    img.setAttribute('src', qr);
+    img.setAttribute('alt', '');
+    img.setAttribute('loading', 'eager');
+    img.className = 'mdcore-xhs-footer-qr';
+    for (const [prop, value] of Object.entries({
+      width: QR_SIZE,
+      height: QR_SIZE,
+      'object-fit': 'contain',
+      'border-radius': '8px',
+      'margin-left': '12px',
+    })) {
+      img.style.setProperty(prop, value);
+    }
+    el.appendChild(img);
+  }
   return el;
 }
 

@@ -1,7 +1,7 @@
 import katex from 'katex';
 import hljs from 'highlight.js';
 import type { IRBlock, InlineNode, LayoutIR } from '../ir/types';
-import { resolveTheme } from './index';
+import { themeWithOverrides } from './derive';
 import type { StyleProps, Theme, ThemeOverrides, ThemeTokens } from './types';
 
 /**
@@ -23,7 +23,7 @@ export function applyTheme(
   doc: Document = globalThis.document,
 ): HTMLElement {
   if (!doc) throw new Error('@hertz/mdcore: applyTheme 需要 DOM 环境（浏览器或 jsdom）');
-  const resolved = resolveTheme(theme);
+  const resolved = themeWithOverrides(theme, overrides);
   const tokens: ThemeTokens = { ...resolved.tokens, ...overrides };
   const styles = resolveStyles(resolved, tokens);
   const ctx: RenderContext = { doc, tokens, styles };
@@ -66,7 +66,7 @@ export function resolveThemedProps(
   overrides: ThemeOverrides,
   key: string,
 ): StyleProps {
-  const resolved = resolveTheme(theme);
+  const resolved = themeWithOverrides(theme, overrides);
   const tokens: ThemeTokens = { ...resolved.tokens, ...overrides };
   return resolveStyles(resolved, tokens)[key] ?? {};
 }
