@@ -1,0 +1,114 @@
+# 超级 Markdown 模块（MD Studio）设计
+
+日期：2026-10-13
+状态：已批准（架构方案一，用户确认 §1-§8）
+定位：**顶级核心功能**，排版导出工作站（非写作 IDE），三平台齐上（微信/小红书/知乎），精调主题+轻自定义，排版稿入库。
+
+## 1. 总体架构
+
+```
+packages/mdcore (@hertz/mdcore)   纯 TS 零 React 内核
+frontend/src/pages/mdstudio/      React 宿主页（三栏工作站）
+backend layout 域                 models/layout.py + routers/layout.py + wave33
+```
+
+三条边界铁律：
+
+1. **后端零渲染**。解析/排版/分页/截图全部在前端（Electron 即 Chromium）。后端只做排版稿 CRUD 与导入（docs 空间 / Studio 产物，复用 `backend/routers/docs.py` 的 containment 模式）。
+2. **mdcore 不 import React、不 import frontend 任何模块**。输入 md 字符串 + 配置，输出挂好样式的 DOM 容器 / Blob / 剪贴板 payload。可在 node+jsdom 下跑 vitest。
+3. **预览与导出共用同一渲染态 DOM**。画布 DOM 即微信内联快照源、即 snapdom 截图源。「所见即所得」由结构保证。
+
+pnpm-workspace.yaml 增加 `packages/*`。
+
+## 2. mdcore 内核管线
+
+```
+parse/      markdown-it + footnote + katex(@traptitech) + container(callout) + toc + attrs
+            代码高亮 Shiki
+ir/         LayoutIR 块序列（heading/para/list/code/table/quote/image/callout/formula），
+            带源码行号。平台适配与分页只认 IR，不认 markdown-it token —— 心脏层
+theme/      主题 = {tokens, styles}；applyTheme(ir, theme, overrides) → 带样式 DOM
+paginate/   测量式分页（移植 mdsea/xiaohongshu-text-layout paginate.js 重写为 TS）
+            隐藏测量台与导出同样式；Range 二分断点；表格按行拆+跨页重复表头；
+            标题孤行控制；中文避头尾（标点不开头）；英文不拆词
+platform/   平台适配器（见 §3）
+export/     snapdom 主 + modern-screenshot 兜底
+            就绪闸门：document.fonts.ready + 图片 eager + 双 rAF + 像素 checksum 两帧一致
+            缩放降级 2×→1.5→1（16384px / 1.2 亿像素双上限）
+            长图 ≤8192px 切片渲染再拼总 canvas
+            产物：PNG Blob / 多页 ZIP(jszip) / 剪贴板 payload
+fonts/      cn-font-split 构建期中文分片 + unicode-range CSS；
+            导出前仅对本文用到的字符分片 FontFace.load()
+```
+
+性能预算：重排 150ms debounce；单页 3:4 PNG <500ms；20 页+ZIP <5s。
+
+三方资产（皆 MIT，保留版权头）：xhs paginate.js→分页器；WeMD 微信清洗器对抗清单→微信适配器硬修复规则集；mdshot exporter 降级策略→导出器骨架。
+
+## 3. 平台适配器
+
+### 3.1 微信 wechat
+- 渲染态快照内联：遍历画布 DOM，`getComputedStyle` 逐节点写回 `style`（不用 juice——浏览器跑不动）。
+- 清洗器对抗：代码块空格/Tab→`&nbsp;`；pre 强制 `overflow-x:auto`；code 左对齐；mjx-container→section；禁 grid/float/position/CSS 变量/class/id/`<style>`；结构扁平化为 `<section>/<p>/<span>`。
+- 外链自动转脚注（References 文末 + 角标）。
+- 复制：`ClipboardItem` 双写 `text/html` + `text/plain`，降级 execCommand。
+
+### 3.2 知乎 zhihu（降级渲染器）
+- 表格→图片；公式→知乎 MathJax 或图片；有序列表→文本编号；图片须在线链接或 base64。
+- 输出同微信规格的 inline HTML。
+
+### 3.3 小红书 xhs
+- 3:4（1242×1656）测量分页卡片；自动封面（首标题放大）；品牌页脚（署名/二维码位）；18 页上限提示。
+- 导出：PNG 组 ZIP + 复制文案（正文+话题标签位）。**不做直发**（无官方发布 API）。
+
+### 3.4 通用
+- 画布内用 CSS `text-autospace: ideograph-alpha ideograph-numeric`；进剪贴板前 pangu 预处理插真实空格（第三方编辑器不认 CSS）。
+- 中文避头尾 `line-break: strict` + `word-break: break-all`。
+
+## 4. 主题系统
+
+- 主题 = TS 对象 `{ id, name, platform 调优, tokens{主色/字体/字号/行距/圆角}, styles{元素→CSS} }`。
+- 内置 8 套（微信 3 / 小红书 3 / 知乎 2）。
+- 色盘一键换色：选主色派生整套（doocs/md 式）。
+- 微调 overrides（主色/字号/行距/圆角）随排版稿入库 = 「我的主题」。
+- 品牌位：页脚署名文本 + 二维码图片（上传存 data/assets，稿内引用路径）。
+
+## 5. 前端页面 pages/mdstudio/
+
+- 路由 `/mdstudio`；侧边导航 produce 组、「执行」之后；i18n `nav.mdstudio`（图文工坊 / MD Studio）。
+- 三栏：
+  - 左栏：排版稿列表（新建/删除/切换）+ 源文轻编辑（复用 components/ui/MarkdownEditor）+ 导入（docs 空间 / Studio run final.md / 粘贴 / 本地 .md 上传）。
+  - 中栏：平台感知画布——微信=手机图文流宽度；小红书=3:4 卡片横向滑动+封面；知乎=文章页。缩放、深色预览开关。
+  - 右栏：平台 Tab（微信/小红书/知乎）→ 主题选择 → 色盘 → token 微调 → 分页控制（小红书）→ 导出按钮组。
+- 顶栏：稿名、保存状态（自动保存 debounce）、主导出按钮。
+- 视觉遵循 theme/tokens.ts `--hz-*` 与 components/ui/ 组件库；TabBar/Modal/Toast 复用。
+
+## 6. 后端 layout 域
+
+- `backend/models/layout.py`：`Layout(BaseModel)` — title, source_md(Text), source_ref(可空，docs 相对路径或 `studio:<run>`), platform, theme_id, overrides(JSON), cover(JSON)。
+- `backend/routers/layout.py`：`GET /layout` 列表、`POST /layout`、`GET/PUT/DELETE /layout/{id}`、`GET /layout/import/docs?path=`（containment 复用 docs 逻辑）、`GET /layout/import/studio?run=`。
+- 聚合注册进 `backend/routers/__init__.py`。
+- 迁移 `alembic/versions/wave33_layout.py`。
+- 前端 `api/layout.ts` 对接。导出产物不落库。
+
+## 7. 测试策略
+
+- **mdcore**（vitest, node+jsdom）：
+  - IR 快照：代表样例 md → IR 结构断言；
+  - 分页：合成 DOM mock `getBoundingClientRect`，钉断点选择、表格跨页表头、孤行标题推下页、避头尾（标点不开行首）；
+  - 微信内联：产物无 class/id/`<style>`/CSS 变量，代码块含 `&nbsp;`，外链进 References；
+  - 降级链：mock canvas 超限 → scale 降档断言；
+  - 成对变异：拿掉避头尾/表头重复 → 对应断言必须红。
+- **后端**：`tests/test_layout.py` CRUD + 导入路径越界 403/422 + 非 .md 拒绝。
+- **前端**：页面 smoke（渲染+切平台 Tab）、`api/layout.ts` mock 层。
+- 门禁：现有 607 pytest + 117 vitest 全绿 + 新增；`pnpm typecheck`。
+
+## 8. 实施切片（按序）
+
+- **A 内核+微信**：mdcore 骨架（parse/IR/theme）+ 微信适配器 + 复制；最小页面能粘贴 md → 复制到公众号。
+- **B 小红书**：分页引擎 + 3:4 卡片 + ZIP 导出。
+- **C 长图+知乎**：长图切片拼接导出；知乎降级渲染器。
+- **D 后端域+页面整合**：layout CRUD/导入/迁移；三栏工作站完整化；导航/i18n。
+- **E 打磨**：色盘、品牌位、深色预览、性能预算核验。
+
+每片验收 = 对应测试绿 + 在 Electron dev 里人工走通该平台导出。
