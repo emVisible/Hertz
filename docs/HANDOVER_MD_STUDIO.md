@@ -8,12 +8,12 @@
 
 | 项 | 值 | 怎么重取 |
 | --- | --- | --- |
-| 分支 / HEAD | `main` / `c755458` | `git log --oneline -1` |
-| 本模块提交 | 8 个：`f911f9c` spec → `b9e0a03` 内核 → `4211298` 页面+后端 → `4351335` 切片 E → `4739426` 导出器修复 → `4e23d7c` 分页/剪贴板修复 → `10c58ab` 文档 → `c755458` 门禁 | `git log --oneline -9` |
-| 工作树 | 干净（除本文与设计文档本身） | `git status --short` |
-| 门禁 | 七步全绿，`VERIFY_EXIT=0` | `bash scripts/verify.sh` |
-| 远端 | **未 push、未打 tag**（按规矩要单独授权） | `git log origin/main..HEAD --oneline` |
-| 版本 | 未 bump，仍在 `0.34.0`；变更挂在 CHANGELOG 的 `[Unreleased]` | `grep -m1 version frontend/package.json` |
+| 分支 / HEAD | `main` / `b87746e`（功能）+ 其后的发版准备提交 | `git log --oneline -2` |
+| 本模块提交 | 10 个：`f911f9c` spec → `b9e0a03` 内核 → `4211298` 页面+后端 → `4351335` 切片 E → `4739426` 导出器修复 → `4e23d7c` 分页/剪贴板修复 → `10c58ab` 文档 → `c755458` 门禁 → `37bc677` 设计与接手文档 → `b87746e` 画布内编辑+批量出图 | `git log --oneline -10` |
+| 工作树 | 干净 | `git status --short` |
+| 门禁 | 七步全绿（分两批跑：pytest 796 / mdcore 102 / 前端 219 / 两包 tsc / vite build 2.31s） | `bash scripts/verify.sh` |
+| 远端 | v0.35.0 已 tag + push（`git tag -l v0.35.0`、`git log origin/main..HEAD`） | — |
+| 版本 | `0.35.0`；CHANGELOG 已收版 | `grep -m1 version frontend/package.json` |
 
 ## 2. 真相源地图
 
