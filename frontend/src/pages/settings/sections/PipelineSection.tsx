@@ -689,6 +689,14 @@ export function PipelineSection({
               onChange={(e) => set('pipeline_publish_max_attempts', e.target.value)}
             />
             <Input
+              label={t('settings.itemRetryBudget')}
+              type="number"
+              min={0}
+              max={20}
+              value={form.pipeline_max_item_retries ?? '3'}
+              onChange={(e) => set('pipeline_max_item_retries', e.target.value)}
+            />
+            <Input
               label={t('settings.publishRetryBase')}
               type="number"
               step={0.5}

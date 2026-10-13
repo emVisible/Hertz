@@ -5,14 +5,19 @@ v0.8.9 AXIOM 2.1 路由域拆分：原 pipeline.py 30+ 端点 7 域挤一文件�
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 
 from backend.config import settings
 from backend.errors import HertzError
 from backend.factory.registry import ServiceRegistry
+from backend.models.item import Item, ItemStatus
+from backend.models.session import session_factory
 from backend.pipeline.publish_queue import QUEUE_PHASES
+from backend.pipeline.publish_reliability import cooldown_left
 from backend.pipeline.publishers.router import PUBLISHERS
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
@@ -106,6 +111,37 @@ async def publish_status() -> dict:
     from backend.infrastructure.deps import dep_ok, load_dependencies
 
     biliup = dep_ok(load_dependencies(), "biliup")
+
+    # v0.38：发布可靠性状态。
+    #
+    # 熔断与重试上一轮就做了，但**没有任何出口**——一个不可观测的状态等于不存在：
+    # 用户看到「发布失败」，界面告诉他「失败」，却既不知道目标是不是正在被限流
+    # 冻结，也看不出最近失败都归到哪一类。这两个数就是把那口黑箱打开的地方。
+    cooldowns: dict[str, float] = {}
+    for name in PUBLISHERS:
+        try:
+            left = await cooldown_left(name)
+        except Exception:  # noqa: BLE001 — 状态查询 best-effort，不让它掀掉整个健康检查
+            continue
+        if left > 0:
+            cooldowns[name] = round(left, 1)
+
+    # 近 7 天发布失败的分类分布：回答「为什么发不出去」而不是只回答「失败了」
+    since = datetime.now(UTC) - timedelta(days=7)
+    async with session_factory() as session:
+        failure_rows = (
+            await session.execute(
+                select(Item.error_class, func.count())
+                .where(
+                    Item.status == ItemStatus.FAILED,
+                    Item.error_class != "",
+                    Item.updated_at >= since,
+                )
+                .group_by(Item.error_class)
+            )
+        ).all()
+    by_class = {cls or "other": int(n) for cls, n in failure_rows}
+
     return {
         "target": target,
         "biliup_available": biliup,
@@ -115,6 +151,11 @@ async def publish_status() -> dict:
         "publishers": list(PUBLISHERS),
         # noop 目标下发布只是记录意图——前端据此刻意警示
         "noop": target == "noop",
+        # v0.38
+        "max_attempts": int(getattr(settings, "pipeline_publish_max_attempts", 3)),
+        "cooldowns_s": cooldowns,
+        "target_throttled": target in cooldowns,
+        "failures_7d_by_class": by_class,
     }
 
 

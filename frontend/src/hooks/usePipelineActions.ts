@@ -333,13 +333,31 @@ export function usePipelineActions(ctx: PipelineActionsContext) {
    *  撤的是**界面写点**：后端 `POST /items/{id}/queue` 与 `queue_phase` 字段、
    *  `auto_publish` 的槽位机制一律保留——要开无人值守发布，走 API 或 Telegram 写相位。 */
 
-  /** 同类批量重试（失败分类看板）：批量副作用，先确认（AXIOM §13.1）。 */
-  async function retryClass(cls: string, n: number) {
+  /** 同类批量重试（失败分类看板）：批量副作用，先确认（AXIOM §13.1）。
+   *
+   *  v0.38：条目有**重试预算**（`pipeline_max_item_retries`）。超预算的条目不会被
+   *  自动复位——否则一个永久失败的源能被无限重试。但只回一句「重试了 0 条」会
+   *  让人以为按钮坏了，所以要报出被预算挡下的条数，并给出 `force` 出口：
+   *  这是**人的**决定（我确认过这几条该再试），与系统的自动循环不是一回事。
+   */
+  async function retryClass(cls: string, n: number, force = false) {
     if (!window.confirm(t('console.retryClassConfirm', { cls, n }))) return
     try {
-      const res = await pipelineApi.retryClass(cls)
+      const res = await pipelineApi.retryClass(cls, force)
       refresh()
-      toast(t('console.retriedClass', { n: res.requeued }), 'success')
+      if (res.requeued === 0 && res.skipped_over_budget > 0) {
+        toast(t('console.retryClassOverBudget', { n: res.skipped_over_budget }), 'warning')
+      } else if (res.skipped_over_budget > 0) {
+        toast(
+          t('console.retriedClassWithSkipped', {
+            n: res.requeued,
+            k: res.skipped_over_budget,
+          }),
+          'warning',
+        )
+      } else {
+        toast(t('console.retriedClass', { n: res.requeued }), 'success')
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'error')
     }

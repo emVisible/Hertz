@@ -453,7 +453,10 @@
     "publishCooldownMax": "Cooldown cap (s)",
     "publishReliabilityHint": "Uploads that hit rate limits or flaky networks are retried with exponential backoff. Repeated rate limits freeze the target for a while (longer the more you collide); one success clears it. 403/404 are permanent and never retried — that is an expired cookie, and retrying only deepens the block.",
     "publishLookaheadDays": "Schedule horizon (days)",
-    "publishLookaheadHint": "1 = today only (when windows fill up, the item stays unscheduled for you to place manually). Set 7 to plan a week ahead — previously no value could schedule past tomorrow."
+    "publishLookaheadHint": "1 = today only (when windows fill up, the item stays unscheduled for you to place manually). Set 7 to plan a week ahead — previously no value could schedule past tomorrow.",
+    "publishThrottled": "Rate-limited, resuming in ~{s}s (up to {n} attempts each)",
+    "publishFailures7d": "Publish failures, last 7 days:",
+    "itemRetryBudget": "Per-item retry budget (beyond this, manual review)"
   },
   "execution": {
     "modeStudio": "Studio",
@@ -1223,7 +1226,10 @@
       "sourceLoading": "Loading…",
       "blockMissingSource": "{n} segment(s) are no longer available as sources (file cleaned up or item state changed) — remove them or pick different clips before creating",
       "draftPruned": "Restored your previous arrangement. {n} segment(s) were no longer available (file cleaned up or item state changed) and have been removed."
-    }
+    },
+    "retryClassOverBudget": "{n} items are over the retry limit and were not retried. Use “Force retry” if you are sure.",
+    "retriedClassWithSkipped": "Retried {n}; {k} skipped for exceeding the retry limit.",
+    "retryClassForce": "Force retry (ignore the retry limit)"
   },
   "canvas": {
     "tool": {
@@ -1556,6 +1562,18 @@
       "publish": "Upload failed — check Bilibili login state and whether cookies.json expired",
       "internal": "Internal crash — check System Logs for the stack; a retry often recovers",
       "other": "Unclassified error — click the row to read the full message"
+    },
+    "class": {
+      "blocked": "Source rejected",
+      "rate_limit": "Rate limited",
+      "timeout": "Timeout",
+      "llm": "AI service",
+      "tts": "Speech synthesis",
+      "ffmpeg": "Video processing",
+      "download": "Download",
+      "publish": "Upload",
+      "internal": "Internal error",
+      "other": "Unclassified"
     }
   },
   "workshop": {

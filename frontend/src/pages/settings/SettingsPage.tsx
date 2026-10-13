@@ -63,6 +63,7 @@ interface ConfigData {
   pipeline_subtitle_margin_bottom?: number
   node_bin?: string
   pipeline_publish_max_attempts?: number
+  pipeline_max_item_retries?: number
   pipeline_publish_retry_base_seconds?: number
   pipeline_publish_cooldown_seconds?: number
   pipeline_publish_lookahead_days?: number
@@ -209,6 +210,7 @@ export function SettingsPage() {
       pipeline_subtitle_margin_bottom: String(cfg.pipeline_subtitle_margin_bottom ?? 64),
       node_bin: cfg.node_bin ?? '',
       pipeline_publish_max_attempts: String(cfg.pipeline_publish_max_attempts ?? 3),
+      pipeline_max_item_retries: String(cfg.pipeline_max_item_retries ?? 3),
       pipeline_publish_retry_base_seconds: String(cfg.pipeline_publish_retry_base_seconds ?? 5),
       pipeline_publish_cooldown_seconds: String(cfg.pipeline_publish_cooldown_seconds ?? 900),
       pipeline_publish_lookahead_days: String(cfg.pipeline_publish_lookahead_days ?? 1),

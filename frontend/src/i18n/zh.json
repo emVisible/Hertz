@@ -468,7 +468,10 @@
     "publishCooldownMax": "冷却上限(秒)",
     "publishReliabilityHint": "上传遇到限流或网络抖动时按指数退避重试。连续撞到限流就冻结该目标一段时间（连撞越久等越久），一次成功即解冻。403/404 属永久失败不重试——那是 cookie 过期，重试只会加重封禁。",
     "publishLookaheadDays": "排期向前看(天)",
-    "publishLookaheadHint": "1 = 只排当天（窗口排满就保持未排期，等你手动设）。调到 7 就能提前把未来一周的内容排进窗口——此前无论怎么调都只能排到明天为止。"
+    "publishLookaheadHint": "1 = 只排当天（窗口排满就保持未排期，等你手动设）。调到 7 就能提前把未来一周的内容排进窗口——此前无论怎么调都只能排到明天为止。",
+    "publishThrottled": "限速冻结中，约 {s} 秒后恢复（每次最多尝试 {n} 次）",
+    "publishFailures7d": "近 7 天发布失败：",
+    "itemRetryBudget": "条目重试上限（超出则需人工确认）"
   },
   "execution": {
     "modeStudio": "Studio 编排",
@@ -1238,7 +1241,10 @@
       "sourceLoading": "载入中…",
       "blockMissingSource": "有 {n} 段素材已不在候选列表（文件被清理或条目状态变了），无法创建——请移除这些段或换素材",
       "draftPruned": "已恢复上次的编排，其中 {n} 段素材已不可用（文件被清理或条目状态变化），已自动移除。"
-    }
+    },
+    "retryClassOverBudget": "有 {n} 条已超出重试上限，未自动重试。确认无误可点「强制重试」。",
+    "retriedClassWithSkipped": "已重试 {n} 条，另有 {k} 条超出重试上限被跳过。",
+    "retryClassForce": "强制重试（无视重试上限）"
   },
   "canvas": {
     "tool": {
@@ -1556,6 +1562,18 @@
       "publish": "上传失败——检查 B 站登录状态与 cookies.json 是否过期",
       "internal": "程序内部异常——查看 系统日志 定位堆栈；重试一次常可恢复",
       "other": "未分类错误——点击行查看完整错误信息判断"
+    },
+    "class": {
+      "blocked": "源被拒",
+      "rate_limit": "限流",
+      "timeout": "超时",
+      "llm": "AI 服务",
+      "tts": "语音合成",
+      "ffmpeg": "视频处理",
+      "download": "下载",
+      "publish": "上传",
+      "internal": "内部异常",
+      "other": "未分类"
     }
   },
   "workshop": {

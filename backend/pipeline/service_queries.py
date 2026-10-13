@@ -114,6 +114,11 @@ def utc_instant(value: str) -> datetime:
 
 
 class QueriesMixin:
+    #: 上次 retry_class 因超预算而跳过的条目 id。随该方法一起更新，供 API 层
+    #: 如实告诉用户「有 N 条没自动重试」——只返回一个偏小的数字会让用户以为
+    #: 全都处理了。
+    _last_retry_skipped: list[str] = []
+
     # ---------- queries ----------
 
     async def list_items(
@@ -623,12 +628,23 @@ class QueriesMixin:
                 counts[cls or "other"] = counts.get(cls or "other", 0) + 1
             return counts
 
-    async def retry_class(self, cls: str) -> int:
-        """同类批量重试：把该失败分类的所有 failed 条目复位回可继续的状态。"""
+    async def retry_class(self, cls: str, *, force: bool = False) -> int:
+        """同类批量重试：把该失败分类的 failed 条目复位回可继续的状态。
+
+        v0.38：加**重试预算**。`retry_count` 此前只在两处 `+= 1`，从没有任何地方
+        读它——于是一个永久失败的数据源（cookie 过期、源站下线）会被无限次
+        「重试」，每次都白烧一轮采集/评分。超预算的条目不再被复位。
+
+        `force=True` 时无视预算——那是**人的**决定（我确认过这条该再试一次），
+        与系统的自动循环不是一回事。
+        """
+        from backend.config import settings
         from backend.pipeline.errors import FAILURE_CLASSES
+        from backend.pipeline.helpers import back_status_for
 
         if cls not in FAILURE_CLASSES:
             raise ValueError(f"unknown failure class '{cls}'")
+        budget = max(0, int(getattr(settings, "pipeline_max_item_retries", 3)))
         async with session_factory() as session:
             rows = (
                 await session.execute(
@@ -639,12 +655,18 @@ class QueriesMixin:
                     )
                 )
             ).scalars().all()
-            from backend.pipeline.helpers import back_status_for
-
+            retried = 0
+            skipped: list[str] = []
             for item in rows:
+                if not force and int(item.retry_count or 0) >= budget:
+                    # 超预算：留着 failed + 保留 error_class，人能看到它卡在哪
+                    skipped.append(str(item.id))
+                    continue
                 item.status = back_status_for(item)
                 item.error = None
                 item.error_class = ""
                 item.retry_count += 1
+                retried += 1
             await session.commit()
-            return len(rows)
+            self._last_retry_skipped = skipped
+            return retried

@@ -13,7 +13,9 @@ retry/backoff/sleep——一次网络抖动 = 一次已经被消费掉的调度�
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
+from backend.models.item import Item, ItemStatus
 from backend.models.pipeline import ResourceCooldown
 from backend.models.session import session_factory
 from backend.pipeline.publish_reliability import (
@@ -26,6 +28,7 @@ from backend.pipeline.publish_reliability import (
     publish_with_retry,
     trip_cooldown,
 )
+from backend.pipeline.publishers.router import PUBLISHERS
 
 
 @pytest.fixture
@@ -199,7 +202,6 @@ async def test_cooldown_grows_then_clears_on_success(clean_cooldown) -> None:
 @pytest.mark.asyncio
 async def test_cooldown_is_scoped_per_target(clean_cooldown) -> None:
     """熔断按目标隔离——B 站被限流不该连累别的目标。"""
-    from backend.pipeline.publishers.router import PUBLISHERS
 
     if "bilibili" not in PUBLISHERS:  # pragma: no cover
         pytest.skip("biliup 不可用")
@@ -365,3 +367,153 @@ def test_publish_gate_keeps_title_check_outside_phash_branch():
     assert not line.lstrip().startswith(("if ", "elif ")), (
         f"标题闸被条件包住了（{line.strip()!r}）——phash 为空的条目会绕过它"
     )
+
+
+# ---------- 发布可靠性必须可观测（v0.38） ----------
+
+@pytest.mark.asyncio
+async def test_publish_status_exposes_cooldown_and_failures(client, clean_cooldown, clean_items):
+    """发布状态端点要报出：目标是否被熔断、近 7 天失败都归到哪一类。
+
+    ## 为什么这条必须存在
+
+    重试与熔断做出来之后，状态存进了 `resource_cooldown`——但**没有任何出口**。
+    一个不可观测的状态等于不存在：用户看到「发布失败」，界面告诉他「失败」，
+    却既不知道目标是不是正被限流冻结，也看不出最近失败的原因分布。
+    """
+    from backend.pipeline.publish_reliability import trip_cooldown
+
+    await trip_cooldown("bilibili")
+    r = await client.get("/api/pipeline/publish/status")
+    body = r.json()
+
+    assert body["cooldowns_s"].get("bilibili", 0) > 0, "熔断状态必须能从端点看到"
+    assert body["max_attempts"] >= 1, "界面要知道会重试几次"
+    assert "failures_7d_by_class" in body
+
+    # target_throttled 是给「当前生效目标」的便捷判断：默认配置是 noop，
+    # 而 noop 从不被熔断（本地记意图），所以必须是 False——这正是「不误报」。
+    assert body["target_throttled"] is (
+        body["target"] in body["cooldowns_s"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_publish_status_clean_when_nothing_wrong(client, clean_cooldown, clean_items):
+    """没出问题时不要平白报警——「熔断中」指示灯常亮等于没有指示灯。"""
+    r = await client.get("/api/pipeline/publish/status")
+    body = r.json()
+    assert body["target_throttled"] is False
+    assert body["cooldowns_s"] == {}
+
+
+@pytest.mark.asyncio
+async def test_auto_publish_failure_is_classified_not_blanket(clean_items):
+    """发布失败必须按文本归类，不能一律写死 `publish`。
+
+    一律写死会让**所有**发布失败落进同一个桶，失败看板（按 error_class 聚合
+    + 批量重试）于是答不出「为什么发不出去」：cookie 过期、限流、视频格式问题
+    看起来一模一样。
+
+    直接对 `PhaseEngine` 里那条 except 分支所依赖的归类行为做断言，再补一条
+    源码级守卫锁住「不许回退成写死的 publish」。驱动整个 tick 需要先造出
+    ready 相位的条目（enqueue 语义），那是另一层测试关心的事。
+    """
+    from backend.pipeline.errors import classify_error
+
+    # 发布语境下这些文本必须分得开
+    assert classify_error("HTTP Error 403: Forbidden", step="publish") == "blocked"
+    assert classify_error("HTTP Error 429: Too Many Requests", step="publish") == "rate_limit"
+    assert classify_error("biliup exited 1", step="publish") == "publish"
+
+
+def test_auto_publish_branch_does_not_hardcode_publish_class():
+    """源码级守卫：except 分支不得再写死 `error_class = "publish"`。
+
+    这类退化**不报错**——功能只是悄悄变回「所有失败一个桶」，所以只能靠源码断言。
+    """
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parents[1]
+        / "backend/pipeline/service_promotion.py"
+    ).read_text(encoding="utf-8")
+    assert 'error_class = "publish"' not in src, (
+        "发布失败又退回写死 publish——失败看板将无法回答「为什么发不出去」"
+    )
+    assert "classify_error(" in src, "应当用 classify_error 归类"
+
+
+async def _clear_failed(*classes: str) -> None:
+    """清掉指定失败分类下的**全部**条目（含其它测试文件漏下的）。
+
+    `retry_class` 是**按类全局**操作的：只看自己造的条目去断言返回条数，等于
+    依赖「整个共享库恰好是干净的」——别的文件漏一条 FAILED/internal 进来，
+    这条测试就会在全量跑时莫名失败，而单跑时通过。这类「单跑绿、全量红」的测试
+    比没有测试更糟：它训练人忽略红灯。
+    """
+    from sqlalchemy import delete
+
+    from backend.models.item import Item
+
+    async with session_factory() as session:
+        await session.execute(
+            delete(Item).where(Item.error_class.in_(classes)))
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_retry_class_respects_budget_and_force_rescues_it(clean_items):
+    """`retry_count` 此前只写不读：一个永久失败的条目能被无限重试。
+
+    预算必须真的生效，且必须有出口——否则用户只会看到「重试没反应」，
+    而不知道是自己被防住了。
+    """
+    from backend.factory.registry import ServiceRegistry
+    from backend.pipeline.helpers import back_status_for
+
+    await _clear_failed("internal")
+    svc = ServiceRegistry.get().pipeline
+    await _mk_item(source_id="budget-1", status=ItemStatus.FAILED,
+                   error="boom", error_class="internal",
+                   retry_count=3)  # 已用满默认预算 3
+
+    n = await svc.retry_class("internal")
+    assert n == 0, "超预算的条目不应被自动复位"
+    assert svc._last_retry_skipped, "跳过的条目必须报出来，否则用户以为全处理了"
+
+    # 它必须仍留在失败态、且保留 error_class——这是人工排查的线索
+    async with session_factory() as session:
+        row = (await session.execute(
+            select(Item).where(Item.source_id == "budget-1"))).scalar_one()
+        assert row.status == ItemStatus.FAILED
+        assert row.error_class == "internal"
+
+    # 人的决定能越过预算
+    assert await svc.retry_class("internal", force=True) == 1
+    async with session_factory() as session:
+        row = (await session.execute(
+            select(Item).where(Item.source_id == "budget-1"))).scalar_one()
+        assert row.status == back_status_for(row)
+        assert row.error_class == ""
+
+
+@pytest.mark.asyncio
+async def test_retry_class_budget_counts_down_per_round(clean_items):
+    """预算按次递减——不是一次性闸门，否则第二条同类失败条目会永远排不上。"""
+    from backend.factory.registry import ServiceRegistry
+
+    await _clear_failed("timeout")
+    svc = ServiceRegistry.get().pipeline
+    await _mk_item(source_id="b-a", status=ItemStatus.FAILED,
+                   error="x", error_class="timeout", retry_count=0)
+    await _mk_item(source_id="b-b", status=ItemStatus.FAILED,
+                   error="x", error_class="timeout", retry_count=0)
+
+    assert await svc.retry_class("timeout") == 2
+    for src in ("b-a", "b-b"):
+        async with session_factory() as session:
+            row = (await session.execute(
+                select(Item).where(Item.source_id == src))).scalar_one()
+            assert row.retry_count == 1
+            assert row.error_class == ""

@@ -169,7 +169,11 @@ export function ExceptionsTab({
                 <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
                   {Object.entries(p.failures).map(([cls, n]) => (
                     <span key={cls} className="inline-flex items-center gap-1.5 border border-border bg-surface-2/60 px-2 py-0.5 text-[11px] text-text-secondary">
-                      <span className="font-mono">{cls}</span>
+                      {/* v0.38：类名此前裸露英文（blocked / rate_limit…）。
+                          分类是这套界面里最高频出现的词，中文用户不该每次靠猜。 */}
+                      <span className="font-mono">
+                        {t(`errors.class.${cls}`, { defaultValue: cls })}
+                      </span>
                       <span className="text-text-disabled">{n}</span>
                       <button
                         type="button"
@@ -178,6 +182,15 @@ export function ExceptionsTab({
                         className=" p-0.5 text-text-disabled transition-colors hover:text-primary"
                       >
                         <Icon name="refresh" size={11} />
+                      </button>
+                      {/* v0.38：预算出口。只有超预算时才有意义——平时它是噪声。 */}
+                      <button
+                        type="button"
+                        onClick={() => void p.retryClass(cls, n, true)}
+                        title={t('console.retryClassForce')}
+                        className="p-0.5 text-text-disabled transition-colors hover:text-warning"
+                      >
+                        <Icon name="alert" size={11} />
                       </button>
                     </span>
                   ))}

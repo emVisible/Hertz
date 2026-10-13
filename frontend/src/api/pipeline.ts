@@ -324,6 +324,14 @@ export const pipelineApi = {
       cookie_age_s: number | null
       publishers: string[]
       noop: boolean
+      /** v0.38：最多尝试几次（上传遇限流/网络抖动会重试） */
+      max_attempts: number
+      /** v0.38：各目标剩余冷却秒数——非空表示它正被熔断冻结 */
+      cooldowns_s: Record<string, number>
+      /** 便捷判断：当前生效的目标是否正处于熔断中 */
+      target_throttled: boolean
+      /** 近 7 天发布失败按原因分类的分布——回答「为什么发不出去」 */
+      failures_7d_by_class: Record<string, number>
     }>('/api/pipeline/publish/status'),
   steps: () => api.get<{ steps: string[] }>('/api/pipeline/steps'),
   /** 条目列表。v0.34 A：三轴筛选走 query（服务端筛——limit 500 < 活口 2659，
@@ -510,7 +518,11 @@ export const pipelineApi = {
   sources: () => api.get<SourceState[]>('/api/pipeline/sources'),
   supply: () => api.get<{ warnings: string[] }>('/api/pipeline/supply'),
   failures: () => api.get<Record<string, number>>('/api/pipeline/failures'),
-  retryClass: (cls: string) => api.post<{ cls: string; requeued: number }>('/api/pipeline/retry-class', { cls }),
+  retryClass: (cls: string, force = false) =>
+    api.post<{ cls: string; requeued: number; skipped_over_budget: number }>(
+      '/api/pipeline/retry-class',
+      { cls, force },
+    ),
   nextScheduleSlot: () => api.get<{ recommended_at: string }>('/api/pipeline/schedule/next'),
   /** 发布队列看板（v0.12）：ready/holding 列表 + 今日产能。读侧保留（运营看板在用）。 */
   queueView: () => api.get<PublishQueueView>('/api/pipeline/publish/queue'),

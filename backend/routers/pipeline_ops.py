@@ -232,15 +232,24 @@ async def failure_classes():
 
 class RetryClassBody(BaseModel):
     cls: str
+    # v0.38：无视重试预算地强推这一类。默认 False——系统的自动循环要有上限，
+    # 但人能说「这条我确认过，该再试」。
+    force: bool = False
 
 @router.post("/retry-class")
 async def retry_failure_class(body: RetryClassBody):
-    """同类批量重试：该失败分类的所有 failed 条目复位回可继续状态。"""
+    """同类批量重试：该失败分类的 failed 条目复位回可继续状态。
+
+    `force=true` 时无视重试预算——那是人的决定（我确认过这条该再试）。
+    """
     try:
-        count = await _pipe().retry_class(body.cls)
+        count = await _pipe().retry_class(body.cls, force=body.force)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"cls": body.cls, "requeued": count}
+    # 如实报出「有几条因为超出重试预算没自动重试」（v0.38）。只返回 requeued
+    # 会让用户以为这一类全处理了——而实际上有若干条卡在那儿等人工看一眼。
+    skipped = len(getattr(_pipe(), "_last_retry_skipped", []))
+    return {"cls": body.cls, "requeued": count, "skipped_over_budget": skipped}
 
 
 @router.get("/schedule/next")

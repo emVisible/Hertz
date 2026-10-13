@@ -48,7 +48,8 @@ export interface PipelineViewProps {
   randomCover: (item: PipelineItem) => void
   // v0.34 B：发布队列的界面写点（`enqueueItem`）随「入队」按钮退役——
   // `queue_phase` 字段与后端 `POST /items/{id}/queue` 都还在，只是界面上喂不进去。
-  retryClass: (cls: string, n: number) => void
+  /** v0.38：force=true 无视重试上限——人的决定，与系统自动循环不同。 */
+  retryClass: (cls: string, n: number, force?: boolean) => void
   backToPrep: (item: PipelineItem) => void
   batchAction: (action: 'approve' | 'reject' | 'back_to_prep' | 'requeue', ids: string[]) => void
   rescheduleExpired: () => Promise<void>

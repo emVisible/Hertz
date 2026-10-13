@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from backend.models import script_keys as sk
 from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
+from backend.pipeline.errors import classify_error
 from backend.pipeline.helpers import _auto_tid as helpers_auto_tid
 from backend.pipeline.publish_reliability import PublishThrottledError
 from backend.pipeline.schedule import _lookahead_days
@@ -317,7 +318,14 @@ class PromotionMixin:
                         if row is not None and row.status == ItemStatus.APPROVED:
                             row.status = ItemStatus.FAILED
                             row.error = f"auto publish failed: {exc}"
-                            row.error_class = "publish"
+                            # v0.38：按文本归类，而不是一律写死 "publish"。
+                            #
+                            # 一律写死会让**所有**发布失败落进同一个桶，失败看板
+                            # （service_queries 按 error_class 聚合 + 批量重试）
+                            # 于是答不出「为什么发不出去」——cookie 过期、限流、
+                            # 视频格式问题看起来一模一样。
+                            row.error_class = classify_error(str(exc), step="publish")
+                            row.retry_count = int(row.retry_count or 0) + 1
                             await session.commit()
                             failed += 1
                 if throttled:

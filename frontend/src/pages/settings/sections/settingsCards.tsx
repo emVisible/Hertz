@@ -31,6 +31,19 @@ export function PublishStatusCard({ onChanged }: { onChanged: () => void }) {
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Badge tone={data.noop ? 'warning' : 'success'}>{data.target}</Badge>
+        {/* v0.38：熔断与失败分布。
+            重试/熔断做出来之后状态存进了 resource_cooldown，但此前**没有任何出口**
+            ——用户看到「发布失败」，界面只说「失败」，既不知道目标是不是正被冻结，
+            也看不出原因分布。这两行就是那口黑箱。 */}
+        {data.target_throttled && (
+          <span className="flex items-center gap-1.5 text-warning">
+            <span className="h-2 w-2 rounded-full bg-warning" />
+            {t('settings.publishThrottled', {
+              s: Math.round(data.cooldowns_s[data.target] ?? 0),
+              n: data.max_attempts,
+            })}
+          </span>
+        )}
         {data.target === 'bilibili' && (
           <span className="flex items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${data.cookie_exists ? 'bg-success' : 'bg-error'}`} />
@@ -48,6 +61,29 @@ export function PublishStatusCard({ onChanged }: { onChanged: () => void }) {
       {data.noop && (
         <p className="text-xs leading-relaxed text-warning">{t('settings.publishNoopWarn')}</p>
       )}
+      {/* 近 7 天发布失败的原因分布。这是「为什么发不出去」的唯一答案来源：
+          cookie 过期（blocked）、被限流（rate_limit）、格式问题… 此前一律落进
+          publish 一个桶，看起来全都一样。 */}
+      {(() => {
+        const entries = Object.entries(data.failures_7d_by_class)
+          .filter(([, n]) => n > 0)
+          .sort((a, b) => b[1] - a[1])
+        if (entries.length === 0) return null
+        return (
+          <p className="text-xs leading-relaxed text-text-secondary">
+            {t('settings.publishFailures7d')}
+            {entries.map(([cls, n]) => (
+              <span key={cls} className="ml-1.5 inline-flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-error" />
+                <span className="font-mono">
+                  {t(`errors.class.${cls}`, { defaultValue: cls })}
+                </span>
+                <span className="font-mono text-text-disabled">×{n}</span>
+              </span>
+            ))}
+          </p>
+        )
+      })()}
       {data.target === 'bilibili' && (
         <p className="text-xs leading-relaxed text-text-secondary">
           {t('settings.cookiePath')}: <code className="font-mono text-text-primary">{data.cookie_path}</code>
