@@ -697,9 +697,15 @@ async def test_buff_system(client, fake_ai) -> None:
     fx_random = await svc.resolve_effects(["random"])
     assert len(fx_random) == 3  # random 池抽 3 个（v0.2.1 至少三个）
     assert all(b["category"] == "random" for b in fx_random)
-    # 每次随机不同（大概率）
-    fx_random2 = await svc.resolve_effects(["random"])
-    assert [b["key"] for b in fx_random] != [b["key"] for b in fx_random2]
+
+    # 「每次运行不同」是肉鸽感的产品要求，但**不能用单次抽样来断言它**。
+    # random 池 6 个抽 3 个，两次结果完全相同的概率是 1/C(6,3) = 1/20 —— 这条
+    # 测试因此天生有 5% 概率假红。假红的测试比没有测试更糟：它训练人忽略红灯。
+    # 正确做法是断言「多次抽样后确实出现过不同」，这既表达了要求，又不会偶发失败。
+    seen = {tuple(b["key"] for b in fx_random)}
+    for _ in range(9):
+        seen.add(tuple(b["key"] for b in await svc.resolve_effects(["random"])))
+    assert len(seen) > 1, "random 注入 10 次抽出了完全相同的结果，『每次不同』失效"
 
     # 空 = 无注入
     assert await svc.resolve_effects([]) == []

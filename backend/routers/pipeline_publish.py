@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from backend.config import settings
 from backend.errors import HertzError
@@ -126,7 +126,12 @@ async def publish_status() -> dict:
         if left > 0:
             cooldowns[name] = round(left, 1)
 
-    # 近 7 天发布失败的分类分布：回答「为什么发不出去」而不是只回答「失败了」
+    # 近 7 天**发布**失败的分类分布：回答「为什么发不出去」而不是只回答「失败了」。
+    #
+    # 必须限定在发布失败上。`error_class` 是**全流程**共享的列——下载、ffmpeg、
+    # tts 的失败同样写进去。不加限定，这个字段会把「视频处理失败 ×4」当成
+    # 「上传失败原因分布」报给用户，而界面上它就写着「近 7 天发布失败」。
+    # 一个会说谎的指标比没有指标更糟：它让人去查错的方向。
     since = datetime.now(UTC) - timedelta(days=7)
     async with session_factory() as session:
         failure_rows = (
@@ -136,6 +141,12 @@ async def publish_status() -> dict:
                     Item.status == ItemStatus.FAILED,
                     Item.error_class != "",
                     Item.updated_at >= since,
+                    or_(
+                        # 自动发布 tick 落的失败（唯一写 FAILED 的发布路径）
+                        Item.error.like("auto publish failed:%"),
+                        # 归类器认不出具体原因、但确实发生在发布阶段
+                        Item.error_class == "publish",
+                    ),
                 )
                 .group_by(Item.error_class)
             )

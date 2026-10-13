@@ -517,3 +517,35 @@ async def test_retry_class_budget_counts_down_per_round(clean_items):
                 select(Item).where(Item.source_id == src))).scalar_one()
             assert row.retry_count == 1
             assert row.error_class == ""
+
+
+@pytest.mark.asyncio
+async def test_failure_distribution_counts_publish_only(client, clean_items):
+    """`failures_7d_by_class` 只能装发布失败——它挂在「发布状态」上。
+
+    `error_class` 是全流程共享的列：下载、ffmpeg、tts 的失败同样写进去。
+    不加限定，界面上的「近 7 天发布失败」会报出「视频处理失败 ×4」——
+    一个会说谎的指标比没有指标更糟，它让人去查错的方向。
+    """
+    from backend.models.item import Item, ItemStatus
+
+    async with session_factory() as session:
+        # 制作阶段挂掉的 ffmpeg：error 没有发布前缀，只有它该被排除
+        session.add(Item(
+            source="test", item_type="text_only", title="非发布失败",
+            status=ItemStatus.FAILED, error_class="ffmpeg",
+            error="ffmpeg exited 1 while rendering",
+        ))
+        session.add(Item(
+            source="test", item_type="text_only", title="真发布失败",
+            status=ItemStatus.FAILED, error_class="blocked",
+            error="auto publish failed: HTTP Error 403: Forbidden",
+        ))
+        await session.commit()
+
+    body = (await client.get("/api/pipeline/publish/status")).json()
+    dist = body["failures_7d_by_class"]
+    assert dist.get("blocked") == 1
+    assert "ffmpeg" not in dist, (
+        f"非发布阶段的失败混进了发布失败分布：{dist}"
+    )
