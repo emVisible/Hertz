@@ -57,6 +57,7 @@ export {
   exportZip,
   isCanvasTooLargeError,
   SCALE_LADDER,
+  zipBlobs,
 } from './export/exporter';
 export type { CaptureEngine, ExportCardsResult, ExportOptions, ReadyGate } from './export/exporter';
 // 切片 C：长图导出（≤8192px 切片渲染再拼总 canvas）

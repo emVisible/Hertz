@@ -163,3 +163,82 @@ describe('MdStudioPage smoke', () => {
     expect(await screen.findByTestId('mdstudio-qr-input')).toBeInTheDocument()
   })
 })
+
+/** 画布内联编辑（§10 候选 2）与批量出图（§10 候选 4）的接线判据。
+ *
+ * 这层只钉「用户动作 → 落库字段」的链路：真实改文、真实截图分别在 mdcore 与
+ * 导出器层验（jsdom 没有 canvas，也没有排版）。 */
+describe('MdStudioPage 画布内联编辑', () => {
+  it('点段落 → 块编辑器带出该段源码，保存后按行区间回写 source_md', async () => {
+    render(<MdStudioPage />, { wrapper })
+    const mount = await screen.findByTestId('mdstudio-canvas-mount')
+    await waitFor(() => expect(mount.querySelector('p')).not.toBeNull())
+
+    fireEvent.click(mount.querySelector('p')!)
+    const editor = await screen.findByTestId('mdstudio-block-editor')
+    const area = within(editor).getByLabelText('mdstudio.edit.text') as HTMLTextAreaElement
+    // 带出的是这段的 markdown 源码（token.map 行区间 2..3），不是渲染后的纯文本
+    expect(area.value).toBe('正文段落。')
+
+    fireEvent.change(area, { target: { value: '**改后**的段落。' } })
+    fireEvent.click(within(editor).getByText('mdstudio.edit.save'))
+    await waitFor(() => expect(calls.update?.length).toBe(1), { timeout: 3000 })
+    expect(calls.update[0][1]).toMatchObject({ source_md: '# 你好\n\n**改后**的段落。' })
+  })
+
+  it('拖分页边界 → 强制断点写进 cover.breaks 随稿入库', async () => {
+    // 四段正文 + 已存 breaks:[2] → 画布上两页（第 1 页两块），第 1 页有边界手柄
+    docData = {
+      ...DOC,
+      platform: 'xhs',
+      theme_id: 'taoyao',
+      source_md: '一\n\n二\n\n三\n\n四',
+      cover: { breaks: [2] },
+    }
+    listData = [{ id: DOC.id, title: DOC.title, platform: 'xhs', theme_id: 'taoyao', updated_at: DOC.updated_at }]
+    render(<MdStudioPage />, { wrapper })
+
+    const mount = await screen.findByTestId('mdstudio-canvas-mount')
+    const handle = await waitFor(() => {
+      const el = mount.querySelector('[data-mdcore-boundary="0"]')
+      expect(el).not.toBeNull()
+      return el as HTMLElement
+    })
+    // jsdom 无排版：块高全为 0，手动给出块底边才能验「吸到哪块下沿」
+    const body = mount.querySelectorAll('.mdcore-page-body')[0]
+    const [b0, b1] = Array.from(body.children) as HTMLElement[]
+    Object.defineProperty(b0, 'offsetHeight', { value: 40, configurable: true })
+    Object.defineProperty(b1, 'offsetHeight', { value: 60, configurable: true })
+    const slot = handle.parentElement as HTMLElement
+
+    // 指针事件在 jsdom 里没有构造器，用 MouseEvent 冒泡同名字段即可（handler 只读 clientY）
+    const at = (target: HTMLElement, type: string, clientY: number) =>
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, clientY }))
+    at(handle, 'pointerdown', 0)
+    at(slot, 'pointermove', 10)
+    at(slot, 'pointerup', 10)
+
+    await waitFor(() => expect(calls.update?.length).toBe(1), { timeout: 3000 })
+    // 边界吸到第一块下沿（y=40 恰是块 0 底边）→ 强制断点从 2 挪到 1
+    expect(calls.update[0][1]).toMatchObject({ cover: { breaks: [1] } })
+  })
+})
+
+describe('MdStudioPage 批量出图', () => {
+  const second = { id: 'l2', title: '第二篇', platform: 'xhs', theme_id: 'taoyao', updated_at: '2026-10-13T00:00:00Z' }
+
+  it('开批量 → 勾两篇 → 批量出图弹层里两篇都在', async () => {
+    listData = [{ id: DOC.id, title: DOC.title, platform: DOC.platform, theme_id: DOC.theme_id, updated_at: DOC.updated_at }, second]
+    render(<MdStudioPage />, { wrapper })
+
+    fireEvent.click(await screen.findByTitle('mdstudio.batch.toggleHint'))
+    fireEvent.click(await screen.findByTestId('mdstudio-batch-check-l1'))
+    fireEvent.click(await screen.findByTestId('mdstudio-batch-check-l2'))
+    expect((await screen.findByTestId('mdstudio-batch-count')).textContent).toBe('mdstudio.batch.selected')
+
+    fireEvent.click(screen.getByText('mdstudio.batch.export'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(DOC.title)).toBeInTheDocument()
+    expect(within(dialog).getByText(second.title)).toBeInTheDocument()
+  })
+})

@@ -40,6 +40,11 @@ export interface XhsOptions {
   cover?: boolean;
   /** 缺省 18 */
   maxPages?: number;
+  /**
+   * 强制分页边界（IR 块序号）：画布上手动拖过边界的位置。语义见 paginate 的
+   * `breaks`——只增不减的「至少在这里断」，不裁内容。
+   */
+  breaks?: number[];
   /** 测试注入 mock 测量 */
   measurer?: Measurer;
   doc?: Document;
@@ -74,6 +79,7 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
       },
     },
     measurer: opts.measurer,
+    breaks: opts.breaks,
     doc,
   });
 

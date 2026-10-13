@@ -1,9 +1,9 @@
 /** MD Studio 顶页：图文工坊三栏工作站（设计 §5）。
  *
  * 编排：排版稿 CRUD（react-query）+ 本地 draft（自动保存 800ms debounce PUT）
- * + 画布重排（150ms debounce）+ 平台导出动作。
- * 持久化字段映射：footer（小红书署名）后端无独立列，存在 cover JSON 的 footer 键里
- * （cover 是自由 JSON 槽，§6 模型预留位）。
+ * + 画布重排（150ms debounce）+ 平台导出动作 + 画布内联编辑 + 批量出图队列。
+ * 持久化字段映射：footer（小红书署名）、breaks（手动分页边界）与 qr 一起存在 cover
+ * JSON 里——cover 是自由 JSON 槽（§6 模型预留位），加键不需要迁移。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -24,9 +24,11 @@ import {
 
 import { layoutApi, type LayoutDoc, type LayoutPlatform } from '../../api'
 import { Button, EmptyState, Icon, Input, Select, ToggleChip, useToast } from '../../components/ui'
-import { CanvasPanel, type XhsRenderInfo } from './CanvasPanel'
+import { BatchExportModal, type BatchTarget } from './BatchExportModal'
+import { CanvasPanel, type CanvasBlockTarget, type XhsRenderInfo } from './CanvasPanel'
 import { InspectorPanel, type ExportAction } from './InspectorPanel'
 import { LayoutListPanel } from './LayoutListPanel'
+import { downloadBlob } from './shared'
 
 /** 自动保存 debounce（顶栏状态点：未保存/保存中/已保存） */
 const SAVE_DEBOUNCE_MS = 800
@@ -41,9 +43,16 @@ interface DraftState {
   overrides: ThemeOverrides
   footer: string
   qr: string | null
+  /** 手动拖过的分页边界（IR 块序号），小红书卡片分页专用 */
+  breaks: number[]
 }
 
 type SaveState = 'saved' | 'dirty' | 'saving'
+
+function breaksOf(cover: Record<string, unknown> | undefined): number[] {
+  const raw = cover?.breaks
+  return Array.isArray(raw) ? raw.filter((n): n is number => Number.isInteger(n) && n > 0) : []
+}
 
 function draftFromDoc(doc: LayoutDoc): DraftState {
   return {
@@ -52,9 +61,10 @@ function draftFromDoc(doc: LayoutDoc): DraftState {
     platform: doc.platform,
     theme_id: doc.theme_id || defaultThemeFor(doc.platform).id,
     overrides: doc.overrides as ThemeOverrides,
-    // footer / qr 存 cover JSON 槽（封面/品牌位，§6 模型预留位）
+    // footer / breaks / qr 存 cover JSON 槽（封面/品牌位，§6 模型预留位）
     footer: typeof doc.cover?.footer === 'string' ? doc.cover.footer : '',
     qr: typeof doc.cover?.qr === 'string' ? doc.cover.qr : null,
+    breaks: breaksOf(doc.cover),
   }
 }
 
@@ -65,15 +75,6 @@ function useDebounced<T>(value: T, ms: number): T {
     return () => clearTimeout(timer)
   }, [value, ms])
   return debounced
-}
-
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 export function MdStudioPage() {
@@ -102,6 +103,13 @@ export function MdStudioPage() {
   const [zoom, setZoom] = useState(1)
   const [dark, setDark] = useState(false)
   const [xhsInfo, setXhsInfo] = useState<XhsRenderInfo>({ pageCount: 0, overflow: false })
+  /** 画布内联编辑：正在改的块（点段落进来）与其 markdown 文本 */
+  const [editing, setEditing] = useState<CanvasBlockTarget | null>(null)
+  const [editText, setEditText] = useState('')
+  /** 批量出图：勾选集 + 队列弹层 */
+  const [batchMode, setBatchMode] = useState(false)
+  const [batchIds, setBatchIds] = useState<string[]>([])
+  const [batchOpen, setBatchOpen] = useState(false)
 
   const mountRef = useRef<HTMLDivElement | null>(null)
   // 自动保存计时器与「载入中文档」的去抖守卫
@@ -137,7 +145,7 @@ export function MdStudioPage() {
           platform: snapshot.platform,
           theme_id: snapshot.theme_id,
           overrides: snapshot.overrides,
-          cover: { footer: snapshot.footer, qr: snapshot.qr },
+          cover: { footer: snapshot.footer, qr: snapshot.qr, breaks: snapshot.breaks },
         })
         .then((doc) => {
           loadedDocRef.current = doc
@@ -162,6 +170,56 @@ export function MdStudioPage() {
       prev.pageCount === info.pageCount && prev.overflow === info.overflow ? prev : info,
     )
   }, [])
+
+  /** 拖动分页边界 → 写回 draft（自动保存接管落库） */
+  const handleBreaksChange = useCallback(
+    (breaks: number[]) => {
+      patchDraft({ breaks })
+    },
+    [patchDraft],
+  )
+
+  /** 画布点段落：取出该块的源码行段进编辑器（markdown 仍是唯一真相源，不做 IR 反序列化） */
+  const handleBlockClick = useCallback(
+    (target: CanvasBlockTarget) => {
+      if (!draft) return
+      if (!target.line) {
+        toast(t('mdstudio.edit.noLine'), 'warning')
+        return
+      }
+      const lines = draft.source_md.split('\n')
+      setEditing(target)
+      setEditText(lines.slice(target.line[0], target.line[1]).join('\n'))
+    },
+    [draft, t, toast],
+  )
+
+  /** 保存块编辑：按行区间回写 source_md；其余行的行号随后由重新解析自然对齐 */
+  const commitBlockEdit = () => {
+    if (!draft || !editing?.line) return
+    const [from, to] = editing.line
+    const lines = draft.source_md.split('\n')
+    const next = [...lines.slice(0, from), ...editText.split('\n'), ...lines.slice(to)]
+    patchDraft({ source_md: next.join('\n') })
+    setEditing(null)
+  }
+
+  const toggleBatchId = (id: string) =>
+    setBatchIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+
+  const toggleBatchAll = () => {
+    const all = layouts.map((l) => l.id)
+    setBatchIds((prev) => (prev.length === all.length ? [] : all))
+  }
+
+  const batchTargets: BatchTarget[] = useMemo(
+    () =>
+      batchIds
+        .map((id) => layouts.find((l) => l.id === id))
+        .filter((l): l is NonNullable<typeof l> => !!l)
+        .map((l) => ({ id: l.id, title: l.title, platform: l.platform })),
+    [batchIds, layouts],
+  )
 
   const invalidateList = () => queryClient.invalidateQueries({ queryKey: ['layout-list'] })
 
@@ -245,6 +303,7 @@ export function MdStudioPage() {
           overrides: draft.overrides,
           footer: draft.footer,
           qr: draft.qr,
+          breaks: draft.breaks,
         })
         const blob = await exportZip(res.pages)
         downloadBlob(blob, `${name}-xhs.zip`)
@@ -352,6 +411,12 @@ export function MdStudioPage() {
               onImportDocs={(path) => void importDocs(path)}
               onImportStudio={(run) => void importStudio(run)}
               onDelete={(id) => void deleteLayout(id)}
+              batchMode={batchMode}
+              batchIds={batchIds}
+              onBatchModeChange={setBatchMode}
+              onToggleBatchId={toggleBatchId}
+              onToggleBatchAll={toggleBatchAll}
+              onBatchExport={() => setBatchOpen(true)}
             />
           </div>
           {/* 源文轻编辑：不复用 MarkdownEditor——它自带右侧预览，与中栏画布职责重复；
@@ -410,15 +475,62 @@ export function MdStudioPage() {
                   overrides={renderDraft.overrides}
                   footer={renderDraft.footer}
                   qr={renderDraft.qr}
+                  breaks={renderDraft.breaks}
                   zoom={zoom}
                   dark={dark}
                   emptyHint={t('mdstudio.canvas.emptyHint')}
                   mountRef={mountRef}
                   onXhsInfo={handleXhsInfo}
+                  onBlockClick={handleBlockClick}
+                  onBreaksChange={handleBreaksChange}
                 />
               )}
             </div>
           </div>
+          {/* 点段落改文本：改的是这一块的 markdown 源码段（行区间来自 token.map），
+              不用 IR 反序列化——markdown 始终是唯一真相源，导出与自动保存都不必改道 */}
+          {editing?.line && (
+            <div
+              className="shrink-0 border-t border-border bg-surface-1"
+              data-testid="mdstudio-block-editor"
+            >
+              <div className="flex shrink-0 items-center gap-2 px-3 py-1.5">
+                <Icon name="edit" size={12} className="shrink-0 text-primary" />
+                <span className="text-xs font-medium text-text-secondary">
+                  {t('mdstudio.edit.title')}
+                </span>
+                <span className="text-[10px] text-text-disabled">
+                  {t('mdstudio.edit.range', {
+                    from: editing.line[0] + 1,
+                    to: editing.line[1],
+                  })}
+                </span>
+                <button
+                  type="button"
+                  aria-label={t('mdstudio.edit.close')}
+                  onClick={() => setEditing(null)}
+                  className="ml-auto rounded p-1 text-text-disabled transition-colors hover:text-text-primary"
+                >
+                  <Icon name="close" size={12} />
+                </button>
+              </div>
+              <textarea
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                spellCheck={false}
+                aria-label={t('mdstudio.edit.text')}
+                className="h-24 w-full resize-none overflow-y-auto bg-transparent px-3 pb-2 font-mono text-xs leading-relaxed text-text-primary outline-none"
+              />
+              <div className="flex shrink-0 justify-end gap-2 px-3 pb-2">
+                <Button size="sm" variant="secondary" onClick={() => setEditing(null)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button size="sm" onClick={commitBlockEdit}>
+                  {t('mdstudio.edit.save')}
+                </Button>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* 右栏：平台 → 主题 → 微调 → 导出 */}
@@ -442,6 +554,19 @@ export function MdStudioPage() {
           )}
         </aside>
       </div>
+
+      {/* 批量出图：一个批次一个 ZIP，逐篇状态与失败原因都在弹层里 */}
+      <BatchExportModal
+        open={batchOpen}
+        targets={batchTargets}
+        onClose={() => setBatchOpen(false)}
+        onFinished={(ok) => {
+          if (ok) {
+            setBatchIds([])
+            setBatchMode(false)
+          }
+        }}
+      />
     </div>
   )
 }

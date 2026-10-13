@@ -105,6 +105,42 @@
       "title": "Start from a Markdown doc",
       "description": "Create a layout: typeset once, publish to WeChat / RED / Zhihu.",
       "create": "New layout"
+    },
+    "edit": {
+      "title": "Canvas edit",
+      "range": "Lines {{from}}–{{to}}",
+      "save": "Write back",
+      "close": "Close block editor",
+      "text": "Block markdown source",
+      "noLine": "This block has no source line range — edit it in the source pane"
+    },
+    "batch": {
+      "toggle": "Batch",
+      "toggleHint": "Pick several drafts and export them in one run",
+      "selected": "{{count}} selected",
+      "selectAll": "Select all",
+      "clearAll": "Clear",
+      "export": "Batch export",
+      "title": "Batch export",
+      "hint": "Renders each draft and packs everything into one ZIP: card set for Xiaohongshu, long image elsewhere. One failure never stops the batch.",
+      "start": "Start",
+      "cancel": "Cancel rest",
+      "canceled": "Batch export canceled",
+      "done": "Batch export done — {{count}} images",
+      "nothing": "Nothing to export",
+      "emptySource": "Empty source",
+      "cards": "{{count}} cards",
+      "longImage": "1 long image",
+      "failed": "Export failed",
+      "skipped": "Skipped",
+      "state": {
+        "pending": "Queued",
+        "running": "Rendering",
+        "done": "Done",
+        "failed": "Failed",
+        "skipped": "Skipped"
+      },
+      "partial": "Canceled the rest — {{count}} images delivered"
     }
   },
   "common": {

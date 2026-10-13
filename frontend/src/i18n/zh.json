@@ -105,6 +105,42 @@
       "title": "从一篇 Markdown 开始",
       "description": "新建排版稿：一次排版，微信 / 小红书 / 知乎三平台分发。",
       "create": "新建排版稿"
+    },
+    "edit": {
+      "title": "画布内编辑",
+      "range": "第 {{from}}–{{to}} 行",
+      "save": "写回源文",
+      "close": "关闭块编辑",
+      "text": "块 markdown 源码",
+      "noLine": "这一块没有独立源码行号，请到左栏改源文"
+    },
+    "batch": {
+      "toggle": "批量",
+      "toggleHint": "勾选多篇排版稿，一次出完",
+      "selected": "已选 {{count}} 篇",
+      "selectAll": "全选",
+      "clearAll": "清空",
+      "export": "批量出图",
+      "title": "批量出图",
+      "hint": "逐篇出图后打成一个 ZIP：小红书出卡片组，其余平台出长图。单篇失败不掐断整批。",
+      "start": "开始出图",
+      "cancel": "取消剩余",
+      "canceled": "批量出图已取消",
+      "done": "批量出图完成，共 {{count}} 张",
+      "nothing": "没有任何可导出的产物",
+      "emptySource": "源文为空",
+      "cards": "{{count}} 张卡片",
+      "longImage": "1 张长图",
+      "failed": "出图失败",
+      "skipped": "已跳过",
+      "state": {
+        "pending": "等待",
+        "running": "出图中",
+        "done": "完成",
+        "failed": "失败",
+        "skipped": "跳过"
+      },
+      "partial": "已取消剩余，交付已出的 {{count}} 张"
     }
   },
   "common": {

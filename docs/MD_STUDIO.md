@@ -117,12 +117,19 @@ md 字符串
   → parseToIR()            LayoutIR（10 种块型 + 源码行号）
   → applyTheme(ir, theme, overrides)      渲染态 DOM（预览 = 导出源）
   ├─ wechatPayload / zhihuPayload         { html, text } → ClipboardItem 双写
-  ├─ xhsCards(ir, {theme, footer, qr})    3:4 页 DOM[]（测量分页 + 封面 + 页脚）
+  ├─ xhsCards(ir, {theme, footer, qr, breaks})  3:4 页 DOM[]（测量分页 + 封面 + 页脚）
   │    └─ exportCards / exportZip         PNG[] / ZIP
   └─ renderLongImage(el)                  单张长图 Blob
+
+块定位标记：applyTheme 给每个顶层块挂 `data-mdcore-block`（IR 序号）与
+`data-mdcore-line`（token.map 行区间）。画布的两条内联编辑（点段落改文本、拖分页边界）
+全靠这两个属性反查——**不改 mdcore 的产物结构**，且它们在微信/知乎清洗时被剥掉
+（`stripUnsafe` 剥 `data-mdcore-*`），产物里不留编辑器状态。
 ```
 
 **IR 是心脏层**：markdown-it 之后所有环节只认 `LayoutIR`，不回读 token。于是平台适配器不懂 markdown、分页器不懂平台、主题不懂分页，每一环可独立替换与单测。
+
+**强制分页边界**（`paginate(ir, { breaks })` / `xhsCards(ir, { breaks })`）：IR 块序号集合，命中即「在此块之前另起一页」。语义是**「至少在这里断」而不是「只能在这里断」**——强制收页后若剩余内容仍放不下，照常拆分到后续页。这条约束是为了守住字数守恒：手动调边界永远不会裁内容，往上拖只会让本页变少，往下拖最多多出几页。
 
 ### 4.2 分页引擎（`paginate/paginate.ts` + `paginate/breaks.ts`）
 
@@ -186,19 +193,25 @@ md 字符串
 
 三栏工作站（`frontend/src/pages/mdstudio/`）：
 
-- **左栏 `LayoutListPanel`**：排版稿列表（选中态 primary 高亮、平台·主题副行、hover 出删除 → Modal 确认）；导入菜单四路（docs 空间文件列表点选 / Studio run slug / 粘贴 / 本地 .md 上传）；底部源文轻编辑（裸 textarea + 字数）。**没复用 `MarkdownEditor`**：它自带右侧预览，与中栏画布职责重复。
+- **左栏 `LayoutListPanel`**：排版稿列表（选中态 primary 高亮、平台·主题副行、hover 出删除 → Modal 确认）；导入菜单四路（docs 空间文件列表点选 / Studio run slug / 粘贴 / 本地 .md 上传）；底部源文轻编辑（裸 textarea + 字数）。**没复用 `MarkdownEditor`**：它自带右侧预览，与中栏画布职责重复。表头有「批量」开关，打开后每行换成勾选框、底部出计数与批量出图入口。
 - **中栏 `CanvasPanel`**：平台感知画布——微信 375px、知乎 690px、小红书 1242×1656 卡片横滑带（缩放槽 > 缩放层 > 卡片三层结构，transform 落中间层，卡片节点保持导出坐标系；hover 浮起 150ms）。缩放 Select（50/75/100%，CSS `zoom`，仅预览）+ 深色开关。mdcore 产物是原生 DOM，直接 `appendChild`，不经 React、不用 `dangerouslySetInnerHTML`。
+- **画布内联编辑**（两条都在 `CanvasPanel`，只读渲染态、不改 mdcore 结构）：
+  - **点段落改文本**：事件委托把 `data-mdcore-block/-line` 反查成「哪一块 + 它的源码行区间」，中栏下方开出块编辑器。保存时**按行区间回写 `source_md`**——不做 IR→markdown 反序列化，markdown 始终是唯一真相源（左栏源文、自动保存、导出三条路都不改道）。没有行号的块（少数内联产物）提示回左栏改。
+  - **拖分页边界**：小红书每页（除末页）底部一条可拖的边界线，拖动时吸到最近块的下沿，松手写一条强制断点；落回本页最后一块下沿 = 取消这条边界，回到自然分页。用指针捕获保证拖出卡片松手也收得到事件。
 - **右栏 `InspectorPanel`**：平台 TabBar（切换即把 `platform` + 该平台默认主题落稿）→ 主题卡（色块 + 名字 + 深色徽标）→ 色盘（8 预设 + 取色器）→ 字号/行距（**选项并入主题自带值**，否则 30px 会被显示成 18px）→ 小红书专有（页数/18 上限、署名、二维码上传）→ 导出按钮组。
+- **批量出图**（`BatchExportModal`）：勾选多篇 → 逐篇出图 → **打成一个 ZIP**（每篇一个子目录 `序号-稿名/page-01.png`）。小红书出卡片组、其余平台出长图，与单篇导出同一套平台判定。队列带逐篇状态、失败原因、取消；单篇失败不掐断整批，取消也会把已出的那几篇打包交付（为一次取消丢掉几十 MB 渲染结果是产品缺陷）。顺序触发 N 次浏览器下载会被宿主拦、用户最后只拿到最后一篇——这是「批量」必须是一个包而不是一个循环的根因。
 - **顶栏**：稿名行内改名、保存状态点（未保存 warning / 保存中 primary 脉冲 / 已保存 success）、主导出按钮随平台变。
-- **自动保存**：内容/平台/主题/overrides/footer/qr 变更 debounce 800ms PUT 全稿；画布重排 debounce 150ms。
-- 视觉约束：只用 `theme/tokens.ts` 的 `--hz-*` 与 `components/ui/` 组件库；i18n 双语同步（`mdstudio.*` 66 个 key）。
+- **自动保存**：内容/平台/主题/overrides/footer/qr/breaks 变更 debounce 800ms PUT 全稿；画布重排 debounce 150ms。
+- 视觉约束：只用 `theme/tokens.ts` 的 `--hz-*` 与 `components/ui/` 组件库；i18n 双语同步（`mdstudio.*` 96 个 key）。
 
 ---
 
 ## 7. 数据与接口
 
 **表 `layouts`**（`backend/models/layout.py`，迁移 `alembic/versions/wave33_layout.py`）：
-`title` / `source_md`(Text) / `source_ref`(可空，docs 相对路径或 `studio:<run>`) / `platform`(wechat·xhs·zhihu) / `theme_id` / `overrides`(JSONB) / `cover`(JSONB，装 `footer` 与 `qr` dataURL)。
+`title` / `source_md`(Text) / `source_ref`(可空，docs 相对路径或 `studio:<run>`) / `platform`(wechat·xhs·zhihu) / `theme_id` / `overrides`(JSONB) / `cover`(JSONB，装 `footer`、`qr` dataURL 与 `breaks` 强制分页边界)。
+
+`cover` 是自由 JSON 槽：三个平台专有位都落在它里面（小红书占两席：品牌页脚与手动分页边界），加键**不需要迁移**。
 
 **端点**（`backend/routers/layout.py`，前缀 `/api`）：
 
@@ -220,11 +233,11 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 七步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build）。mdcore 是这次才补进闸的——新包 94 条测试一度不在闸上。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 94 条 vitest（node+jsdom，测试与源码同目录）、前端 210 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 102 条 vitest（node+jsdom，测试与源码同目录）、前端 219 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 **判据纪律**：
 
-- 每条规则配一条断言，且**新判据必须被"拿掉修复"的成对变异打红过**才算有牙。本项目已见过红的变异：外链转脚注、跨页重复表头、避头尾、色盘派生规则 9、游离节点挂载。
+- 每条规则配一条断言，且**新判据必须被"拿掉修复"的成对变异打红过**才算有牙。本项目已见过红的变异：外链转脚注、跨页重复表头、避头尾、色盘派生规则 9、游离节点挂载、强制分页边界、块编辑回写 source_md、拖边界写回 breaks。
 - 分页判据靠注入式 `Measurer` 驱动，导出判据靠注入式 `CaptureEngine`/`ReadyGate`，**不打真 canvas、不依赖 jsdom 排版**。
 - 观感与像素只能在产物层判：jsdom 能证"结构对"，证不了"看起来对"——§10 的五个缺陷里三个只有真浏览器能抓到。
 
@@ -245,12 +258,17 @@ md 字符串
 ## 10. 候选下一步（未开工，按收益/成本排）
 
 1. **Electron 内人工走通四个导出按钮**（唯一剩下的验收腿：自动化浏览器证不到宿主剪贴板权限与另存路径）
-2. **画布内联编辑**：卡片上直接拖动分页边界、点段落改文本（现在只能回左栏改源文）
-3. **违禁词/敏感词检测**（小红书发布前刚需，Reditor 验证过的差异化卖点；纯前端词表可做第一版）
-4. **批量出图**：一次选中多篇 docs/Studio 产物 → 逐篇出卡片（内核已支持，缺队列 UI）
-5. **Shiki 二次 pass 高亮**（换掉 highlight.js 的 token 色映射，代码卡观感更好）
-6. **图床**：微信要求图片必须在微信图床，现在图片走 dataURL/同源；要发带图长文得接图床
-7. **掘金/头条适配器**：mdnice 证明"一份内容多处粘贴"是真需求，适配器形状已就位
+2. **违禁词/敏感词检测**（小红书发布前刚需，Reditor 验证过的差异化卖点；纯前端词表可做第一版）
+3. **Shiki 二次 pass 高亮**（换掉 highlight.js 的 token 色映射，代码卡观感更好）
+4. **图床**：微信要求图片必须在微信图床，现在图片走 dataURL/同源；要发带图长文得接图床
+5. **掘金/头条适配器**：mdnice 证明"一份内容多处粘贴"是真需求，适配器形状已就位
+
+**已于 v0.35 落地**（原候选第 2、4 条）：
+
+| 能力 | 落点 | 已知限度 |
+| --- | --- | --- |
+| 画布内联编辑：点段落改文本 + 拖分页边界 | `CanvasPanel.tsx` + `paginate(ir,{breaks})` | 边界按 **IR 块序号**记（存在 `cover.breaks`）；改了源文导致块数变化后，旧边界可能落到别的块上——要严格对齐就得存行号并做重定位，暂不做 |
+| 批量出图 | `BatchExportModal.tsx` + `zipBlobs()` | 一次性把整批 PNG 装进内存（24 页/篇 ≈ 14MB）；上百篇的量级要改成流式或落盘 |
 
 ---
 

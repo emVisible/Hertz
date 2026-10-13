@@ -199,12 +199,18 @@ export async function exportCards(pages: HTMLElement[], opts: ExportOptions = {}
 /** 渲染态页 DOM 组 → 多页 PNG 打包 ZIP（jszip） */
 export async function exportZip(pages: HTMLElement[], opts: ExportOptions = {}): Promise<Blob> {
   const { blobs } = await exportCardsDetailed(pages, opts);
+  return zipBlobs(blobs.map((blob, i) => ({ name: `${opts.filePrefix ?? 'card'}-${String(i + 1).padStart(2, '0')}.png`, blob })));
+}
+
+/**
+ * 命名条目 → 单个 ZIP（批量出图：多篇稿的产物打成一个包，按「标题/页码.png」分层）。
+ * 与 exportZip 的区别是条目由调用方给名——批量场景的页序来自多篇稿各自的页。
+ * compression 用 STORE：进来的是 PNG/JPEG，再压一遍只烧 CPU。
+ */
+export async function zipBlobs(entries: Array<{ name: string; blob: Blob }>): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
-  const prefix = opts.filePrefix ?? 'card';
-  blobs.forEach((blob, i) => {
-    zip.file(`${prefix}-${String(i + 1).padStart(2, '0')}.png`, blob);
-  });
+  for (const { name, blob } of entries) zip.file(name, blob);
   const u8 = await zip.generateAsync({ type: 'uint8array', compression: 'STORE' });
   return new Blob([u8 as unknown as ArrayBuffer], { type: 'application/zip' });
 }

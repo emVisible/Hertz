@@ -27,6 +27,9 @@
 | `packages/mdcore/src/export/exporter.ts` | 闸门 + 降级链 + 游离节点挂载 + DPR 除回 | 新引擎选项保持注入式，否则测不到 |
 | `backend/routers/layout.py` | 7 端点，containment 复用 `docs.py:_resolve_doc` | 加端点要跑 `scripts/api_inventory.py`（`test_api_surface` 硬约束） |
 | `frontend/src/pages/mdstudio/*` | 三栏宿主；导出按稿参数离屏重建 | 文案必须双语同加（`mdstudio.*`，有 catalog 对齐测试） |
+| `packages/mdcore/src/paginate/paginate.ts` 的 `breaks` | 强制分页边界（画布拖出来的断点）；**只增不减**，不裁内容 | 改语义前先看 D-226 的字数守恒论证 |
+| `packages/mdcore/src/theme/apply.ts` 的 `data-mdcore-block/-line` | 画布点段落与拖边界的反查通道 | 加新清洗器/导出路径时确认 `data-mdcore-*` 不进产物 |
+| `frontend/src/pages/mdstudio/BatchExportModal.tsx` | 批量出图队列（一个批次一个 ZIP） | 平台判定与单篇导出同源，改一处要两处看 |
 | `docs/superpowers/specs/2026-10-13-mdcore-design.md` | §1-§8 设计、§9 实现自检、§10 宿主层验收 | 新验收读数追加，不改写历史段 |
 
 ## 3. 怎么跑
@@ -53,6 +56,9 @@ bash scripts/dev.sh
 5. **Select 谎报主题值**：字号/行距档位不含主题自带值时，界面显示的是"离它最近的那档"（30px 显示成 18px、1.8 显示成 1.5）。`optionsWith()` 并入当前值。
 6. **窄窗三栏塌缩**：中栏被挤到 9px、缩放控件浮到右栏上。三栏容器 `overflow-x-auto` + 中栏 `min-w-[360px]`。
 7. **文档/门禁数字会腐烂**：verify.sh 曾漏掉整个新包（94 条测试不在闸上）。加包/加域时同步看 `scripts/verify.sh`。
+8. **强制分页边界只能"至少在这里断"**：v0.35 的 `breaks` 若改成「只能在这里断」，用户把边界往下拖就会**裁掉放不下的内容**，首版量到的字数守恒当场破掉。改这个语义前先读 D-226。
+9. **jsdom 量不出块底边**：`offsetTop/offsetHeight` 全为 0，拖动那条判据靠 `defineProperty` 造高度才跑得起来——它能证"写回了什么"，证不了"吸得准不准"，后者仍属真浏览器。
+10. **批量导出不能是"循环点 N 次导出"**：宿主会拦连续下载，用户最后只拿到最后一篇；所以 `zipBlobs` 按命名条目打成一个包，条目名过一遍净化（否则给解压端留 zip slip）。
 
 **通用教训**：结构层（jsdom + 注入 mock）能证"对不对"，证不了"看起来对不对"。观感与像素只能在产物层判——上面 1/2/3 三条全是真浏览器抓的。
 
@@ -68,9 +74,9 @@ bash scripts/dev.sh
 | 事项 | 在谁手里 | 备注 |
 | --- | --- | --- |
 | Electron 里点一次四个导出按钮（复制/ZIP/长图/文案） | **你** | 自动化浏览器证不到宿主剪贴板权限与另存路径；这是唯一剩下的验收腿 |
-| 是否 bump 版本 + 打 tag + push | **你** | 变更现在挂 `[Unreleased]` |
+| v0.35 的两个新交互在真浏览器里走一遍（点段落改文、拖分页边界、多选批量出图） | **你** | jsdom 证不了吸附手感与截图交互，见 §4 第 9 条 |
 | 字体分片 | 已判**不做** | 理由与重启条件见 `docs/MD_STUDIO.md` §9 |
-| 候选下一步 2–7（画布内联编辑、违禁词、批量出图、Shiki、图床、掘金/头条） | 我，等你点单 | 排序与理由见 `docs/MD_STUDIO.md` §10 |
+| 候选下一步（违禁词、Shiki、图床、掘金/头条） | 我，等你点单 | 排序与理由见 `docs/MD_STUDIO.md` §10 |
 
 ## 7. 一个收口建议
 

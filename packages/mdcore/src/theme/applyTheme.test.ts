@@ -59,4 +59,20 @@ describe('applyTheme', () => {
     const byObj = applyTheme(ir, getTheme('wanfeng'));
     expect(byId.innerHTML).toBe(byObj.innerHTML);
   });
+
+  it('每个顶层块带 data-mdcore-block / data-mdcore-line（画布点段落与拖分页边界的定位通道）', () => {
+    const el = applyTheme(ir, 'modi');
+    const blocks = Array.from(el.children) as HTMLElement[];
+    expect(blocks.map((b) => b.getAttribute('data-mdcore-block'))).toEqual(['0', '1']);
+    // 行号来自 markdown-it token.map：[start, end)，0 起
+    expect(blocks[0].getAttribute('data-mdcore-line')).toBe('0-1');
+    expect(blocks[1].getAttribute('data-mdcore-line')).toBe('2-3');
+  });
+
+  it('嵌套在引用里的子块不打标记（画布只与顶层块交互）', () => {
+    const quoted = applyTheme(parseToIR('> 引用里的一段\n'), 'modi');
+    const blockquote = quoted.querySelector('blockquote');
+    expect(blockquote?.getAttribute('data-mdcore-block')).toBe('0');
+    expect(blockquote?.querySelector('p')?.hasAttribute('data-mdcore-block')).toBe(false);
+  });
 });

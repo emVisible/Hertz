@@ -2,6 +2,9 @@
  *
  * 列表/新建/切换/删除（Modal 确认）；导入四路：docs 空间、Studio 产物 run、
  * 粘贴新建、本地 .md 上传——全部走「新建一份带内容的稿」，导入面板只负责取文本。
+ *
+ * 「批量」模式（§10 候选 4）：开档后每行换成勾选框，底部出计数与批量出图入口。
+ * 只在批量模式里才出现勾选框——平时那列复选框是纯噪声。
  */
 
 import { useRef, useState } from 'react'
@@ -9,7 +12,17 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 
 import { docsApi, type LayoutSummary } from '../../api'
-import { Button, EmptyState, Icon, Input, Menu, Modal, Spinner, useToast } from '../../components/ui'
+import {
+  Button,
+  EmptyState,
+  Icon,
+  Input,
+  Menu,
+  Modal,
+  Spinner,
+  ToggleChip,
+  useToast,
+} from '../../components/ui'
 
 interface LayoutListPanelProps {
   layouts: LayoutSummary[] | undefined
@@ -20,6 +33,13 @@ interface LayoutListPanelProps {
   onImportDocs: (path: string) => void
   onImportStudio: (run: string) => void
   onDelete: (id: string) => void
+  /** 批量模式：勾选集由宿主持有（批量出图 Modal 要用同一份 id 列表） */
+  batchMode: boolean
+  batchIds: string[]
+  onBatchModeChange: (on: boolean) => void
+  onToggleBatchId: (id: string) => void
+  onToggleBatchAll: () => void
+  onBatchExport: () => void
 }
 
 export function LayoutListPanel({
@@ -31,6 +51,12 @@ export function LayoutListPanel({
   onImportDocs,
   onImportStudio,
   onDelete,
+  batchMode,
+  batchIds,
+  onBatchModeChange,
+  onToggleBatchId,
+  onToggleBatchAll,
+  onBatchExport,
 }: LayoutListPanelProps) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -103,6 +129,15 @@ export function LayoutListPanel({
             e.target.value = ''
           }}
         />
+        <div className="ml-auto">
+          <ToggleChip
+            active={batchMode}
+            onClick={() => onBatchModeChange(!batchMode)}
+            title={t('mdstudio.batch.toggleHint')}
+          >
+            <Icon name="layers" size={11} /> {t('mdstudio.batch.toggle')}
+          </ToggleChip>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -121,14 +156,17 @@ export function LayoutListPanel({
         <ul className="flex flex-col gap-1">
           {(layouts ?? []).map((item) => {
             const active = item.id === selectedId
+            const checked = batchIds.includes(item.id)
             return (
               <li key={item.id}>
                 <div
                   role="button"
                   tabIndex={0}
-                  onClick={() => onSelect(item.id)}
+                  onClick={() => (batchMode ? onToggleBatchId(item.id) : onSelect(item.id))}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') onSelect(item.id)
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      batchMode ? onToggleBatchId(item.id) : onSelect(item.id)
+                    }
                   }}
                   className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 transition-colors duration-150 ${
                     active
@@ -136,11 +174,22 @@ export function LayoutListPanel({
                       : 'border-transparent hover:border-border hover:bg-surface-2'
                   }`}
                 >
-                  <Icon
-                    name="briefs"
-                    size={13}
-                    className={`shrink-0 ${active ? 'text-primary' : 'text-text-disabled'}`}
-                  />
+                  {batchMode ? (
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      readOnly
+                      aria-label={item.title || t('mdstudio.untitled')}
+                      data-testid={`mdstudio-batch-check-${item.id}`}
+                      className="h-3.5 w-3.5 shrink-0 accent-[var(--hz-primary)]"
+                    />
+                  ) : (
+                    <Icon
+                      name="briefs"
+                      size={13}
+                      className={`shrink-0 ${active ? 'text-primary' : 'text-text-disabled'}`}
+                    />
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className={`block truncate text-xs ${active ? 'font-medium text-text-primary' : 'text-text-primary'}`}>
                       {item.title || t('mdstudio.untitled')}
@@ -149,24 +198,51 @@ export function LayoutListPanel({
                       {t(`mdstudio.platform.${item.platform}`)} · {item.theme_id}
                     </span>
                   </span>
-                  <button
-                    type="button"
-                    title={t('common.delete')}
-                    aria-label={t('common.delete')}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setDeleteTarget(item)
-                    }}
-                    className="shrink-0 rounded p-1 text-text-disabled opacity-0 transition-opacity duration-150 hover:bg-error/10 hover:text-error group-hover:opacity-100"
-                  >
-                    <Icon name="trash" size={12} />
-                  </button>
+                  {!batchMode && (
+                    <button
+                      type="button"
+                      title={t('common.delete')}
+                      aria-label={t('common.delete')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeleteTarget(item)
+                      }}
+                      className="shrink-0 rounded p-1 text-text-disabled opacity-0 transition-opacity duration-150 hover:bg-error/10 hover:text-error group-hover:opacity-100"
+                    >
+                      <Icon name="trash" size={12} />
+                    </button>
+                  )}
                 </div>
               </li>
             )
           })}
         </ul>
       </div>
+
+      {/* 批量模式的计数与出图入口 */}
+      {batchMode && (
+        <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
+          <span className="text-xs text-text-secondary" data-testid="mdstudio-batch-count">
+            {t('mdstudio.batch.selected', { count: batchIds.length })}
+          </span>
+          <button
+            type="button"
+            onClick={onToggleBatchAll}
+            className="text-xs text-text-secondary underline-offset-2 transition-colors hover:text-primary hover:underline"
+          >
+            {batchIds.length > 0 ? t('mdstudio.batch.clearAll') : t('mdstudio.batch.selectAll')}
+          </button>
+          <Button
+            size="sm"
+            className="ml-auto"
+            icon={<Icon name="downloads" size={12} />}
+            disabled={batchIds.length === 0}
+            onClick={onBatchExport}
+          >
+            {t('mdstudio.batch.export')}
+          </Button>
+        </div>
+      )}
 
       {/* 删除确认 */}
       <Modal open={deleteTarget !== null} title={t('mdstudio.delete.title')} onClose={() => setDeleteTarget(null)}>

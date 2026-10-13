@@ -122,6 +122,10 @@ export function stripUnsafe(root: HTMLElement): void {
   for (const el of all) {
     el.removeAttribute('class');
     el.removeAttribute('id');
+    // mdcore 自己的定位标记（画布交互用）不进产物：它们是编辑器状态，不是排版结果
+    for (const attr of Array.from(el.attributes)) {
+      if (attr.name.startsWith('data-mdcore-')) el.removeAttribute(attr.name);
+    }
     const htmlEl = el as HTMLElement;
     if (htmlEl.style) {
       for (const prop of Array.from({ length: htmlEl.style.length }, (_, i) => htmlEl.style.item(i))) {

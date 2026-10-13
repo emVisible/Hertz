@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exportCards, exportCardsDetailed, exportZip } from '../index';
+import { exportCards, exportCardsDetailed, exportZip, zipBlobs } from '../index';
 import type { CaptureEngine, ReadyGate } from '../index';
 
 /** 导出器测试（§7）：依赖注入 mock 引擎，不打真 canvas */
@@ -84,6 +84,24 @@ describe('exportZip', () => {
     expect(buf[1]).toBe(0x4b); // K
     expect(buf[2]).toBe(0x03);
     expect(buf[3]).toBe(0x04);
+  });
+});
+
+describe('zipBlobs：批量出图打成一个包', () => {
+  it('命名条目全部落进同一个 ZIP，条目名原样保留（多篇稿各占一个子目录）', async () => {
+    const JSZip = (await import('jszip')).default;
+    const blob = await zipBlobs([
+      { name: '甲/card-01.png', blob: pngBlob('a') },
+      { name: '甲/card-02.png', blob: pngBlob('b') },
+      { name: '乙/long.png', blob: pngBlob('c') },
+    ]);
+    const head = new Uint8Array(await blob.arrayBuffer()).slice(0, 4);
+    expect([...head]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    // jszip 会为路径自动补目录条目（`甲/`），只关心文件条目
+    const files = Object.keys(zip.files).filter((n) => !n.endsWith('/')).sort();
+    expect(files).toEqual(['乙/long.png', '甲/card-01.png', '甲/card-02.png']);
+    expect(await zip.file('甲/card-02.png')!.async('string')).toBe('fake-png-b');
   });
 });
 

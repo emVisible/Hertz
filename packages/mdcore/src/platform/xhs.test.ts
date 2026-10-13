@@ -86,6 +86,18 @@ describe('xhsCards', () => {
     });
   });
 
+  it('breaks 透传：强制边界在第三块前收页（画布拖过的边界要真的落到卡片上）', () => {
+    // 三段各 700 字，一页只放得下一段 → 自然分页本就是 3 页；
+    // 强制边界 [1] 会让第一页只放第一段、第二页从第二段开始（页数不变、边界位置变）
+    const md = Array.from({ length: 3 }, () => '字'.repeat(700)).join('\n\n');
+    const natural = xhsCards(parseToIR(md), { measurer: mockMeasurer(CONTENT_H) });
+    expect(natural.pageCount).toBe(3);
+    const forced = xhsCards(parseToIR(md), { measurer: mockMeasurer(CONTENT_H), breaks: [1] });
+    expect(forced.pageCount).toBe(3);
+    const second = forced.pages[1].querySelector('.mdcore-page-body') as HTMLElement;
+    expect(second.firstElementChild?.getAttribute('data-mdcore-block')).toBe('1');
+  });
+
   it('品牌二维码位：qr 传入时每页页脚渲染 eager img，不传则无', () => {
     const md = '正文一。\n\n正文二。';
     const withQr = xhsCards(parseToIR(md), {

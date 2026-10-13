@@ -36,6 +36,14 @@ describe('wechatPayload：渲染态快照内联产物', () => {
     expect(html).not.toContain('var(');
   });
 
+  it('mdcore 自己的块定位标记不进产物（data-mdcore-* 是编辑器状态，不是排版结果）', () => {
+    const el = renderAndAttach(MD);
+    // 渲染态里确实带着标记，否则下面那条 not.toContain 是空转
+    expect(el.querySelector('[data-mdcore-block]')).not.toBeNull();
+    const { html } = wechatPayload(el);
+    expect(html).not.toContain('data-mdcore-');
+  });
+
   it('样式以内联 style 形式存在', () => {
     const { html } = wechatPayload(renderAndAttach(MD));
     expect(html).toMatch(/<h1[^>]*\sstyle\s*=/);

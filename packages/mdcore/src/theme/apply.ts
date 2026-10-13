@@ -34,9 +34,14 @@ export function applyTheme(
   container.style.setProperty('font-size', tokens.fontSize);
   container.style.setProperty('line-height', tokens.lineHeight);
 
-  for (const block of ir) {
+  for (const [index, block] of ir.entries()) {
     const el = renderBlock(block, ctx);
-    if (el) container.appendChild(el);
+    if (!el) continue;
+    // 块定位标记：画布靠它把「点到的段落」与「分页边界」映射回 IR 序号与源码行号。
+    // 只标顶层块——嵌套在引用/callout 里的子块不参与画布交互。
+    el.setAttribute('data-mdcore-block', String(index));
+    if (block.line) el.setAttribute('data-mdcore-line', `${block.line[0]}-${block.line[1]}`);
+    container.appendChild(el);
   }
   return container;
 }

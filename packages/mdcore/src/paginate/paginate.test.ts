@@ -121,6 +121,51 @@ describe('paginate：表格按行拆', () => {
   });
 });
 
+describe('paginate：强制分页边界（画布拖动边界写回的通道）', () => {
+  const md = `${'一'.repeat(40)}\n\n${'二'.repeat(40)}\n\n${'三'.repeat(40)}`;
+
+  function runWithBreaks(pageHeight: number, breaks: number[]) {
+    const ir = parseToIR(md);
+    return paginate(ir, {
+      theme: 'modi',
+      page: { width: 320, height: pageHeight, padding: 20 },
+      measurer: mockMeasurer(pageHeight - 40),
+      breaks,
+    });
+  }
+
+  it('没有 breaks 时三段并一页；breaks=[2] 在第三块前收页', () => {
+    // 正文高 260：3 段 × 40px = 120px，不强制时只有一页
+    expect(runWithBreaks(300, []).length).toBe(1);
+    const pages = runWithBreaks(300, [2]);
+    expect(pages.length).toBe(2);
+    const bodies = pageBodies(pages);
+    expect(bodies[0].children.length).toBe(2);
+    expect(bodies[1].children[0].textContent).toBe('三'.repeat(40));
+  });
+
+  it('强制边界不裁内容：收页后仍放不下的部分继续拆到后续页（字数守恒）', () => {
+    // 正文高 100 → 5 行；强制在第 2 块前收页，而第 2 块自己就装不下 → 必须继续拆
+    const pages = runWithBreaks(140, [1]);
+    expect(pages.length).toBeGreaterThan(1);
+    const bodies = pageBodies(pages);
+    expect(bodies[0].children[0].textContent).toBe('一'.repeat(40));
+    const rest = pages
+      .slice(1)
+      .map((p) => (p.querySelector('.mdcore-page-body') as HTMLElement).textContent ?? '')
+      .join('');
+    expect(rest).toBe('二'.repeat(40) + '三'.repeat(40));
+  });
+
+  it('breaks 里的 0 / 负数 / 非整数 / 越界值不会凭空多出空页', () => {
+    for (const breaks of [[0], [-1], [1.5], [999]]) {
+      const pages = runWithBreaks(300, breaks);
+      expect(pages.length, `breaks=${JSON.stringify(breaks)}`).toBe(1);
+      expect(pageBodies(pages)[0].children.length).toBe(3);
+    }
+  });
+});
+
 describe('paginate：孤行控制', () => {
   it('标题不留页尾，与它后第一块绑定推下页', () => {
     // 正文高 100：para 40px + h2 40px = 80px 放得下；再追加 60px 图片放不下的时刻，

@@ -50,6 +50,8 @@ and an installer that requires zero configuration on a fresh machine.
 - Xiaohongshu: measurement-based pagination (binary-split break points, table header repeat across pages, CJK line-break rules), 3:4 card export as PNG set / ZIP, auto cover page, brand footer with QR slot
 - Zhihu: degradation renderer (tables → image, formulas → MathJax source, ordered lists → text numbering)
 - 9 built-in themes (each platform has a true dark variant), one-click palette recolour derived from a single accent colour, per-draft overrides persisted in the `layouts` table
+- Canvas-level editing: click a paragraph to edit its Markdown in place (written back by source line range — Markdown stays the single source of truth), drag a Xiaohongshu card's page boundary to force a break anywhere
+- Batch export: pick several drafts, render each, and get one ZIP (`NN-title/page-01.png`) — a failed draft never cancels the batch
 
 **Platform**
 - Zero-config packaging: backend frozen via PyInstaller, embedded PostgreSQL auto-provisioned on first launch, auto-update channel via GitHub Releases

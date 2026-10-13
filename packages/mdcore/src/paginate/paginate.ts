@@ -57,6 +57,14 @@ export interface PaginateOptions {
   /** 默认 domMeasurer（getBoundingClientRect）；测试注入 mock */
   measurer?: Measurer;
   doc?: Document;
+  /**
+   * 强制分页边界：IR 块序号集合，命中即「在此块之前另起一页」（画布拖动分页边界的写回通道）。
+   *
+   * 语义是「至少在这里断」，不是「只能在这里断」：强制收页之后若剩余内容仍放不下，
+   * 照常拆分到后续页。**这条约束是为了守住字数守恒**——强制边界永远不裁内容，
+   * 用户往上一拖只会让本页变少，往下一拖最多多出几页。
+   */
+  breaks?: number[];
 }
 
 function normalizePadding(p: PageSpec['padding']): PagePadding {
@@ -303,7 +311,12 @@ export function paginate(ir: LayoutIR, opts: PaginateOptions): HTMLElement[] {
     };
 
     newPage();
-    for (const block of blocks) {
+    // 强制边界（画布拖动分页边界写回的通道）：页内已有内容才收页，否则会凭空多一张空页
+    const forced = new Set(
+      (opts.breaks ?? []).filter((n) => Number.isInteger(n) && n > 0),
+    );
+    for (const [index, block] of blocks.entries()) {
+      if (forced.has(index) && body.children.length) closePage();
       let el: HTMLElement | null = block;
       body.appendChild(el);
       for (let guard = 0; el && !fits() && guard < 500; guard++) {
