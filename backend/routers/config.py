@@ -162,6 +162,8 @@ RUNTIME_ALLOWLIST = {
     "pipeline_publish_retry_base_seconds",
     "pipeline_publish_cooldown_seconds",
     "pipeline_publish_cooldown_max_seconds",
+    # v0.38：跨日排期（此前 6 处调用点硬传 1，用户无法制定超过 24h 的计划）
+    "pipeline_publish_lookahead_days",
 }
 
 SECRET_FIELDS = {

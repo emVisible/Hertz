@@ -451,7 +451,9 @@
     "publishRetryBase": "Retry backoff base (s)",
     "publishCooldown": "Rate-limit cooldown (s)",
     "publishCooldownMax": "Cooldown cap (s)",
-    "publishReliabilityHint": "Uploads that hit rate limits or flaky networks are retried with exponential backoff. Repeated rate limits freeze the target for a while (longer the more you collide); one success clears it. 403/404 are permanent and never retried — that is an expired cookie, and retrying only deepens the block."
+    "publishReliabilityHint": "Uploads that hit rate limits or flaky networks are retried with exponential backoff. Repeated rate limits freeze the target for a while (longer the more you collide); one success clears it. 403/404 are permanent and never retried — that is an expired cookie, and retrying only deepens the block.",
+    "publishLookaheadDays": "Schedule horizon (days)",
+    "publishLookaheadHint": "1 = today only (when windows fill up, the item stays unscheduled for you to place manually). Set 7 to plan a week ahead — previously no value could schedule past tomorrow."
   },
   "execution": {
     "modeStudio": "Studio",

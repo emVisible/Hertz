@@ -447,3 +447,92 @@ def test_plan_promotions_orders_by_configured_premier_score():
         f"premier_score 抬到 9.0 后高分条目应优先，实际 {order_raised}——"
         "门槛没有接进排序"
     )
+
+
+# ---------- 跨日排期：设置必须真的生效（v0.38 回归） ----------
+
+def test_lookahead_days_reads_settings():
+    """`pipeline_publish_lookahead_days` 必须真的改变 `next_slot` 的排期跨度。
+
+    ## 为什么这条测试必须存在
+
+    v0.37 之前配置里有这个字段而代码**零读取**——6 处调用点全硬传 1，用户改了
+    完全没反应。那种「看得见、调不了」的旋钮比没有更糟。
+
+    v0.37 我把字段删了（当时判断：v0.11.5「只排当天」是刻意约束）。v0.38 加回来，
+    这次每个调用点都真读它——**而且默认仍是 1**，所以不配置时行为与 v0.11.5 逐字
+    一致，变的是用户主动调大时能生效。
+    """
+    from backend.pipeline.schedule import _lookahead_days
+
+    class _Cfg:
+        def __init__(self, v):
+            self.pipeline_publish_lookahead_days = v
+
+    assert _lookahead_days(_Cfg(1)) == 1
+    assert _lookahead_days(_Cfg(7)) == 7
+    # 非法值钳到 1：填 0/负数是笔误，不该产生「0 天排期」这种无意义配置
+    assert _lookahead_days(_Cfg(0)) == 1
+    assert _lookahead_days(_Cfg(-3)) == 1
+    assert _lookahead_days(_Cfg("abc")) == 1
+
+
+def test_lookahead_actually_extends_the_scheduling_horizon():
+    """窗口排满时，lookahead 决定**能否往后找几天**——这才是它的实际作用。
+
+    别被「窗口错过 → 兜底到 now + 最小间隔」误导：那是兜底路径，与 lookahead
+    无关。真正的差别发生在**已排期把当天窗口彻底占满**时：
+
+    - `earliest` 被推出今天的窗口 → lookahead=1 只看这一天，找不到 → 兜底条件
+      「earliest 仍与 now 同日」不成立 → 返回 **None**，调用方保持无排期；
+    - lookahead=7 则会往后找 7 天，找到下一个可用窗口。
+
+    也就是说：lookahead=1 时**你无法制定超过 24 小时的计划**——库存里躺着一条
+    该发的内容，它也不会被排到后天去。
+
+    断言用「本地日差」而非日期字面量：`next_slot` 按**系统本地时区**解释窗口
+    （v0.11.5 刻意的墙钟语义），拿 UTC 日期去断言会在非 UTC 机器上假红。
+    """
+    from backend.pipeline.schedule import next_slot
+
+    local = datetime.now().astimezone().tzinfo
+    today = datetime.now().astimezone(local).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    # 占用放在今天之后一点的时刻：earliest = 占用 + min_interval，必然跨出今天
+    occupied = [today.replace(hour=23, minute=40)]
+
+    same_day = next_slot(
+        occupied, now=today,
+        windows_raw="00:00-01:00", min_interval_min=60, lookahead_days=1,
+    )
+    assert same_day is None, (
+        f"lookahead=1 时窗口排满应当返回 None（保持无排期、等用户手动设），实际 {same_day}"
+    )
+
+    a_week = next_slot(
+        occupied, now=today,
+        windows_raw="00:00-01:00", min_interval_min=60, lookahead_days=7,
+    )
+    assert a_week is not None, "lookahead=7 应当能往后找到下一个可用窗口"
+    span_days = (
+        a_week.astimezone(local).date() - occupied[0].astimezone(local).date()
+    ).days
+    assert 1 <= span_days <= 7, f"应排到 1~7 天内，实际 {span_days} 天"
+
+
+def test_no_hardcoded_lookahead_left_in_production_call_sites():
+    """源码级守卫：生产调用点不得再出现 `lookahead_days=1`。
+
+    这条针对的正是 v0.37 那个洞：字段存在、六处硬编码、用户改了没反应。
+    只测 `_lookahead_days` 函数不够——它可能压根没人调用（那正是当初的形状）。
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "backend/pipeline"
+    offenders = [
+        f"{p.name}:{i}"
+        for p in root.glob("service_*.py")
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+        if "lookahead_days=1" in line
+    ]
+    assert not offenders, f"这些生产调用点仍硬编码 lookahead：{offenders}"

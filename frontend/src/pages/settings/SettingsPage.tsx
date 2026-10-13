@@ -65,6 +65,7 @@ interface ConfigData {
   pipeline_publish_max_attempts?: number
   pipeline_publish_retry_base_seconds?: number
   pipeline_publish_cooldown_seconds?: number
+  pipeline_publish_lookahead_days?: number
   pipeline_publish_cooldown_max_seconds?: number
   pipeline_video_width?: number
   pipeline_video_height?: number
@@ -210,6 +211,7 @@ export function SettingsPage() {
       pipeline_publish_max_attempts: String(cfg.pipeline_publish_max_attempts ?? 3),
       pipeline_publish_retry_base_seconds: String(cfg.pipeline_publish_retry_base_seconds ?? 5),
       pipeline_publish_cooldown_seconds: String(cfg.pipeline_publish_cooldown_seconds ?? 900),
+      pipeline_publish_lookahead_days: String(cfg.pipeline_publish_lookahead_days ?? 1),
       pipeline_publish_cooldown_max_seconds: String(cfg.pipeline_publish_cooldown_max_seconds ?? 3600),
       pipeline_video_width: String(cfg.pipeline_video_width ?? 1280),
       pipeline_video_height: String(cfg.pipeline_video_height ?? 720),

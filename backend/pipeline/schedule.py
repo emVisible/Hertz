@@ -43,6 +43,26 @@ def parse_windows(raw: str) -> list[PublishWindow]:
     return windows
 
 
+def _lookahead_days(settings_obj) -> int:
+    """跨日排期天数：读 `pipeline_publish_lookahead_days`，钳到 ≥1。
+
+    唯一读数入口（v0.38）。此前 6 处调用点各硬传 `lookahead_days=1`，而配置里
+    还有一个同名字段零读取——用户改它完全没有反应。
+
+    钳到 ≥1 是因为 `next_slot` 内部 `range(max(lookahead_days, 1))` 也拦着，
+    但配置层就该给出合法值：填 0 或负数是用户笔误，不该让「0 天」这种
+    无意义配置静默退化成 1。
+
+    默认 1，与 v0.11.5「只排当天」逐字一致；调大它，用户就能制定超过 24 小时的
+    排期计划。
+    """
+    try:
+        value = int(getattr(settings_obj, "pipeline_publish_lookahead_days", 1) or 1)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, value)
+
+
 def next_slot(
     existing: list[datetime],
     *,

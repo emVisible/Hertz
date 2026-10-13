@@ -16,6 +16,7 @@ from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 from backend.pipeline.helpers import _auto_tid as helpers_auto_tid
 from backend.pipeline.publish_reliability import PublishThrottledError
+from backend.pipeline.schedule import _lookahead_days
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ class PromotionMixin:
         v0.13：策略开启时由发布策略引擎接管——账号健康度定配额、内容分层选
         条目、同分区间隔 + 相邻分区去重；关闭时保持静态转正数行为。"""
         from backend.pipeline.publish_queue import PHASE_HOLDING, PHASE_READY
-        from backend.pipeline.schedule import next_slot
+        from backend.pipeline.schedule import _lookahead_days, next_slot
 
         settings = self.engine.settings
         if self._strategy_cfg().enabled:
@@ -120,7 +121,7 @@ class PromotionMixin:
                         getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
                     ),
                     jitter_min=0,
-                    lookahead_days=1,
+                    lookahead_days=_lookahead_days(self.engine.settings),
                 )
                 if slot is None:
                     continue  # 窗口排满 → 保持 holding，次日再转
@@ -192,9 +193,9 @@ class PromotionMixin:
                 getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
             ),
             cfg=cfg,
-            # v0.11.5 决策对齐：只排当天——窗口满保持 holding（次日再转），
-            # 不因策略路径悄悄把排期推到未来几天
-            lookahead_days=1,
+            # 默认仍是 1（v0.11.5「只排当天」：窗口满保持 holding、次日再转）。
+            # v0.38 起读设置——想排超过 24 小时的用户可以主动调大它。
+            lookahead_days=_lookahead_days(self.engine.settings),
         )
         if not plan:
             return 0
@@ -255,7 +256,7 @@ class PromotionMixin:
 
         from backend.pipeline.errors import InvalidItemStateError
         from backend.pipeline.publish_queue import PHASE_READY
-        from backend.pipeline.schedule import next_slot
+        from backend.pipeline.schedule import _lookahead_days, next_slot
         from backend.pipeline.strategy import daily_quota
 
         settings = self.engine.settings
@@ -345,7 +346,7 @@ class PromotionMixin:
                             getattr(settings, "pipeline_publish_min_interval_min", 30)
                         ),
                         jitter_min=0,
-                        lookahead_days=1,
+                        lookahead_days=_lookahead_days(self.engine.settings),
                     )
                     if slot is not None:
                         item.scheduled_at = slot

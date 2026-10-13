@@ -24,7 +24,7 @@ class ScheduleMixin:
         from datetime import datetime
 
         from backend.pipeline.publish_queue import PHASE_HOLDING
-        from backend.pipeline.schedule import next_slot
+        from backend.pipeline.schedule import _lookahead_days, next_slot
 
         now = datetime.now(UTC)
         async with session_factory() as session:
@@ -65,7 +65,7 @@ class ScheduleMixin:
                         getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
                     ),
                     jitter_min=0,  # 批量分配不做随机抖动，避免重复
-                    lookahead_days=1,  # v0.11.5：只排当天，不要定到几天后
+                    lookahead_days=_lookahead_days(self.engine.settings),
                 )
                 if slot is None:
                     # 窗口排满/跨天无可用槽位 → 保持无排期（用户手动设），
@@ -150,7 +150,7 @@ class ScheduleMixin:
         """下一个发布槽位：窗口内 + 与已排期条目的最小间隔 + 抖动。
         v0.11.5：只统计未发布条目（queued/approved/downloaded）的排期——
         published/failed/rejected 的历史排期不参与挤压（否则推荐被推到几天后）。"""
-        from backend.pipeline.schedule import next_slot
+        from backend.pipeline.schedule import _lookahead_days, next_slot
 
         async with session_factory() as session:
             result = await session.execute(
@@ -169,7 +169,7 @@ class ScheduleMixin:
                 getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
             ),
             jitter_min=int(getattr(self.engine.settings, "pipeline_publish_jitter_min", 5)),
-            lookahead_days=1,  # v0.11.5：只排当天（用户需求）
+            lookahead_days=_lookahead_days(self.engine.settings),
         )
         # 当天无可用槽位 → 返回空（前端回退 now+5min 兜底）
         return slot.isoformat() if slot else ""

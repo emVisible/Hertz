@@ -229,7 +229,7 @@ class PublishMixin:
 
         if phase not in QUEUE_PHASES:
             raise ValueError(f"unknown queue phase '{phase}'")
-        from backend.pipeline.schedule import next_slot
+        from backend.pipeline.schedule import _lookahead_days, next_slot
 
         async with session_factory() as session:
             item = await session.get(Item, item_id)
@@ -268,7 +268,7 @@ class PublishMixin:
                             getattr(self.engine.settings, "pipeline_publish_min_interval_min", 30)
                         ),
                         jitter_min=0,
-                        lookahead_days=1,
+                        lookahead_days=_lookahead_days(self.engine.settings),
                     )
                     if slot is None:
                         raise ValueError("今天发布窗口已排满，无法自动分配槽位（请先手动设置排期）")

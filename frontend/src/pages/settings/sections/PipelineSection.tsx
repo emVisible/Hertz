@@ -710,8 +710,20 @@ export function PipelineSection({
               value={form.pipeline_publish_cooldown_max_seconds ?? '3600'}
               onChange={(e) => set('pipeline_publish_cooldown_max_seconds', e.target.value)}
             />
+            <Input
+              label={t('settings.publishLookaheadDays')}
+              type="number"
+              min={1}
+              max={30}
+              value={form.pipeline_publish_lookahead_days ?? '1'}
+              onChange={(e) => set('pipeline_publish_lookahead_days', e.target.value)}
+            />
           </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">{t('settings.publishReliabilityHint')}</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-text-disabled">
+            {t('settings.publishReliabilityHint')}
+            {' '}
+            {t('settings.publishLookaheadHint')}
+          </p>
         </div>
 
         {/* RSS 订阅（v0.37 补齐）：collectors/rss.py 的报错文案一直叫用户

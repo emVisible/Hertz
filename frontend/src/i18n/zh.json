@@ -466,7 +466,9 @@
     "publishRetryBase": "重试退避起步(秒)",
     "publishCooldown": "限速冷却(秒)",
     "publishCooldownMax": "冷却上限(秒)",
-    "publishReliabilityHint": "上传遇到限流或网络抖动时按指数退避重试。连续撞到限流就冻结该目标一段时间（连撞越久等越久），一次成功即解冻。403/404 属永久失败不重试——那是 cookie 过期，重试只会加重封禁。"
+    "publishReliabilityHint": "上传遇到限流或网络抖动时按指数退避重试。连续撞到限流就冻结该目标一段时间（连撞越久等越久），一次成功即解冻。403/404 属永久失败不重试——那是 cookie 过期，重试只会加重封禁。",
+    "publishLookaheadDays": "排期向前看(天)",
+    "publishLookaheadHint": "1 = 只排当天（窗口排满就保持未排期，等你手动设）。调到 7 就能提前把未来一周的内容排进窗口——此前无论怎么调都只能排到明天为止。"
   },
   "execution": {
     "modeStudio": "Studio 编排",
