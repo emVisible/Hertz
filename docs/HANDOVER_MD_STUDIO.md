@@ -11,7 +11,7 @@
 | 分支 / HEAD | `main` / `b87746e`（功能）+ 其后的发版准备提交 | `git log --oneline -2` |
 | 本模块提交 | 10 个：`f911f9c` spec → `b9e0a03` 内核 → `4211298` 页面+后端 → `4351335` 切片 E → `4739426` 导出器修复 → `4e23d7c` 分页/剪贴板修复 → `10c58ab` 文档 → `c755458` 门禁 → `37bc677` 设计与接手文档 → `b87746e` 画布内编辑+批量出图 | `git log --oneline -10` |
 | 工作树 | 干净 | `git status --short` |
-| 门禁 | 七步全绿（分两批跑：pytest 796 / mdcore 102 / 前端 219 / 两包 tsc / vite build 2.31s） | `bash scripts/verify.sh` |
+| 门禁 | 源码七步全绿（分两批跑：pytest 796 / mdcore 102 / 前端 219 / 两包 tsc / vite build 2.31s）；**产物级 `release-check.sh` 有一项红**，见 §4 第 11 条 | `bash scripts/verify.sh`、`bash scripts/release-check.sh` |
 | 远端 | v0.35.0 已 tag + push（`git tag -l v0.35.0`、`git log origin/main..HEAD`） | — |
 | 版本 | `0.35.0`；CHANGELOG 已收版 | `grep -m1 version frontend/package.json` |
 
@@ -59,6 +59,7 @@ bash scripts/dev.sh
 8. **强制分页边界只能"至少在这里断"**：v0.35 的 `breaks` 若改成「只能在这里断」，用户把边界往下拖就会**裁掉放不下的内容**，首版量到的字数守恒当场破掉。改这个语义前先读 D-226。
 9. **jsdom 量不出块底边**：`offsetTop/offsetHeight` 全为 0，拖动那条判据靠 `defineProperty` 造高度才跑得起来——它能证"写回了什么"，证不了"吸得准不准"，后者仍属真浏览器。
 10. **批量导出不能是"循环点 N 次导出"**：宿主会拦连续下载，用户最后只拿到最后一篇；所以 `zipBlobs` 按命名条目打成一个包，条目名过一遍净化（否则给解压端留 zip slip）。
+11. **产物级门禁的红项与本模块无关，但别把它当"环境问题"放过**：`release-check.sh` 唯一红项是 `/api/studio/transcribe` 返回 000（契约要 200 或 502）。实测同一固化包隔离目录下首调 **68.3s 返回 200**、第二次 **1.4s 返回 200**，隔离目录里落了 148MB 模型——`_get_whisper()` 在模型未就绪时走 `ensure_model()` **隐式下载**，而 `sim-newmachine.sh` 只给 60s（它自己的注释就写着"绝不隐式下载模型"）。本模块两个提交对 backend 的全部改动是 `config.py` 一行版本号。**这条红项的真实含义是**：转写端点在"模型未就绪 + 网络慢/不通"时不会快速 502，用户会对着一个几十秒无响应的界面等——修它属于 ASR 线的活，不是本模块的遗留。
 
 **通用教训**：结构层（jsdom + 注入 mock）能证"对不对"，证不了"看起来对不对"。观感与像素只能在产物层判——上面 1/2/3 三条全是真浏览器抓的。
 
