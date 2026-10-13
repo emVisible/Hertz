@@ -169,7 +169,9 @@ async def test_platform_all_three_accepted(client, _layout_cleanup) -> None:
 @pytest.fixture
 def docs_root(tmp_path, monkeypatch):
     """隔离 docs 根（assets_root 指向 tmp_path），写完即弃。"""
-    monkeypatch.setattr("backend.routers.docs.runtime_config.load", lambda: {"assets_root": str(tmp_path)})
+    monkeypatch.setattr(
+        "backend.routers.docs.runtime_config.load", lambda: {"assets_root": str(tmp_path)}
+    )
     return tmp_path
 
 

@@ -86,7 +86,7 @@ async def list_layouts() -> list[dict]:
             .scalars()
             .all()
         )
-        return [_layout_dict(l, full=False) for l in layouts]
+        return [_layout_dict(row, full=False) for row in layouts]
 
 
 @router.post("")
