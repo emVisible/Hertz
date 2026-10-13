@@ -1539,7 +1539,9 @@
       "warning": "本月 AI 花费已达预算 {used} / {budget}（超过 50%）",
       "critical": "本月 AI 花费 {used} / {budget}——已超 80%，建议放缓制作节奏",
       "exceeded": "本月 AI 花费 {used} 已超预算 {budget}（≥95%）——发布策略引擎将照常运行，请评估是否调整预算或降量"
-    }
+    },
+    "aiTime": "推理耗时",
+    "aiTimeHint": "本地模型不花钱，但要走算力时间——这一列才是本地推理的真实成本。"
   },
   "errors": {
     "suggestion": {

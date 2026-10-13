@@ -10,6 +10,7 @@ import pytest
 
 from backend.ai.costs import _domain_of, aggregate_costs, estimate_cost
 from backend.models.ai_registry import AICall
+from backend.models.item import Item, ItemStatus
 from backend.models.session import session_factory
 
 PRICES = {"deepseek-chat": {"prompt": 0.27, "completion": 1.1}}
@@ -376,3 +377,75 @@ async def test_insights_generate_and_inject(client, monkeypatch) -> None:
     assert seen, "score 未调用 LLM"
     system_text = " ".join(seen[0])
     assert "受众偏好" in system_text and "动物" in system_text
+
+
+# ---------- 时长作为第二个成本维度（v0.38） ----------
+
+@pytest.mark.asyncio
+async def test_duration_reported_even_when_cost_is_zero():
+    """本地模型 cost 恒为 0 时，**时长必须仍然被报出来**。
+
+    ## 为什么这条是地基级的
+
+    项目定位是 local-first，推荐配置是本地 ollama。而 `estimate_cost` 对本地
+    模型返回 0 ——于是「条目成本 ROI」整张表对真正的目标用户恒为 ¥0，全无意义。
+
+    时长一直在 `ai_calls.duration_ms` 里，只是没人读。它才是本地用户真实的
+    成本：不是钱，是**等了多久**。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from backend.ai.costs import aggregate_costs
+
+    now = datetime.now(UTC)
+    async with session_factory() as session:
+        for i in range(3):
+            session.add(AICall(
+                model_key="local/ollama-q4", provider_key="ollama",
+                caller="score", operation="chat",
+                prompt_tokens=1000, completion_tokens=500,
+                duration_ms=40_000 + i * 1000,
+                created_at=now - timedelta(hours=1),
+            ))
+        await session.commit()
+
+    # 空价目表 → 本地模型记 0 元：正是推荐配置下的真实形态
+    rep = await aggregate_costs(days=30, prices={})
+    assert rep["summary"]["total_cost"] == 0.0, "本地推理不该计钱"
+    assert rep["summary"]["duration_ms"] == 123_000, "但时长必须如实报出"
+    assert rep["summary"]["avg_duration_ms"] == 41_000
+
+    # 桶里也要有——「按模型」那张表同样要能看出谁最耗时间
+    buckets = rep["by_model"]
+    local = next(b for b in buckets if b["model_key"] == "local/ollama-q4")
+    assert local["duration_ms"] == 123_000
+    # 桶的 cost 可能是 None（未配价时整桶置空）也可能是 0.0 —— 金额这一维
+    # 本身就是不可靠的。时长那一维没有这个歧义，这正是它该被加进来的理由。
+    assert local["cost"] in (None, 0.0)
+
+
+@pytest.mark.asyncio
+async def test_item_roi_carries_duration():
+    """每条视频的 ROI 要带自己的时长——这是「这条花了多少时间」的唯一落点。"""
+    from datetime import UTC, datetime, timedelta
+
+    from backend.ai.costs import aggregate_costs
+
+    now = datetime.now(UTC)
+    async with session_factory() as session:
+        row = Item(status=ItemStatus.PUBLISHED, source="test", source_id="roi-1",
+                   title="时长可见的条目")
+        session.add(row)
+        await session.flush()
+        iid = str(row.id)
+        session.add(AICall(
+            model_key="local/ollama-q4", provider_key="ollama",
+            task_id=f"item:{iid}", caller="score", operation="chat",
+            prompt_tokens=100, completion_tokens=50, duration_ms=12_345,
+            created_at=now - timedelta(hours=1),
+        ))
+        await session.commit()
+
+    rep = await aggregate_costs(days=30, prices={})
+    mine = next(r for r in rep["items"] if r["item_id"] == iid)
+    assert mine["ai_duration_ms"] == 12_345, "ROI 行必须带时长，否则本地用户的表是空的"

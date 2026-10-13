@@ -183,6 +183,12 @@ async def aggregate_costs(
     total_cost = 0.0
     billed_calls = 0
     prompt_total = completion_total = 0
+    # v0.38：本地推理的真实成本是**时间**，不是钱。
+    #
+    # 之前只累计金额，于是推荐配置（本地 ollama）下 `ai_cost` 恒为 ¥0，ROI
+    # 表对真正的目标用户失去全部意义——而项目定位恰恰是 local-first。
+    # 时长一直在 `ai_calls.duration_ms` 里，只是没人读。
+    duration_total_ms = 0
     in_domain_rows: list[AICall] = []
 
     for r in rows:
@@ -195,14 +201,19 @@ async def aggregate_costs(
         ct = int(r.completion_tokens or 0)
         prompt_total += pt
         completion_total += ct
+        duration_total_ms += int(r.duration_ms or 0)
 
         for bucket, key in ((by_domain, d), (by_model, r.model_key or "unknown")):
             b = bucket.setdefault(
                 key,
                 {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0,
+                 # v0.38：时长与金额并列进每个桶，让「按环节/按模型」两张表
+                 # 都能看出哪些环节最耗时间
+                 "duration_ms": 0,
                  "cost": 0.0, "_unpriced": False},
             )
             b["calls"] += 1
+            b["duration_ms"] = b.get("duration_ms", 0) + int(r.duration_ms or 0)
             b["prompt_tokens"] += pt
             b["completion_tokens"] += ct
             if cost is None:
@@ -293,8 +304,10 @@ async def aggregate_costs(
         iid = m.group(1)
         if iid not in items_by_id:
             continue
-        b = by_item.setdefault(iid, {"calls": 0, "cost": 0.0, "_unpriced": False})
+        b = by_item.setdefault(
+            iid, {"calls": 0, "cost": 0.0, "duration_ms": 0, "_unpriced": False})
         b["calls"] += 1
+        b["duration_ms"] = b.get("duration_ms", 0) + int(r.duration_ms or 0)
         cost = _row_cost(r)
         if cost is None:
             b["cost"] = None
@@ -310,11 +323,16 @@ async def aggregate_costs(
             "views": (items_by_id.get(iid) or {}).get("views"),
             "calls": b["calls"],
             "ai_cost": _to_currency(b["cost"]),
+            # v0.38：本地配置下 ai_cost 恒为 0，没有时长这一列的话整张 ROI
+            # 表对目标用户毫无意义——它无法区分「便宜地做完」和「没花钱但跑了 10 分钟」。
+            "ai_duration_ms": b["duration_ms"],
             "asset_path": (items_by_id.get(iid) or {}).get("asset_path") or None,
         }
         for iid, b in by_item.items()
     ]
-    items_view.sort(key=lambda x: -(x["ai_cost"] or 0))
+    # v0.38：按「金额优先、时长兜底」排。
+    # 只按金额排的话，本地配置下每条都是 0 ——排序退化成字典序，等于没有排序。
+    items_view.sort(key=lambda x: (-(x["ai_cost"] or 0), -(x["ai_duration_ms"] or 0)))
 
     calls_view = [
         {
@@ -347,6 +365,10 @@ async def aggregate_costs(
             "coverage": round(billed_calls / total, 4) if total else 1.0,
             "prompt_tokens": prompt_total,
             "completion_tokens": completion_total,
+            # v0.38：与金额并列的第二个成本维度。本地模型 cost 恒为 0，
+            # 「每条视频花了多少算力时间」才是本地用户真正该看的数。
+            "duration_ms": duration_total_ms,
+            "avg_duration_ms": round(duration_total_ms / total, 1) if total else 0,
             "days": days,
             # v0.20：达到聚合行数上限时如实标注（数据被截断到最近 2 万行）
             "truncated": truncated,

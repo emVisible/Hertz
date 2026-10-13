@@ -60,6 +60,8 @@ interface CostReport {
     views: number | null
     calls: number
     ai_cost: number | null
+    /** v0.38：本地模型 ai_cost 恒为 0，时长才是本地用户真实的成本维度 */
+    ai_duration_ms: number
     asset_path: string | null
   }>
   calls: Array<{
@@ -87,6 +89,13 @@ const RANGES = [7, 30, 90] as const
 function fmtCost(symbol: string, v: number | null | undefined): string {
   if (v == null) return '—'
   return `${symbol}${v.toFixed(4).replace(/\.?0+$/, '')}`
+}
+
+/** 毫秒时长 → `1m 03s`。本地推理的真实成本是「等了多久」，所以它必须可读。 */
+function fmtDuration(ms: number): string {
+  const total = Math.round(ms / 1000)
+  if (total < 60) return `${total}s`
+  return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, '0')}s`
 }
 
 function fmtTokens(n: number | null | undefined): string {
@@ -371,6 +380,9 @@ export function CostPage() {
                       <th className="py-1.5 pr-3 text-right">{t('cost.colViews')}</th>
                       <th className="py-1.5 pr-3 text-right">{t('cost.colCalls')}</th>
                       <th className="py-1.5 pr-3 text-right">{t('cost.aiCostOfItem')}</th>
+                      <th className="py-1.5 pr-3 text-right" title={t('cost.aiTimeHint')}>
+                        {t('cost.aiTime')}
+                      </th>
                       <th className="py-1.5 pr-3 text-right">{t('cost.costPerK')}</th>
                       <th className="py-1.5" />
                     </tr>
@@ -394,6 +406,10 @@ export function CostPage() {
                           </td>
                           <td className="py-1.5 pr-3 text-right font-mono text-text-secondary">{it.calls}</td>
                           <td className="py-1.5 pr-3 text-right font-mono">{fmtCost(symbol, it.ai_cost)}</td>
+                          <td className="py-1.5 pr-3 text-right font-mono text-text-secondary">
+                            {/* 本地推理时上面那列恒为 0；这一列才是「这条等了多久」 */}
+                            {it.ai_duration_ms > 0 ? fmtDuration(it.ai_duration_ms) : '—'}
+                          </td>
                           <td className="py-1.5 pr-3 text-right font-mono">{perK != null ? fmtCost(symbol, perK) : '—'}</td>
                           <td className="py-1.5">
                             {it.asset_path && (

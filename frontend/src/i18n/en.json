@@ -1539,7 +1539,9 @@
       "warning": "Month-to-date AI spend hit {used} / {budget} (over 50%)",
       "critical": "Month-to-date AI spend {used} / {budget} — past 80%, consider slowing production",
       "exceeded": "Month-to-date AI spend {used} exceeds budget {budget} (≥95%) — the publish strategy engine keeps running; adjust budget or pace"
-    }
+    },
+    "aiTime": "Inference time",
+    "aiTimeHint": "Local models cost no money but do cost compute time — that is the real cost of local inference."
   },
   "errors": {
     "suggestion": {
