@@ -14,7 +14,88 @@
     "dashboard": "看板",
     "queue": "发布队列",
     "cost": "成本控制",
-    "monoline": "文稿成片"
+    "monoline": "文稿成片",
+    "mdstudio": "图文工坊"
+  },
+  "mdstudio": {
+    "new": "新建",
+    "untitled": "未命名稿",
+    "created": "已新建排版稿",
+    "deleted": "已删除",
+    "actionFailed": "操作失败，请重试",
+    "titleLabel": "稿名",
+    "platform": {
+      "wechat": "微信",
+      "xhs": "小红书",
+      "zhihu": "知乎"
+    },
+    "list": {
+      "empty": "还没有排版稿",
+      "emptyHint": "新建或导入一篇 Markdown 开始排版"
+    },
+    "delete": {
+      "title": "删除排版稿",
+      "body": "确定删除「{{title}}」吗？此操作不可撤销。"
+    },
+    "import": {
+      "trigger": "导入",
+      "fromDocs": "从文档导入",
+      "fromStudio": "从 Studio 产物导入",
+      "paste": "粘贴新建",
+      "upload": "上传本地 .md",
+      "pasteEmpty": "剪贴板是空的",
+      "pasteDenied": "读不到剪贴板，已新建空白稿",
+      "uploadFailed": "读取文件失败",
+      "docsFailed": "文档列表加载失败",
+      "docsEmpty": "docs 空间还没有文档",
+      "studioHint": "输入 Studio 运行 slug，读取其 final.md",
+      "studioRun": "运行 slug",
+      "studioRunPlaceholder": "如 2026-10-13-my-run",
+      "confirm": "导入"
+    },
+    "source": {
+      "title": "源文",
+      "placeholder": "在这里编辑 Markdown 源文…"
+    },
+    "save": {
+      "dirty": "未保存",
+      "saving": "保存中…",
+      "saved": "已保存",
+      "failed": "保存失败，请检查后端"
+    },
+    "canvas": {
+      "zoom": "缩放",
+      "dark": "深色预览"
+    },
+    "inspector": {
+      "theme": "主题",
+      "tune": "微调",
+      "color": "主色",
+      "fontSize": "字号",
+      "lineHeight": "行距",
+      "footer": "署名",
+      "footerPlaceholder": "卡片页脚署名",
+      "pages": "页数 {{count}} / {{max}}",
+      "pageOverflow": "超出上限，建议精简或拆分",
+      "export": "导出"
+    },
+    "export": {
+      "copyWechat": "复制到公众号",
+      "copyZhihu": "复制到知乎",
+      "copyCaption": "复制文案",
+      "zip": "导出图组 ZIP",
+      "longimage": "导出长图 PNG",
+      "copiedWechat": "已复制，去公众号后台粘贴",
+      "copiedZhihu": "已复制，去知乎编辑器粘贴",
+      "copiedCaption": "文案已复制",
+      "done": "导出完成",
+      "failed": "导出失败"
+    },
+    "empty": {
+      "title": "从一篇 Markdown 开始",
+      "description": "新建排版稿：一次排版，微信 / 小红书 / 知乎三平台分发。",
+      "create": "新建排版稿"
+    }
   },
   "common": {
     "loading": "加载中…",

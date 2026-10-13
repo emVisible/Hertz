@@ -39,6 +39,15 @@ export { canvasApi } from './canvas'
 export type { RemixResult, CardPosOverview } from './canvas'
 export type { DocContent } from './docs'
 export { monolineApi } from './monoline'
+export { layoutApi } from './layout'
+export type {
+  LayoutCreateBody,
+  LayoutDoc,
+  LayoutImportResult,
+  LayoutPlatform,
+  LayoutSummary,
+  LayoutUpdateBody,
+} from './layout'
 export type {
   MonolineAsset,
   MonolineBrand,

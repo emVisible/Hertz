@@ -18,6 +18,7 @@ from backend.models.channel import Channel
 from backend.models.crew import Crew
 from backend.models.download import DownloadStatus, DownloadTask, Project
 from backend.models.item import Item, ItemStatus, ItemType
+from backend.models.layout import Layout
 from backend.models.monoline import (
     MonolineArtifact,
     MonolineBrand,
@@ -63,6 +64,7 @@ __all__ = [
     "ItemType",
     "JobRun",
     "JobStatus",
+    "Layout",
     "TelegramNotification",
     "ModelCapability",
     "ModelRole",

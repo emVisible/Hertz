@@ -20,6 +20,7 @@ import { ExecutionPage } from '../pages/execution/ExecutionPage'
 import { CanvasPage } from '../pages/canvas/CanvasPage'
 import { SettingsPage } from '../pages/settings/SettingsPage'
 import { CostPage } from '../pages/cost/CostPage'
+import { MdStudioPage } from '../pages/mdstudio/MdStudioPage'
 
 export function AppShell() {
   const { t } = useTranslation()
@@ -65,6 +66,8 @@ export function AppShell() {
     { to: '/dashboard', icon: 'whisper', label: t('nav.dashboard'), group: 'produce' },
     // 生产
     { to: '/execution', icon: 'console', label: t('nav.execution'), group: 'produce' },
+    // 图文工坊（超级 Markdown 模块 切片 D）：排版导出工作站
+    { to: '/mdstudio', icon: 'briefs', label: t('nav.mdstudio'), group: 'produce' },
     { to: '/plans', icon: 'plans', label: t('nav.plans'), group: 'produce' },
     // 素材（唯一出口：下载/资源/文档）
     { to: '/assets', icon: 'box', label: t('nav.assets'), group: 'assets' },
@@ -134,6 +137,7 @@ export function AppShell() {
                   也就是这条深链一直是坏的，书签进来看到的是 Studio。 */}
               <Route path="/queue" element={<Navigate to="/execution?mode=pipeline" replace />} />
               <Route path="/plans" element={<PlansPage />} />
+              <Route path="/mdstudio" element={<MdStudioPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/assets" element={<AssetsPage />} />
               <Route path="/canvas" element={<CanvasPage />} />

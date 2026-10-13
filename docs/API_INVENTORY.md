@@ -88,6 +88,13 @@
 `POST /api/download/tasks/{task_id}/retry`
 `POST /api/download/tasks/{task_id}/start`
 `GET /api/health`
+`GET /api/layout`
+`POST /api/layout`
+`GET /api/layout/import/docs`
+`GET /api/layout/import/studio`
+`DELETE /api/layout/{layout_id}`
+`GET /api/layout/{layout_id}`
+`PUT /api/layout/{layout_id}`
 `POST /api/library/ai-organize`
 `GET /api/library/duplicates`
 `DELETE /api/library/file`

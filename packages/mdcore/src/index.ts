@@ -71,7 +71,6 @@ export type {
   SliceCaptureEngine,
 } from './export/longimage';
 
-import { parseToIR } from './ir/parseToIR';
 import { applyTheme } from './theme/apply';
 import { defaultThemeFor, resolveTheme } from './theme/index';
 import type { Theme, ThemeOverrides } from './theme/types';

@@ -14,7 +14,88 @@
     "dashboard": "Dashboard",
     "queue": "Queue",
     "cost": "Costs",
-    "monoline": "Script to Film"
+    "monoline": "Script to Film",
+    "mdstudio": "MD Studio"
+  },
+  "mdstudio": {
+    "new": "New",
+    "untitled": "Untitled",
+    "created": "Layout created",
+    "deleted": "Deleted",
+    "actionFailed": "Action failed, please retry",
+    "titleLabel": "Title",
+    "platform": {
+      "wechat": "WeChat",
+      "xhs": "RED",
+      "zhihu": "Zhihu"
+    },
+    "list": {
+      "empty": "No layouts yet",
+      "emptyHint": "Create or import a Markdown doc to start typesetting"
+    },
+    "delete": {
+      "title": "Delete layout",
+      "body": "Delete \"{{title}}\"? This cannot be undone."
+    },
+    "import": {
+      "trigger": "Import",
+      "fromDocs": "Import from docs",
+      "fromStudio": "Import from Studio output",
+      "paste": "Paste as new",
+      "upload": "Upload local .md",
+      "pasteEmpty": "Clipboard is empty",
+      "pasteDenied": "Clipboard unavailable — created a blank layout",
+      "uploadFailed": "Failed to read file",
+      "docsFailed": "Failed to load doc list",
+      "docsEmpty": "No documents in docs space yet",
+      "studioHint": "Enter a Studio run slug to read its final.md",
+      "studioRun": "Run slug",
+      "studioRunPlaceholder": "e.g. 2026-10-13-my-run",
+      "confirm": "Import"
+    },
+    "source": {
+      "title": "Source",
+      "placeholder": "Edit the Markdown source here…"
+    },
+    "save": {
+      "dirty": "Unsaved",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "failed": "Save failed — check the backend"
+    },
+    "canvas": {
+      "zoom": "Zoom",
+      "dark": "Dark preview"
+    },
+    "inspector": {
+      "theme": "Theme",
+      "tune": "Fine-tune",
+      "color": "Primary color",
+      "fontSize": "Font size",
+      "lineHeight": "Line height",
+      "footer": "Footer",
+      "footerPlaceholder": "Card footer text",
+      "pages": "Pages {{count}} / {{max}}",
+      "pageOverflow": "Over the limit — trim or split",
+      "export": "Export"
+    },
+    "export": {
+      "copyWechat": "Copy for WeChat",
+      "copyZhihu": "Copy for Zhihu",
+      "copyCaption": "Copy caption",
+      "zip": "Export cards ZIP",
+      "longimage": "Export long PNG",
+      "copiedWechat": "Copied — paste in the WeChat editor",
+      "copiedZhihu": "Copied — paste in the Zhihu editor",
+      "copiedCaption": "Caption copied",
+      "done": "Export finished",
+      "failed": "Export failed"
+    },
+    "empty": {
+      "title": "Start from a Markdown doc",
+      "description": "Create a layout: typeset once, publish to WeChat / RED / Zhihu.",
+      "create": "New layout"
+    }
   },
   "common": {
     "loading": "Loading…",
