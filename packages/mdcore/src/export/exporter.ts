@@ -26,13 +26,20 @@ export function isCanvasTooLargeError(e: unknown): boolean {
   return /too large|exceeds|maximum|canvas|out of memory/i.test(msg);
 }
 
-/** 默认引擎：snapdom 主，非尺寸错误时兜底 modern-screenshot */
+/** 默认引擎：snapdom 主，非尺寸错误时兜底 modern-screenshot。
+ *
+ * snapdom 的 scale 是**乘在 devicePixelRatio 之上**的（真浏览器实测：scale=2 +
+ * DPR=2 出 4× 位图，一张 1242px 卡片 880KB）。这里除回 DPR，让「scale」就是
+ * 最终位图倍率——产物尺寸可预测，降级链的像素预算才对得上。
+ */
 export function createDefaultCapture(): CaptureEngine {
   return {
     async capture(el, scale) {
+      const dpr = el.ownerDocument.defaultView?.devicePixelRatio ?? 1;
+      const effective = Math.max(0.1, scale / dpr);
       try {
         const { snapdom } = await import('@zumer/snapdom');
-        return await snapdom.toBlob(el, { scale, type: 'png' });
+        return await snapdom.toBlob(el, { scale: effective, type: 'png' });
       } catch (e) {
         if (isCanvasTooLargeError(e)) throw e; // 尺寸超限交给降级链，不切引擎
         const { domToBlob } = await import('modern-screenshot');
@@ -132,6 +139,28 @@ export interface ExportCardsResult {
   scale: number;
 }
 
+/**
+ * 截图前保证节点真的在文档里渲染：snapdom/foreignObject 对游离节点算不出
+ * 布局与样式，会**静默产出一张 4×4 空图**（真浏览器实测）。游离节点临时挂到
+ * 屏外宿主，出图后原样摘掉——调用方拿到的 DOM 状态不变。
+ */
+export async function withRenderedNode<T>(el: HTMLElement, run: () => Promise<T>): Promise<T> {
+  if (el.isConnected) return run();
+  const host = el.ownerDocument.createElement('div');
+  host.setAttribute('data-mdcore-offscreen', '');
+  host.style.setProperty('position', 'fixed');
+  host.style.setProperty('left', '-99999px');
+  host.style.setProperty('top', '0');
+  host.style.setProperty('z-index', '-1');
+  host.appendChild(el);
+  el.ownerDocument.body.appendChild(host);
+  try {
+    return await run();
+  } finally {
+    host.remove();
+  }
+}
+
 /** 渲染态页 DOM 组 → 每页一个 PNG Blob（含实际 scale） */
 export async function exportCardsDetailed(
   pages: HTMLElement[],
@@ -148,8 +177,10 @@ export async function exportCardsDetailed(
     try {
       const blobs: Blob[] = [];
       for (const page of pages) {
-        if (gate) await gate.waitReady(page);
-        blobs.push(await capture.capture(page, scale));
+        await withRenderedNode(page, async () => {
+          if (gate) await gate.waitReady(page);
+          blobs.push(await capture.capture(page, scale));
+        });
       }
       return { blobs, scale };
     } catch (e) {

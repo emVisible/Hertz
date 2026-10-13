@@ -86,3 +86,22 @@ describe('exportZip', () => {
     expect(buf[3]).toBe(0x04);
   });
 });
+
+describe('exportCards：游离节点必须先渲染再截图', () => {
+  it('capture 看到的页节点一定在文档内，出图后原样摘干净', async () => {
+    const seen: boolean[] = [];
+    const capture: CaptureEngine = {
+      async capture(el) {
+        seen.push(el.isConnected);
+        return pngBlob('x');
+      },
+    };
+    const pages = makePages(2);
+    expect(pages[0].isConnected).toBe(false);
+    await exportCardsDetailed(pages, { capture, gate: noopGate });
+    // 真浏览器实测：游离节点喂给 snapdom 会静默产出 4×4 空图，故这里必须是 true
+    expect(seen).toEqual([true, true]);
+    expect(pages.every((p) => !p.isConnected)).toBe(true);
+    expect(document.querySelector('[data-mdcore-offscreen]')).toBeNull();
+  });
+});
