@@ -159,14 +159,21 @@ export function normalizeText(root: HTMLElement): string {
 export async function copyToClipboard(payload: { html: string; text: string }): Promise<void> {
   const nav = globalThis.navigator;
   const ClipboardItemCtor = (globalThis as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
+  let firstError: Error | undefined;
 
   if (nav?.clipboard && typeof nav.clipboard.write === 'function' && ClipboardItemCtor) {
     const item = new ClipboardItemCtor({
       'text/html': new Blob([payload.html], { type: 'text/html' }),
       'text/plain': new Blob([payload.text], { type: 'text/plain' }),
     });
-    await nav.clipboard.write([item]);
-    return;
+    try {
+      await nav.clipboard.write([item]);
+      return;
+    } catch (e) {
+      // 焦点丢失 / 权限被拒等瞬时错误不该直接放弃：继续走下面的降级链，
+      // 全链都失败时再抛（保留原始原因）。
+      firstError = e as Error;
+    }
   }
 
   // 降级：execCommand 复制富文本
@@ -194,8 +201,13 @@ export async function copyToClipboard(payload: { html: string; text: string }): 
 
   // 最后兜底：纯文本
   if (nav?.clipboard && typeof nav.clipboard.writeText === 'function') {
-    await nav.clipboard.writeText(payload.text);
-    return;
+    try {
+      await nav.clipboard.writeText(payload.text);
+      return;
+    } catch (e) {
+      // 报第一个原因（多为「窗口未聚焦」），它比末端的权限错误更可行动
+      throw firstError ?? (e as Error);
+    }
   }
-  throw new Error('@hertz/mdcore: 当前环境无可用剪贴板 API');
+  throw firstError ?? new Error('@hertz/mdcore: 当前环境无可用剪贴板 API');
 }

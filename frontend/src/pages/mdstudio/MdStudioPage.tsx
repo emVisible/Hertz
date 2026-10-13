@@ -263,8 +263,9 @@ export function MdStudioPage() {
           el.remove()
         }
       }
-    } catch {
-      toast(t('mdstudio.export.failed'), 'error')
+    } catch (e) {
+      // 带上原因：失焦、字体加载失败、画布超限是三种完全不同的下一步
+      toast(`${t('mdstudio.export.failed')}：${(e as Error).message}`, 'error')
     } finally {
       setExporting(null)
     }

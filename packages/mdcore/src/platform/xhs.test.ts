@@ -128,3 +128,24 @@ describe('xhsCaption', () => {
     expect(caption.endsWith('#咖啡 #周末')).toBe(true);
   });
 });
+
+describe('页壳基线字体（真浏览器抓出的缺陷）', () => {
+  it('卡片必须带主题基线字号/行距，否则正文退回浏览器默认 16px', () => {
+    const { pages } = xhsCards(parseToIR('正文。'), {
+      theme: 'taoyao',
+      measurer: mockMeasurer(CONTENT_H),
+    });
+    expect(pages[0].style.fontSize).toBe('30px');
+    expect(pages[0].style.lineHeight).toBe('1.55');
+    expect(pages[0].style.fontFamily).toContain('PingFang SC');
+  });
+
+  it('overrides.fontSize 同样落到页壳（右栏字号档对卡片生效）', () => {
+    const { pages } = xhsCards(parseToIR('正文。'), {
+      theme: 'taoyao',
+      overrides: { fontSize: '36px' },
+      measurer: mockMeasurer(CONTENT_H),
+    });
+    expect(pages[0].style.fontSize).toBe('36px');
+  });
+});

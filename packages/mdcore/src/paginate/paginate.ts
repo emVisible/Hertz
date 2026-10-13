@@ -14,6 +14,7 @@
  */
 import type { LayoutIR } from '../ir/types';
 import { applyTheme, resolveThemedProps } from '../theme/apply';
+import { themeWithOverrides } from '../theme/derive';
 import { resolveTheme } from '../theme/index';
 import type { StyleProps, Theme, ThemeOverrides } from '../theme/types';
 import { adjustBreak, codeBreak } from './breaks';
@@ -233,6 +234,13 @@ function makeShell(
   );
   // 主题卡片样式（xhs 主题提供 card 键：底色/圆角等）
   applyProps(page, resolveThemedProps(theme, overrides, 'card'));
+  // 基线字体会落到页壳上：applyTheme 是挂在 container 上的，而分页页壳没有
+  // container 这一层——漏掉它，卡片正文会退回浏览器默认 16px（1242px 画幅里
+  // 小成一粒米，且底部空一大片）。overrides 里的字号/行距同样要生效。
+  const base = { ...themeWithOverrides(theme, overrides).tokens, ...overrides };
+  page.style.setProperty('font-family', base.fontFamily);
+  page.style.setProperty('font-size', base.fontSize);
+  page.style.setProperty('line-height', base.lineHeight);
 
   const body = doc.createElement('div');
   body.className = 'mdcore-page-body';
