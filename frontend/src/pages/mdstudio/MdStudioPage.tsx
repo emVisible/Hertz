@@ -682,6 +682,13 @@ export function MdStudioPage() {
                   zoom={zoom}
                   dark={dark}
                   emptyHint={t('mdstudio.canvas.emptyHint')}
+                  diagnosticsLabels={{
+                    summary: t('mdstudio.canvas.diagnostics.summary'),
+                    expand: t('mdstudio.canvas.diagnostics.expand'),
+                    collapse: t('mdstudio.canvas.diagnostics.collapse'),
+                    line: t('mdstudio.canvas.diagnostics.line'),
+                    times: t('mdstudio.canvas.diagnostics.times'),
+                  }}
                   mountRef={mountRef}
                   onXhsInfo={handleXhsInfo}
                   onBlockClick={handleBlockClick}

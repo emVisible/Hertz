@@ -66,7 +66,14 @@
     "canvas": {
       "zoom": "Zoom",
       "dark": "Dark preview",
-      "emptyHint": "Edit the Markdown source on the left — the layout updates here instantly."
+      "emptyHint": "Edit the Markdown source on the left — the layout updates here instantly.",
+      "diagnostics": {
+        "summary": "{{count}} syntax bits kept their text but were not laid out",
+        "expand": "Show",
+        "collapse": "Hide",
+        "line": "line {{line}}",
+        "times": "×{{count}}"
+      }
     },
     "theme": {
       "darkBadge": "Dark"

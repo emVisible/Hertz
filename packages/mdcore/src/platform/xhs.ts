@@ -5,7 +5,7 @@
  *  - 18 页上限：超出返回 overflow:true 与建议，不静默截断
  *  - 文案导出 xhsCaption：纯文本（标题+正文+尾部话题标签位），供复制。不做直发。
  */
-import type { InlineNode, IRBlock, LayoutIR } from '../ir/types';
+import type { InlineNode, IRBlock, IRDiagnostic, LayoutIR } from '../ir/types';
 import { cardTexture, decoPreset } from './decks';
 import { createCardShell, paginate } from '../paginate/paginate';
 import type { CardChrome, Measurer, PagePadding } from '../paginate/paginate';
@@ -83,6 +83,13 @@ export interface XhsOptions {
   /** 测试注入 mock 测量 */
   measurer?: Measurer;
   doc?: Document;
+  /**
+   * 未建模语法的记账出口（可选）。给了就往里塞，宿主可以拿去给用户看。
+   *
+   * 过去这条账只有解析层有、渲染层没有，两边不对称——于是"这稿子里有哪些东西
+   * 我们没真正支持"没人答得上来。
+   */
+  diagnostics?: IRDiagnostic[];
 
   /** 卡片比例（缺省 3:4） */
   ratio?: XhsRatio;
@@ -126,6 +133,7 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
   const pages = paginate(ir, {
     theme,
     overrides,
+    diagnostics: opts.diagnostics,
     page: {
       width: card.width,
       height: card.height,

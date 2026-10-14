@@ -66,7 +66,14 @@
     "canvas": {
       "zoom": "缩放",
       "dark": "深色预览",
-      "emptyHint": "在这里编辑 Markdown 源文，排版会即时出现在这里。"
+      "emptyHint": "在这里编辑 Markdown 源文，排版会即时出现在这里。",
+      "diagnostics": {
+        "summary": "{{count}} 处语法已保留原文，但未真正排版",
+        "expand": "展开",
+        "collapse": "收起",
+        "line": "行 {{line}}",
+        "times": "×{{count}}"
+      }
     },
     "theme": {
       "darkBadge": "深色"

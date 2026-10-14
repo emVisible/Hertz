@@ -161,6 +161,10 @@ md 字符串
 
 顺带一提：TS 会把 `renderBlock` 的 default 分支里 `block` 收窄成 `never`——也就是**新增 IR 块型却忘了写渲染分支，编译就会报错**。那是第一道防线，运行时的兜底是第二道（给绕过类型断言的路径留着）。
 
+**诊断横幅（切片 7）**：内核里有两本账——解析层的"哪些语法没建模"与渲染层的"哪些块型没渲染分支"——**两本都在内核里没有出口**。于是"这稿子里有哪些东西我们没真正支持"用户只能反过来从"内容还在不在"猜：内容保住了，但没说清楚为什么这块长得奇怪。现在画布顶部挂一条可折叠横幅，没诊断时**完全不出现**（正常稿件零噪声），有诊断时给出总数、逐条 token 与源码行号，同一语法合并计数。文案双语同加（`mdstudio.canvas.diagnostics.*`）。
+
+一处诚实记录：今天 mdcore 把未建模语法集合守成空集，所以**没有任何一篇合法 markdown 能让这条横幅亮起来**。也就是说"有账 → 出横幅"的端到端段没有可驱动的输入。真去验它的时候发现——把那两行赋值从 effect 里抽成纯函数（`frontend/src/pages/mdstudio/diagnosticsWire.ts`）并**注入解析函数**才咬得住：注入一个账非空的假解析，才能断言"渲染回调同时看得到解析账与渲染账"。不注入的话，删掉解析账那句，判据全绿（已实测）。
+
 **代码块**（W1 切片 4）：三件"写了支持、产物里不成立"的事——
 
 - **围栏 info 不再整串当语言用**：` ```ts title="a.ts" ` 此前 `hljs.getLanguage('ts title="a.ts"')` 必然失败（整块不高亮），代码头标签还把整串原样显示。现在 `parse/lang.ts` 拆出「归一化语言（高亮用）+ 可读标签（显示用）」，剥掉 `{1,3}`、`js:app.js`、`title="a.ts"` 等记号，并带一张**只登记用户真会写的形式**的别名表（`ts`/`sh`/`yml`/`py`/`c++`…）。高亮与标签共用同一份归一化结果——两处各解析一次迟早漂。
@@ -328,7 +332,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 295 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 297 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

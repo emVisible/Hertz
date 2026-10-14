@@ -12,7 +12,7 @@
  *  - 标题不留页尾（孤行控制：标题与它后第一块绑定）
  *  - 断点遵守中文避头尾（闭标点不开行首），不拆英文单词（见 breaks.ts）
  */
-import type { LayoutIR } from '../ir/types';
+import type { IRDiagnostic, LayoutIR } from '../ir/types';
 import { applyTheme, resolveThemedProps } from '../theme/apply';
 import { themeWithOverrides } from '../theme/derive';
 import { resolveTheme } from '../theme/index';
@@ -106,6 +106,13 @@ export interface PaginateOptions {
   /** 默认 domMeasurer（getBoundingClientRect）；测试注入 mock */
   measurer?: Measurer;
   doc?: Document;
+  /**
+   * 未建模语法的记账出口（可选）。给了就往里塞，宿主可以拿去给用户看。
+   *
+   * 过去这条账只有解析层有、渲染层没有，两边不对称——于是"这稿子里有哪些东西
+   * 我们没真正支持"没人答得上来。
+   */
+  diagnostics?: IRDiagnostic[];
   /**
    * 强制分页边界：IR 块序号集合，命中即「在此块之前另起一页」（画布拖动分页边界的写回通道）。
    *
@@ -545,7 +552,7 @@ export function paginate(ir: LayoutIR, opts: PaginateOptions): HTMLElement[] {
   doc.body.appendChild(stage);
 
   try {
-    const rendered = applyTheme(ir, theme, overrides, doc);
+    const rendered = applyTheme(ir, theme, overrides, doc, opts.diagnostics);
     const blocks = Array.from(rendered.children) as HTMLElement[];
 
     const pages: HTMLElement[] = [];

@@ -1,5 +1,5 @@
 import hljs from 'highlight.js';
-import type { IRBlock, InlineNode, LayoutIR, LineRange } from '../ir/types';
+import type { IRBlock, IRDiagnostic, InlineNode, LayoutIR, LineRange } from '../ir/types';
 import { resolveThemeSlots } from './derive';
 import { getTheme } from './index';
 import type { ResolvedTokens, StyleProps, Theme, ThemeOverrides } from './types';
@@ -32,7 +32,7 @@ interface RenderContext {
    * 与解析层 `parseToIRDetailed().diagnostics` 对称——两边都有账，才能回答
    * "这篇稿子里有哪些东西我们没真正支持"。
    */
-  diagnostics?: Array<{ token: string; count: number; line: number | null }>;
+  diagnostics?: IRDiagnostic[];
   tokens: ResolvedTokens;
   styles: Record<string, StyleProps>;
   /** section-number 样式下的章节计数器（CSS counter 不可移植 → 渲染期物化） */
@@ -56,7 +56,7 @@ export function applyTheme(
   theme: Theme | string,
   overrides: ThemeOverrides = {},
   doc: Document = globalThis.document,
-  diagnostics?: Array<{ token: string; count: number; line: number | null }>,
+  diagnostics?: IRDiagnostic[],
 ): HTMLElement {
   if (!doc) throw new Error('@hertz/mdcore: applyTheme 需要 DOM 环境（浏览器或 jsdom）');
   const { tokens, styles } = resolveThemeSlots(

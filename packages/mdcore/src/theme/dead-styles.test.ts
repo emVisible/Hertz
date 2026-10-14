@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { applyTheme, getTheme, paginate, parseToIR } from '../index';
+import { applyTheme, getTheme, paginate, parseToIR, xhsCards } from '../index';
 import { baseStyles } from './themes/base';
 
 function slotsOf(themeId: string): Record<string, Record<string, string>> {
@@ -166,5 +166,35 @@ describe('渲染层诊断与解析层对称（切片 6）', () => {
     const fallback = el.querySelector('[data-mdcore-fallback="rogue_block"]');
     expect(fallback).toBeTruthy();
     expect(fallback?.textContent).toBe('未知块的内容');
+  });
+});
+
+describe('诊断能从每一个平台出口拿到（不只是 applyTheme 直调）', () => {
+  /** 一个 mdcore 不认识的块型，带内容——渲染层兜底必须记账 */
+  const rogue = [
+    ...parseToIR('正文'),
+    { type: 'rogue_block', children: [{ type: 'text', text: '未知块的内容' }], line: [2, 3] } as never,
+  ];
+
+  it('paginate 透传（微信/知乎分页走的就是它）', () => {
+    const diagnostics: Array<{ token: string; count: number; line: number | null }> = [];
+    paginate(rogue, {
+      theme: 'modi',
+      page: { width: 600, height: 400, padding: 20 },
+      diagnostics,
+      measurer: { fits: () => true },
+    });
+    expect(diagnostics.some((d) => d.token === 'render:rogue_block')).toBe(true);
+  });
+
+  it('xhsCards 透传（小红书卡片走 paginate，不透传就等于小红书这一侧是瞎的）', () => {
+    const diagnostics: Array<{ token: string; count: number; line: number | null }> = [];
+    xhsCards(rogue, {
+      theme: 'taoyao',
+      doc: globalThis.document,
+      diagnostics,
+      measurer: { fits: () => true },
+    });
+    expect(diagnostics.some((d) => d.token === 'render:rogue_block')).toBe(true);
   });
 });

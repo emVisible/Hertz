@@ -14,18 +14,20 @@
  * 这两条都不改 DOM 语义，导出走离屏重建，所以交互层不会污染产物。
  */
 
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import {
   applyTheme,
   darkThemeFor,
-  parseToIR,
   xhsCardSize,
   xhsCards,
+  type IRDiagnostic,
   type ThemeOverrides,
   type XhsRatio,
 } from '@hertz/mdcore'
 
 import type { LayoutPlatform } from '../../api'
+import { DiagnosticsBanner, type DiagnosticsLabels } from './CanvasDiagnostics'
+import { withDiagnostics } from './diagnosticsWire'
 
 /**
  * xhs 卡片展示缩放基值：1080 宽导出坐标系 → 约 420px 展示宽。
@@ -101,6 +103,8 @@ interface CanvasPanelProps {
   /** 卡片底纹与装饰件（覆盖主题自带的那套） */
   texture?: string
   deco?: string
+  /** 语法诊断横幅的文案（i18n 由宿主传入） */
+  diagnosticsLabels?: DiagnosticsLabels
 }
 
 function parseLine(raw: string | null): [number, number] | null {
@@ -232,7 +236,16 @@ export function CanvasPanel({
   xhsCoverBadge,
   texture,
   deco,
+  diagnosticsLabels,
 }: CanvasPanelProps) {
+  /**
+   * 两本账合起来：解析层（哪些语法没建模）+ 渲染层（哪些块型没渲染分支）。
+   *
+   * 过去两本账都关在内核里没有出口，用户只能从「内容还在不在」反推——保住了内容，
+   * 没说清楚为什么这块长得奇怪。
+   */
+  const [diagnostics, setDiagnostics] = useState<IRDiagnostic[]>([])
+
   useEffect(() => {
     const host = mountRef.current
     if (!host) return
@@ -260,116 +273,122 @@ export function CanvasPanel({
         }
       : null
     try {
-      const ir = parseToIR(sourceMd)
-      // 深色预览：优先切到该平台的真深色主题（晚风/夜航/墨案），只影响预览不改稿；
-      // 平台无深色款时保持原主题，由外层容器深底近似（见 MdStudioPage 画布外框）。
-      const darkPreset = dark ? darkThemeFor(platform) : undefined
-      const previewTheme = darkPreset?.id ?? themeId
-      if (platform === 'xhs') {
-        const result = xhsCards(ir, {
-          theme: previewTheme,
-          overrides,
-          footer,
-          qr,
-          breaks,
-          ratio,
-          header: xhsHeader,
-          pageNum: xhsPageNum,
-          coverSubtitle: xhsCoverSub,
-          coverBadge: xhsCoverBadge,
-          cardTexture: texture,
-          cardDecoPreset: deco,
-        })
-        onXhsInfo({ pageCount: result.pageCount, overflow: result.overflow })
-        // 单页展示（切片 4）：早先把所有卡片横向排成一条，每张只有 ~310px 宽，
-        // 30px 的正文缩到约 7.5px——看不见、也点不准，用户实际是在"盲操作"。
-        // 现在一次只铺一页，翻页条 + 缩略图条负责导航。
-        const card = xhsCardSize(ratio)
-        const scale = XHS_FIT_SCALE * zoom
-        const band = document.createElement('div')
-        band.style.display = 'flex'
-        band.style.gap = '12px'
-        band.style.flexDirection = 'column'
-        band.style.alignItems = 'center'
-        result.pages.forEach((page, index) => {
-          if (index !== pageIndex) return
-          // 缩放槽 > 缩放层 > 卡片：transform 落在中间层，卡片节点本身保持
-          // 1080 原始坐标系（与导出产物同规格）
-          const slot = document.createElement('div')
-          slot.dataset.xhsPage = String(index)
-          slot.style.position = 'relative'
-          slot.style.width = `${card.width * scale}px`
-          slot.style.height = `${card.height * scale}px`
-          slot.style.flex = 'none'
-          slot.style.borderRadius = '8px'
-          slot.style.overflow = 'hidden'
-          slot.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'
-          slot.style.transition = 'transform 150ms, box-shadow 150ms'
-          slot.addEventListener('mouseenter', () => {
-            slot.style.transform = 'translateY(-2px)'
-            slot.style.boxShadow = '0 6px 16px rgba(0,0,0,0.16)'
-          })
-          slot.addEventListener('mouseleave', () => {
-            slot.style.transform = ''
-            slot.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'
-          })
-          const scaler = document.createElement('div')
-          scaler.style.transform = `scale(${scale})`
-          scaler.style.transformOrigin = 'top left'
-          scaler.appendChild(page)
-          slot.appendChild(scaler)
-          band.appendChild(slot)
-          if (onBreaksChange && index < result.pages.length - 1) {
-            attachBoundary(slot, page, result.pages, index, scale, breaks, onBreaksChange)
-          }
-        })
-        // 缩略图条：一眼看到全篇几页、哪页是封面，点击直达
-        if (result.pages.length > 1) {
-          const strip = document.createElement('div')
-          strip.dataset.xhsThumbs = 'true'
-          strip.style.display = 'flex'
-          strip.style.gap = '8px'
-          strip.style.flexWrap = 'wrap'
-          strip.style.justifyContent = 'center'
-          result.pages.forEach((_, index) => {
-            const thumb = document.createElement('button')
-            thumb.type = 'button'
-            thumb.dataset.xhsThumb = String(index)
-            thumb.setAttribute('aria-label', index === 0 ? '封面' : `第 ${index} 页`)
-            thumb.setAttribute('aria-current', index === pageIndex ? 'true' : 'false')
-            thumb.style.width = '44px'
-            thumb.style.height = `${Math.round((44 * card.height) / card.width)}px`
-            thumb.style.borderRadius = '4px'
-            thumb.style.border =
-              index === pageIndex ? '2px solid var(--hz-primary)' : '1px solid var(--hz-border)'
-            thumb.style.background = 'var(--hz-surface-2)'
-            thumb.style.cursor = 'pointer'
-            thumb.style.fontSize = '10px'
-            thumb.style.color = 'var(--hz-text-secondary)'
-            thumb.textContent = index === 0 ? '封' : String(index)
-            thumb.addEventListener('click', (e) => {
-              e.stopPropagation()
-              onXhsPageChange?.(index)
+      // 一次解析拿两份账（见 diagnosticsWire.ts：接线本身也要有判据）
+      withDiagnostics(sourceMd, (ir, collected) => {
+          // 深色预览：优先切到该平台的真深色主题（晚风/夜航/墨案），只影响预览不改稿；
+          // 平台无深色款时保持原主题，由外层容器深底近似（见 MdStudioPage 画布外框）。
+          const darkPreset = dark ? darkThemeFor(platform) : undefined
+          const previewTheme = darkPreset?.id ?? themeId
+          if (platform === 'xhs') {
+            const result = xhsCards(ir, {
+              theme: previewTheme,
+              overrides,
+              footer,
+              qr,
+              breaks,
+              ratio,
+              header: xhsHeader,
+              pageNum: xhsPageNum,
+              coverSubtitle: xhsCoverSub,
+              coverBadge: xhsCoverBadge,
+              cardTexture: texture,
+              cardDecoPreset: deco,
+              diagnostics: collected,
             })
-            strip.appendChild(thumb)
-          })
-          band.appendChild(strip)
+            onXhsInfo({ pageCount: result.pageCount, overflow: result.overflow })
+            // 单页展示（切片 4）：早先把所有卡片横向排成一条，每张只有 ~310px 宽，
+            // 30px 的正文缩到约 7.5px——看不见、也点不准，用户实际是在"盲操作"。
+            // 现在一次只铺一页，翻页条 + 缩略图条负责导航。
+            const card = xhsCardSize(ratio)
+            const scale = XHS_FIT_SCALE * zoom
+            const band = document.createElement('div')
+            band.style.display = 'flex'
+            band.style.gap = '12px'
+            band.style.flexDirection = 'column'
+            band.style.alignItems = 'center'
+            result.pages.forEach((page, index) => {
+              if (index !== pageIndex) return
+              // 缩放槽 > 缩放层 > 卡片：transform 落在中间层，卡片节点本身保持
+              // 1080 原始坐标系（与导出产物同规格）
+              const slot = document.createElement('div')
+              slot.dataset.xhsPage = String(index)
+              slot.style.position = 'relative'
+              slot.style.width = `${card.width * scale}px`
+              slot.style.height = `${card.height * scale}px`
+              slot.style.flex = 'none'
+              slot.style.borderRadius = '8px'
+              slot.style.overflow = 'hidden'
+              slot.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'
+              slot.style.transition = 'transform 150ms, box-shadow 150ms'
+              slot.addEventListener('mouseenter', () => {
+                slot.style.transform = 'translateY(-2px)'
+                slot.style.boxShadow = '0 6px 16px rgba(0,0,0,0.16)'
+              })
+              slot.addEventListener('mouseleave', () => {
+                slot.style.transform = ''
+                slot.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'
+              })
+              const scaler = document.createElement('div')
+              scaler.style.transform = `scale(${scale})`
+              scaler.style.transformOrigin = 'top left'
+              scaler.appendChild(page)
+              slot.appendChild(scaler)
+              band.appendChild(slot)
+              if (onBreaksChange && index < result.pages.length - 1) {
+                attachBoundary(slot, page, result.pages, index, scale, breaks, onBreaksChange)
+              }
+            })
+            // 缩略图条：一眼看到全篇几页、哪页是封面，点击直达
+            if (result.pages.length > 1) {
+              const strip = document.createElement('div')
+              strip.dataset.xhsThumbs = 'true'
+              strip.style.display = 'flex'
+              strip.style.gap = '8px'
+              strip.style.flexWrap = 'wrap'
+              strip.style.justifyContent = 'center'
+              result.pages.forEach((_, index) => {
+                const thumb = document.createElement('button')
+                thumb.type = 'button'
+                thumb.dataset.xhsThumb = String(index)
+                thumb.setAttribute('aria-label', index === 0 ? '封面' : `第 ${index} 页`)
+                thumb.setAttribute('aria-current', index === pageIndex ? 'true' : 'false')
+                thumb.style.width = '44px'
+                thumb.style.height = `${Math.round((44 * card.height) / card.width)}px`
+                thumb.style.borderRadius = '4px'
+                thumb.style.border =
+                  index === pageIndex ? '2px solid var(--hz-primary)' : '1px solid var(--hz-border)'
+                thumb.style.background = 'var(--hz-surface-2)'
+                thumb.style.cursor = 'pointer'
+                thumb.style.fontSize = '10px'
+                thumb.style.color = 'var(--hz-text-secondary)'
+                thumb.textContent = index === 0 ? '封' : String(index)
+                thumb.addEventListener('click', (e) => {
+                  e.stopPropagation()
+                  onXhsPageChange?.(index)
+                })
+                strip.appendChild(thumb)
+              })
+              band.appendChild(strip)
+            }
+            if (onClick) band.addEventListener('click', onClick)
+            host.appendChild(band)
+          } else {
+            const el = applyTheme(ir, previewTheme, overrides, document, collected)
+            // 平台画布宽：微信=手机图文逻辑宽 375px；知乎=文章页 ~690px
+            el.style.width = platform === 'wechat' ? '375px' : '690px'
+            el.style.boxSizing = 'border-box'
+            // CSS zoom：Electron=Chromium 原生支持，且缩放占布局（transform 会留白）。
+            // 仅预览缩放——导出在 MdStudioPage 按原参数离屏重建，不读这份 DOM。
+            el.style.setProperty('zoom', String(zoom))
+            if (onClick) el.addEventListener('click', onClick)
+            host.appendChild(el)
         }
-        if (onClick) band.addEventListener('click', onClick)
-        host.appendChild(band)
-      } else {
-        const el = applyTheme(ir, previewTheme, overrides)
-        // 平台画布宽：微信=手机图文逻辑宽 375px；知乎=文章页 ~690px
-        el.style.width = platform === 'wechat' ? '375px' : '690px'
-        el.style.boxSizing = 'border-box'
-        // CSS zoom：Electron=Chromium 原生支持，且缩放占布局（transform 会留白）。
-        // 仅预览缩放——导出在 MdStudioPage 按原参数离屏重建，不读这份 DOM。
-        el.style.setProperty('zoom', String(zoom))
-        if (onClick) el.addEventListener('click', onClick)
-        host.appendChild(el)
-      }
+        setDiagnostics(collected)
+      })
     } catch {
-      // markdown 编辑中间态解析失败：静默留空画布，不打断输入
+      // markdown 编辑中间态解析失败：静默留空画布，不打断输入。
+      // 但账要清空——留着上一次解析的诊断，等于报一个已经不存在的毛病。
+      setDiagnostics([])
       onXhsInfo({ pageCount: 0, overflow: false })
     }
     // overrides 对象随 draft 变更重建，引用即变更信号
@@ -424,5 +443,12 @@ export function CanvasPanel({
   }, [focusBlockIndex, mountRef])
 
   // 宿主 div 不进 React children——渲染态 DOM 由上面 effect 全权管理
-  return <div ref={mountRef} data-testid="mdstudio-canvas-mount" className="min-h-0" />
+  return (
+    <div className="min-h-0">
+      {diagnosticsLabels ? (
+        <DiagnosticsBanner items={diagnostics} labels={diagnosticsLabels} />
+      ) : null}
+      <div ref={mountRef} data-testid="mdstudio-canvas-mount" className="min-h-0" />
+    </div>
+  )
 }
