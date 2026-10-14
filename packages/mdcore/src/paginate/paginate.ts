@@ -27,6 +27,47 @@ export interface Measurer {
   fits(body: HTMLElement): boolean;
 }
 
+/**
+ * 卡片页壳的"装饰件"（小红书卡片向；微信/知乎是连续长文，不传）。
+ *
+ * 五层结构（参考实现同款）：bg 底纹 / deco 装饰 / header 页眉 / body 正文 / footer 页脚。
+ * **只有 body 进测量流**——这是本文件的硬约定：装饰件任意加高都不得影响分页结果，
+ * 由paginate.test.ts 的「装饰改高不改变分页」判据守住。
+ */
+export interface CardChrome {
+  /** 页眉小字（每页顶部，弱辅助色） */
+  header?: string;
+  /** 水印/署名（页脚左侧） */
+  watermark?: string;
+  /** 页码（页脚右侧）。默认 true——卡片没有页码会让人以为漏页了 */
+  pageNum?: boolean;
+  /** 底色（缺省取主题的 card 底） */
+  bgColor?: string;
+  /** 纸纹/网格背景（data URL）。与 bgColor 互斥，bgColor 作兜底色 */
+  bgImage?: string;
+  /** 背景平铺方式 */
+  bgRepeat?: 'repeat' | 'no-repeat';
+  /** 背景尺寸（默认 auto；配合 no-repeat 常配 cover） */
+  bgSize?: string;
+  /**
+   * 装饰件：胶带、状态栏、花边……**一律绝对定位**（不进正文流）。
+   * `size` 是相对于页宽的百分比，`inset` 是距对应边界的百分比。
+   */
+  deco?: Array<{
+    html: string;
+    /** 贴哪条边 */
+    anchor: 'top' | 'bottom' | 'left' | 'right';
+    /** 水平/垂直方向的对齐端 */
+    align?: 'start' | 'center' | 'end';
+    /** 贴边偏移（%，默认 0） */
+    inset?: number;
+    /** 宽度（页宽的 %，默认 100 = 整条边） */
+    span?: number;
+    /** z 轴（小的被后面的内容盖住） */
+    z?: number;
+  }>;
+}
+
 /** 默认测量：与参考实现一致，比较最后子块与正文区的 getBoundingClientRect 底边 */
 export const domMeasurer: Measurer = {
   fits(body) {
@@ -65,6 +106,8 @@ export interface PaginateOptions {
    * 用户往上一拖只会让本页变少，往下一拖最多多出几页。
    */
   breaks?: number[];
+  /** 卡片页壳装饰件（页眉/水印/页码/底纹/贴边装饰）。不给就是纯白页壳 */
+  chrome?: CardChrome;
 }
 
 function normalizePadding(p: PageSpec['padding']): PagePadding {
@@ -250,6 +293,7 @@ function makeShell(
   overrides: ThemeOverrides,
   spec: PageSpec,
   pad: PagePadding,
+  chrome?: CardChrome,
 ): { page: HTMLElement; body: HTMLElement } {
   const page = doc.createElement('section');
   page.className = 'mdcore-page';
@@ -272,13 +316,127 @@ function makeShell(
   page.style.setProperty('font-size', base.fontSize);
   page.style.setProperty('line-height', base.lineHeight);
 
+  /**
+   * 五层页壳：bg 底纹 / deco 装饰 / header 页眉 / body 正文 / footer 页脚。
+   *
+   * 原来只有 body 一层，所以卡片既没有底纹也没有装饰位——"小红书感"无从谈起。
+   * 关键约定：**除 body 外的层全部绝对定位**，不进正文流，也就不进测量；
+   * 装饰加高 999px 也不该影响分页（paginate.test.ts 有这条判据）。
+   *
+   * body 因此改成撑满内容区（`flex:1` + `position:relative`），让页眉页脚
+   * 自然落在 padding 之内而不是绝对定位到页角——后者会和正文重叠。
+   */
+  page.style.setProperty('display', 'flex');
+  page.style.setProperty('flex-direction', 'column');
+
+  // ── bg 底纹
+  if (chrome?.bgImage || chrome?.bgColor) {
+    const bg = doc.createElement('div');
+    bg.className = 'mdcore-card-bg';
+    bg.setAttribute('aria-hidden', 'true');
+    bg.style.setProperty('position', 'absolute');
+    bg.style.setProperty('inset', '0');
+    bg.style.setProperty('z-index', '0');
+    if (chrome.bgColor) bg.style.setProperty('background-color', chrome.bgColor);
+    if (chrome.bgImage) {
+      bg.style.setProperty('background-image', `url(${chrome.bgImage})`);
+      bg.style.setProperty('background-repeat', chrome.bgRepeat ?? 'repeat');
+      bg.style.setProperty('background-size', chrome.bgSize ?? 'auto');
+      if (!chrome.bgColor) bg.style.setProperty('background-color', '#ffffff');
+    }
+    page.appendChild(bg);
+  }
+
+  // ── deco 装饰（贴边，绝对定位）
+  for (const item of chrome?.deco ?? []) {
+    const layer = doc.createElement('div');
+    layer.className = 'mdcore-card-deco';
+    layer.setAttribute('aria-hidden', 'true');
+    layer.innerHTML = item.html;
+    layer.style.setProperty('position', 'absolute');
+    layer.style.setProperty('z-index', String(item.z ?? 1));
+    const inset = `${item.inset ?? 0}%`;
+    const span = `${item.span ?? 100}%`;
+    switch (item.anchor) {
+      case 'top':
+        layer.style.setProperty('top', inset);
+        layer.style.setProperty('height', 'auto');
+        break;
+      case 'bottom':
+        layer.style.setProperty('bottom', inset);
+        layer.style.setProperty('height', 'auto');
+        break;
+      case 'left':
+        layer.style.setProperty('left', inset);
+        layer.style.setProperty('width', 'auto');
+        break;
+      case 'right':
+        layer.style.setProperty('right', inset);
+        layer.style.setProperty('width', 'auto');
+        break;
+    }
+    // 贴 top/bottom 的横向落位、贴 left/right 的纵向落位
+    const cross: Record<string, string> = { start: 'flex-start', center: 'center', end: 'flex-end' };
+    const align = cross[item.align ?? 'center'] ?? 'center';
+    if (item.anchor === 'top' || item.anchor === 'bottom') {
+      layer.style.setProperty('left', '50%');
+      layer.style.setProperty('width', span);
+      layer.style.setProperty('transform', `translateX(${alignOffset(align)})`);
+    } else {
+      layer.style.setProperty('top', '50%');
+      layer.style.setProperty('height', span);
+      layer.style.setProperty('transform', `translateY(${alignOffset(align)})`);
+    }
+    page.appendChild(layer);
+  }
+
+  // ── header 页眉
+  if (chrome?.header?.trim()) {
+    const header = doc.createElement('div');
+    header.className = 'mdcore-card-header';
+    header.textContent = chrome.header.trim();
+    applyProps(header, resolveThemedProps(theme, overrides, 'cardHeader'));
+    page.appendChild(header);
+  }
+
+  // ── body 正文（唯一进测量流的层）
   const body = doc.createElement('div');
   body.className = 'mdcore-page-body';
-  body.style.setProperty('height', '100%');
+  body.style.setProperty('position', 'relative');
+  body.style.setProperty('z-index', '1');
+  body.style.setProperty('flex', '1 1 auto');
+  body.style.setProperty('min-height', '0');
   body.style.setProperty('overflow', 'hidden');
   applyProps(body, resolveThemedProps(theme, overrides, 'cardBody'));
   page.appendChild(body);
+
+  // ── footer 页脚（水印 + 页码）
+  if (chrome && (chrome.watermark?.trim() || chrome.pageNum !== false)) {
+    const footer = doc.createElement('div');
+    footer.className = 'mdcore-card-footer';
+    applyProps(footer, resolveThemedProps(theme, overrides, 'cardFooter'));
+    if (chrome.watermark?.trim()) {
+      const wm = doc.createElement('span');
+      wm.className = 'mdcore-card-watermark';
+      wm.textContent = chrome.watermark.trim();
+      footer.appendChild(wm);
+    }
+    if (chrome.pageNum !== false) {
+      const num = doc.createElement('span');
+      num.className = 'mdcore-card-pageno';
+      num.dataset.pageSlot = '1';
+      footer.appendChild(num);
+    }
+    page.appendChild(footer);
+  }
+
   return { page, body };
+}
+
+/** flex 对齐 → translate 百分比偏移（装饰层用绝对定位代替 flex） */
+function alignOffset(align: string): string {
+  if (align === 'center') return '-50%';
+  return align === 'flex-end' ? '-100%' : '0';
 }
 
 /**
@@ -313,7 +471,7 @@ export function paginate(ir: LayoutIR, opts: PaginateOptions): HTMLElement[] {
     let body!: HTMLElement;
 
     const newPage = () => {
-      const shell = makeShell(doc, theme, overrides, opts.page, pad);
+      const shell = makeShell(doc, theme, overrides, opts.page, pad, opts.chrome);
       page = shell.page;
       body = shell.body;
       stage.replaceChildren(page);
@@ -339,6 +497,13 @@ export function paginate(ir: LayoutIR, opts: PaginateOptions): HTMLElement[] {
     );
     for (const [index, block] of blocks.entries()) {
       if (forced.has(index) && body.children.length) closePage();
+      // `---` 强制分页：作者自己划了段落边界。页内已有内容才收页，
+      // 否则开头就一个 `---` 会凭空多出一张空卡。
+      if (block.classList.contains('mdcore-pagebreak')) {
+        block.remove();
+        if (body.children.length) closePage();
+        continue;
+      }
       let el: HTMLElement | null = block;
       body.appendChild(el);
       for (let guard = 0; el && !fits() && guard < 500; guard++) {

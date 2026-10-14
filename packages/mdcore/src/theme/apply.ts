@@ -411,18 +411,27 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
     }
 
     case 'hr': {
+      // `---`（pagebreak）在连续长文里仍然是一条横线；卡片平台把它当换页信号。
+      // 标记必须**两个分支都加**：早先只加在 <hr> 那条路上，而小红书三套主题用的
+      // 全是 dots 样式（走三圆点分支），于是 `---` 在小红书上静默失效——
+      // 正是「小红书完全不可用」清单里没被单独列出来的那一条。
+      let el: HTMLElement;
       if (tokens.hrStyle === 'dots') {
-        const el = deco(doc, 'section', 'mdcore-hr-dots');
+        el = deco(doc, 'section', 'mdcore-hr-dots');
         applyProps(el, styles.hr);
         for (let i = 0; i < 3; i += 1) {
           const dot = deco(doc, 'span', 'mdcore-hr-dot');
           applyProps(dot, styles.hrDot);
           el.appendChild(dot);
         }
-        return el;
+      } else {
+        el = doc.createElement('hr');
+        applyProps(el, styles.hr);
       }
-      const el = doc.createElement('hr');
-      applyProps(el, styles.hr);
+      if (block.kind === 'pagebreak') {
+        el.classList.add('mdcore-pagebreak');
+        el.setAttribute('data-mdcore-pagebreak', 'true');
+      }
       return el;
     }
 

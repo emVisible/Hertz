@@ -144,6 +144,10 @@ md 字符串
 | `[^1]` 脚注 | `markdown-it-footnote` + IR `footnotes` 块 | 正文是可回跳的上标角标，文末是脚注区；两边的内容都要在产物里 |
 | 任意未建模语法 | `parseToIRDetailed()` 的 `diagnostics` | **保内容 + 记账**，不静默丢弃；见下 |
 
+**卡片页壳五层**（`paginate/card-shell.test.ts`）：`bg 底纹 / deco 装饰 / header 页眉 / body 正文 / footer 页脚`，**只有 body 进测量流**，装饰件一律绝对定位。判据是「装饰层撑到 999px，分页结果一字不变」。之前页壳只有 body 一层，所以卡片既没有底纹也没有装饰位。
+
+**`---` 强制分页**：IR 的 `hr` 带 `kind`（`---` → pagebreak，`***`/`___` → rule）。卡片平台把它翻成收页；微信/知乎是连续长文，同一行**仍然画成横线**（不能为了卡片平台改掉长文的既有行为）。这里有个只有小红书会中的坑：三套 xhs 主题的 `hrStyle` 都是 `dots`，而分页标记早先只加在 `<hr>` 分支上，于是 `---` 在小红书上静默失效。
+
 **语法守卫（切片 1）**：解析层遇到不认识的 token 只有两个选择——丢，或者原样带出来。v0.36 之前选的是「丢」，于是 `~~删除线~~` 的样式没了、定义列表和脚注正文**整段从成品里消失**，而 190 条结构断言一条都不红：它们压根不知道存在这些语法。现在 `parseToIRDetailed()` 除 blocks 外还给一份 `diagnostics`（token 类型 / 次数 / 首次出现行号），判据用一份「厨房水槽」样例把未建模集合守成**空集**——加一种新语法而忘了建模，那条会立刻红。
 
 守卫同时把「未知内容不许消失」变成契约：未建模 token 一律按 content 抢救成文字/代码/HTML，无内容的纯结构 token 才静默跳过（不在正文里插空段）。
@@ -270,7 +274,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 203 条 vitest（node+jsdom，测试与源码同目录）、前端 281 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 219 条 vitest（node+jsdom，测试与源码同目录）、前端 281 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

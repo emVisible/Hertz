@@ -193,6 +193,7 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
     // 小红书卡片位（微信/知乎主题不填页壳样式时这两个键不会被用到）
     card: { 'background-color': '${canvasBg}', 'border-radius': '${radius}' },
     cardBody: {},
+    cardHeader: { 'font-size': '0.72em', 'line-height': '1.4', opacity: '0.62', 'margin-bottom': '1.2em' },
     cardFooter: { 'font-size': '0.8em', 'line-height': '1.4' },
 
     ...(dark ? hljsDark : hljsLight),

@@ -235,7 +235,8 @@ export function tokensToIR(tokens: Token[], ctx?: ParseContext): IRBlock[] {
       }
 
       case 'hr': {
-        blocks.push({ type: 'hr', line: lineOf(t) });
+        // `---` 是"换页"意图，`***`/`___` 是"分隔"意图（见 types.ts hr 的头注）
+        blocks.push({ type: 'hr', kind: t.markup.trim() === '---' ? 'pagebreak' : 'rule', line: lineOf(t) });
         i += 1;
         break;
       }

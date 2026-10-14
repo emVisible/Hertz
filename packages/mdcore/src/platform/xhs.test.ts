@@ -99,7 +99,7 @@ describe('xhsCards', () => {
     });
     expect(pages.length).toBe(3);
     pages.forEach((page, i) => {
-      const footer = page.querySelector('.mdcore-xhs-footer');
+      const footer = page.querySelector('.mdcore-card-footer');
       expect(footer).not.toBeNull();
       expect(footer!.textContent).toContain('young 的笔记');
       expect(footer!.textContent).toContain(`${i + 1} / 3`);

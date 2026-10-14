@@ -7,7 +7,7 @@
  */
 import type { InlineNode, IRBlock, LayoutIR } from '../ir/types';
 import { paginate } from '../paginate/paginate';
-import type { Measurer } from '../paginate/paginate';
+import type { CardChrome, Measurer } from '../paginate/paginate';
 import { resolveThemedProps } from '../theme/apply';
 import { defaultThemeFor, resolveTheme } from '../theme/index';
 import type { Theme, ThemeOverrides } from '../theme/types';
@@ -48,6 +48,19 @@ export interface XhsOptions {
   /** 测试注入 mock 测量 */
   measurer?: Measurer;
   doc?: Document;
+
+  /** 页眉小字（每页顶部，可选） */
+  header?: string;
+  /** 页码开关（缺省 true） */
+  pageNum?: boolean;
+  /** 卡片底色（缺省取主题 card 底） */
+  cardBgColor?: string;
+  /** 纸纹/网格背景（data URL） */
+  cardBgImage?: string;
+  cardBgRepeat?: 'repeat' | 'no-repeat';
+  cardBgSize?: string;
+  /** 贴边装饰件（主题装饰层，见 CardChrome） */
+  cardDeco?: CardChrome['deco'];
 }
 
 export interface XhsResult {
@@ -81,11 +94,21 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
     measurer: opts.measurer,
     breaks: opts.breaks,
     doc,
+    // 页壳装饰件：页脚的水印与页码由 paginate 建层，这里只传意图（内容随后填进槽里）
+    chrome: {
+      watermark: opts.footer,
+      pageNum: opts.pageNum ?? true,
+      bgColor: opts.cardBgColor,
+      bgImage: opts.cardBgImage,
+      bgRepeat: opts.cardBgRepeat,
+      bgSize: opts.cardBgSize,
+      deco: opts.cardDeco,
+    },
   });
 
   if (opts.cover !== false && pages.length) applyCover(pages[0]);
   pages.forEach((page, i) => {
-    page.appendChild(makeFooter(doc, theme, overrides, opts.footer, i, pages.length, opts.qr));
+    fillFooter(doc, theme, overrides, page, i, pages.length, opts.qr);
   });
 
   const max = opts.maxPages ?? XHS_MAX_PAGES;
@@ -136,36 +159,30 @@ function applyCover(page: HTMLElement): void {
   first.style.setProperty('width', '100%');
 }
 
-/** 品牌页脚：署名 + 页码（+ 可选二维码），绝对定位在页脚预留区（不进测量流） */
-function makeFooter(
+/** 品牌页脚：填页脚层里的水印/页码槽 + 右侧二维码。页脚层本身由 paginate 建好（不进测量流） */
+function fillFooter(
   doc: Document,
   theme: Theme,
   overrides: ThemeOverrides,
-  footerText: string | undefined,
+  page: HTMLElement,
   index: number,
   total: number,
   qr?: string | null,
-): HTMLElement {
-  const el = doc.createElement('div');
-  el.className = 'mdcore-xhs-footer';
-  el.style.setProperty('position', 'absolute');
-  el.style.setProperty('left', `${XHS_CARD.padding}px`);
-  el.style.setProperty('right', `${XHS_CARD.padding}px`);
-  el.style.setProperty('bottom', '36px');
-  el.style.setProperty('display', 'flex');
-  el.style.setProperty('justify-content', 'space-between');
-  el.style.setProperty('align-items', 'baseline');
-  for (const [prop, value] of Object.entries(resolveThemedProps(theme, overrides, 'cardFooter'))) {
-    el.style.setProperty(prop, value);
+): void {
+  const footer = page.querySelector('.mdcore-card-footer') as HTMLElement | null;
+  if (!footer) return;
+  // 页码槽由页壳预建（页码可关，所以可能不存在）
+  const num = footer.querySelector('.mdcore-card-pageno') as HTMLElement | null;
+  if (num) num.textContent = `${index + 1} / ${total}`;
+  // 署名：页脚层建的时候可能没有（footer 为空），这里补一个
+  if (!footer.querySelector('.mdcore-card-watermark')) {
+    const brand = doc.createElement('span');
+    brand.className = 'mdcore-card-watermark';
+    for (const [prop, value] of Object.entries(resolveThemedProps(theme, overrides, 'cardFooter'))) {
+      brand.style.setProperty(prop, value);
+    }
+    footer.insertBefore(brand, footer.firstChild);
   }
-  const brand = doc.createElement('span');
-  brand.className = 'mdcore-xhs-footer-brand';
-  brand.textContent = footerText ?? '';
-  const num = doc.createElement('span');
-  num.className = 'mdcore-xhs-footer-page';
-  num.textContent = `${index + 1} / ${total}`;
-  el.appendChild(brand);
-  el.appendChild(num);
   if (qr) {
     const img = doc.createElement('img');
     img.setAttribute('src', qr);
@@ -181,9 +198,8 @@ function makeFooter(
     })) {
       img.style.setProperty(prop, value);
     }
-    el.appendChild(img);
+    footer.appendChild(img);
   }
-  return el;
 }
 
 /* ------------------------------------------------------------ 文案导出 */

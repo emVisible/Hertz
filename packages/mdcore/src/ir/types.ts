@@ -48,7 +48,14 @@ export type IRBlock =
     }
   | { type: 'callout'; variant: string; blocks: IRBlock[]; line: LineRange | null }
   | { type: 'formula'; tex: string; displayMode: boolean; line: LineRange | null }
-  | { type: 'hr'; line: LineRange | null }
+  /**
+   * 横线。`kind` 区分两种写法，因为它们的**意图**不同：
+   * - `rule`（`***` / `___`）：一条分隔线，三个平台都画出来；
+   * - `pagebreak`（`---`）：小红书/公众号的"换页"意图。小红书卡成图，
+   *   画一条线没有意义，所以在那里被翻成强制分页；微信/知乎是连续长文，
+   *   同一行仍然画成分隔线（不能为了卡片平台改掉长文的既有行为）。
+   */
+  | { type: 'hr'; kind: 'rule' | 'pagebreak'; line: LineRange | null }
   /** `[toc]`：目录块，条目来自文档的 2/3 级标题（anchor 可跳） */
   | { type: 'toc'; items: Array<{ level: number; text: string; anchor: string }>; line: LineRange | null }
   /** 定义列表 `术语\n: 释义`：一个术语可带多条释义 */
