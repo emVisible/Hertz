@@ -40,6 +40,12 @@ const CANVAS_CSS = `
   background: rgba(124, 58, 237, 0.55); cursor: ns-resize;
 }
 [data-mdcore-boundary]:hover, [data-mdcore-boundary][data-dragging='true'] { border-top-color: rgba(124, 58, 237, 0.95); }
+/* 编辑器光标所在块：淡底 + 左侧色条。虚线是 hover，虚实分别是"可点"与"你现在在这儿" */
+[data-mdcore-block][data-mdcore-focus='true'] {
+  background: rgba(124, 58, 237, 0.07);
+  box-shadow: inset 2px 0 0 rgba(124, 58, 237, 0.5);
+}
+[data-mdcore-block][data-mdcore-focus='true']:hover { outline: none; }
 `
 
 export interface XhsRenderInfo {
@@ -71,6 +77,8 @@ interface CanvasPanelProps {
   mountRef: RefObject<HTMLDivElement | null>
   onXhsInfo: (info: XhsRenderInfo) => void
   onBlockClick?: (target: CanvasBlockTarget) => void
+  /** 编辑器光标所在块：画布上高亮并滚到视线里（编辑器 → 画布方向） */
+  focusBlockIndex?: number | null
   onBreaksChange?: (breaks: number[]) => void
 }
 
@@ -193,6 +201,7 @@ export function CanvasPanel({
   onXhsInfo,
   onBlockClick,
   onBreaksChange,
+  focusBlockIndex,
 }: CanvasPanelProps) {
   useEffect(() => {
     const host = mountRef.current
@@ -298,6 +307,31 @@ export function CanvasPanel({
     onBlockClick,
     onBreaksChange,
   ])
+
+  /**
+   * 编辑器 → 画布：光标所在块高亮并滚进视线。
+   *
+   * 独立成一个 effect，而不是塞进上面那个渲染 effect 的分支里：光标每动一行就
+   * 触发一次，重新渲染整篇画布（重新分页、重新量高）会让联动变成灾难性的开销。
+   * 这里只翻一个 DOM 属性 + 一次 scrollIntoView，代价与稿子长度无关。
+   *
+   * 放在渲染 effect **之后**声明：同一次 commit 里 React 按声明顺序跑，
+   * 于是"重渲染 + 重新标记"不会互相踩。
+   */
+  useEffect(() => {
+    const host = mountRef.current
+    if (!host) return
+    for (const el of Array.from(host.querySelectorAll('[data-mdcore-focus]'))) {
+      el.removeAttribute('data-mdcore-focus')
+    }
+    if (focusBlockIndex === null || focusBlockIndex === undefined) return
+    const el = host.querySelector(`[data-mdcore-block="${focusBlockIndex}"]`)
+    if (el instanceof HTMLElement) {
+      el.setAttribute('data-mdcore-focus', 'true')
+      // jsdom 没实现 scrollIntoView；没有它就不滚（高亮照样生效），别让联动整条断掉
+      if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' })
+    }
+  }, [focusBlockIndex, mountRef])
 
   // 宿主 div 不进 React children——渲染态 DOM 由上面 effect 全权管理
   return <div ref={mountRef} data-testid="mdstudio-canvas-mount" className="min-h-0" />

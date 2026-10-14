@@ -182,6 +182,22 @@ md 字符串
 
 ---
 
+## 5.1 编辑器（Phase 4）
+
+源文区是 **CodeMirror 6**（`editor/MarkdownEditor.tsx`，自己封而不用 wrapper 库：联动要 `EditorView` 实例，wrapper 只会把它藏进 ref 再加一层版本对齐）。自带行号 / `Cmd+F` 搜索面板 / 撤销重做 / Markdown 高亮 / 括号配对 / 自动换行。
+
+两条工程约定：
+- **受控值只在外部值 ≠ 编辑器当前值时写回**。否则每敲一个字就走一圈 `setState → 写回 → 重置选区`，光标会被往前拽。
+- **挂载失败要看得见**：CM 抛错时降级成 textarea 并显示原因，不静默（空白会被当成"编辑器没了"）。`setup.ts` 里补了 `Range.getClientRects` 垫片——CM 在 rAF 里量字宽，jsdom 没这个 API，不补就是"测试全绿但整轮 EXIT=1"。
+
+**大纲与双向联动**（`editor/outline.ts`，纯函数）：
+- 大纲只收 1~3 级，行号取自 **IR**（`token.map` 是解析产物）——再扫一遍 Markdown 就有了第二套行号，两套迟早漂。
+- 光标行 → 画布高亮：取「含该行且最窄」的块；落在所有区间之外就回落到最近的上一块。
+- 画布点段落 → 编辑器选中该段（旧的块编辑框仍在）。
+- 高亮是**独立 effect**，只翻一个 DOM 属性 + 一次 `scrollIntoView`：挂在渲染 effect 的分支里会让"每动一行光标就重排整篇画布"。
+
+**分栏可拖**：240~640px，pointer 事件跟窗口走，localStorage 记住；方向键也能调。
+
 ## 5. 主题与色盘
 
 主题 = `{ id, name, platform, dark?, tokens{color,fontFamily,fontSize,lineHeight,radius}, styles{元素→CSS} }`。
@@ -248,7 +264,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 190 条 vitest（node+jsdom，测试与源码同目录）、前端 252 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 190 条 vitest（node+jsdom，测试与源码同目录）、前端 281 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

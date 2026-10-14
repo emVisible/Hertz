@@ -18,7 +18,8 @@
 - Phase 2a 中文排版语法（新增 7 个依赖，全部实现在 IR 层）：`==荧光笔==`、`> [!NOTE/TIP/IMPORTANT/WARNING/CAUTION]` 提示块、`- [x]` 任务列表（→ ✅/⬜，微信整类剥掉 `<input>`）、`H~2~O` / `E=mc^2^` / `<ruby>` 注音、`:短码:` emoji、定义列表
 - Phase 2b 内容件：`[toc]` 目录（收尾统一回填条目，锚点重名不撞车）、`#话题`、`[color:#xxx]文字[/color]` 受控彩色通道、`{70% left}` 图宽与对齐（宽度夹 10%~100%）
 - Phase 3 主题设计器（mdstudio 右栏抽屉）：35 个变量 / 10 个分区，改动即预览；派生变量（accentInk/soft/rule/hl）默认只读并可「固定」；自建主题存本机（localStorage）并支持 JSON 导入导出，自建 id 必须带 `user:` 前缀且不许撞内置名
-- 判据：mdcore 102 → 190 条、前端 219 → 252 条；其中 3 个"看起来能写、实际写不对"的坑由判据当场抓住（核心规则不下钻 inline 子节点 / `<ruby>` 被 html_inline 抢先 / 任务项正文裹在 `<label>` 里对 markdown-it 不透明，项内 emoji 全留在原文——基线图里看见 `:sparkles:` 没变才定位到）
+- Phase 4 编辑器（CodeMirror 6）：行号 / Cmd+F 搜索面板 / 撤销重做 / Markdown 高亮 / 括号配对；大纲面板（1~3 级标题，点击跳行）；编辑器 ↔ 画布 双向联动（光标行高亮画布对应块、画布点段落选中源码段）；左栏拖拽分栏（240~640px，localStorage 记住，方向键可调）
+- 判据：mdcore 102 → 190 条、前端 219 → 281 条；其中 3 个"看起来能写、实际写不对"的坑由判据当场抓住（核心规则不下钻 inline 子节点 / `<ruby>` 被 html_inline 抢先 / 任务项正文裹在 `<label>` 里对 markdown-it 不透明，项内 emoji 全留在原文——基线图里看见 `:sparkles:` 没变才定位到）
 
 ## [v0.35.0] - 2026-10-13
 

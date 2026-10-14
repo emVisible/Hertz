@@ -26,6 +26,9 @@ import { layoutApi, type LayoutDoc, type LayoutPlatform } from '../../api'
 import { Button, EmptyState, Icon, Input, Select, ToggleChip, useToast } from '../../components/ui'
 import { BatchExportModal, type BatchTarget } from './BatchExportModal'
 import { CanvasPanel, type CanvasBlockTarget, type XhsRenderInfo } from './CanvasPanel'
+import { MarkdownEditor, type MarkdownEditorHandle } from './editor/MarkdownEditor'
+import { OutlinePanel } from './editor/OutlinePanel'
+import { blockIndexAtLine, buildOutline, type OutlineItem } from './editor/outline'
 import { InspectorPanel, type ExportAction } from './InspectorPanel'
 import { LayoutListPanel } from './LayoutListPanel'
 import { downloadBlob } from './shared'
@@ -105,6 +108,15 @@ export function MdStudioPage() {
   const [xhsInfo, setXhsInfo] = useState<XhsRenderInfo>({ pageCount: 0, overflow: false })
   /** 画布内联编辑：正在改的块（点段落进来）与其 markdown 文本 */
   const [editing, setEditing] = useState<CanvasBlockTarget | null>(null)
+  /** 编辑器 ↔ 画布 联动（Phase 4） */
+  const editorRef = useRef<MarkdownEditorHandle | null>(null)
+  const [outlineOpen, setOutlineOpen] = useState(true)
+  const [cursorLine, setCursorLine] = useState(0)
+  /** 画布高亮的块序号：由光标行换算，null = 不高亮 */
+  const [focusBlock, setFocusBlock] = useState<number | null>(null)
+  /** 左栏宽度（拖分栏），localStorage 记住 */
+  const [leftWidth, setLeftWidth] = useState(() => Number(localStorage.getItem('hertz.mdstudio.leftWidth')) || 320)
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [editText, setEditText] = useState('')
   /** 批量出图：勾选集 + 队列弹层 */
   const [batchMode, setBatchMode] = useState(false)
@@ -165,6 +177,65 @@ export function MdStudioPage() {
   // 画布输入 150ms debounce（改 overrides/源文时避免每次按键都重排）
   const renderDraft = useDebounced(draft, RENDER_DEBOUNCE_MS)
 
+  /**
+   * 大纲与联动都从**已解析的 IR** 取，不重扫 Markdown：行号在 IR 里已经是解析产物，
+   * 再扫一遍就有了第二套行号，两套迟早漂（表现为"点标题跳到隔壁段落"）。
+   */
+  const outline: OutlineItem[] = useMemo(() => {
+    if (!renderDraft?.source_md) return []
+    try {
+      return buildOutline(parseToIR(renderDraft.source_md))
+    } catch {
+      return []
+    }
+  }, [renderDraft?.source_md])
+
+  const activeHeading = useMemo(() => {
+    let best: OutlineItem | null = null
+    for (const item of outline) {
+      if (item.line <= cursorLine) best = item
+      else break
+    }
+    return best
+  }, [outline, cursorLine])
+
+  /** 光标行 → 画布该高亮哪一块 */
+  const handleCursorLine = useCallback((line: number) => {
+    setCursorLine(line)
+    setFocusBlock((prev) => {
+      if (!renderDraft?.source_md) return null
+      try {
+        const next = blockIndexAtLine(parseToIR(renderDraft.source_md), line)
+        return next === prev ? prev : next
+      } catch {
+        return null
+      }
+    })
+  }, [renderDraft?.source_md])
+
+  /** 拖分栏：pointer 事件跟着窗口走，鼠标移出侧栏也不断 */
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = dragRef.current
+      if (!drag) return
+      const next = Math.max(240, Math.min(640, drag.startWidth + (e.clientX - drag.startX)))
+      setLeftWidth(next)
+    }
+    const onUp = () => {
+      if (!dragRef.current) return
+      dragRef.current = null
+      localStorage.setItem('hertz.mdstudio.leftWidth', String(leftWidth))
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [leftWidth])
+
   const handleXhsInfo = useCallback((info: XhsRenderInfo) => {
     setXhsInfo((prev) =>
       prev.pageCount === info.pageCount && prev.overflow === info.overflow ? prev : info,
@@ -190,6 +261,8 @@ export function MdStudioPage() {
       const lines = draft.source_md.split('\n')
       setEditing(target)
       setEditText(lines.slice(target.line[0], target.line[1]).join('\n'))
+      // 编辑器同步定位到这一段（CodeMirror 的选区 + 滚动，居中在视线里）
+      editorRef.current?.selectRange(target.line[0], Math.max(target.line[0], target.line[1] - 1))
     },
     [draft, t, toast],
   )
@@ -395,8 +468,12 @@ export function MdStudioPage() {
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-x-auto">
-        {/* 左栏：排版稿列表 + 导入 + 源文轻编辑 */}
-        <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-surface-1">
+        {/* 左栏：排版稿列表 + 导入 + 源文编辑（宽度可拖） */}
+        <aside
+          className="flex shrink-0 flex-col border-r border-border bg-surface-1"
+          style={{ width: leftWidth }}
+          data-testid="mdstudio-left"
+        >
           <div className="min-h-0 flex-1">
             <LayoutListPanel
               layouts={listQuery.data}
@@ -419,26 +496,70 @@ export function MdStudioPage() {
               onBatchExport={() => setBatchOpen(true)}
             />
           </div>
-          {/* 源文轻编辑：不复用 MarkdownEditor——它自带右侧预览，与中栏画布职责重复；
-              这里只要 raw 编辑面（样式同 MarkdownEditor 左半，保持全项目手感一致） */}
+          {/* 源文编辑：CodeMirror 6（Phase 4）。自带行号/搜索面板(Cmd+F)/撤销重做/
+              Markdown 高亮/括号配对，文本控件该有的都补齐了 */}
           {draft && (
-            <div className="flex h-2/5 shrink-0 flex-col border-t border-border">
-              <div className="flex shrink-0 items-center justify-between px-3 py-1.5">
+            <div className="flex h-[45%] shrink-0 flex-col border-t border-border">
+              <div className="flex shrink-0 items-center gap-1.5 px-3 py-1.5">
+                <Icon name="edit" size={12} className="text-text-secondary" />
                 <span className="text-xs font-medium text-text-secondary">{t('mdstudio.source.title')}</span>
-                <span className="text-[10px] text-text-disabled">
+                <button
+                  type="button"
+                  aria-pressed={outlineOpen}
+                  onClick={() => setOutlineOpen((v) => !v)}
+                  data-testid="mdstudio-outline-toggle"
+                  className={`rounded border px-1.5 py-0.5 text-[10px] transition-colors ${
+                    outlineOpen
+                      ? 'border-primary/50 bg-primary/10 text-primary'
+                      : 'border-border text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  {t('mdstudio.outline.toggle')}
+                </button>
+                <span className="ml-auto text-[10px] text-text-disabled">
                   {t('briefs.charCount', { count: draft.source_md.length })}
                 </span>
               </div>
-              <textarea
-                value={draft.source_md}
-                onChange={(e) => patchDraft({ source_md: e.target.value })}
-                spellCheck={false}
-                placeholder={t('mdstudio.source.placeholder')}
-                className="min-h-0 flex-1 resize-none overflow-y-auto bg-transparent px-3 pb-2 font-mono text-xs leading-relaxed text-text-primary outline-none placeholder:text-text-disabled"
-              />
+              {outlineOpen && (
+                <OutlinePanel
+                  items={outline}
+                  activeText={activeHeading?.text ?? null}
+                  onPick={(item) => editorRef.current?.jumpToLine(item.line)}
+                  onClose={() => setOutlineOpen(false)}
+                />
+              )}
+              <div className="min-h-0 flex-1 px-1 pb-1">
+                <MarkdownEditor
+                  className="h-full"
+                  value={draft.source_md}
+                  onChange={(next) => patchDraft({ source_md: next })}
+                  onCursorLine={handleCursorLine}
+                  placeholder={t('mdstudio.source.placeholder')}
+                  handleRef={editorRef}
+                />
+              </div>
             </div>
           )}
         </aside>
+
+        {/* 分栏拖柄：按住改左栏宽度，松手记住 */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('mdstudio.split.label')}
+          tabIndex={0}
+          data-testid="mdstudio-split"
+          onPointerDown={(e) => {
+            dragRef.current = { startX: e.clientX, startWidth: leftWidth }
+            document.body.style.cursor = 'col-resize'
+            document.body.style.userSelect = 'none'
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') setLeftWidth((w) => Math.max(240, w - 16))
+            if (e.key === 'ArrowRight') setLeftWidth((w) => Math.min(640, w + 16))
+          }}
+          className="group relative w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40"
+        />
 
         {/* 中栏：平台感知画布 */}
         <section className="flex min-w-[360px] flex-1 flex-col">
@@ -483,6 +604,7 @@ export function MdStudioPage() {
                   onXhsInfo={handleXhsInfo}
                   onBlockClick={handleBlockClick}
                   onBreaksChange={handleBreaksChange}
+                  focusBlockIndex={focusBlock}
                 />
               )}
             </div>

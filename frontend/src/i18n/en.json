@@ -165,6 +165,15 @@
       "sameAsBody": "Same as body",
       "pin": "Pin",
       "pinIt": "Pin this value (stop following primary)"
+    },
+    "outline": {
+      "title": "Outline",
+      "toggle": "Outline",
+      "close": "Hide",
+      "empty": "No H1-H3 headings yet."
+    },
+    "split": {
+      "label": "Drag to resize the sidebar"
     }
   },
   "common": {
