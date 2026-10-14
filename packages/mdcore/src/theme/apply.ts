@@ -231,16 +231,44 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
     }
 
     case 'table': {
+      /**
+       * 窄表横滚：块元素是一层 `.mdcore-table-wrap`（overflow-x:auto），table 放里面。
+       *
+       * 为什么不能直接给 table 加 overflow：display:table 的元素上 overflow 与
+       * border-radius 基本无效（不产生 BFC），单元格会被压扁/逐字折行，用户宁可
+       * 横着滚也不要看到"第一列五个字换三行"。包一层是唯一可靠的做法。
+       *
+       * 代价：分页里 `matches('table')` 的判断必须跟着改（见 paginate 的 tableOf）。
+       */
+      const wrap = doc.createElement('div');
+      wrap.className = 'mdcore-table-wrap';
+      applyProps(wrap, styles.tableWrap);
       const table = doc.createElement('table');
+      table.className = 'mdcore-table';
       applyProps(table, styles.table);
+      // 按列：一列一个值，作用于该列所有单元格
+      const alignAt = (colIndex: number): string | null => block.align?.[colIndex] ?? null;
       const thead = doc.createElement('thead');
       const headTr = doc.createElement('tr');
-      for (const cell of block.header) {
+      block.header.forEach((cell, colIndex) => {
         const th = doc.createElement('th');
         applyProps(th, styles.th);
+        applyProps(th, styles.tableCell);
+        const align = alignAt(colIndex);
+        if (align) th.style.setProperty('text-align', align);
+        // 表头圆角只能逐格写死：产物里没有 <style>，`thead th:first-child` 那条
+        // 规则在导出快照与剪贴板内联里都不生效
+        if (colIndex === 0) {
+          th.classList.add('mdcore-th-first');
+          applyProps(th, styles.thFirst);
+        }
+        if (colIndex === block.header.length - 1) {
+          th.classList.add('mdcore-th-last');
+          applyProps(th, styles.thLast);
+        }
         appendInlines(th, cell, ctx);
         headTr.appendChild(th);
-      }
+      });
       thead.appendChild(headTr);
       table.appendChild(thead);
       const tbody = doc.createElement('tbody');
@@ -251,16 +279,20 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
           tr.className = 'mdcore-row-even';
           applyProps(tr, styles.tbodyEven);
         }
-        for (const cell of row) {
+        row.forEach((cell, colIndex) => {
           const td = doc.createElement('td');
           applyProps(td, styles.td);
+          applyProps(td, styles.tableCell);
+          const align = alignAt(colIndex);
+          if (align) td.style.setProperty('text-align', align);
           appendInlines(td, cell, ctx);
           tr.appendChild(td);
-        }
+        });
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
-      return table;
+      wrap.appendChild(table);
+      return wrap;
     }
 
     case 'quote': {

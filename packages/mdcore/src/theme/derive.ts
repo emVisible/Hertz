@@ -103,6 +103,10 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
       'font-family': 'Georgia, "Times New Roman", serif',
     },
 
+    // 表格：圆角裁切放在外层容器上（table 自身 display:table 不产生 BFC），
+    // 表头首末格单独给圆角——否则"圆角表头"在多数浏览器上根本看不到
+    tableWrap: { 'border-radius': 'inherit', overflow: 'hidden' },
+
     // 公式：字色跟正文（公式是内容的一部分，不该是另一种颜色）；回落源码用等宽 +
     // 极淡底，提示文字更淡——两层都是「异常态」，不该跟正文抢注意力
     formulaInline: { color: 'inherit' },

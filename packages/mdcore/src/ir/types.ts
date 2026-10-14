@@ -35,7 +35,24 @@ export type IRBlock =
   | { type: 'para'; children: InlineNode[]; line: LineRange | null }
   | { type: 'list'; ordered: boolean; items: InlineNode[][]; line: LineRange | null }
   | { type: 'code'; lang: string | null; code: string; line: LineRange | null }
-  | { type: 'table'; header: InlineNode[][]; rows: InlineNode[][][]; line: LineRange | null }
+  | {
+      type: 'table';
+      header: InlineNode[][];
+      rows: InlineNode[][][];
+      /**
+       * 逐列对齐（长度 = 列数，缺省 null = 跟随主题的 th/td 默认值）。
+       *
+       * 为什么必须进 IR：markdown-it 把 `:---:` / `---:` 放在 `th_open`/`td_open`
+       * 的 style 属性上，而早先的 convertTable **只取 inline children**，style
+       * 整个被丢掉；随后样式槽又硬写 `text-align: left`——于是 `|:---:|` 在产物里
+       * 恒为左对齐，数值列对不齐。
+       *
+       * 按**列**而不是按格：markdown 表格的对齐只由表头下的分隔行决定，一列一个值，
+       * 作用于该列所有单元格。做成二维表是凭空多出一层不存在的数据。
+       */
+      align?: Array<'left' | 'center' | 'right' | null>;
+      line: LineRange | null;
+    }
   | { type: 'quote'; blocks: IRBlock[]; line: LineRange | null }
   | {
       type: 'image';

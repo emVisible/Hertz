@@ -15,9 +15,12 @@ const IMG_H = 60; // 图片块高
 /** 合成块高：标题 40；表格 表头+行 各 20；pre 按换行计行；图片 60；其余按字符折行 */
 function blockHeight(el: HTMLElement): number {
   if (el.matches('h1,h2,h3,h4,h5,h6')) return HEAD_H;
-  if (el.matches('table')) {
-    const head = el.querySelector('thead') ? 1 : 0;
-    return (head + el.querySelectorAll('tbody tr').length) * LINE_H;
+  // 表格的块元素现在是 `.mdcore-table-wrap`（窄表横滚容器，W1 切片 2），
+  // 认 table 本身会退化成"按文本长度估高"，分页结果就跟着错
+  const table = el.matches('table') ? el : el.querySelector('table');
+  if (table) {
+    const head = table.querySelector('thead') ? 1 : 0;
+    return (head + table.querySelectorAll('tbody tr').length) * LINE_H;
   }
   // v0.36：代码块外面套了 .mdcore-code 卡片壳，图片变成 figure > img + figcaption
   if (el.matches('pre') || el.querySelector('pre')) {

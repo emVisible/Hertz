@@ -429,11 +429,16 @@ function findClose(tokens: Token[], openIdx: number, openType: string, closeType
   return tokens.length - 1;
 }
 
-function convertTable(inner: Token[], ctx?: ParseContext): Pick<Extract<IRBlock, { type: 'table' }>, 'header' | 'rows'> {
+function convertTable(
+  inner: Token[],
+  ctx?: ParseContext,
+): Pick<Extract<IRBlock, { type: 'table' }>, 'header' | 'rows' | 'align'> {
   const header: InlineNode[][] = [];
   const rows: InlineNode[][][] = [];
   let inHead = false;
   let curRow: InlineNode[][] | null = null;
+  /** 逐列对齐：markdown 的对齐只写在**表头**那一行上（分隔行），一列一个值 */
+  const colAlign: Array<'left' | 'center' | 'right' | null> = [];
 
   for (let i = 0; i < inner.length; i++) {
     const t = inner[i];
@@ -458,6 +463,7 @@ function convertTable(inner: Token[], ctx?: ParseContext): Pick<Extract<IRBlock,
       case 'td_open': {
         const inline = inner[i + 1];
         curRow?.push(inline?.type === 'inline' ? convertInline(inline.children ?? [], ctx) : []);
+        if (inHead) colAlign[colAlign.length] = cellAlign(t);
         break;
       }
       default:
@@ -465,7 +471,15 @@ function convertTable(inner: Token[], ctx?: ParseContext): Pick<Extract<IRBlock,
     }
   }
   // header 语义：thead 那一行的各单元格 → header 为单元格数组
-  return { header, rows };
+  // 整张表都没写对齐时不留 align 键（省一份内存，也避免下游误以为"对齐是空数组"）
+  return { header, rows, ...(colAlign.some((a) => a) ? { align: colAlign } : {}) };
+}
+
+/** `th_open`/`td_open` 上的 `text-align` → 枚举（只有三种，其余归 null） */
+function cellAlign(token: Token): 'left' | 'center' | 'right' | null {
+  const style = token.attrGet('style') ?? '';
+  const m = /text-align:\s*(left|center|right)/i.exec(style);
+  return (m?.[1]?.toLowerCase() as 'left' | 'center' | 'right' | undefined) ?? null;
 }
 
 /** markdown-it inline token children → InlineNode 序列 */

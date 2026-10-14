@@ -141,6 +141,10 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
     listMarker: { 'margin-right': '0.45em', 'min-width': '1.2em', 'font-variant-numeric': 'tabular-nums' },
 
     // 表格：结构与内边距；表头底色/斑马纹由派生给
+    // 窄表横滚容器：块级元素是它（见 apply 的 table 分支）
+    tableWrap: { 'max-width': '100%', 'overflow-x': 'auto', '-webkit-overflow-scrolling': 'touch' },
+    // 表格本体：圆角/overflow 放在 display:table 上是**无效**的（不产生 BFC），
+    // 裁切交给外层 .mdcore-table-wrap；表头的圆角在 derive 里按首末格单独写。
     table: {
       'border-collapse': 'separate',
       'border-spacing': '0',
@@ -152,6 +156,11 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
       'margin-top': '0.6em',
       'margin-bottom': '0.8em',
     },
+    // 单元格：长 URL / 长 ID 逐字折行会把整张表撑成筛子
+    tableCell: { 'word-break': 'break-word', 'overflow-wrap': 'anywhere' },
+    // 表头首/末格的圆角（逐格写死，见 apply 的说明）
+    thFirst: { 'border-top-left-radius': '6px', 'border-bottom-left-radius': '6px' },
+    thLast: { 'border-top-right-radius': '6px', 'border-bottom-right-radius': '6px' },
     th: { 'font-weight': '600', padding: '0.5em 0.7em', 'text-align': 'left' },
     td: { padding: '0.5em 0.7em', 'border-top': '1px solid ${rule}', 'vertical-align': 'top' },
     tbodyEven: {},

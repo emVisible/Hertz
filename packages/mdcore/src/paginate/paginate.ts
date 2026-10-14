@@ -144,6 +144,17 @@ function isCodeBlock(el: HTMLElement): boolean {
  * `pre` 藏在代码卡片壳里（v0.36），所以这里必须**下钻一层**——否则 `textBox` 返回
  * null，`splitText` 会走 `el.remove()` 把整块代码丢掉（内容消失而不是分页）。
  */
+/**
+ * 块元素里的 `<table>`。
+ *
+ * 表格的块元素现在是 `.mdcore-table-wrap`（窄表横滚容器，W1 切片 2），
+ * `matches('table')` 认不出来了——这里统一收口，避免"排版改一次、分页改两处"。
+ */
+function tableOf(el: HTMLElement): HTMLTableElement | null {
+  if (el.matches('table')) return el as HTMLTableElement;
+  return el.querySelector('table');
+}
+
 function textBox(el: HTMLElement): HTMLElement | null {
   if (el.matches('p, blockquote, ul, ol, li')) return el;
   const pre = el.matches('pre') ? el : el.querySelector('pre');
@@ -262,15 +273,30 @@ function splitText(el: HTMLElement, fits: () => boolean, doc: Document): HTMLEle
 }
 
 /** 表格按行拆分，下一页自动重复表头 */
-function splitTable(el: HTMLTableElement, fits: () => boolean, doc: Document): HTMLElement | null {
+/**
+ * 表格按行拆分，下一页自动重复表头。
+ *
+ * `block` 是页里那个块元素（现在是横滚容器），`table` 是它里面的 table。
+ * 拆出来的续块要**克隆容器**而不是克隆 table——否则续页少了 `overflow-x:auto`，
+ * 宽表在续页又变成"逐字折行"。
+ */
+function splitTable(
+  block: HTMLElement,
+  table: HTMLTableElement,
+  fits: () => boolean,
+  doc: Document,
+  theme: Theme,
+  overrides: ThemeOverrides,
+): HTMLElement | null {
+  const el = table;
   const tbody = el.tBodies[0];
   if (!tbody) {
-    el.remove();
+    block.remove();
     return null;
   }
   const rows = Array.from(tbody.rows);
   if (rows.length < 2) {
-    el.remove();
+    block.remove();
     return null;
   }
   // keep = 留在这一页的行数，从后往前一行行挪走，直到放得下
@@ -281,18 +307,23 @@ function splitTable(el: HTMLTableElement, fits: () => boolean, doc: Document): H
   }
   if (!fits()) {
     tbody.replaceChildren(...rows);
-    el.remove();
+    block.remove();
     return null;
   }
-  const tail = el.cloneNode(false) as HTMLTableElement;
-  tail.classList.add('mdcore-cont');
+  // 续块克隆**容器**（不是 table）：容器上带着 overflow-x:auto 与样式槽，
+  // 只克隆 table 的话续页的宽表又变成逐字折行
+  const tailWrap = block.cloneNode(false) as HTMLElement;
+  tailWrap.classList.add('mdcore-cont');
+  const tail = doc.createElement('table');
+  applyProps(tail, resolveThemedProps(theme, overrides, 'table'));
   // 跨页重复表头（成对变异钉住：去掉本行使下页丢失表头）
   const thead = el.querySelector('thead');
   if (thead) tail.appendChild(thead.cloneNode(true));
   const tailBody = doc.createElement('tbody');
   tailBody.replaceChildren(...rows.slice(keep).map((r) => r.cloneNode(true)));
   tail.appendChild(tailBody);
-  return tail;
+  tailWrap.appendChild(tail);
+  return tailWrap;
 }
 
 function makeShell(
@@ -560,8 +591,9 @@ export function paginate(ir: LayoutIR, opts: PaginateOptions): HTMLElement[] {
       for (let guard = 0; el && !fits() && guard < 500; guard++) {
         const current: HTMLElement = el;
         const wasAlone = body.children.length === 1;
-        const tail: HTMLElement | null = current.matches('table')
-          ? splitTable(current as HTMLTableElement, fits, doc)
+        const table = tableOf(current);
+        const tail: HTMLElement | null = table
+          ? splitTable(current, table, fits, doc, theme, overrides)
           : splitText(current, fits, doc);
         if (tail) {
           closePage();

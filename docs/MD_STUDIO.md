@@ -152,6 +152,13 @@ md 字符串
 
 封面字号是**测量台上二分**出来的"尽量大但仍放得下"，不是固定倍数。量的是**整页克隆件**：只把封面内容丢进没有宽度约束的测量台，标题换行更少、显得更矮，二分就会选一个过大的字号，角标与副标题在真卡片里被裁掉（这个坑基线图第一眼就看见了）。
 
+**表格**（W1 切片 2）：四件"写了支持、产物里不成立"的事一并修掉——
+
+- **对齐进 IR**：markdown-it 把 `:---:` 放在 `th_open/td_open` 的 style 上，而 `convertTable` 只取 inline children，style 整个被丢；样式槽又硬写 `text-align:left`，于是数值列恒左对齐。现在 IR 存**逐列**对齐（markdown 的对齐本就由表头下的分隔行决定，一列一个值），整表都没写对齐时不留 `align` 键。
+- **窄表横滚**：块元素改成 `.mdcore-table-wrap`（`overflow-x:auto`），table 在里面。`display:table` 上的 overflow 与 border-radius 不产生 BFC，压根无效——直接写在 table 上等于没写。代价是分页的 `matches('table')` 跟着改（收口成 `tableOf()`），**跨页续块要克隆容器而不是 table**，否则续页的宽表又变逐字折行。
+- **圆角移到能生效的地方**：表头首/末格逐格写圆角（产物里没有 `<style>`，`thead th:first-child` 那条规则在导出快照与剪贴板内联里都不存在）。
+- **单元格断词**：`word-break:break-word` + `overflow-wrap:anywhere`，长 URL/长 ID 不再把表撑成筛子。
+
 **公式链路**（`theme/formula.ts`）：KaTeX 的 class 规则与 `@font-face` 此前**全仓无人引入**，于是"支持公式"在产物里从来不成立。现在宿主在入口引入 `katex/dist/katex.min.css`，mdcore 侧补三件事：
 
 - **CSS 缺失要看得见**：`katexCssMissing()` 探一次（结果缓存，避免每条公式都强制重排），缺失时**不静默**——改用「等宽源码 + 一句说明」的回落形态。
@@ -298,7 +305,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 253 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 262 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 
