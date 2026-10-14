@@ -193,8 +193,28 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
     // 小红书卡片位（微信/知乎主题不填页壳样式时这两个键不会被用到）
     card: { 'background-color': '${canvasBg}', 'border-radius': '${radius}' },
     cardBody: {},
+    // 封面三件套：角标（药丸）/ 标题（自适应字号）/ 副标题（弱一档）
+    coverBadge: {
+      'align-self': 'flex-start',
+      padding: '0.24em 0.9em',
+      'border-radius': '999px',
+      'font-size': '0.34em',
+      'font-weight': '600',
+      'letter-spacing': '0.06em',
+    },
+    coverTitle: { margin: '0.12em 0', 'font-weight': '700', 'line-height': '1.22', 'letter-spacing': '0em' },
+    coverSub: { 'font-size': '0.62em', 'line-height': '1.5', margin: '0.2em 0 0' },
     cardHeader: { 'font-size': '0.72em', 'line-height': '1.4', opacity: '0.62', 'margin-bottom': '1.2em' },
-    cardFooter: { 'font-size': '0.8em', 'line-height': '1.4' },
+    // 页脚是左右分布的（署名靠左、页码靠右）。页壳层化的改动把旧实现里内联的
+    // display:flex / space-between 弄丢了，于是两段文字贴在了一起——基线图一眼看出来
+    cardFooter: {
+      display: 'flex',
+      'justify-content': 'space-between',
+      'align-items': 'baseline',
+      gap: '1em',
+      'font-size': '0.8em',
+      'line-height': '1.4',
+    },
 
     ...(dark ? hljsDark : hljsLight),
   };

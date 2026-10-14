@@ -94,6 +94,43 @@ export const CARD_MD = [
   '',
 ].join('\n');
 
+/**
+ * 样例 3：小红书**长文正文页**——内容长到必然分页（切片 3 的回归网）。
+ *
+ * 为什么必须有它：卡片基线早先只拍 `pages[0]`，而 `pages[0]` 在封面独立成页之后
+ * 变成了**封面**——正文页一次都没被拍到。分页错位、跨页拆坏、强制分页失效，
+ * 在这套基线里全都看不见（"导出的图片不对"长期没被发现的直接原因）。
+ */
+export const CARD_LONG_MD = [
+  '# 长文分页回归样例',
+  '',
+  '第一段正文，用来占掉封面之后的第一张卡。这一段刻意写得比较长，',
+  '好让测量台在这一页就接近装满，从而把第二段挤到下一页去。',
+  '',
+  '## 第一节',
+  '',
+  '第二节正文。段落之间的断行、字号与行距都会体现在基线图上，',
+  '任何一处改动都会让这张图动。',
+  '',
+  '- 列表项甲',
+  '- 列表项乙',
+  '',
+  '> 引用块跨页时不该被拦腰截断成孤零零一行。',
+  '',
+  '---',
+  '',
+  '## 第二节',
+  '',
+  '第三节正文。上面那条 `---` 应当把这一节整体推到新的一张卡上。',
+  '',
+  '| 项目 | 值 |',
+  '| --- | --- |',
+  '| 比例 | 3:4 |',
+  '',
+  '最后一段，用来验证页尾不会被顶出去。',
+  '',
+].join('\n');
+
 /** 内联 SVG 占位图：像素稳定，且能看出圆角/边框/图注是否生效 */
 // 内联 SVG 占位图：像素稳定，且能看出圆角/边框/图注是否生效。
 // **不能含字面空格**：markdown 的链接地址在空格处终止，整行会退化成普通文本
@@ -126,7 +163,7 @@ export interface BaselineShot {
   id: string;
   themeId: string;
   platform: string;
-  sample: 'article' | 'card';
+  sample: 'article' | 'card' | 'card-page';
   width: number;
   height: number;
   /** 渲染好的元素（已挂进 body） */
@@ -144,11 +181,17 @@ export function buildShots(): BaselineShot[] {
     const width = WIDTHS[platform];
 
     if (platform === 'xhs') {
-      const { pages } = xhsCards(parseToIR(CARD_MD), { theme, footer: '图文工坊', qr: null });
-      const card = pages[0];
-      const slot = document.createElement('div');
-      slot.style.width = `${XHS_CARD.width}px`;
-      slot.appendChild(card);
+      // ①封面页（pages[0]）：角标/标题/副标题的排版
+      const cover = xhsCards(parseToIR(CARD_MD), {
+        theme,
+        footer: '图文工坊',
+        qr: null,
+        coverSubtitle: '看完能少走半年弯路',
+        coverBadge: '建议收藏',
+      });
+      const coverSlot = document.createElement('div');
+      coverSlot.style.width = `${XHS_CARD.width}px`;
+      coverSlot.appendChild(cover.pages[0]);
       shots.push({
         id: `${platform}-${themeId}-card`,
         themeId,
@@ -156,7 +199,22 @@ export function buildShots(): BaselineShot[] {
         sample: 'card',
         width: XHS_CARD.width,
         height: XHS_CARD.height,
-        el: slot,
+        el: coverSlot,
+      });
+      // ②正文页（长文样例的第一张正文卡）：分页、跨页拆分、强制分页都发生在这里
+      const long = xhsCards(parseToIR(CARD_LONG_MD), { theme, footer: '图文工坊', qr: null });
+      const contentPage = long.pages[1] ?? long.pages[0];
+      const pageSlot = document.createElement('div');
+      pageSlot.style.width = `${XHS_CARD.width}px`;
+      pageSlot.appendChild(contentPage);
+      shots.push({
+        id: `${platform}-${themeId}-card-page`,
+        themeId,
+        platform,
+        sample: 'card-page',
+        width: XHS_CARD.width,
+        height: XHS_CARD.height,
+        el: pageSlot,
       });
       continue;
     }

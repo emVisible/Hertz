@@ -6,8 +6,8 @@
  *  - 文案导出 xhsCaption：纯文本（标题+正文+尾部话题标签位），供复制。不做直发。
  */
 import type { InlineNode, IRBlock, LayoutIR } from '../ir/types';
-import { paginate } from '../paginate/paginate';
-import type { CardChrome, Measurer } from '../paginate/paginate';
+import { createCardShell, paginate } from '../paginate/paginate';
+import type { CardChrome, Measurer, PagePadding } from '../paginate/paginate';
 import { resolveThemedProps } from '../theme/apply';
 import { defaultThemeFor, resolveTheme } from '../theme/index';
 import type { Theme, ThemeOverrides } from '../theme/types';
@@ -36,8 +36,14 @@ export interface XhsOptions {
   footer?: string;
   /** 品牌二维码（dataURL 或同源 URL），渲染在页脚右侧并加宽页脚预留区 */
   qr?: string | null;
-  /** 缺省 true：首块是 heading 时第一页做封面 */
+  /** 缺省 true：首块是 heading 时生成一张**独立封面页**（v0.36 起不再与正文同页） */
   cover?: boolean;
+  /** 封面标题（留空则取正文第一个 H1；支持行内 ==高亮== / **加粗**） */
+  coverTitle?: string;
+  /** 封面副标题：一句话说明看完能得到什么 */
+  coverSubtitle?: string;
+  /** 封面角标：干货 / 保姆级 / 建议收藏 */
+  coverBadge?: string;
   /** 缺省 18 */
   maxPages?: number;
   /**
@@ -106,57 +112,187 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
     },
   });
 
-  if (opts.cover !== false && pages.length) applyCover(pages[0]);
-  pages.forEach((page, i) => {
-    fillFooter(doc, theme, overrides, page, i, pages.length, opts.qr);
+  /**
+   * 封面是**独立的一页**，插在最前面。
+   *
+   * 之前封面是"第一页同时装标题和正文"，而且是在分页**之后**把标题放大 1.5 倍——
+   * 放大之后这一页未必还装得下，页壳 overflow:hidden 会把超出的部分直接裁掉。
+   * 这就是「长文分页不对（溢出/截断）」里最隐蔽的一条：结构层与基线图都看不出来，
+   * 因为短样例放大后仍有大量留白。
+   *
+   * 现在：①封面独立成页，正文页整体后移；②标题块从正文流里摘掉（不再重复出现）；
+   * ③封面标题字号在测量台上二分自适应，**保证放得下**。
+   */
+  const contentPages = pages;
+  const cover = opts.cover === false ? null : buildCover(doc, theme, overrides, contentPages[0], opts);
+  if (cover && contentPages.length) {
+    // 标题摘不摘，看封面标题的**来源**：
+    // - 取自正文第一个 H1 → 摘掉（否则同一句话在封面和正文各出现一次）
+    // - 用户自定义了封面标题 → 正文 H1 留在正文流里（那是作者写的内容，删了是丢内容）
+    if (cover.takenFromDoc) {
+      const first = contentPages[0].querySelector('.mdcore-page-body') as HTMLElement | null;
+      const heading = first?.firstElementChild as HTMLElement | null;
+      if (!heading || !/^H[1-6]$/.test(heading.tagName)) return finish(contentPages, opts, null);
+      heading.remove();
+    }
+    contentPages.unshift(cover.page);
+  }
+  return finish(contentPages, opts, cover?.page ?? null);
+
+  function finish(all: HTMLElement[], o: XhsOptions, coverPage: HTMLElement | null): XhsResult {
+    all.forEach((page, i) => {
+      // 封面页不排页码（第几页在角标里已经写了）
+      if (page === coverPage) return;
+      fillFooter(doc, theme, overrides, page, i - (coverPage ? 1 : 0), all.length, o.qr);
+    });
+    const max = o.maxPages ?? XHS_MAX_PAGES;
+    const overflow = all.length > max;
+    return {
+      pages: all,
+      pageCount: all.length,
+      overflow,
+      suggestion: overflow
+        ? `内容共 ${all.length} 页，超出小红书 ${max} 页上限：建议精简内容，或拆分为 ${Math.ceil(all.length / max)} 篇笔记。`
+        : undefined,
+    };
+  }
+}
+
+/** 封面页：独立页壳 + 角标/标题/副标题/页数提示，字号在测量台上二分自适应 */
+function buildCover(
+  doc: Document,
+  theme: Theme,
+  overrides: ThemeOverrides,
+  firstContent: HTMLElement | undefined,
+  opts: XhsOptions,
+): { page: HTMLElement; takenFromDoc: boolean } | null {
+  const fromDoc = (firstContent?.querySelector('.mdcore-page-body > h1, .mdcore-page-body > h2')?.textContent ?? '').trim();
+  const custom = opts.coverTitle?.trim();
+  const sourceTitle = custom || fromDoc;
+  if (!sourceTitle) return null;
+
+  const chrome: CardChrome = {
+    watermark: opts.footer,
+    pageNum: false,
+    bgColor: opts.cardBgColor,
+    bgImage: opts.cardBgImage,
+    bgRepeat: opts.cardBgRepeat,
+    bgSize: opts.cardBgSize,
+    deco: opts.cardDeco,
+  };
+  const { page, body } = createCardShell({
+    doc,
+    theme,
+    overrides,
+    page: coverPageSpec(opts),
+    chrome,
+    cover: true,
   });
 
-  const max = opts.maxPages ?? XHS_MAX_PAGES;
-  const overflow = pages.length > max;
+  const wrap = doc.createElement('div');
+  wrap.className = 'mdcore-cover';
+  wrap.style.setProperty('display', 'flex');
+  wrap.style.setProperty('flex-direction', 'column');
+  wrap.style.setProperty('gap', '0.5em');
+
+  if (opts.coverBadge?.trim()) {
+    const badge = doc.createElement('span');
+    badge.className = 'mdcore-cover-badge';
+    badge.textContent = opts.coverBadge.trim();
+    applyCoverProps(badge, theme, overrides, 'coverBadge');
+    wrap.appendChild(badge);
+  }
+  const title = doc.createElement('h1');
+  title.className = 'mdcore-cover-title';
+  title.textContent = sourceTitle;
+  applyCoverProps(title, theme, overrides, 'coverTitle');
+  wrap.appendChild(title);
+  if (opts.coverSubtitle?.trim()) {
+    const sub = doc.createElement('p');
+    sub.className = 'mdcore-cover-sub';
+    sub.textContent = opts.coverSubtitle.trim();
+    applyCoverProps(sub, theme, overrides, 'coverSub');
+    wrap.appendChild(sub);
+  }
+  body.appendChild(wrap);
+
+  fitCoverTitle(doc, page);
+  return { page, takenFromDoc: !custom };
+}
+
+/** 封面页尺寸（含封面页脚的留白） */
+function coverPageSpec(opts: XhsOptions): { width: number; height: number; padding: PagePadding } {
   return {
-    pages,
-    pageCount: pages.length,
-    overflow,
-    suggestion: overflow
-      ? `内容共 ${pages.length} 页，超出小红书 ${max} 页上限：建议精简内容，或拆分为 ${Math.ceil(pages.length / max)} 篇笔记。`
-      : undefined,
+    width: XHS_CARD.width,
+    height: XHS_CARD.height,
+    padding: {
+      top: XHS_CARD.padding,
+      right: XHS_CARD.padding,
+      bottom: XHS_CARD.padding + (opts.qr ? QR_FOOTER_SPACE : XHS_CARD.footerSpace),
+      left: XHS_CARD.padding,
+    },
   };
 }
 
-/** 封面标题放大倍数 */
-const COVER_TITLE_SCALE = 1.5;
-
-/**
- * 按倍数放大字号，**保留单位**。
- *
- * 这里的坑：v0.36 起标题字号是相对值（`1.7em`）。早先的实现是
- * `parseFloat(fontSize) * 1.5` 再拼 `px` —— `parseFloat('1.7em')` = 1.7，
- * 于是封面标题变成 **1.7 × 1.5 = 2.55px**：整张卡片最该抢眼的那行标题缩成一个点。
- * 结构层 158 条断言一条都没红，是排版基线图（`tests/baselines/typography/`）
- * 第一轮就抓出来的。
- */
-export function scaleFontSize(current: string, factor: number): string {
-  const value = current.trim();
-  const m = /^(-?[\d.]+)(em|rem|px|%)?$/.exec(value);
-  if (!m) return `${Math.round(54 * factor)}px`; // 取不到就用缺省 54px
-  const num = parseFloat(m[1]);
-  const unit = m[2] ?? 'px';
-  const scaled = unit === 'px' ? `${Math.round(num * factor)}px` : `${+(num * factor).toFixed(3)}${unit}`;
-  return scaled;
+/** 封面件样式：走主题的样式槽（角标药丸、标题字色、副标题弱一档） */
+function applyCoverProps(
+  el: HTMLElement,
+  theme: Theme,
+  overrides: ThemeOverrides,
+  slot: 'coverBadge' | 'coverTitle' | 'coverSub',
+): void {
+  for (const [prop, value] of Object.entries(resolveThemedProps(theme, overrides, slot))) {
+    el.style.setProperty(prop, value);
+  }
 }
 
-/** 自动封面：第一页首块是 heading → 放大居中 */
-function applyCover(page: HTMLElement): void {
-  const body = page.querySelector('.mdcore-page-body') as HTMLElement | null;
-  const first = body?.firstElementChild as HTMLElement | null | undefined;
-  if (!body || !first || !/^H[1-6]$/.test(first.tagName)) return;
-  page.dataset.cover = 'true';
-  body.style.setProperty('display', 'flex');
-  body.style.setProperty('flex-direction', 'column');
-  body.style.setProperty('justify-content', 'center');
-  first.style.setProperty('font-size', scaleFontSize(first.style.fontSize, COVER_TITLE_SCALE));
-  first.style.setProperty('text-align', 'center');
-  first.style.setProperty('width', '100%');
+/**
+ * 封面标题字号自适应：二分找"尽量大但仍放得下"的字号。
+ *
+ * 三个要点，都是踩出来的：
+ * ①**必须量整页克隆件**，不能只把封面内容块丢进测量台——测量台没有卡片宽度，
+ *   标题在无宽度约束下换行更少、显得更矮，二分就会选一个过大的字号，角标与副标题
+ *   在真卡片里被 overflow:hidden 裁掉（第一版就是这么做的，基线图一眼看出来）。
+ * ②**判据是正文区有没有溢出**，不是"标题多高"——角标、副标题都是封面内容的一部分。
+ * ③量的是**克隆件**：`replaceChildren` 是搬运不是复制，量完 remove() 会把封面
+ *   一起带走（症状：封面页 textContent 为空）。
+ */
+function fitCoverTitle(doc: Document, page: HTMLElement): void {
+  const probe = page.cloneNode(true) as HTMLElement;
+  const probeBody = probe.querySelector('.mdcore-page-body') as HTMLElement | null;
+  const probeTitle = probe.querySelector('.mdcore-cover-title') as HTMLElement | null;
+  if (!probeBody || !probeTitle) return;
+
+  const stage = doc.createElement('div');
+  stage.className = 'mdcore-measure-stage';
+  stage.setAttribute('aria-hidden', 'true');
+  stage.style.setProperty('position', 'absolute');
+  stage.style.setProperty('left', '-100000px');
+  stage.style.setProperty('top', '0');
+  stage.style.setProperty('visibility', 'hidden');
+  stage.style.setProperty('pointer-events', 'none');
+  doc.body.appendChild(stage);
+  try {
+    stage.replaceChildren(probe);
+    const fits = (): boolean => probeBody.scrollHeight <= probeBody.clientHeight + 0.5;
+    let lo = 40;
+    let hi = 260;
+    let best = lo;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      probeTitle.style.setProperty('font-size', `${mid}px`);
+      if (fits()) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    const title = page.querySelector('.mdcore-cover-title') as HTMLElement | null;
+    title?.style.setProperty('font-size', `${best}px`);
+  } finally {
+    stage.remove();
+  }
 }
 
 /** 品牌页脚：填页脚层里的水印/页码槽 + 右侧二维码。页脚层本身由 paginate 建好（不进测量流） */

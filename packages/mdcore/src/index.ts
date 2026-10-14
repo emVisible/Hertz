@@ -90,7 +90,7 @@ export { domMeasurer, paginate } from './paginate/paginate';
 export type { Measurer, PagePadding, PageSpec, PaginateOptions } from './paginate/paginate';
 export { adjustBreak, codeBreak, NO_END, NO_START } from './paginate/breaks';
 // 切片 B：小红书适配
-export { scaleFontSize, XHS_CARD, XHS_MAX_PAGES, xhsCaption, xhsCards } from './platform/xhs';
+export { XHS_CARD, XHS_MAX_PAGES, xhsCaption, xhsCards } from './platform/xhs';
 export type { XhsCaptionOptions, XhsOptions, XhsResult } from './platform/xhs';
 // 切片 B：导出器（分页 PNG / ZIP）
 export {

@@ -144,6 +144,10 @@ md 字符串
 | `[^1]` 脚注 | `markdown-it-footnote` + IR `footnotes` 块 | 正文是可回跳的上标角标，文末是脚注区；两边的内容都要在产物里 |
 | 任意未建模语法 | `parseToIRDetailed()` 的 `diagnostics` | **保内容 + 记账**，不静默丢弃；见下 |
 
+**封面是独立的一页**（`platform/xhs.ts`）：封面页 = 角标 + 自适应字号标题 + 副标题 + 水印，正文页整体后移，页码从 `1 / N` 重新起算（封面不排页码）。标题摘不摘看封面标题的**来源**——取自正文第一个 H1 就摘掉（否则同一句话出现两次），用户自定义了封面标题则正文 H1 留在正文流里（那是作者写的内容，删了是丢内容）。
+
+封面字号是**测量台上二分**出来的"尽量大但仍放得下"，不是固定倍数。量的是**整页克隆件**：只把封面内容丢进没有宽度约束的测量台，标题换行更少、显得更矮，二分就会选一个过大的字号，角标与副标题在真卡片里被裁掉（这个坑基线图第一眼就看见了）。
+
 **卡片页壳五层**（`paginate/card-shell.test.ts`）：`bg 底纹 / deco 装饰 / header 页眉 / body 正文 / footer 页脚`，**只有 body 进测量流**，装饰件一律绝对定位。判据是「装饰层撑到 999px，分页结果一字不变」。之前页壳只有 body 一层，所以卡片既没有底纹也没有装饰位。
 
 **`---` 强制分页**：IR 的 `hr` 带 `kind`（`---` → pagebreak，`***`/`___` → rule）。卡片平台把它翻成收页；微信/知乎是连续长文，同一行**仍然画成横线**（不能为了卡片平台改掉长文的既有行为）。这里有个只有小红书会中的坑：三套 xhs 主题的 `hrStyle` 都是 `dots`，而分页标记早先只加在 `<hr>` 分支上，于是 `---` 在小红书上静默失效。
@@ -274,7 +278,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 219 条 vitest（node+jsdom，测试与源码同目录）、前端 281 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 225 条 vitest（node+jsdom，测试与源码同目录）、前端 281 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

@@ -103,6 +103,12 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
       'font-family': 'Georgia, "Times New Roman", serif',
     },
 
+    // 规则 8.44：封面角标跟主色实底 + 反白字（它在第一页最抢眼的位置，
+    // 用弱色等于白写）；副标题回落次要墨色，别跟标题抢。
+    coverBadge: { 'background-color': primary, color: accentInk },
+    coverTitle: { color: t.headInk },
+    coverSub: { color: t.quoteInk },
+
     // 规则 8.45：脚注是"次要信息"——比正文淡一档，角标跟主色（读者才点得动）
     defTerm: { color: t.headInk },
     defDef: { color: t.quoteInk },

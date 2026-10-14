@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTheme, listThemes, parseToIR, scaleFontSize, XHS_CARD, XHS_MAX_PAGES, xhsCaption, xhsCards } from '../index';
+import { getTheme, listThemes, parseToIR, XHS_CARD, XHS_MAX_PAGES, xhsCaption, xhsCards } from '../index';
 import type { Measurer } from '../index';
 
 /** xhs 卡片内容高 = 卡高 - 上 padding - (下 padding + 页脚区) */
@@ -40,41 +40,38 @@ describe('xhs 主题', () => {
 });
 
 describe('xhsCards', () => {
-  it('scaleFontSize 保留单位：em 放大后仍是 em（封面标题曾被缩成 2.55px）', () => {
-    expect(scaleFontSize('1.7em', 1.5)).toBe('2.55em');
-    expect(scaleFontSize('54px', 1.5)).toBe('81px');
-    expect(scaleFontSize('30px', 2)).toBe('60px');
-    // 取不到 / 非数字 → 回落到缺省 54px，不产出 NaN
-    expect(scaleFontSize('', 1.5)).toBe('81px');
-    expect(scaleFontSize('inherit', 1.5)).toBe('81px');
+  it('封面标题字号自适应：短标题放大到放不下为止（绝对 px，不做 em×倍数）', () => {
+    const { pages } = xhsCards(parseToIR('# 短标题\n\n正文。'), { measurer: mockMeasurer(CONTENT_H) });
+    const title = pages[0].querySelector('.mdcore-cover-title') as HTMLElement;
+    // 固定倍数 ×1.5 是拍脑袋的：短标题放大后仍留大片空白，长标题放大后被裁。
+    // 现在是测量台上二分出来的「尽量大但放得下」，所以必须是实打实的 px
+    expect(title.style.fontSize).toMatch(/^\d+px$/);
+    expect(parseFloat(title.style.fontSize)).toBeGreaterThan(
+      parseFloat(getTheme('taoyao').tokens.fontSize) * 1.5,
+    );
   });
 
-  it('封面标题字号按倍数放大（em 相对值不被当成 px）', () => {
-    const ir = parseToIR('# 封面标题\n\n正文。');
-    const { pages } = xhsCards(ir, { measurer: mockMeasurer(CONTENT_H) });
-    const h1 = pages[0].querySelector('h1') as HTMLElement;
-    // 桃夭的 h1 是 1.7em → 封面应是 2.55em，而不是 2.55px
-    expect(h1.style.fontSize).toBe('2.55em');
-  });
-
-  it('首块是 heading → 第一页做成封面页', () => {
-    const ir = parseToIR('# 大标题\n\n正文内容。');
-    const { pages, overflow } = xhsCards(ir, { measurer: mockMeasurer(CONTENT_H) });
+  it('首块是 heading → 生成一张**独立封面页**，正文页整体后移', () => {
+    const { pages, overflow } = xhsCards(parseToIR('# 大标题\n\n正文内容。'), {
+      measurer: mockMeasurer(CONTENT_H),
+    });
     expect(overflow).toBe(false);
-    expect(pages.length).toBe(1);
-    const cover = pages[0];
-    expect(cover.dataset.cover).toBe('true');
-    const h1 = cover.querySelector('h1') as HTMLElement;
-    expect(h1.style.textAlign).toBe('center');
-    // 封面标题放大：字号严格大于主题 h1 基础字号（相对值口径，em 与 px 混用时会在这里露馅）
-    const base = getTheme('taoyao').styles.h1['font-size'];
-    expect(h1.style.fontSize.endsWith('em')).toBe(true);
-    expect(parseFloat(h1.style.fontSize)).toBeGreaterThan(parseFloat(base));
+    expect(pages).toHaveLength(2);
+    expect(pages[0].dataset.cover).toBe('true');
+    // 封面页只有封面块，没有正文
+    expect(pages[0].querySelector('.mdcore-cover')).toBeTruthy();
+    expect(pages[1].querySelector('.mdcore-cover')).toBeNull();
+  });
+
+  it('标题块从正文流里摘掉：不在封面重复出现，也不在正文页再出现一次', () => {
+    const { pages } = xhsCards(parseToIR('# 大标题\n\n正文内容。'), { measurer: mockMeasurer(CONTENT_H) });
+    expect(pages[0].textContent).toContain('大标题');
+    expect(pages[1].querySelector('h1')).toBeNull();
+    expect(pages[1].textContent).not.toContain('大标题');
   });
 
   it('首块不是 heading → 不做封面页', () => {
-    const ir = parseToIR('开门见山的正文。');
-    const { pages } = xhsCards(ir, { measurer: mockMeasurer(CONTENT_H) });
+    const { pages } = xhsCards(parseToIR('开门见山的正文。'), { measurer: mockMeasurer(CONTENT_H) });
     expect(pages[0].dataset.cover).toBeUndefined();
   });
 
@@ -179,5 +176,74 @@ describe('页壳基线字体（真浏览器抓出的缺陷）', () => {
       measurer: mockMeasurer(CONTENT_H),
     });
     expect(pages[0].style.fontSize).toBe('36px');
+  });
+});
+
+describe('封面独立页（切片 3：溢出/截断的根因修复）', () => {
+  const roomy = () => mockMeasurer(XHS_CARD.height); // 一页装得下，用来暴露"本来不会拆"的场景
+
+  it('封面页不排页码，正文页页码从 1 开始、总页数含封面', () => {
+    const { pages } = xhsCards(parseToIR('# 标题\n\n甲\n\n乙\n\n丙'), { measurer: mockMeasurer(CONTENT_H) });
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages[0].querySelector('.mdcore-card-pageno')).toBeNull();
+    const nums = pages.slice(1).map((p) => p.querySelector('.mdcore-card-pageno')?.textContent);
+    expect(nums[0]).toBe(`1 / ${pages.length}`);
+    expect(nums[nums.length - 1]).toBe(`${pages.length - 1} / ${pages.length}`);
+  });
+
+  it('封面带角标、副标题，字段缺失时就不出现（不留空气节点）', () => {
+    const plain = xhsCards(parseToIR('# 标题\n\n正文。'), { measurer: mockMeasurer(CONTENT_H) });
+    expect(plain.pages[0].querySelector('.mdcore-cover-badge')).toBeNull();
+    expect(plain.pages[0].querySelector('.mdcore-cover-sub')).toBeNull();
+
+    const rich = xhsCards(parseToIR('# 标题\n\n正文。'), {
+      measurer: mockMeasurer(CONTENT_H),
+      coverBadge: '建议收藏',
+      coverSubtitle: '看完能少走半年弯路',
+    });
+    expect(rich.pages[0].querySelector('.mdcore-cover-badge')?.textContent).toBe('建议收藏');
+    expect(rich.pages[0].querySelector('.mdcore-cover-sub')?.textContent).toBe('看完能少走半年弯路');
+  });
+
+  it('封面标题可覆盖：不写就用正文第一个 H1', () => {
+    const fromDoc = xhsCards(parseToIR('# 正文里的标题\n\n正文。'), { measurer: mockMeasurer(CONTENT_H) });
+    expect(fromDoc.pages[0].querySelector('.mdcore-cover-title')?.textContent).toBe('正文里的标题');
+
+    const custom = xhsCards(parseToIR('# 正文里的标题\n\n正文。'), {
+      measurer: mockMeasurer(CONTENT_H),
+      coverTitle: '另一个标题',
+    });
+    expect(custom.pages[0].querySelector('.mdcore-cover-title')?.textContent).toBe('另一个标题');
+    // 正文里的原标题仍在正文页上：封面换标题不该动作者的内容
+    expect(custom.pages[1].textContent).toContain('正文里的标题');
+  });
+
+  it('显式关闭封面时不产生封面页（pageCount 与正文页数一致）', () => {
+    const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), {
+      measurer: mockMeasurer(CONTENT_H),
+      cover: false,
+    });
+    expect(pages).toHaveLength(1);
+    expect(pages[0].querySelector('.mdcore-cover')).toBeNull();
+  });
+
+  it('**字号自适应是真的在二分**：测量台测量的是克隆件，真实封面内容不搬家', () => {
+    const { pages } = xhsCards(parseToIR('# 三\n\n正文。'), { measurer: mockMeasurer(CONTENT_H) });
+    const cover = pages[0];
+    // 封面内容必须还在页里（第一版用 replaceChildren(wrap) 搬运真节点，量完被一起带走）
+    expect(cover.textContent).toContain('三');
+    expect(cover.querySelector('.mdcore-cover-title')).toBeTruthy();
+    // 测量台用完即摘，不能留在文档里
+    expect(document.querySelectorAll('.mdcore-measure-stage').length).toBe(0);
+  });
+
+  it('封面页与正文页同规格（同宽高同边距），不是另写一套样式', () => {
+    const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), { measurer: mockMeasurer(CONTENT_H) });
+    const coverStyle = pages[0].getAttribute('style') ?? '';
+    const bodyStyle = pages[1].getAttribute('style') ?? '';
+    for (const key of ['width:', 'height:', 'padding:', 'background-color:']) {
+      expect(coverStyle).toContain(key);
+      expect(bodyStyle).toContain(key);
+    }
   });
 });

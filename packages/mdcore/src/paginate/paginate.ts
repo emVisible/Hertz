@@ -440,6 +440,36 @@ function alignOffset(align: string): string {
 }
 
 /**
+ * 建一张**空白卡片页壳**（封面页等"没有正文"的卡片要用）。
+ *
+ * 为什么单独导出：小红书封面是独立的一页（`is-cover`），它不进分页流程，
+ * 但要跟正文页**长得一模一样**——同一套壳、同一套装饰、同一套边距。
+ * 另写一套封面样式，迟早会和正文页漂。
+ */
+export function createCardShell(opts: {
+  doc?: Document;
+  theme: Theme | string;
+  overrides?: ThemeOverrides;
+  page: PageSpec;
+  chrome?: CardChrome;
+  /** 封面页：正文区换成一块垂直居中的内容区（标题/副标题/角标） */
+  cover?: boolean;
+}): { page: HTMLElement; body: HTMLElement } {
+  const doc = opts.doc ?? globalThis.document;
+  if (!doc) throw new Error('@hertz/mdcore: createCardShell 需要 DOM 环境');
+  const theme = resolveTheme(opts.theme ?? 'modi');
+  const pad = normalizePadding(opts.page.padding);
+  const shell = makeShell(doc, theme, opts.overrides ?? {}, opts.page, pad, opts.chrome);
+  if (!opts.cover) return shell;
+  shell.page.dataset.cover = 'true';
+  shell.body.classList.add('mdcore-cover-body');
+  shell.body.style.setProperty('display', 'flex');
+  shell.body.style.setProperty('flex-direction', 'column');
+  shell.body.style.setProperty('justify-content', 'center');
+  return shell;
+}
+
+/**
  * 分页主流程：LayoutIR + Theme + overrides + 页尺寸 → 每页一个挂好样式的卡片容器。
  * 预览/导出同一份渲染态（§1 铁律 3）：返回的 HTMLElement[] 即画布 DOM，也是截图源。
  */
