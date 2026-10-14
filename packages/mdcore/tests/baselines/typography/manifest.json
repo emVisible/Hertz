@@ -21,48 +21,48 @@
       "themeId": "taoyao",
       "platform": "xhs",
       "sample": "card",
-      "width": 1242,
-      "height": 1656
+      "width": 1080,
+      "height": 1440
     },
     {
       "id": "xhs-taoyao-card-page",
       "themeId": "taoyao",
       "platform": "xhs",
       "sample": "card-page",
-      "width": 1242,
-      "height": 1656
+      "width": 1080,
+      "height": 1440
     },
     {
       "id": "xhs-qingning-card",
       "themeId": "qingning",
       "platform": "xhs",
       "sample": "card",
-      "width": 1242,
-      "height": 1656
+      "width": 1080,
+      "height": 1440
     },
     {
       "id": "xhs-qingning-card-page",
       "themeId": "qingning",
       "platform": "xhs",
       "sample": "card-page",
-      "width": 1242,
-      "height": 1656
+      "width": 1080,
+      "height": 1440
     },
     {
       "id": "xhs-mucheng-card",
       "themeId": "mucheng",
       "platform": "xhs",
       "sample": "card",
-      "width": 1242,
-      "height": 1656
+      "width": 1080,
+      "height": 1440
     },
     {
       "id": "xhs-mucheng-card-page",
       "themeId": "mucheng",
       "platform": "xhs",
       "sample": "card-page",
-      "width": 1242,
-      "height": 1656
+      "width": 1080,
+      "height": 1440
     },
     {
       "id": "zhihu-xueshu-article",
@@ -85,16 +85,16 @@
       "themeId": "yehang",
       "platform": "xhs",
       "sample": "card",
-      "width": 1242,
-      "height": 1656
+      "width": 1080,
+      "height": 1440
     },
     {
       "id": "xhs-yehang-card-page",
       "themeId": "yehang",
       "platform": "xhs",
       "sample": "card-page",
-      "width": 1242,
-      "height": 1656
+      "width": 1080,
+      "height": 1440
     },
     {
       "id": "zhihu-moan-article",

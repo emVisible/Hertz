@@ -19,7 +19,9 @@ import {
   renderLongImage,
   xhsCaption,
   xhsCards,
+  XHS_RATIO_KEYS,
   type ThemeOverrides,
+  type XhsRatio,
 } from '@hertz/mdcore'
 
 import { layoutApi, type LayoutDoc, type LayoutPlatform } from '../../api'
@@ -48,9 +50,27 @@ interface DraftState {
   qr: string | null
   /** 手动拖过的分页边界（IR 块序号），小红书卡片分页专用 */
   breaks: number[]
+  /** 小红书卡片比例与封面/页眉字段（切片 4，全部存在 cover JSON 槽） */
+  ratio: XhsRatio
+  coverSub: string
+  coverBadge: string
+  pageNum: boolean
+  header: string
 }
 
 type SaveState = 'saved' | 'dirty' | 'saving'
+
+/** 小红书卡片比例（切片 4）。存 cover JSON 槽，加键不需要迁移。 */
+function ratioOf(cover: Record<string, unknown> | undefined): XhsRatio {
+  const raw = cover?.ratio;
+  return typeof raw === 'string' && (XHS_RATIO_KEYS as string[]).includes(raw) ? (raw as XhsRatio) : '3:4';
+}
+function strOf(cover: Record<string, unknown> | undefined, key: string): string {
+  return typeof cover?.[key] === 'string' ? (cover[key] as string) : '';
+}
+function boolOf(cover: Record<string, unknown> | undefined, key: string, fallback: boolean): boolean {
+  return typeof cover?.[key] === 'boolean' ? (cover[key] as boolean) : fallback;
+}
 
 function breaksOf(cover: Record<string, unknown> | undefined): number[] {
   const raw = cover?.breaks
@@ -64,10 +84,15 @@ function draftFromDoc(doc: LayoutDoc): DraftState {
     platform: doc.platform,
     theme_id: doc.theme_id || defaultThemeFor(doc.platform).id,
     overrides: doc.overrides as ThemeOverrides,
-    // footer / breaks / qr 存 cover JSON 槽（封面/品牌位，§6 模型预留位）
-    footer: typeof doc.cover?.footer === 'string' ? doc.cover.footer : '',
+    // footer / breaks / qr / ratio / 封面字段 存 cover JSON 槽（封面/品牌位，§6 模型预留位）
+    footer: strOf(doc.cover, 'footer'),
     qr: typeof doc.cover?.qr === 'string' ? doc.cover.qr : null,
     breaks: breaksOf(doc.cover),
+    ratio: ratioOf(doc.cover),
+    coverSub: strOf(doc.cover, 'cover_sub'),
+    coverBadge: strOf(doc.cover, 'cover_badge'),
+    pageNum: boolOf(doc.cover, 'page_num', true),
+    header: strOf(doc.cover, 'header'),
   }
 }
 
@@ -112,6 +137,8 @@ export function MdStudioPage() {
   const editorRef = useRef<MarkdownEditorHandle | null>(null)
   const [outlineOpen, setOutlineOpen] = useState(true)
   const [cursorLine, setCursorLine] = useState(0)
+  /** 小红书卡片当前展示页（0 = 封面） */
+  const [xhsPage, setXhsPage] = useState(0)
   /** 画布高亮的块序号：由光标行换算，null = 不高亮 */
   const [focusBlock, setFocusBlock] = useState<number | null>(null)
   /** 左栏宽度（拖分栏），localStorage 记住 */
@@ -157,7 +184,16 @@ export function MdStudioPage() {
           platform: snapshot.platform,
           theme_id: snapshot.theme_id,
           overrides: snapshot.overrides,
-          cover: { footer: snapshot.footer, qr: snapshot.qr, breaks: snapshot.breaks },
+          cover: {
+            footer: snapshot.footer,
+            qr: snapshot.qr,
+            breaks: snapshot.breaks,
+            ratio: snapshot.ratio,
+            cover_sub: snapshot.coverSub,
+            cover_badge: snapshot.coverBadge,
+            page_num: snapshot.pageNum,
+            header: snapshot.header,
+          },
         })
         .then((doc) => {
           loadedDocRef.current = doc
@@ -349,6 +385,11 @@ export function MdStudioPage() {
     }
   }
 
+  /** 换页后立刻回到封面：稿子换语言/换比例之后，旧页码多半已无意义 */
+  const handleXhsPageChange = useCallback((index: number) => {
+    setXhsPage(index)
+  }, [])
+
   /** 切平台：稿的 platform + theme_id 一起换到该平台默认主题（自动保存接管落库） */
   const changePlatform = (p: LayoutPlatform) => {
     patchDraft({ platform: p, theme_id: defaultThemeFor(p).id })
@@ -377,6 +418,11 @@ export function MdStudioPage() {
           footer: draft.footer,
           qr: draft.qr,
           breaks: draft.breaks,
+          ratio: draft.ratio,
+          header: draft.header,
+          pageNum: draft.pageNum,
+          coverSubtitle: draft.coverSub,
+          coverBadge: draft.coverBadge,
         })
         const blob = await exportZip(res.pages)
         downloadBlob(blob, `${name}-xhs.zip`)
@@ -579,6 +625,33 @@ export function MdStudioPage() {
             <ToggleChip active={dark} onClick={() => setDark((v) => !v)} title={t('mdstudio.canvas.dark')}>
               <Icon name="moon" size={11} /> {t('mdstudio.canvas.dark')}
             </ToggleChip>
+            {/* 小红书翻页：单页展示之后必须给导航，否则只能看到封面那张 */}
+            {renderDraft?.platform === 'xhs' && xhsInfo.pageCount > 1 && (
+              <div className="ml-auto flex items-center gap-1" data-testid="mdstudio-xhs-pager">
+                <button
+                  type="button"
+                  aria-label={t('mdstudio.xhs.prev')}
+                  disabled={xhsPage <= 0}
+                  onClick={() => setXhsPage((p) => Math.max(0, p - 1))}
+                  className="flex h-7 w-7 items-center justify-center rounded border border-border text-text-secondary transition-colors enabled:hover:border-primary enabled:hover:text-primary disabled:opacity-40"
+                >
+                  <Icon name="close" size={10} className="rotate-45" />
+                </button>
+                <span className="min-w-16 text-center text-[11px] text-text-secondary">
+                  {xhsPage === 0 ? t('mdstudio.xhs.cover') : t('mdstudio.xhs.page', { n: xhsPage })} /{' '}
+                  {xhsInfo.pageCount - 1}
+                </span>
+                <button
+                  type="button"
+                  aria-label={t('mdstudio.xhs.next')}
+                  disabled={xhsPage >= xhsInfo.pageCount - 1}
+                  onClick={() => setXhsPage((p) => Math.min(xhsInfo.pageCount - 1, p + 1))}
+                  className="flex h-7 w-7 items-center justify-center rounded border border-border text-text-secondary transition-colors enabled:hover:border-primary enabled:hover:text-primary disabled:opacity-40"
+                >
+                  <Icon name="close" size={10} className="-rotate-45" />
+                </button>
+              </div>
+            )}
           </div>
           <div
             className={`min-h-0 flex-1 overflow-auto p-4 transition-colors duration-150 ${dark ? 'bg-[#14161c]' : ''}`}
@@ -605,6 +678,13 @@ export function MdStudioPage() {
                   onBlockClick={handleBlockClick}
                   onBreaksChange={handleBreaksChange}
                   focusBlockIndex={focusBlock}
+                  ratio={renderDraft.ratio}
+                  pageIndex={xhsPage}
+                  onXhsPageChange={handleXhsPageChange}
+                  xhsHeader={renderDraft.header}
+                  xhsPageNum={renderDraft.pageNum}
+                  xhsCoverSub={renderDraft.coverSub}
+                  xhsCoverBadge={renderDraft.coverBadge}
                 />
               )}
             </div>
@@ -671,6 +751,13 @@ export function MdStudioPage() {
               onOverridesChange={(o) => patchDraft({ overrides: o })}
               onFooterChange={(f) => patchDraft({ footer: f })}
               onQrChange={(q) => patchDraft({ qr: q })}
+              ratio={draft.ratio}
+              coverSub={draft.coverSub}
+              coverBadge={draft.coverBadge}
+              pageNum={draft.pageNum}
+              header={draft.header}
+              onRatioChange={(r) => patchDraft({ ratio: r })}
+              onCoverFieldChange={(key, value) => patchDraft({ [key]: value } as Partial<DraftState>)}
               onExport={(a) => void runExport(a)}
             />
           )}

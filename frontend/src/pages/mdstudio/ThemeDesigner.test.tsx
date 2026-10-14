@@ -40,6 +40,11 @@ function renderInspector(initial: Record<string, string> = {}, themeId = 'modi')
           footer="图文工坊"
           qr={null}
           xhsInfo={{ pageCount: 1, overflow: false }}
+          ratio="3:4"
+          coverSub=""
+          coverBadge=""
+          pageNum
+          header=""
           exporting={null}
           onPlatformChange={noop}
           onThemeChange={(next) => {
@@ -53,6 +58,8 @@ function renderInspector(initial: Record<string, string> = {}, themeId = 'modi')
           onFooterChange={noop}
           onQrChange={noop}
           onExport={noop as (a: ExportAction) => void}
+          onRatioChange={noop}
+          onCoverFieldChange={noop}
         />
       </ToastProvider>
     )

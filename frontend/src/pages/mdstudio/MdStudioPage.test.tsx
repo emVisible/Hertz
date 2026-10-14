@@ -131,9 +131,10 @@ describe('MdStudioPage smoke', () => {
     listData = [{ id: DOC.id, title: DOC.title, platform: 'xhs', theme_id: 'taoyao', updated_at: DOC.updated_at }]
     render(<MdStudioPage />, { wrapper })
     const mount = await screen.findByTestId('mdstudio-canvas-mount')
-    // 卡片节点在 缩放槽 > 缩放层 > 卡片 的最内层，按导出坐标系宽 1242px 认它
+    // 卡片节点在 缩放槽 > 缩放层 > 卡片 的最内层，按**导出坐标系宽**认它。
+    // 坐标系从 1242 切到 1080 之后这里跟着变——硬编码宽度是又一处会骗过人的地方
     const cardOf = (): HTMLElement | null =>
-      Array.from(mount.querySelectorAll<HTMLElement>('*')).find((d) => d.style.width === '1242px') ?? null
+      Array.from(mount.querySelectorAll<HTMLElement>('*')).find((d) => d.style.width === '1080px') ?? null
     await waitFor(() => expect(cardOf()).not.toBeNull())
     const lightBg = cardOf()!.style.backgroundColor
     const toggle = await screen.findByRole('button', { name: 'mdstudio.canvas.dark' })

@@ -12,14 +12,42 @@ import { resolveThemedProps } from '../theme/apply';
 import { defaultThemeFor, resolveTheme } from '../theme/index';
 import type { Theme, ThemeOverrides } from '../theme/types';
 
-/** 3:4 卡片尺寸与页脚预留（px，导出坐标系） */
-export const XHS_CARD = {
-  width: 1242,
-  height: 1656,
-  padding: 72,
-  /** 下 padding 之外的页脚预留区 */
-  footerSpace: 84,
+/**
+ * 小红书卡片比例（1080 宽坐标系）。
+ *
+ * 坐标系从 1242 切到 1080：1242 是 v0.35 自己定的历史值，而 1080 才是小红书
+ * 官方与参考实现共同在用的导出宽（3:4 = 1080×1440）。比例不止一种——同一个
+ * 脚本经常既出竖版卡片又出方图，写死 3:4 等于替用户决定了。
+ */
+export const XHS_RATIOS = {
+  '3:4': { width: 1080, height: 1440 },
+  '2:3': { width: 1080, height: 1620 },
+  '9:16': { width: 1080, height: 1920 },
+  '1:1': { width: 1080, height: 1080 },
+  '4:3': { width: 1080, height: 810 },
 } as const;
+
+export type XhsRatio = keyof typeof XHS_RATIOS;
+
+export const XHS_RATIO_KEYS = Object.keys(XHS_RATIOS) as XhsRatio[];
+
+/** 某个比例下的卡片尺寸（含边距与页脚预留） */
+export function xhsCardSize(ratio: XhsRatio = '3:4'): {
+  width: number;
+  height: number;
+  padding: number;
+  footerSpace: number;
+} {
+  const size = XHS_RATIOS[ratio] ?? XHS_RATIOS['3:4'];
+  return { ...size, padding: XHS_PADDING, footerSpace: XHS_FOOTER_SPACE };
+}
+
+/** 边距与页脚预留（按 1080 宽定，约 6.7%/7.8%） */
+export const XHS_PADDING = 72;
+export const XHS_FOOTER_SPACE = 84;
+
+/** 缺省 3:4 的卡片尺寸（保持旧导出名可用；新代码请用 xhsCardSize(ratio)） */
+export const XHS_CARD = xhsCardSize('3:4');
 
 /** 小红书单篇图集页数上限 */
 export const XHS_MAX_PAGES = 18;
@@ -55,6 +83,8 @@ export interface XhsOptions {
   measurer?: Measurer;
   doc?: Document;
 
+  /** 卡片比例（缺省 3:4） */
+  ratio?: XhsRatio;
   /** 页眉小字（每页顶部，可选） */
   header?: string;
   /** 页码开关（缺省 true） */
@@ -84,17 +114,18 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
   const theme = resolveTheme(opts.theme ?? defaultThemeFor('xhs'));
   const overrides = opts.overrides ?? {};
 
+  const card = xhsCardSize(opts.ratio ?? '3:4');
   const pages = paginate(ir, {
     theme,
     overrides,
     page: {
-      width: XHS_CARD.width,
-      height: XHS_CARD.height,
+      width: card.width,
+      height: card.height,
       padding: {
-        top: XHS_CARD.padding,
-        right: XHS_CARD.padding,
-        bottom: XHS_CARD.padding + (opts.qr ? QR_FOOTER_SPACE : XHS_CARD.footerSpace),
-        left: XHS_CARD.padding,
+        top: card.padding,
+        right: card.padding,
+        bottom: card.padding + (opts.qr ? QR_FOOTER_SPACE : card.footerSpace),
+        left: card.padding,
       },
     },
     measurer: opts.measurer,
@@ -104,6 +135,7 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
     chrome: {
       watermark: opts.footer,
       pageNum: opts.pageNum ?? true,
+    header: opts.header,
       bgColor: opts.cardBgColor,
       bgImage: opts.cardBgImage,
       bgRepeat: opts.cardBgRepeat,
@@ -222,14 +254,15 @@ function buildCover(
 
 /** 封面页尺寸（含封面页脚的留白） */
 function coverPageSpec(opts: XhsOptions): { width: number; height: number; padding: PagePadding } {
+  const card = xhsCardSize(opts.ratio ?? '3:4');
   return {
-    width: XHS_CARD.width,
-    height: XHS_CARD.height,
+    width: card.width,
+    height: card.height,
     padding: {
-      top: XHS_CARD.padding,
-      right: XHS_CARD.padding,
-      bottom: XHS_CARD.padding + (opts.qr ? QR_FOOTER_SPACE : XHS_CARD.footerSpace),
-      left: XHS_CARD.padding,
+      top: card.padding,
+      right: card.padding,
+      bottom: card.padding + (opts.qr ? QR_FOOTER_SPACE : card.footerSpace),
+      left: card.padding,
     },
   };
 }

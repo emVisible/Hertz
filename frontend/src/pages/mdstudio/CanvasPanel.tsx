@@ -19,15 +19,21 @@ import {
   applyTheme,
   darkThemeFor,
   parseToIR,
+  xhsCardSize,
   xhsCards,
-  XHS_CARD,
   type ThemeOverrides,
+  type XhsRatio,
 } from '@hertz/mdcore'
 
 import type { LayoutPlatform } from '../../api'
 
-/** xhs 卡片展示缩放基值：1242×1656 导出坐标系 → ~310px 展示宽 */
-const XHS_DISPLAY_SCALE = 0.25
+/**
+ * xhs 卡片展示缩放基值：1080 宽导出坐标系 → 约 420px 展示宽。
+ *
+ * 0.25 那个值是给 1242 坐标系定的，落到 1080 上只有 270px，正文（30px）缩到 7.5px。
+ * 单页展示之后可以给得更宽，"看不见"这条就解决了。
+ */
+const XHS_FIT_SCALE = 0.39
 
 /** 画布交互的样式层（悬停描边 / 边界手柄），只活在预览 DOM 里，不进任何导出产物 */
 const CANVAS_CSS = `
@@ -80,6 +86,18 @@ interface CanvasPanelProps {
   /** 编辑器光标所在块：画布上高亮并滚到视线里（编辑器 → 画布方向） */
   focusBlockIndex?: number | null
   onBreaksChange?: (breaks: number[]) => void
+  /** 小红书卡片比例（切片 4） */
+  ratio?: XhsRatio
+  /** 当前展示的卡片页（0 = 封面） */
+  pageIndex?: number
+  onXhsPageChange?: (index: number) => void
+  /** 页眉小字 */
+  xhsHeader?: string
+  /** 页码开关 */
+  xhsPageNum?: boolean
+  /** 封面副标题 / 角标 */
+  xhsCoverSub?: string
+  xhsCoverBadge?: string
 }
 
 function parseLine(raw: string | null): [number, number] | null {
@@ -202,6 +220,13 @@ export function CanvasPanel({
   onBlockClick,
   onBreaksChange,
   focusBlockIndex,
+  ratio = '3:4',
+  pageIndex = 0,
+  onXhsPageChange,
+  xhsHeader,
+  xhsPageNum,
+  xhsCoverSub,
+  xhsCoverBadge,
 }: CanvasPanelProps) {
   useEffect(() => {
     const host = mountRef.current
@@ -236,20 +261,38 @@ export function CanvasPanel({
       const darkPreset = dark ? darkThemeFor(platform) : undefined
       const previewTheme = darkPreset?.id ?? themeId
       if (platform === 'xhs') {
-        const result = xhsCards(ir, { theme: previewTheme, overrides, footer, qr, breaks })
+        const result = xhsCards(ir, {
+          theme: previewTheme,
+          overrides,
+          footer,
+          qr,
+          breaks,
+          ratio,
+          header: xhsHeader,
+          pageNum: xhsPageNum,
+          coverSubtitle: xhsCoverSub,
+          coverBadge: xhsCoverBadge,
+        })
         onXhsInfo({ pageCount: result.pageCount, overflow: result.overflow })
-        const scale = XHS_DISPLAY_SCALE * zoom
+        // 单页展示（切片 4）：早先把所有卡片横向排成一条，每张只有 ~310px 宽，
+        // 30px 的正文缩到约 7.5px——看不见、也点不准，用户实际是在"盲操作"。
+        // 现在一次只铺一页，翻页条 + 缩略图条负责导航。
+        const card = xhsCardSize(ratio)
+        const scale = XHS_FIT_SCALE * zoom
         const band = document.createElement('div')
         band.style.display = 'flex'
         band.style.gap = '12px'
-        band.style.alignItems = 'flex-start'
+        band.style.flexDirection = 'column'
+        band.style.alignItems = 'center'
         result.pages.forEach((page, index) => {
+          if (index !== pageIndex) return
           // 缩放槽 > 缩放层 > 卡片：transform 落在中间层，卡片节点本身保持
-          // 1242px 原始坐标系（与导出产物同规格）
+          // 1080 原始坐标系（与导出产物同规格）
           const slot = document.createElement('div')
+          slot.dataset.xhsPage = String(index)
           slot.style.position = 'relative'
-          slot.style.width = `${XHS_CARD.width * scale}px`
-          slot.style.height = `${XHS_CARD.height * scale}px`
+          slot.style.width = `${card.width * scale}px`
+          slot.style.height = `${card.height * scale}px`
           slot.style.flex = 'none'
           slot.style.borderRadius = '8px'
           slot.style.overflow = 'hidden'
@@ -273,6 +316,38 @@ export function CanvasPanel({
             attachBoundary(slot, page, result.pages, index, scale, breaks, onBreaksChange)
           }
         })
+        // 缩略图条：一眼看到全篇几页、哪页是封面，点击直达
+        if (result.pages.length > 1) {
+          const strip = document.createElement('div')
+          strip.dataset.xhsThumbs = 'true'
+          strip.style.display = 'flex'
+          strip.style.gap = '8px'
+          strip.style.flexWrap = 'wrap'
+          strip.style.justifyContent = 'center'
+          result.pages.forEach((_, index) => {
+            const thumb = document.createElement('button')
+            thumb.type = 'button'
+            thumb.dataset.xhsThumb = String(index)
+            thumb.setAttribute('aria-label', index === 0 ? '封面' : `第 ${index} 页`)
+            thumb.setAttribute('aria-current', index === pageIndex ? 'true' : 'false')
+            thumb.style.width = '44px'
+            thumb.style.height = `${Math.round((44 * card.height) / card.width)}px`
+            thumb.style.borderRadius = '4px'
+            thumb.style.border =
+              index === pageIndex ? '2px solid var(--hz-primary)' : '1px solid var(--hz-border)'
+            thumb.style.background = 'var(--hz-surface-2)'
+            thumb.style.cursor = 'pointer'
+            thumb.style.fontSize = '10px'
+            thumb.style.color = 'var(--hz-text-secondary)'
+            thumb.textContent = index === 0 ? '封' : String(index)
+            thumb.addEventListener('click', (e) => {
+              e.stopPropagation()
+              onXhsPageChange?.(index)
+            })
+            strip.appendChild(thumb)
+          })
+          band.appendChild(strip)
+        }
         if (onClick) band.addEventListener('click', onClick)
         host.appendChild(band)
       } else {
@@ -302,6 +377,12 @@ export function CanvasPanel({
     zoom,
     dark,
     emptyHint,
+    ratio,
+    pageIndex,
+    xhsHeader,
+    xhsPageNum,
+    xhsCoverSub,
+    xhsCoverBadge,
     mountRef,
     onXhsInfo,
     onBlockClick,

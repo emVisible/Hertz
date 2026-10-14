@@ -6,7 +6,14 @@
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getTheme, listThemes, XHS_MAX_PAGES, type ThemeOverrides } from '@hertz/mdcore'
+import {
+  getTheme,
+  listThemes,
+  XHS_MAX_PAGES,
+  XHS_RATIO_KEYS,
+  type ThemeOverrides,
+  type XhsRatio,
+} from '@hertz/mdcore'
 
 import type { LayoutPlatform } from '../../api'
 import { Button, Icon, Input, Select, TabBar, useToast } from '../../components/ui'
@@ -39,6 +46,12 @@ interface InspectorPanelProps {
   footer: string
   qr: string | null
   xhsInfo: XhsRenderInfo
+  /** 小红书卡片比例与封面字段（切片 4） */
+  ratio: XhsRatio
+  coverSub: string
+  coverBadge: string
+  pageNum: boolean
+  header: string
   exporting: ExportAction | null
   onPlatformChange: (p: LayoutPlatform) => void
   onThemeChange: (id: string) => void
@@ -46,6 +59,8 @@ interface InspectorPanelProps {
   onFooterChange: (f: string) => void
   onQrChange: (qr: string | null) => void
   onExport: (action: ExportAction) => void
+  onRatioChange: (r: XhsRatio) => void
+  onCoverFieldChange: (key: 'coverSub' | 'coverBadge' | 'header' | 'pageNum', value: string | boolean) => void
 }
 
 export function InspectorPanel({
@@ -55,6 +70,11 @@ export function InspectorPanel({
   footer,
   qr,
   xhsInfo,
+  ratio,
+  coverSub,
+  coverBadge,
+  pageNum,
+  header,
   exporting,
   onPlatformChange,
   onThemeChange,
@@ -62,6 +82,8 @@ export function InspectorPanel({
   onFooterChange,
   onQrChange,
   onExport,
+  onRatioChange,
+  onCoverFieldChange,
 }: InspectorPanelProps) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -215,6 +237,59 @@ export function InspectorPanel({
         {platform === 'xhs' && (
           <div className="mt-5">
             <h3 className="mb-2 text-xs font-semibold text-text-secondary">{t('mdstudio.platform.xhs')}</h3>
+
+            {/* 比例：同一篇稿子常常既出竖版卡片又出方图，写死 3:4 等于替用户决定了 */}
+            <div className="mb-3 flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-text-secondary">{t('mdstudio.xhs.ratio')}</span>
+              <div className="flex gap-1" data-testid="mdstudio-ratio">
+                {XHS_RATIO_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={ratio === key}
+                    onClick={() => onRatioChange(key)}
+                    className={`flex-1 rounded border px-1 py-1 text-[11px] transition-colors ${
+                      ratio === key
+                        ? 'border-primary/60 bg-primary/10 font-medium text-primary'
+                        : 'border-border text-text-secondary hover:border-primary/50'
+                    }`}
+                  >
+                    {key}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 封面三件套：标题取自正文 H1，副标题与角标在这里 */}
+            <div className="mb-3 flex flex-col gap-2">
+              <Input
+                label={t('mdstudio.xhs.coverBadge')}
+                value={coverBadge}
+                placeholder={t('mdstudio.xhs.coverBadgePlaceholder')}
+                onChange={(e) => onCoverFieldChange('coverBadge', e.target.value)}
+              />
+              <Input
+                label={t('mdstudio.xhs.coverSub')}
+                value={coverSub}
+                placeholder={t('mdstudio.xhs.coverSubPlaceholder')}
+                onChange={(e) => onCoverFieldChange('coverSub', e.target.value)}
+              />
+              <Input
+                label={t('mdstudio.xhs.header')}
+                value={header}
+                placeholder={t('mdstudio.xhs.headerPlaceholder')}
+                onChange={(e) => onCoverFieldChange('header', e.target.value)}
+              />
+              <label className="flex items-center gap-2 text-xs text-text-secondary">
+                <input
+                  type="checkbox"
+                  checked={pageNum}
+                  onChange={(e) => onCoverFieldChange('pageNum', e.target.checked)}
+                  className="h-3.5 w-3.5 accent-[var(--hz-primary)]"
+                />
+                {t('mdstudio.xhs.pageNum')}
+              </label>
+            </div>
             <p
               className={`mb-3 text-xs ${xhsInfo.overflow ? 'font-medium text-warning' : 'text-text-secondary'}`}
               data-testid="mdstudio-xhs-pages"

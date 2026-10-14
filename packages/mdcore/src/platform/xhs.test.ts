@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { getTheme, listThemes, parseToIR, XHS_CARD, XHS_MAX_PAGES, xhsCaption, xhsCards } from '../index';
+import {
+  getTheme,
+  listThemes,
+  parseToIR,
+  xhsCaption,
+  xhsCardSize,
+  xhsCards,
+  XHS_CARD,
+  XHS_MAX_PAGES,
+  XHS_RATIO_KEYS,
+} from '../index';
 import type { Measurer } from '../index';
 
 /** xhs 卡片内容高 = 卡高 - 上 padding - (下 padding + 页脚区) */
@@ -75,31 +85,34 @@ describe('xhsCards', () => {
     expect(pages[0].dataset.cover).toBeUndefined();
   });
 
-  it('18 页上限：19 页输入 → overflow:true 且不静默截断', () => {
-    // 每段 700 字 = 1400px，一页只放得下一整段 → 19 段 = 19 页
-    const md = Array.from({ length: 19 }, () => '字'.repeat(700)).join('\n\n');
+  it('18 页上限：超限时 overflow:true，且**不静默截断**', () => {
+    // 页数随坐标系/比例变化（1080 坐标系比 1242 窄且矮），所以断言的是
+    // 「超限 + 一页都不裁」，而不是某个写死的页数——写死的页数一改坐标系就红。
+    const md = Array.from({ length: 40 }, () => '字'.repeat(700)).join('\n\n');
     const { pages, overflow, suggestion, pageCount } = xhsCards(parseToIR(md), {
       measurer: mockMeasurer(CONTENT_H),
     });
-    expect(pageCount).toBe(19);
-    expect(pages.length).toBe(19); // 不截断
+    expect(pageCount).toBeGreaterThan(XHS_MAX_PAGES);
+    expect(pages).toHaveLength(pageCount); // 不截断
     expect(overflow).toBe(true);
-    expect(suggestion).toBeTruthy();
     expect(suggestion).toContain(String(XHS_MAX_PAGES));
   });
 
-  it('品牌页脚：每页含署名与页码', () => {
-    const md = Array.from({ length: 3 }, () => '字'.repeat(700)).join('\n\n');
+  it('品牌页脚：正文页含署名与页码（页码从 1 起、总页数含封面）', () => {
+    // 开头给个 H1 才有封面页（没有封面时页码本来就从 1 起）
+    const md = ['# 标题', '', ...Array.from({ length: 3 }, () => '字'.repeat(700))].join('\n\n');
     const { pages } = xhsCards(parseToIR(md), {
       footer: 'young 的笔记',
       measurer: mockMeasurer(CONTENT_H),
     });
-    expect(pages.length).toBe(3);
-    pages.forEach((page, i) => {
+    // 第 0 页是封面（无页码），其余是正文页
+    expect(pages[0].dataset.cover).toBe('true');
+    expect(pages.length).toBeGreaterThan(1);
+    pages.slice(1).forEach((page, i) => {
       const footer = page.querySelector('.mdcore-card-footer');
       expect(footer).not.toBeNull();
       expect(footer!.textContent).toContain('young 的笔记');
-      expect(footer!.textContent).toContain(`${i + 1} / 3`);
+      expect(footer!.textContent).toContain(`${i + 1} / ${pages.length}`);
     });
   });
 
@@ -107,12 +120,21 @@ describe('xhsCards', () => {
     // 三段各 700 字，一页只放得下一段 → 自然分页本就是 3 页；
     // 强制边界 [1] 会让第一页只放第一段、第二页从第二段开始（页数不变、边界位置变）
     const md = Array.from({ length: 3 }, () => '字'.repeat(700)).join('\n\n');
-    const natural = xhsCards(parseToIR(md), { measurer: mockMeasurer(CONTENT_H) });
-    expect(natural.pageCount).toBe(3);
-    const forced = xhsCards(parseToIR(md), { measurer: mockMeasurer(CONTENT_H), breaks: [1] });
-    expect(forced.pageCount).toBe(3);
-    const second = forced.pages[1].querySelector('.mdcore-page-body') as HTMLElement;
-    expect(second.firstElementChild?.getAttribute('data-mdcore-block')).toBe('1');
+    const natural = xhsCards(parseToIR(md), { measurer: mockMeasurer(CONTENT_H), cover: false });
+    const forced = xhsCards(parseToIR(md), {
+      measurer: mockMeasurer(CONTENT_H),
+      cover: false,
+      breaks: [1],
+    });
+    // 判据只钉住真正要保证的东西：**第 2 块一定从某一页的开头开始**。
+    // 原来那条「第二页从第 2 块开始 / 页数不变」在 1080 坐标系下不成立也不该成立：
+    // 一段 700 字本就装不满整页，自然分页会把它拆到两页，第二页开头的其实是
+    // 第 0 块的续块。写成扫描"有没有一页以第 2 块开头"，才是这条通道真正的语义。
+    const firstBlockOf = (page: Element): string | null =>
+      page.querySelector('.mdcore-page-body')?.firstElementChild?.getAttribute('data-mdcore-block') ?? null;
+    expect(forced.pages.map(firstBlockOf)).toContain('1');
+    // 自然分页下这一页不一定存在（拆段把它带偏了）——所以这条断言只钉强制通道
+    expect(natural.pages.length).toBeGreaterThan(0);
   });
 
   it('品牌二维码位：qr 传入时每页页脚渲染 eager img，不传则无', () => {
@@ -245,5 +267,80 @@ describe('封面独立页（切片 3：溢出/截断的根因修复）', () => {
       expect(coverStyle).toContain(key);
       expect(bodyStyle).toContain(key);
     }
+  });
+});
+
+describe('卡片比例（切片 4）', () => {
+  it('五种比例都按 1080 宽出图，比例关系正确', () => {
+    expect(XHS_RATIO_KEYS).toEqual(['3:4', '2:3', '9:16', '1:1', '4:3']);
+    const expectations: Record<string, [number, number]> = {
+      '3:4': [1080, 1440],
+      '2:3': [1080, 1620],
+      '9:16': [1080, 1920],
+      '1:1': [1080, 1080],
+      '4:3': [1080, 810],
+    };
+    for (const key of XHS_RATIO_KEYS) {
+      const size = xhsCardSize(key);
+      expect([size.width, size.height], key).toEqual(expectations[key]);
+    }
+  });
+
+  it('坐标系是 1080 而不是历史遗留的 1242（对齐官方与参考实现）', () => {
+    expect(xhsCardSize('3:4').width).toBe(1080);
+    expect(xhsCardSize('3:4').height).toBe(1440);
+  });
+
+  it('比例真的作用到出图：页壳尺寸随比例变', () => {
+    for (const key of XHS_RATIO_KEYS) {
+      const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), {
+        ratio: key,
+        measurer: { fits: () => true },
+        doc: globalThis.document,
+      });
+      const style = pages[0].getAttribute('style') ?? '';
+      expect(style, key).toContain(`width: ${xhsCardSize(key).width}px`);
+      expect(style, key).toContain(`height: ${xhsCardSize(key).height}px`);
+    }
+  });
+
+  it('封面页与正文页同比例（封面不是另一套尺寸）', () => {
+    const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), {
+      ratio: '9:16',
+      measurer: { fits: () => true },
+      doc: globalThis.document,
+    });
+    const cover = pages[0].getAttribute('style') ?? '';
+    const body = pages[1].getAttribute('style') ?? '';
+    expect(cover).toContain('height: 1920px');
+    expect(body).toContain('height: 1920px');
+  });
+
+  it('比例改变会改变分页结果（高的装得多、矮的装得少）', () => {
+    const md = ['# 标题', '', ...Array.from({ length: 6 }, () => '字'.repeat(700))].join('\n\n');
+    const tall = xhsCards(parseToIR(md), { ratio: '9:16', measurer: mockMeasurer(1920 - 144 - 84), cover: false });
+    const short = xhsCards(parseToIR(md), { ratio: '4:3', measurer: mockMeasurer(810 - 144 - 84), cover: false });
+    expect(tall.pageCount).toBeLessThan(short.pageCount);
+  });
+
+  it('未知比例回退到 3:4（不抛，也不出一张怪尺寸的卡）', () => {
+    const size = xhsCardSize('5:4' as never);
+    expect(size.height).toBe(1440);
+  });
+
+  it('页眉与页码开关进页壳（长卡片的可控点）', () => {
+    const withHeader = xhsCards(parseToIR('# 标题\n\n正文。'), {
+      header: '我的专栏',
+      measurer: { fits: () => true },
+      doc: globalThis.document,
+    });
+    expect(withHeader.pages[1].querySelector('.mdcore-card-header')?.textContent).toBe('我的专栏');
+
+    const noNum = xhsCards(parseToIR('# 标题\n\n正文。'), {
+      pageNum: false,
+      measurer: { fits: () => true },
+      doc: globalThis.document,
+    });
+    expect(noNum.pages[1].querySelector('.mdcore-card-pageno')).toBeNull();
   });
 });
