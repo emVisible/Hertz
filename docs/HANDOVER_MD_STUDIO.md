@@ -4,14 +4,15 @@
 
 ---
 
-## 1. 恢复点（2026-10-13 实测）
+## 1. 恢复点（2026-10-14 实测）
 
 | 项 | 值 | 怎么重取 |
 | --- | --- | --- |
-| 分支 / HEAD | `main` / `b87746e`（功能）+ 其后的发版准备提交 | `git log --oneline -2` |
+| 分支 / HEAD | `main` / `7267f23`（含 W1 六片 + 诊断横幅 + 测试单） | `git log --oneline -2` |
+| **手动测试基点** | tag `test-point/w1` → `a20d627` | `git tag -l "test-point/*"` |
 | 本模块提交 | 10 个：`f911f9c` spec → `b9e0a03` 内核 → `4211298` 页面+后端 → `4351335` 切片 E → `4739426` 导出器修复 → `4e23d7c` 分页/剪贴板修复 → `10c58ab` 文档 → `c755458` 门禁 → `37bc677` 设计与接手文档 → `b87746e` 画布内编辑+批量出图 | `git log --oneline -10` |
 | 工作树 | 干净 | `git status --short` |
-| 门禁 | 源码七步全绿（分两批跑：pytest 796 / mdcore 102 / 前端 219 / 两包 tsc / vite build 2.31s）；**产物级 `release-check.sh` 有一项红**，见 §4 第 11 条 | `bash scripts/verify.sh`、`bash scripts/release-check.sh` |
+| 门禁 | `verify.sh` 八步全绿：pytest 798 / mdcore 297 / 前端 299（42 文件）/ 两包 tsc / vite build / 13 张排版基线；**产物级 `release-check.sh` 有一项红**，见 §4 第 11 条 | `bash scripts/verify.sh`、`bash scripts/release-check.sh` |
 | 远端 | v0.35.0 已 tag + push（`git tag -l v0.35.0`、`git log origin/main..HEAD`） | — |
 | 版本 | `0.35.0`；CHANGELOG 已收版 | `grep -m1 version frontend/package.json` |
 
@@ -74,8 +75,9 @@ bash scripts/dev.sh
 
 | 事项 | 在谁手里 | 备注 |
 | --- | --- | --- |
-| Electron 里点一次四个导出按钮（复制/ZIP/长图/文案） | **你** | 自动化浏览器证不到宿主剪贴板权限与另存路径；这是唯一剩下的验收腿 |
-| v0.35 的两个新交互在真浏览器里走一遍（点段落改文、拖分页边界、多选批量出图） | **你** | jsdom 证不了吸附手感与截图交互，见 §4 第 9 条 |
+| **走一遍 `docs/MD_STUDIO_TEST_SHEET.md`**（2026-10-14 新写，三段稿可直接粘贴） | **你** | 基点 tag `test-point/w1`；结构层证不了观感，这一份捞的是像素/手感/宿主权限 |
+| Electron 里点一次四个导出按钮（复制/ZIP/长图/文案） | **你** | 已收进测试单 §2.6；自动化浏览器证不到宿主剪贴板权限与另存路径 |
+| v0.35 的两个新交互在真浏览器里走一遍（点段落改文、拖分页边界、多选批量出图） | **你** | 已收进测试单 §2.5；jsdom 证不了吸附手感与截图交互，见 §4 第 9 条 |
 | 字体分片 | 已判**不做** | 理由与重启条件见 `docs/MD_STUDIO.md` §9 |
 | 候选下一步（违禁词、Shiki、图床、掘金/头条） | 我，等你点单 | 排序与理由见 `docs/MD_STUDIO.md` §10 |
 
