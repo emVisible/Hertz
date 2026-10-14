@@ -74,7 +74,7 @@ export const ARTICLE_MD = [
   '| h2 | 1.4em | 一种 |',
   '| h3 | 1.18em | 一种 |',
   '',
-  '行内公式 $E = mc^2$ 与中文混排时基线要压得下。',
+  '行内公式 $E = mc^2$、行内插图 ![示例配图](${PLACEHOLDER_SVG}){30% left} 与[color:#c2410c]彩色文字[/color]混排。',
   '',
   '$$\\frac{a}{b} = c$$',
   '',

@@ -89,7 +89,7 @@ export {
   unregisterTheme,
 } from './theme/index';
 export type { StyleProps, Theme, ThemeOverrides, ThemePlatform, ThemeTokens } from './theme/types';
-export { copyToClipboard, toWechatClipboardPayload } from './platform/wechat';
+export { copyToClipboard, toWechatClipboardPayload, WECHAT_FOOTNOTE } from './platform/wechat';
 export type { WechatPayload } from './platform/wechat';
 export { toZhihuClipboardPayload } from './platform/zhihu';
 export type { TableCapture, ZhihuOptions, ZhihuPayload } from './platform/zhihu';

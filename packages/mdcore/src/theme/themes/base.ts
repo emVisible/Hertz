@@ -137,6 +137,12 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
 
     // 列表：序号与正文分离的排版基础（序号色由派生给）
     list: { 'margin-top': '0.4em', 'margin-bottom': '0.6em' },
+    // 列表项内容：缩进/对齐/断词都在这里可调（此前完全没有槽）
+    liContent: { 'word-break': 'break-word', 'overflow-wrap': 'anywhere' },
+    // 硬换行：微信清洗器不认 <br> 之外的任何写法，尺寸必须可调
+    br: {},
+    // `[color:#xxx]` 彩色文字
+    coloredText: {},
     listItem: { 'margin-bottom': '0.35em' },
     listMarker: { 'margin-right': '0.45em', 'min-width': '1.2em', 'font-variant-numeric': 'tabular-nums' },
 
@@ -174,6 +180,14 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
     // 图片与图注
     figure: { 'margin-top': '1.2em', 'margin-bottom': '1.2em' },
     image: { 'max-width': '100%', height: 'auto', display: 'block', 'border-radius': '${imgRadius}', margin: '0 auto' },
+    // 行内图：**不能**继承块级槽的 display:block（会撑断图文流）
+    imageInline: {
+      'max-width': '100%',
+      height: 'auto',
+      display: 'inline-block',
+      'vertical-align': 'middle',
+      'border-radius': '${imgRadius}',
+    },
     figcaption: { color: '${muted}', 'margin-top': '0.5em' },
 
     // 提示块

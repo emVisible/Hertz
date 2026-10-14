@@ -152,6 +152,12 @@ md 字符串
 
 封面字号是**测量台上二分**出来的"尽量大但仍放得下"，不是固定倍数。量的是**整页克隆件**：只把封面内容丢进没有宽度约束的测量台，标题换行更少、显得更矮，二分就会选一个过大的字号，角标与副标题在真卡片里被裁掉（这个坑基线图第一眼就看见了）。
 
+**行内元素各归各槽**（W1 切片 3）：渲染了节点、却没有槽位的一类缺口——它们全都只能写死样式。
+
+- **行内图片复用的是块级 `image` 槽**，而那个槽带 `display:block; margin:0 auto`——段内插一张图，整段被撑成块级并居中，图文流彻底断掉。现在行内图有自己的 `imageInline` 槽（`inline-block` + 中线对齐），圆角仍跟 `imgRadius`。
+- **行内图连 `{60% left}` 都不支持**（字段只加在块级上）。记号写在 inline 层，所以 `convertInline()` 要拿到**外层 inline token 的完整源码**——只遍历 children 永远找不到。踩过一个坑：段落走的是 `paragraph_open` 分支，传错了 token 的 content（空串）。
+- **`[color:#xxx]` 彩色文字**、**硬换行 `<br>`**、**列表项内容** 各有自己的槽。
+
 **表格**（W1 切片 2）：四件"写了支持、产物里不成立"的事一并修掉——
 
 - **对齐进 IR**：markdown-it 把 `:---:` 放在 `th_open/td_open` 的 style 上，而 `convertTable` 只取 inline children，style 整个被丢；样式槽又硬写 `text-align:left`，于是数值列恒左对齐。现在 IR 存**逐列**对齐（markdown 的对齐本就由表头下的分隔行决定，一列一个值），整表都没写对齐时不留 `align` 键。
@@ -305,7 +311,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 262 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 271 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

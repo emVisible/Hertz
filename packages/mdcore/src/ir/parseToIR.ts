@@ -151,7 +151,7 @@ export function tokensToIR(tokens: Token[], ctx?: ParseContext): IRBlock[] {
         blocks.push({
           type: 'heading',
           level: Number(t.tag.slice(1)),
-          children: convertInline(inline?.children ?? [], ctx),
+          children: convertInline(inline?.children ?? [], ctx, inline?.content),
           line: lineOf(t),
         });
         i = end + 1;
@@ -180,7 +180,9 @@ export function tokensToIR(tokens: Token[], ctx?: ParseContext): IRBlock[] {
           // `[toc]` 占位：条目在整篇转换完后由 fillToc 补（见其头注）
           blocks.push({ type: 'toc', items: [], line: lineOf(t) });
         } else {
-          blocks.push({ type: 'para', children: convertInline(kids, ctx), line: lineOf(t) });
+          // 传的是 **inline** 的 content，不是 paragraph_open 的（后者是空串）：
+          // `{60% left}` 这类记号写在 inline 层，传错就等于没传
+          blocks.push({ type: 'para', children: convertInline(kids, ctx, inline?.content), line: lineOf(t) });
         }
         i = end + 1;
         break;
@@ -248,7 +250,7 @@ export function tokensToIR(tokens: Token[], ctx?: ParseContext): IRBlock[] {
       }
 
       case 'inline': {
-        blocks.push({ type: 'para', children: convertInline(t.children ?? [], ctx), line: lineOf(t) });
+        blocks.push({ type: 'para', children: convertInline(t.children ?? [], ctx, t.content), line: lineOf(t) });
         i += 1;
         break;
       }
@@ -462,7 +464,7 @@ function convertTable(
       case 'th_open':
       case 'td_open': {
         const inline = inner[i + 1];
-        curRow?.push(inline?.type === 'inline' ? convertInline(inline.children ?? [], ctx) : []);
+        curRow?.push(inline?.type === 'inline' ? convertInline(inline.children ?? [], ctx, inline.content) : []);
         if (inHead) colAlign[colAlign.length] = cellAlign(t);
         break;
       }
@@ -483,7 +485,14 @@ function cellAlign(token: Token): 'left' | 'center' | 'right' | null {
 }
 
 /** markdown-it inline token children → InlineNode 序列 */
-export function convertInline(tokens: Token[], ctx?: ParseContext): InlineNode[] {
+/**
+ * markdown-it inline children → InlineNode 序列。
+ *
+ * `parentContent` 是**外层 inline token 的完整源码**：`{60% left}` 这类尺寸记号
+ * 写在段尾（`![图](u){60% left}` 的记号是 inline 内容的一部分，不在图 token 上），
+ * 行内图要解析它就必须拿到整段文本。早先只遍历 children，永远找不到。
+ */
+export function convertInline(tokens: Token[], ctx?: ParseContext, parentContent?: string): InlineNode[] {
   const out: InlineNode[] = [];
   let i = 0;
 
@@ -582,9 +591,13 @@ export function convertInline(tokens: Token[], ctx?: ParseContext): InlineNode[]
         break;
       }
 
-      case 'image':
-        out.push({ type: 'image', src: attrOf(t, 'src') ?? '', alt: t.content ?? '' });
+      case 'image': {
+        // 行内图与块级图共用同一套 `{60% left}` 记号。记号写在段尾，
+        // 所以从 inline token 的整体内容里找（children 里那个 text 节点是图本身）
+        const spec = parseImageSizeSpec(parentContent ?? t.content);
+        out.push({ type: 'image', src: attrOf(t, 'src') ?? '', alt: t.content ?? '', ...(spec ?? {}) });
         break;
+      }
 
       case 'softbreak':
         out.push({ type: 'text', text: '\n' });
@@ -603,7 +616,7 @@ export function convertInline(tokens: Token[], ctx?: ParseContext): InlineNode[]
         const label = /^\s*<label[^>]*>([\s\S]*)<\/label>\s*$/i.exec(t.content);
         if (label) {
           const inner = getMarkdownParser().parseInline(label[1], {});
-          out.push(...convertInline(inner[0]?.children ?? [], ctx));
+          out.push(...convertInline(inner[0]?.children ?? [], ctx, inner[0]?.content));
           break;
         }
         // 注音：`html: true` 让 html_inline 规则先于 markdown-it-ruby 的 inline 规则命中，

@@ -24,7 +24,11 @@ export type InlineNode =
   | { type: 'footnoteRef'; id: number }
   | { type: 'code'; text: string }
   | { type: 'link'; href: string; children: InlineNode[] }
-  | { type: 'image'; src: string; alt: string }
+  /**
+   * 行内图片。`width/align` 与块级图同一套 `{60% left}` 记号——
+   * 段内插图此前连这两个字段都没有，写了 `{60% left}` 也不起作用。
+   */
+  | { type: 'image'; src: string; alt: string; width?: string; align?: 'left' | 'center' | 'right' }
   | { type: 'formula'; tex: string; displayMode: boolean }
   /** 原生 HTML inline（兜底通道，katex/脚注等暂不建模的渲染产物） */
   | { type: 'html'; html: string }

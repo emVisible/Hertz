@@ -126,6 +126,23 @@ const TAG_MAP: Record<string, string> = {
  * 渲染态 DOM → 微信剪贴板 payload。
  * 不改动入参 DOM：全程在深克隆上操作。
  */
+/**
+ * 外链脚注的排版参数。
+ *
+ * 此前是三处内联字面量（12px / line-height:0 / 32px / break-all），
+ * 换字号时它们不动——微信正文 16px、小红书卡片 30px，12px 的脚注在后者上
+ * 已经不是"小一号"而是"看不清"。
+ */
+export const WECHAT_FOOTNOTE = {
+  /** 角标字号（相对正文） */
+  refSize: '0.78em',
+  refLineHeight: '0',
+  sectionMarginTop: '1.6em',
+  titleSize: '0.86em',
+  itemSize: '0.8em',
+  itemBreak: 'break-all',
+} as const;
+
 export function toWechatClipboardPayload(input: Document | HTMLElement): WechatPayload {
   const { clone, win, cleanup } = snapshotClone(input, 'wechatPayload');
   try {
@@ -153,7 +170,10 @@ function linksToFootnotes(root: HTMLElement): void {
     refs.push(href);
     const sup = doc.createElement('sup');
     sup.textContent = `[${refs.length}]`;
-    sup.setAttribute('style', 'font-size:12px;line-height:0;');
+    sup.setAttribute(
+      'style',
+      `font-size:${WECHAT_FOOTNOTE.refSize};line-height:${WECHAT_FOOTNOTE.refLineHeight};`,
+    );
     const span = doc.createElement('span');
     while (a.firstChild) span.appendChild(a.firstChild);
     const frag = doc.createDocumentFragment();
@@ -164,15 +184,16 @@ function linksToFootnotes(root: HTMLElement): void {
   if (refs.length === 0) return;
 
   const section = doc.createElement('section');
-  section.setAttribute('style', 'margin-top:32px;');
+  section.setAttribute('style', `margin-top:${WECHAT_FOOTNOTE.sectionMarginTop};`);
   const title = doc.createElement('p');
   const strong = doc.createElement('strong');
+  strong.style.setProperty('font-size', WECHAT_FOOTNOTE.titleSize);
   strong.textContent = 'References';
   title.appendChild(strong);
   section.appendChild(title);
   refs.forEach((href, idx) => {
     const p = doc.createElement('p');
-    p.setAttribute('style', 'font-size:12px;word-break:break-all;');
+    p.setAttribute('style', `font-size:${WECHAT_FOOTNOTE.itemSize};word-break:${WECHAT_FOOTNOTE.itemBreak};`);
     p.textContent = `[${idx + 1}] ${href}`;
     section.appendChild(p);
   });

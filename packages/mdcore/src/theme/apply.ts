@@ -185,6 +185,7 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
         li.appendChild(marker);
         const span = doc.createElement('span');
         span.className = 'mdcore-li-content';
+        applyProps(span, styles.liContent);
         appendInlines(span, item, ctx);
         li.appendChild(span);
         el.appendChild(li);
@@ -542,10 +543,23 @@ function renderInline(node: InlineNode, ctx: RenderContext): Node {
     }
 
     case 'image': {
+      /**
+       * 行内图此前复用**块级** `image` 槽，而那个槽带 `display:block; margin:0 auto`——
+       * 于是段内插一张图，整段被撑成块级并居中，图文流彻底断掉。
+       * 现在行内图有自己的槽（inline 默认），尺寸/对齐与块级同一套记号。
+       */
       const img = doc.createElement('img');
       img.setAttribute('src', node.src);
       img.setAttribute('alt', node.alt);
-      applyProps(img, styles.image);
+      applyProps(img, styles.imageInline);
+      if (node.width) {
+        img.style.setProperty('width', node.width);
+        img.style.setProperty('max-width', '100%');
+      }
+      if (node.align) {
+        img.style.setProperty('margin-left', node.align === 'right' ? 'auto' : '0');
+        img.style.setProperty('margin-right', node.align === 'left' ? 'auto' : '0');
+      }
       return img;
     }
 
@@ -566,15 +580,28 @@ function renderInline(node: InlineNode, ctx: RenderContext): Node {
       // 既是噪音，也会让微信内联多算一次样式）
       const single = /^\s*<span\b[^>]*>\s*[\s\S]*\s*<\/span>\s*$/i.test(node.html);
       if (single) {
+        // 整段就是一个 span 时**直接用它**，别再套一层（产物里多一个空 span
+        // 既是噪音，也会让微信内联多算一次样式）
         const holder = doc.createElement('div');
         holder.innerHTML = node.html;
         const el = holder.firstElementChild;
         if (el) {
           holder.removeChild(el);
+          // `[color:#xxx]` 走的就是这条路：把彩色文字槽合并进它自己，
+          // 作者写一个色值之后主题仍管得到（而不是另包一层 span）
+          // 判断看**整个属性串**而不是只找 `style="`：经过内联清洗后 class 上的
+          // 样式会变成 `class="..."`，内联色值也可能被排在属性串后半段
+          if (el instanceof HTMLElement && /(^|;)\s*color\s*:/i.test(el.getAttribute('style') ?? '')) {
+            el.classList.add('mdcore-colored');
+            for (const [prop, value] of Object.entries(styles.coloredText ?? {})) {
+              if (!el.style.getPropertyValue(prop)) el.style.setProperty(prop, value);
+            }
+          }
           return el;
         }
       }
       const span = doc.createElement('span');
+      applyProps(span, styles.coloredText);
       span.innerHTML = node.html;
       return span;
     }
@@ -601,8 +628,11 @@ function renderInline(node: InlineNode, ctx: RenderContext): Node {
       return el;
     }
 
-    case 'break':
-      return doc.createElement('br');
+    case 'break': {
+      const br = doc.createElement('br');
+      applyProps(br, styles.br);
+      return br;
+    }
   }
 }
 
