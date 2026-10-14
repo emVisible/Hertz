@@ -99,7 +99,12 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
       padding: '0.1em 0.3em',
       'box-decoration-break': 'clone',
     },
-    mark: { padding: '0 0.1em', 'box-decoration-break': 'clone' },
+    // mark（==高亮==）：底色与边距在派生槽，这里给字号与跨行不断
+    mark: { padding: '0 0.1em', 'box-decoration-break': 'clone', 'border-radius': '2px' },
+    sub: { 'font-size': '0.72em' },
+    sup: { 'font-size': '0.72em' },
+    ruby: { 'ruby-align': 'center' },
+    rubyRt: { 'font-size': '0.5em', opacity: '0.75' },
 
     // 代码：卡片壳 + 头部 + 代码体
     codeCard: { 'background-color': '${codeBg}' },

@@ -11,6 +11,13 @@ export type InlineNode =
   | { type: 'text'; text: string }
   | { type: 'strong'; children: InlineNode[] }
   | { type: 'em'; children: InlineNode[] }
+  /** `==荧光笔==`：小红书/公众号正文里最常见的强调写法（中文排版里比 font-weight 更地道） */
+  | { type: 'mark'; children: InlineNode[] }
+  /** `H~2~O` / `E=mc^2^` */
+  | { type: 'sub'; children: InlineNode[] }
+  | { type: 'sup'; children: InlineNode[] }
+  /** `<ruby>注音<rt>zhùyīn</rt></ruby>` */
+  | { type: 'ruby'; base: InlineNode[]; rt: InlineNode[] }
   | { type: 'code'; text: string }
   | { type: 'link'; href: string; children: InlineNode[] }
   | { type: 'image'; src: string; alt: string }

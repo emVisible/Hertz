@@ -74,6 +74,11 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
     link: { color: linkInk },
     inlineCode: { color: linkInk, 'background-color': withAlpha(primary, 0.12) },
     mark: { 'background-color': hl, color: 'inherit' },
+    // 上下标不跟主色：它们是排版件，颜色跟正文走才不刺眼
+    sub: { color: 'inherit' },
+    sup: { color: 'inherit' },
+    ruby: { color: 'inherit' },
+    rubyRt: { color: 'inherit' },
     strong: strongPaint(t.strongStyle, primary, hl),
 
     // 规则 5、6：标题

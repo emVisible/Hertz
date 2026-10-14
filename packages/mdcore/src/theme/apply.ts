@@ -374,6 +374,35 @@ function renderInline(node: InlineNode, ctx: RenderContext): Node {
       return el;
     }
 
+    case 'mark': {
+      // `==高亮==`：底色来自 mark 槽（派生给 hl）。cross-break 让高亮跨行不断开
+      const el = doc.createElement('mark');
+      applyProps(el, styles.mark);
+      appendInlines(el, node.children, ctx);
+      return el;
+    }
+
+    case 'sub':
+    case 'sup': {
+      const tag = node.type === 'sub' ? 'sub' : 'sup';
+      const el = doc.createElement(tag);
+      applyProps(el, node.type === 'sub' ? styles.sub : styles.sup);
+      appendInlines(el, node.children, ctx);
+      return el;
+    }
+
+    case 'ruby': {
+      // 注音：base + rt（rt 用真正的 <rt>，微信清洗器不剥）
+      const el = doc.createElement('ruby');
+      applyProps(el, styles.ruby);
+      appendInlines(el, node.base, ctx);
+      const rt = doc.createElement('rt');
+      applyProps(rt, styles.rubyRt);
+      appendInlines(rt, node.rt, ctx);
+      el.appendChild(rt);
+      return el;
+    }
+
     case 'code': {
       const el = doc.createElement('code');
       applyProps(el, styles.inlineCode);

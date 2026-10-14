@@ -1,5 +1,15 @@
 import MarkdownIt from 'markdown-it';
+import type Token from 'markdown-it/lib/token.mjs';
+import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
+import deflist from 'markdown-it-deflist';
+// markdown-it-emoji v3 是纯具名导出（full/light/bare），没有 default
+import { full as emojiFull } from 'markdown-it-emoji';
 import footnote from 'markdown-it-footnote';
+import mark from 'markdown-it-mark';
+import rub from 'markdown-it-ruby';
+import sub from 'markdown-it-sub';
+import sup from 'markdown-it-sup';
+import taskLists from 'markdown-it-task-lists';
 import katexPlugin from '@traptitech/markdown-it-katex';
 import container from 'markdown-it-container';
 import toc from 'markdown-it-table-of-contents';
@@ -70,12 +80,48 @@ export function createMarkdownParser(): MarkdownIt {
 
   md.use(footnote);
   md.use(katexPlugin, { throwOnError: false });
+  // 中文排版常见件（Phase 2 移植自 WeMD/小红书布局仓的插件矩阵）
+  md.use(mark); // ==荧光笔==
+  md.use(sub);
+  md.use(sup);
+  md.use(rub);
+  md.use(deflist);
+  md.use(emojiFull);
+  // 任务列表：开 enabled 后产出 `<input type="checkbox">`，而**微信清洗器会吃掉 input**，
+  // 所以紧跟着把 checkbox token 换成 ✅/⬜ 文本（见 checkboxToEmoji 核心规则）
+  md.use(taskLists, { enabled: true, label: true, labelAfter: true });
+  // push 到链尾而不是 after('inline')：task-lists 自己也注册了 core 规则并在后面
+  // 重排 inline children，挂在 inline 之后会被它重新吐回 <input>
   md.use(toc, { includeLevel: [1, 2, 3] });
   md.use(attrs);
   for (const variant of CALLOUT_VARIANTS) {
     md.use(container, variant);
   }
+
+  md.core.ruler.push('mdcore_checkbox_to_emoji', checkboxToEmoji);
   return md;
+}
+
+/**
+ * `<input type="checkbox">` → `✅ ` / `⬜ `。
+ *
+ * 为什么必须转：微信编辑器把 `<input>` 整类标签清洗掉，任务列表在公众号里就变成
+ * 四个没有勾选框的行。换成 emoji 后三个平台都能看见（参考实现 WeMD 的
+ * `markdown-it-checkbox-emoji`，思路一致、代码本仓库自写）。
+ */
+function checkboxToEmoji(state: StateCore): void {
+  const visit = (tokens: Token[]): void => {
+    for (const token of tokens) {
+      // html_inline 是**inline token 的子节点**，只看顶层 token 永远扫不到
+      if (token.children) visit(token.children);
+      if (token.type !== 'html_inline') continue;
+      if (!/^\s*<input\b/i.test(token.content)) continue;
+      const checked = /\bchecked\b/i.test(token.content);
+      token.type = 'text';
+      token.content = checked ? '✅ ' : '⬜ ';
+    }
+  };
+  visit(state.tokens);
 }
 
 let shared: MarkdownIt | null = null;

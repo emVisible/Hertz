@@ -127,6 +127,17 @@ md 字符串
 （`stripUnsafe` 剥 `data-mdcore-*`），产物里不留编辑器状态。
 ```
 
+**语法层落点**：Phase 2 的插件矩阵一律实现在 **IR 层**（`parseToIR`），不写 markdown-it 插件——整条渲染链已经是 parse → IR → applyTheme（没有人渲染 markdown-it 的 HTML 了），写在插件层就等于同一份规则有两个作者。当前支持：
+
+| 语法 | 落点 | 说明 |
+| --- | --- | --- |
+| `==荧光笔==` | `markdown-it-mark` + IR `mark` 节点 | 中文正文最地道的强调；底色走 `hl` 槽，配 `box-decoration-break` 跨行不断 |
+| `> [!NOTE/TIP/IMPORTANT/WARNING/CAUTION]` | `parseToIR.parseGitHubAlert` | 转成 callout 变体（`:::note` 容器的等价物，但写法是引用） |
+| `- [x]` / `- [ ]` | `markdown-it-task-lists` + `checkboxToEmoji` 核心规则 | **必须换成 ✅/⬜ 字符**：微信清洗器整类剥掉 `<input>`。任务项正文裹在 `<label>` 里（对 markdown-it 不透明），IR 层拆开重解析，否则项内的 emoji/强调全留在原文里 |
+| `H~2~O` / `E=mc^2^` / `<ruby>` | sub / sup / ruby IR 节点 | 注音同理：html_inline 抢先，要在 IR 层自己认 |
+| `:sunny:` 等短码 | `markdown-it-emoji`（full） | |
+| `H₂O` 之外的定义列表 | `markdown-it-deflist` | |
+
 **IR 是心脏层**：markdown-it 之后所有环节只认 `LayoutIR`，不回读 token。于是平台适配器不懂 markdown、分页器不懂平台、主题不懂分页，每一环可独立替换与单测。
 
 **强制分页边界**（`paginate(ir, { breaks })` / `xhsCards(ir, { breaks })`）：IR 块序号集合，命中即「在此块之前另起一页」。语义是**「至少在这里断」而不是「只能在这里断」**——强制收页后若剩余内容仍放不下，照常拆分到后续页。这条约束是为了守住字数守恒：手动调边界永远不会裁内容，往上拖只会让本页变少，往下拖最多多出几页。
@@ -233,7 +244,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 158 条 vitest（node+jsdom，测试与源码同目录）、前端 219 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 171 条 vitest（node+jsdom，测试与源码同目录）、前端 219 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

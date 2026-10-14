@@ -118,7 +118,13 @@ export function tokensToIR(tokens: Token[]): IRBlock[] {
 
       case 'blockquote_open': {
         const end = findClose(tokens, i, 'blockquote_open', 'blockquote_close');
-        blocks.push({ type: 'quote', blocks: tokensToIR(tokens.slice(i + 1, end)), line: lineOf(t) });
+        const inner = tokens.slice(i + 1, end);
+        const alert = parseGitHubAlert(inner);
+        if (alert) {
+          blocks.push({ type: 'callout', ...alert, line: lineOf(t) });
+        } else {
+          blocks.push({ type: 'quote', blocks: tokensToIR(inner), line: lineOf(t) });
+        }
         i = end + 1;
         break;
       }
@@ -243,6 +249,44 @@ export function convertInline(tokens: Token[]): InlineNode[] {
         break;
       }
 
+      case 'mark_open': {
+        const end = findCloseInline(tokens, i, 'mark_open', 'mark_close');
+        out.push({ type: 'mark', children: convertInline(tokens.slice(i + 1, end)) });
+        i = end;
+        break;
+      }
+
+      case 'sub_open': {
+        const end = findCloseInline(tokens, i, 'sub_open', 'sub_close');
+        out.push({ type: 'sub', children: convertInline(tokens.slice(i + 1, end)) });
+        i = end;
+        break;
+      }
+
+      case 'sup_open': {
+        const end = findCloseInline(tokens, i, 'sup_open', 'sup_close');
+        out.push({ type: 'sup', children: convertInline(tokens.slice(i + 1, end)) });
+        i = end;
+        break;
+      }
+
+      case 'ruby': {
+        // markdown-it-ruby：ruby_open → text → rt_open → text → rt_close → ruby_close
+        const end = findCloseInline(tokens, i, 'ruby_open', 'ruby_close');
+        const inner = tokens.slice(i + 1, end);
+        const rtIdx = inner.findIndex((x) => x.type === 'rt_open');
+        const base = convertInline(rtIdx === -1 ? inner : inner.slice(0, rtIdx));
+        const rt = rtIdx === -1 ? [] : convertInline(inner.slice(rtIdx + 1, inner.length - 1));
+        out.push({ type: 'ruby', base, rt });
+        i = end;
+        break;
+      }
+
+      case 'emoji':
+        // markdown-it-emoji 把 :sunny: 渲染成 unicode，content 即字符本身
+        out.push({ type: 'text', text: t.content });
+        break;
+
       case 's_open': {
         // 删除线不建模为独立节点，降级为 em 语义外的普通文本组
         const end = findCloseInline(tokens, i, 's_open', 's_close');
@@ -274,9 +318,35 @@ export function convertInline(tokens: Token[]): InlineNode[] {
         out.push({ type: 'break' });
         break;
 
-      case 'html_inline':
+      case 'html_inline': {
+        // 任务列表：markdown-it-task-lists 把整条正文包成
+        // `<label …> 正文 </label>` 的**单个** html_inline token，里面的
+        // 强调/emoji/短码一律不解析（整条正文对 markdown-it 是不透明的一坨）。
+        // 这里拆开标签重新按 inline 解析一次——否则「- [ ] 主题只写性格 :sparkles:」
+        // 的 emoji 就留在原文里。
+        const label = /^\s*<label[^>]*>([\s\S]*)<\/label>\s*$/i.exec(t.content);
+        if (label) {
+          const inner = getMarkdownParser().parseInline(label[1], {});
+          out.push(...convertInline(inner[0]?.children ?? []));
+          break;
+        }
+        // 注音：`html: true` 让 html_inline 规则先于 markdown-it-ruby 的 inline 规则命中，
+        // 于是 <ruby> 到达 IR 时是一串 html_inline/text。所以这里自己认一遍，
+        // 不然注音会退化成裸标签文本。
+        if (/^\s*<ruby\b/i.test(t.content)) {
+          const rtStart = tokens.findIndex((x, k) => k > i && /<rt\b/i.test(x.content));
+          const rtEnd = tokens.findIndex((x, k) => k > (rtStart === -1 ? i : rtStart) && /<\/rt>/i.test(x.content));
+          const rubyEnd = tokens.findIndex((x, k) => k > i && /<\/ruby>/i.test(x.content));
+          const base = convertInline(tokens.slice(i + 1, rtStart === -1 ? rubyEnd : rtStart));
+          const rt =
+            rtStart !== -1 && rtEnd !== -1 ? convertInline(tokens.slice(rtStart + 1, rtEnd)) : [];
+          out.push({ type: 'ruby', base, rt });
+          i = rubyEnd === -1 ? i : rubyEnd;
+          break;
+        }
         out.push({ type: 'html', html: t.content });
         break;
+      }
 
       case 'math_inline':
         out.push({ type: 'formula', tex: t.content, displayMode: false });
@@ -295,6 +365,49 @@ export function convertInline(tokens: Token[]): InlineNode[] {
     i += 1;
   }
   return out;
+}
+
+/**
+ * GitHub Alert 语法：`> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]`
+ * → callout 块（带图标与标题）。
+ *
+ * 为什么在 IR 层做而不是再写一个 markdown-it 插件：整条渲染链已经是
+ * parse → IR → applyTheme（没人渲染 markdown-it 的 HTML 了），放在这里就只有一处作者，
+ * 而插件写法会让同一份规则存在两个地方。`[文字](链接 "标题")` 那种带标题的写法
+ * 也能落成 callout 标题——但这里只取首行的 `[!X]` 标记，标题文案由 callout 变体决定。
+ */
+const ALERT_VARIANTS: Record<string, string> = {
+  NOTE: 'note',
+  TIP: 'tip',
+  IMPORTANT: 'info',
+  WARNING: 'warning',
+  CAUTION: 'danger',
+};
+
+export const CALLOUT_TITLES: Record<string, string> = {
+  note: '备注',
+  tip: '提示',
+  info: '要点',
+  warning: '注意',
+  danger: '警告',
+};
+
+function parseGitHubAlert(inner: Token[]): { variant: string; blocks: IRBlock[] } | null {
+  const first = inner[0];
+  if (!first || first.type !== 'paragraph_open') return null;
+  const inline = inner[1];
+  const kids = inline?.children ?? [];
+  if (!kids.length || kids[0].type !== 'text') return null;
+  const m = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/.exec(kids[0].content);
+  if (!m) return null;
+  const variant = ALERT_VARIANTS[m[1]] ?? 'note';
+  // 去掉标记后的 inline children 作为首段内容。
+  // **就地改而不是 spread**：markdown-it 的 Token 上挂着 attrGet/attrIndex 等原型方法，
+  // spread 出来的对象会退化成普通对象，attrGet 一调就炸（这里用不到 attrs 也一样）。
+  // token 每次 md.parse 都是新建的，就地改不会污染下一次解析。
+  kids[0].content = kids[0].content.slice(m[0].length);
+  if (inline) inline.children = kids;
+  return { variant, blocks: tokensToIR(inner) };
 }
 
 function findCloseInline(tokens: Token[], openIdx: number, openType: string, closeType: string): number {
