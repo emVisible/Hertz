@@ -13,6 +13,7 @@
  *  - 其余复用微信同规格 inline 快照（platform/inline.ts）；http(s) 链接保留
  *    <a href>（知乎支持链接卡片，不转脚注）。
  */
+import { formulaTexOf } from '../theme/formula';
 import { panguSpacingDOM } from './pangu';
 import {
   hardenCodeBlocks,
@@ -211,13 +212,8 @@ async function degradeTables(root: HTMLElement, capture?: TableCapture | null): 
   }
 }
 
-/** 从 katex / mjx 产物里提取 LaTeX 源码 */
-function texSourceOf(el: Element): string | null {
-  const ann = el.querySelector('annotation[encoding="application/x-tex"]');
-  if (ann?.textContent?.trim()) return ann.textContent;
-  const alt = el.getAttribute('alttext'); // MathJax mjx-container 保留 alttext
-  return alt?.trim() ? alt : null;
-}
+/** 公式源码：显式属性优先（回落形态没有 katex 的 class），其次 KaTeX/MathJax 产物 */
+const texSourceOf = formulaTexOf;
 
 /**
  * 公式 → 文本化 LaTeX 源码（知乎支持 MathJax 语法，发布端再排版）：
@@ -225,7 +221,9 @@ function texSourceOf(el: Element): string | null {
  */
 function formulasToTexSource(root: HTMLElement): void {
   const doc = root.ownerDocument;
-  for (const el of Array.from(root.querySelectorAll('.katex-display, mjx-container[display="true"]'))) {
+  for (const el of Array.from(
+    root.querySelectorAll('.katex-display, mjx-container[display="true"], .mdcore-formula'),
+  )) {
     const tex = texSourceOf(el);
     if (!tex) continue;
     const p = doc.createElement('p');
@@ -233,7 +231,7 @@ function formulasToTexSource(root: HTMLElement): void {
     p.textContent = `$$${tex}$$`;
     el.replaceWith(p);
   }
-  for (const el of Array.from(root.querySelectorAll('.katex, mjx-container'))) {
+  for (const el of Array.from(root.querySelectorAll('.katex, mjx-container, .mdcore-formula-inline'))) {
     const tex = texSourceOf(el);
     if (!tex) continue;
     el.replaceWith(doc.createTextNode(`$${tex}$`));

@@ -2,6 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles/global.css'
+// KaTeX 样式表：公式产物依赖它的 class 规则与 @font-face，此前**全仓无人引入**
+// ——于是"支持公式"在产物里从来不成立，只剩一堆没有布局的 span。
+// 放在入口全局引入一次：画布、导出截图、剪贴板内联三条路径都受益。
+import 'katex/dist/katex.min.css'
 
 // 全局未处理 Promise 拒绝捕获（v0.22.x）：异步错误不再无声消失，
 // 统一走 console.error 便于排查（ErrorBoundary 仅覆盖渲染错误）。

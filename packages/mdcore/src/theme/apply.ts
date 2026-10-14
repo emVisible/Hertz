@@ -1,9 +1,9 @@
-import katex from 'katex';
 import hljs from 'highlight.js';
 import type { IRBlock, InlineNode, LayoutIR } from '../ir/types';
 import { resolveThemeSlots } from './derive';
 import { getTheme } from './index';
 import type { ResolvedTokens, StyleProps, Theme, ThemeOverrides } from './types';
+import { FORMULA_TEX_ATTR, renderFormula } from './formula';
 
 /**
  * applyTheme(ir, theme, overrides) → 挂好样式的 DOM 容器（§2 theme/）。
@@ -329,11 +329,10 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
 
     case 'formula': {
       const el = doc.createElement('section');
+      el.className = 'mdcore-formula';
+      el.setAttribute(FORMULA_TEX_ATTR, block.tex);
       applyProps(el, styles.formula);
-      el.innerHTML = katex.renderToString(block.tex, {
-        displayMode: block.displayMode,
-        throwOnError: false,
-      });
+      el.innerHTML = renderFormula(block.tex, block.displayMode, { doc }).html;
       return el;
     }
 
@@ -519,11 +518,14 @@ function renderInline(node: InlineNode, ctx: RenderContext): Node {
     }
 
     case 'formula': {
+      // 行内公式此前是「裸 span + 零样式」：字号、基线、颜色全由 KaTeX CSS 决定，
+      // 而那份 CSS 当时全仓无人引入，于是行内公式在产物里就是一团没排版的字符。
+      // 现在它有自己的槽（formulaInline），主题管得到。
       const span = doc.createElement('span');
-      span.innerHTML = katex.renderToString(node.tex, {
-        displayMode: node.displayMode,
-        throwOnError: false,
-      });
+      span.className = 'mdcore-formula-inline';
+      span.setAttribute(FORMULA_TEX_ATTR, node.tex);
+      applyProps(span, styles.formulaInline);
+      span.innerHTML = renderFormula(node.tex, node.displayMode, { doc }).html;
       return span;
     }
 

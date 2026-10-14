@@ -74,6 +74,9 @@ importers:
       i18next:
         specifier: ^26.3.6
         version: 26.3.6(typescript@5.9.3)
+      katex:
+        specifier: ^0.16.21
+        version: 0.16.47
       react:
         specifier: ^19.1.0
         version: 19.2.8

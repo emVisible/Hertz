@@ -7,6 +7,8 @@
  *  - 长图（renderLongImage）：见 export/longimage.ts（≤8192px 切片渲染再拼总 canvas）
  */
 
+import { waitForKatexFonts } from '../theme/formula';
+
 /** 截图引擎：元素 → PNG Blob；尺寸超限必须抛错（isCanvasTooLargeError 判定） */
 export interface CaptureEngine {
   capture(el: HTMLElement, scale: number): Promise<Blob>;
@@ -81,6 +83,9 @@ async function blobChecksum(blob: Blob): Promise<number> {
  * 浏览器端默认闸门：fonts.ready + 图片 complete + 双 rAF + 像素 checksum 两帧一致。
  * checksum 需要 canvas 2d 与 probe 引擎；jsdom 缺 API 时自动跳过。
  */
+/** 单张图片的等待上限（超时后照常导出，让用户看到缺图而不是无限转圈） */
+const IMG_WAIT_TIMEOUT_MS = 8000;
+
 export function createBrowserReadyGate(probe?: CaptureEngine): ReadyGate {
   return {
     async waitReady(root) {
@@ -92,13 +97,30 @@ export function createBrowserReadyGate(probe?: CaptureEngine): ReadyGate {
           /* 字体加载失败不阻塞导出 */
         }
       }
+      // KaTeX 字体：@font-face 是懒触发的——没用到某字族时它根本不在 fonts 队列里，
+      // `fonts.ready` 会先返回，截图就截到 fallback 字体（Times），字宽全错。
+      if (root.querySelector('.katex')) {
+        await waitForKatexFonts(doc);
+      }
       const imgs = Array.from(root.querySelectorAll('img'));
       await Promise.all(
         imgs.map((img) => {
-          if (img.complete) return Promise.resolve();
+          if (img.complete) {
+            // complete 只代表元数据就绪，解码可能仍在进行——snapdom 会截到半张图
+            return typeof img.decode === 'function'
+              ? img.decode().catch(() => undefined)
+              : Promise.resolve();
+          }
+          // **必须有超时**：既不 load 也不 error 的连接（挂起的代理、被墙的域名）
+          // 会让这个 Promise 永远不 resolve，导出随之永久挂起，用户只看到转圈。
           return new Promise<void>((resolve) => {
-            img.addEventListener('load', () => resolve(), { once: true });
-            img.addEventListener('error', () => resolve(), { once: true });
+            const done = (): void => {
+              clearTimeout(timer);
+              resolve();
+            };
+            const timer = setTimeout(done, IMG_WAIT_TIMEOUT_MS);
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
           });
         }),
       );

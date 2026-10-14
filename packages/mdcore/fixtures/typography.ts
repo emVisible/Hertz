@@ -15,6 +15,25 @@
  *    Chromium 版本与字体探针（固定字符串的测量宽度）。换了机器/字体时读数不可比，
  *    此时应当 `--update` 重录，而不是把阈值放大。
  */
+/**
+ * 基线页面必须注入 KaTeX 样式表。
+ *
+ * 排版基线的意义是"验真实产物"。公式这条链路此前从未在基线里出现过，所以它塌了
+ * 也没人知道；现在样例里加了公式，就必须让基线跑在**带 CSS** 的页面上——否则验的
+ * 只是源码回落形态，等于把缺陷固化进基准图。
+ * `?inline` 是 vite 的能力（基线页由 vite build 产出）；tsconfig 的 include 只有
+ * src/，所以这里不参与 tsc 检查。
+ */
+// @ts-expect-error vite 的 ?inline 导入，tsc 不检查 fixtures/
+import katexCss from 'katex/dist/katex.min.css?inline';
+
+if (typeof document !== 'undefined' && !document.getElementById('mdcore-katex-css')) {
+  const style = document.createElement('style');
+  style.id = 'mdcore-katex-css';
+  style.textContent = katexCss;
+  document.head.appendChild(style);
+}
+
 import {
   applyTheme,
   getTheme,
@@ -54,6 +73,10 @@ export const ARTICLE_MD = [
   '| h1 | 1.7em | 一种 |',
   '| h2 | 1.4em | 一种 |',
   '| h3 | 1.18em | 一种 |',
+  '',
+  '行内公式 $E = mc^2$ 与中文混排时基线要压得下。',
+  '',
+  '$$\\frac{a}{b} = c$$',
   '',
   '```ts',
   'const spacing = "0.62em"; // 改字号时它跟着缩放',

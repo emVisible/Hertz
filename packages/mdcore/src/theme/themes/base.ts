@@ -169,7 +169,26 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
 
     // 提示块
     callout: { padding: '0.7em 0.9em', 'border-radius': '6px', 'font-size': '0.97em', 'margin-top': '0.6em', 'margin-bottom': '0.6em' },
-    formula: { 'margin-top': '0.8em', 'margin-bottom': '0.8em', 'text-align': 'center', 'overflow-x': 'auto' },
+    // 公式：显示公式用容器槽，行内公式用自己的槽（此前是「裸 span 零样式」）
+    formula: {
+      'margin-top': '0.9em',
+      'margin-bottom': '0.9em',
+      'text-align': 'center',
+      // overflow-x 对 .katex-display 无效（子树会撑开而不是滚动），
+      // 超宽公式交给 KaTeX 自己的缩放，这里只兜住极端情况
+      'max-width': '100%',
+      overflow: 'hidden',
+    },
+    formulaInline: { 'font-size': '1em', 'line-height': '1', 'vertical-align': 'baseline' },
+    // 公式回落：源码 + 提示（KaTeX CSS 缺失或渲染失败时用）
+    formulaSrc: {
+      'font-family': 'var(--hz-mono, monospace)',
+      'font-size': '0.88em',
+      padding: '0.1em 0.3em',
+      'border-radius': '3px',
+      'background-color': 'inherit',
+    },
+    formulaNote: { 'font-size': '0.78em', 'margin-left': '0.4em', opacity: '0.7' },
 
     hr: {},
 

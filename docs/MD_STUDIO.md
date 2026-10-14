@@ -152,6 +152,16 @@ md 字符串
 
 封面字号是**测量台上二分**出来的"尽量大但仍放得下"，不是固定倍数。量的是**整页克隆件**：只把封面内容丢进没有宽度约束的测量台，标题换行更少、显得更矮，二分就会选一个过大的字号，角标与副标题在真卡片里被裁掉（这个坑基线图第一眼就看见了）。
 
+**公式链路**（`theme/formula.ts`）：KaTeX 的 class 规则与 `@font-face` 此前**全仓无人引入**，于是"支持公式"在产物里从来不成立。现在宿主在入口引入 `katex/dist/katex.min.css`，mdcore 侧补三件事：
+
+- **CSS 缺失要看得见**：`katexCssMissing()` 探一次（结果缓存，避免每条公式都强制重排），缺失时**不静默**——改用「等宽源码 + 一句说明」的回落形态。
+- **渲染失败也要看得见**：`throwOnError:true` + 自有回落（KaTeX 自带的 `katex-error` 是一坨跟着主题走的红字）。
+- **平台适配器的源码契约**：知乎/微信要把公式降级成 LaTeX 源码，早先靠 `.katex-display` / `.katex` 两个 class 去认；回落形态没有那些 class，于是公式在平台产物里成了空白。改成显式的 `data-mdcore-formula-tex` 属性，class 只是实现细节。
+
+导出闸门相应加了两项：`.katex` 存在时**显式 load 12 个 KaTeX 字族**（@font-face 懒触发，`fonts.ready` 会先返回，截图会截到 fallback 字体，字宽全错），以及**图片等待加 8s 超时**（此前一张挂起的图能让导出永久转圈）。
+
+排版基线样例也补上了行内/块级公式，并让基线页面注入 KaTeX CSS——否则基线验的只是回落形态，等于把缺陷固化进基准图。
+
 **卡片视觉身份**（`platform/decks.ts`）：`cardTexture()` 出五种可平铺底纹（方格纸 / 点阵纸 / 横线纸 / 细网格 / 牛皮纸），`decoPreset()` 出三套贴边装饰（和纸胶带 / 备忘录状态栏 / 杂志细线）。主题用 `cardChrome: { texture, deco, textureInk, textureOpacity }` 声明自己那一套，四套小红书主题各配各的（桃夭点阵+胶带 / 青柠细网格 / 暮橙牛皮纸+杂志线 / 夜航浅色细网格）。
 
 全部是**内联 SVG**而不是外链 PNG：排版基线图必须像素稳定，外链资源换机就飘、纹理一变整张基线作废。
@@ -288,7 +298,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 244 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 253 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 
