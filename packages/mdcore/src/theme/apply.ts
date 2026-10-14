@@ -294,6 +294,16 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
       img.setAttribute('src', block.src);
       img.setAttribute('alt', block.alt);
       applyProps(img, styles.image);
+      // `{60% left}` 覆盖：宽度与对齐（小红书排版件；不给就用主题默认）
+      if (block.width) {
+        img.style.setProperty('width', block.width);
+        img.style.setProperty('max-width', '100%');
+        // 对齐是三个互斥取值：**逐项写死**而不是"先 auto 再改一个"——
+        // 后者会留下上一次的对齐值（左对齐时 margin-left 仍停在 auto）
+        img.style.setProperty('margin-left', block.align === 'right' ? 'auto' : '0');
+        img.style.setProperty('margin-right', block.align === 'left' ? 'auto' : '0');
+        figure.style.setProperty('width', block.width);
+      }
       figure.appendChild(img);
       // alt 作图注：有图注才生成figcaption（空 alt 不占位）
       if (block.alt && styles.figcaption) {
@@ -325,6 +335,33 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
         throwOnError: false,
       });
       return el;
+    }
+
+    case 'toc': {
+      // 目录：两级（H2/H3）缩进列表。微信把 <nav> 拍平，所以这里用 section/p 造
+      const box = doc.createElement('section');
+      box.className = 'mdcore-toc';
+      applyProps(box, styles.toc);
+      if (!block.items.length) {
+        const empty = doc.createElement('p');
+        empty.className = 'mdcore-toc-empty';
+        empty.textContent = '（本文还没有 2/3 级标题）';
+        applyProps(empty, styles.tocEmpty);
+        box.appendChild(empty);
+      }
+      block.items.forEach((item) => {
+        const row = doc.createElement('p');
+        row.className = `mdcore-toc-item mdcore-toc-l${item.level}`;
+        applyProps(row, styles.tocItem);
+        if (item.level === 3) row.style.setProperty('padding-left', '1.2em');
+        const link = doc.createElement('a');
+        link.setAttribute('href', `#${item.anchor}`);
+        link.textContent = item.text;
+        applyProps(link, styles.tocLink);
+        row.appendChild(link);
+        box.appendChild(row);
+      });
+      return box;
     }
 
     case 'hr': {
@@ -436,9 +473,30 @@ function renderInline(node: InlineNode, ctx: RenderContext): Node {
     }
 
     case 'html': {
+      // 整段就是一个带样式的 span 时直接用它，别再套一层（产物里多一个空 span
+      // 既是噪音，也会让微信内联多算一次样式）
+      const single = /^\s*<span\b[^>]*>\s*[\s\S]*\s*<\/span>\s*$/i.test(node.html);
+      if (single) {
+        const holder = doc.createElement('div');
+        holder.innerHTML = node.html;
+        const el = holder.firstElementChild;
+        if (el) {
+          holder.removeChild(el);
+          return el;
+        }
+      }
       const span = doc.createElement('span');
       span.innerHTML = node.html;
       return span;
+    }
+
+    case 'tag': {
+      // #话题：颜色跟主色（小红书里话题就是品牌色），且不可点（平台直发不做）
+      const el = doc.createElement('span');
+      el.className = 'mdcore-tag';
+      applyProps(el, styles.tag);
+      el.textContent = `#${node.text}`;
+      return el;
     }
 
     case 'break':

@@ -99,6 +99,9 @@ export function createMarkdownParser(): MarkdownIt {
   }
 
   md.core.ruler.push('mdcore_checkbox_to_emoji', checkboxToEmoji);
+  // 中文/小红书行内扩展：必须在 emoji 之后（`:名:` 先被 emoji 吃掉，
+  // `#话题` 里不会有冒号，互不打架）
+  md.core.ruler.push('mdcore_inline_ext', inlineExtensions);
   return md;
 }
 
@@ -122,6 +125,63 @@ function checkboxToEmoji(state: StateCore): void {
     }
   };
   visit(state.tokens);
+}
+
+/**
+ * 行内扩展核心规则：`#话题` 与 `[color:#xxx]文字[/color]`。
+ *
+ * 为什么用核心规则而不是 IR 层：这两个都要在**文本 token 内部**切段（`今天聊 #AI 与
+ * #设计` 一段文字里有几个话题），而 IR 层的 inline 是整块转换的，做不了切分。
+ * 切出来的 token 交给 IR 建模（tag / html），渲染与清洗规则仍然只有一处。
+ *
+ * 判据：话题前后必须是非标签字符（否则 `C#` 这种会误伤），且不以 `#` 开头
+ * 连续（那已经是标题语法，不会走到 inline text 里）。
+ */
+const TAG_RE = /(^|[^\w&])#([\w\u4e00-\u9fa5]{1,20})(?![\w\u4e00-\u9fa5])/g;
+const COLOR_RE = /\[color:#([0-9a-fA-F]{3,8})\]([^\[\]]*)\[\/color\]/g;
+
+function inlineExtensions(state: StateCore): void {
+  for (const token of state.tokens) {
+    if (token.type !== 'inline' || !token.children) continue;
+    token.children = token.children.flatMap((child) => {
+      if (child.type !== 'text') return [child];
+      const out: Token[] = [];
+      let rest = child.content;
+      // 两种语法各自扫一遍：先彩色文字（带定界符，优先），再话题
+      const cuts: Array<{ start: number; end: number; node: Token }> = [];
+      for (const m of rest.matchAll(COLOR_RE)) {
+        const node = new state.Token('colored', '', 0);
+        node.content = m[2];
+        node.meta = { color: `#${m[1]}` };
+        cuts.push({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, node });
+      }
+      for (const m of rest.matchAll(TAG_RE)) {
+        const start = (m.index ?? 0) + m[1].length;
+        const node = new state.Token('tag', '', 0);
+        node.content = m[2];
+        cuts.push({ start, end: (m.index ?? 0) + m[0].length, node });
+      }
+      cuts.sort((a, b) => a.start - b.start);
+      let cursor = 0;
+      for (const cut of cuts) {
+        if (cut.start < cursor) continue; // 重叠（不该发生）时先到先得
+        if (cut.start > cursor) {
+          const text = new state.Token('text', '', 0);
+          text.content = rest.slice(cursor, cut.start);
+          out.push(text);
+        }
+        out.push(cut.node);
+        cursor = cut.end;
+      }
+      if (!cuts.length) return [child];
+      if (cursor < rest.length) {
+        const text = new state.Token('text', '', 0);
+        text.content = rest.slice(cursor);
+        out.push(text);
+      }
+      return out;
+    });
+  }
 }
 
 let shared: MarkdownIt | null = null;

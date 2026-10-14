@@ -18,6 +18,8 @@ export type InlineNode =
   | { type: 'sup'; children: InlineNode[] }
   /** `<ruby>注音<rt>zhùyīn</rt></ruby>` */
   | { type: 'ruby'; base: InlineNode[]; rt: InlineNode[] }
+  /** `#话题`：小红书发布时的话题标签（导出文案与正文里都认） */
+  | { type: 'tag'; text: string }
   | { type: 'code'; text: string }
   | { type: 'link'; href: string; children: InlineNode[] }
   | { type: 'image'; src: string; alt: string }
@@ -33,10 +35,20 @@ export type IRBlock =
   | { type: 'code'; lang: string | null; code: string; line: LineRange | null }
   | { type: 'table'; header: InlineNode[][]; rows: InlineNode[][][]; line: LineRange | null }
   | { type: 'quote'; blocks: IRBlock[]; line: LineRange | null }
-  | { type: 'image'; src: string; alt: string; line: LineRange | null }
+  | {
+      type: 'image';
+      src: string;
+      alt: string;
+      /** `{60% left}` 覆盖图宽与对齐（小红书排版件） */
+      width?: string;
+      align?: 'left' | 'center' | 'right';
+      line: LineRange | null;
+    }
   | { type: 'callout'; variant: string; blocks: IRBlock[]; line: LineRange | null }
   | { type: 'formula'; tex: string; displayMode: boolean; line: LineRange | null }
-  | { type: 'hr'; line: LineRange | null };
+  | { type: 'hr'; line: LineRange | null }
+  /** `[toc]`：目录块，条目来自文档的 2/3 级标题（anchor 可跳） */
+  | { type: 'toc'; items: Array<{ level: number; text: string; anchor: string }>; line: LineRange | null };
 
 export type IRBlockType = IRBlock['type'];
 

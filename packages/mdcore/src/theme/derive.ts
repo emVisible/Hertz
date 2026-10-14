@@ -103,6 +103,17 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
       'font-family': 'Georgia, "Times New Roman", serif',
     },
 
+    // 规则 8.5：目录是个"索引块"——和引用同族（左边线 + 浅底），但不加引号标记，
+    // 行距比正文松一档（目录是扫读件，不是阅读件）
+    toc: {
+      'background-color': soft,
+      'border-left': `3px solid ${rule}`,
+      'border-radius': '0 8px 8px 0',
+      padding: '0.6em 0.9em',
+    },
+    tocItem: { 'line-height': '1.9', margin: '0', color: primary },
+    tocLink: { 'text-decoration': 'none', 'border-bottom': 'none' },
+
     // 规则 8：提示块 5 变体（note/tip/warning/danger/info + callout 别名）
     callout: { 'border-left': `3px solid ${primary}` },
     'callout-note': variantPaint('#2563eb'),
@@ -131,8 +142,9 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
     td: { 'border-color': rule },
     tbodyEven: { 'background-color': soft },
 
-    // 规则 12：列表序号跟主色
+    // 规则 12：列表序号跟主色（话题标签同样跟主色：小红书里话题就是品牌色）
     listMarker: { color: primary },
+    tag: { color: primary, 'font-weight': '600' },
 
     // 规则 13：分隔线 + 三圆点
     hr: hrPaint(t.hrStyle, primary, rule),

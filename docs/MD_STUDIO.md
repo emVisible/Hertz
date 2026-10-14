@@ -136,7 +136,11 @@ md 字符串
 | `- [x]` / `- [ ]` | `markdown-it-task-lists` + `checkboxToEmoji` 核心规则 | **必须换成 ✅/⬜ 字符**：微信清洗器整类剥掉 `<input>`。任务项正文裹在 `<label>` 里（对 markdown-it 不透明），IR 层拆开重解析，否则项内的 emoji/强调全留在原文里 |
 | `H~2~O` / `E=mc^2^` / `<ruby>` | sub / sup / ruby IR 节点 | 注音同理：html_inline 抢先，要在 IR 层自己认 |
 | `:sunny:` 等短码 | `markdown-it-emoji`（full） | |
-| `H₂O` 之外的定义列表 | `markdown-it-deflist` | |
+| `#话题` | `parse/markdown.ts` 行内扩展核心规则 | 切 `text` token 内部（`今天聊 #AI 与 #设计` 一段里有几个话题），前后必须是非标签字符，否则 `C#` 误伤 |
+| `[color:#xxx]文字[/color]` | 同上 | 落成**受控 span**——产物里不出现用户可写的标签，只有颜色这一个自由维度 |
+| `{70% left}` | `parseImageSizeSpec` | 图宽与对齐，宽度夹在 10%~100% |
+| `[toc]` | `fillToc` + `toc` 块 | 目录要"整篇标题"才能填，而 `[toc]` 通常在开头——所以解析时只放占位块，收尾统一回填；锚点 `h2-序号-slug`，重名不撞车 |
+| 定义列表 | `markdown-it-deflist` | |
 
 **IR 是心脏层**：markdown-it 之后所有环节只认 `LayoutIR`，不回读 token。于是平台适配器不懂 markdown、分页器不懂平台、主题不懂分页，每一环可独立替换与单测。
 
@@ -244,7 +248,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 171 条 vitest（node+jsdom，测试与源码同目录）、前端 219 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 182 条 vitest（node+jsdom，测试与源码同目录）、前端 219 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

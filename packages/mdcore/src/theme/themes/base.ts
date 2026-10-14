@@ -173,6 +173,14 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
 
     hr: {},
 
+    // 目录（颜色/底色由 derivedSlots 统一派生，base 只给中性骨架）
+    toc: { 'margin-top': '0.5em', 'margin-bottom': '1em', padding: '0.6em 0.8em' },
+    tocItem: { 'font-size': '0.92em', 'line-height': '1.9', margin: '0' },
+    tocLink: { 'text-decoration': 'none', 'border-bottom': 'none', color: 'inherit' },
+    tocEmpty: { 'font-size': '0.85em', opacity: '0.7' },
+    // #话题
+    tag: { color: 'inherit', 'font-weight': '600' },
+
     // 小红书卡片位（微信/知乎主题不填页壳样式时这两个键不会被用到）
     card: { 'background-color': '${canvasBg}', 'border-radius': '${radius}' },
     cardBody: {},

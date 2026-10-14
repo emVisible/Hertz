@@ -6,7 +6,70 @@ import type { IRBlock, InlineNode, LayoutIR, LineRange } from './types';
 export function parseToIR(markdown: string): LayoutIR {
   const md = getMarkdownParser();
   const tokens = md.parse(markdown, {});
-  return tokensToIR(tokens);
+  const blocks = tokensToIR(tokens);
+  fillToc(blocks);
+  return blocks;
+}
+
+/**
+ * 给 `[toc]` 占位块补上目录条目。
+ *
+ * 为什么放在收尾而不是解析 `[toc]` 那一刻：目录要"整篇的标题"才能填，而流式转换
+ * 时标题可能在 `[toc]` 之后才出现（大多数文章目录在开头，内容在下面）。
+ * 标题锚点由 `headingAnchor()` 按「序号 + 标题文本」生成，重名也能对上。
+ */
+function fillToc(blocks: LayoutIR): void {
+  const toc = blocks.find((b) => b.type === 'toc');
+  if (!toc || toc.type !== 'toc') return;
+  toc.items = blocks
+    .filter((b) => b.type === 'heading' && b.level >= 2 && b.level <= 3)
+    .map((b) => {
+      const heading = b as Extract<IRBlock, { type: 'heading' }>;
+      const text = inlinePlain(heading.children);
+      return { level: heading.level, text, anchor: headingAnchor(heading.level, text) };
+    });
+}
+
+/** 标题锚点：`h2-3-标题` ——序号保证同标题不撞车 */
+export function headingAnchor(level: number, text: string): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 24);
+  return `h${level}-${slug}`;
+}
+
+/** 行内节点 → 纯文本（目录条目、标题锚点都要） */
+export function inlinePlain(nodes: InlineNode[]): string {
+  return nodes
+    .map((n) => {
+      switch (n.type) {
+        case 'text':
+        case 'code':
+          return n.text;
+        case 'tag':
+          return `#${n.text}`;
+        case 'image':
+          return n.alt;
+        case 'formula':
+          return n.tex;
+        case 'break':
+          return '\n';
+        case 'html':
+          return n.html.replace(/<[^>]+>/g, '');
+        case 'ruby':
+          return inlinePlain(n.base);
+        case 'strong':
+        case 'em':
+        case 'mark':
+        case 'sub':
+        case 'sup':
+        case 'link':
+          return inlinePlain(n.children);
+      }
+    })
+    .join('');
 }
 
 function lineOf(token: Token): LineRange | null {
@@ -58,12 +121,17 @@ export function tokensToIR(tokens: Token[]): IRBlock[] {
         const kids = inline?.children ?? [];
         // 独立段落里的单张图提升为 image 块
         if (kids.length === 1 && kids[0].type === 'image') {
+          const spec = parseImageSizeSpec(inline?.content ?? '');
           blocks.push({
             type: 'image',
             src: attrOf(kids[0], 'src') ?? '',
             alt: kids[0].content ?? '',
+            ...(spec ?? {}),
             line: lineOf(t),
           });
+        } else if (isTocMarker(kids)) {
+          // `[toc]` 占位：条目在整篇转换完后由 fillToc 补（见其头注）
+          blocks.push({ type: 'toc', items: [], line: lineOf(t) });
         } else {
           blocks.push({ type: 'para', children: convertInline(kids), line: lineOf(t) });
         }
@@ -282,6 +350,19 @@ export function convertInline(tokens: Token[]): InlineNode[] {
         break;
       }
 
+      case 'tag':
+        out.push({ type: 'tag', text: t.content });
+        break;
+
+      case 'colored':
+        // `[color:#xxx]文字[/color]`：落成受控 span（不是裸 HTML——产物里不出现
+        // 用户可写的标签，只有颜色这一个自由维度）
+        out.push({
+          type: 'html',
+          html: `<span style="color:${String((t.meta as { color?: string })?.color ?? '#000')}">${escapeHtml(t.content)}</span>`,
+        });
+        break;
+
       case 'emoji':
         // markdown-it-emoji 把 :sunny: 渲染成 unicode，content 即字符本身
         out.push({ type: 'text', text: t.content });
@@ -391,6 +472,29 @@ export const CALLOUT_TITLES: Record<string, string> = {
   warning: '注意',
   danger: '警告',
 };
+
+/** 整段只有 `[toc]` 时才算目录标记（正文里提到 [toc] 不算） */
+function isTocMarker(kids: Token[]): boolean {
+  if (kids.length !== 1 || kids[0].type !== 'text') return false;
+  return kids[0].content.trim().toLowerCase() === '[toc]';
+}
+
+/** `{60% left}` / `{100%}`：图宽与对齐（小红书排版件） */
+export /** span 文本转义（颜色块走 html 通道，所以这里要自己挡一次） */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+export function parseImageSizeSpec(raw: string): { width?: string; align?: 'left' | 'center' | 'right' } | null {
+  const m = /\{(\d{1,3})%\s*(left|center|right)?\s*\}/i.exec(raw);
+  if (!m) return null;
+  const width = `${Math.min(100, Math.max(10, Number(m[1])))}%`;
+  const align = (m[2]?.toLowerCase() as 'left' | 'center' | 'right' | undefined) ?? 'center';
+  return { width, align };
+}
 
 function parseGitHubAlert(inner: Token[]): { variant: string; blocks: IRBlock[] } | null {
   const first = inner[0];

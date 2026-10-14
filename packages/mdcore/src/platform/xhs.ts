@@ -228,6 +228,9 @@ function blockText(block: IRBlock): string {
       return block.tex;
     case 'hr':
       return '';
+    case 'toc':
+      // 目录条目也进文案：小红书发布时带上目录，读者一眼看到结构
+      return block.items.map((i) => `${'　'.repeat(i.level - 2)}${i.text}`).join('\n');
   }
 }
 

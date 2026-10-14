@@ -14,7 +14,15 @@
  * - 导出器以 applyTheme/paginate 的渲染态 DOM 为截图源（§1 铁律 3）。
  */
 export { createMarkdownParser, getMarkdownParser } from './parse/markdown';
-export { CALLOUT_TITLES, parseToIR, tokensToIR, convertInline } from './ir/parseToIR';
+export {
+  CALLOUT_TITLES,
+  convertInline,
+  headingAnchor,
+  inlinePlain,
+  parseImageSizeSpec,
+  parseToIR,
+  tokensToIR,
+} from './ir/parseToIR';
 export type { IRBlock, IRBlockType, InlineNode, LayoutIR, LineRange } from './ir/types';
 export { applyTheme, cjkNumeral, resolveThemedProps } from './theme/apply';
 export { deriveTheme, derivedSlots, mergeSlots, resolveThemeSlots, themeWithOverrides } from './theme/derive';
