@@ -14,6 +14,8 @@
  * - 导出器以 applyTheme/paginate 的渲染态 DOM 为截图源（§1 铁律 3）。
  */
 export { createMarkdownParser, getMarkdownParser } from './parse/markdown';
+export { LANG_ALIASES, normalizeLang, parseFenceInfo } from './parse/lang';
+export type { FenceInfo } from './parse/lang';
 export {
   cardTexture,
   DECO_IDS,
@@ -65,6 +67,7 @@ export type {
   StrongStyle,
   TableStyle,
 } from './theme/types';
+export { hljsDark, hljsLight } from './theme/themes/base';
 export { deepen, hexToHsl, hslToHex, isHexColor, withAlpha } from './theme/color';
 export {
   darkThemeFor,

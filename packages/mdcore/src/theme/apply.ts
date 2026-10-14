@@ -205,18 +205,20 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
         applyProps(head, styles.codeHead);
         if (tokens.codeBar === 'mac') {
           const dots = deco(doc, 'span', 'mdcore-code-dots');
+          applyProps(dots, styles.codeDots);
           for (const c of ['#ff5f57', '#febc2e', '#28c840']) {
-            const dot = doc.createElement('span');
-            dot.className = 'mdcore-code-dot';
+            const dot = deco(doc, 'span', 'mdcore-code-dot');
+            applyProps(dot, styles.codeDot);
             dot.style.setProperty('background-color', c);
             dots.appendChild(dot);
           }
           head.appendChild(dots);
         }
+        // 标签用可读名（文件名优先），高亮用归一化后的语言名——两者不是一回事
         const lang = doc.createElement('span');
         lang.className = 'mdcore-code-lang';
         applyProps(lang, styles.codeLang);
-        lang.textContent = block.lang ?? '';
+        lang.textContent = block.label ?? block.lang ?? '';
         head.appendChild(lang);
         wrap.appendChild(head);
       }

@@ -28,23 +28,99 @@ const HEADING_SCALE: Record<number, { size: string; weight: string }> = {
   6: { size: '0.94em', weight: '600' },
 };
 
-/** 代码高亮配色：浅色一套（GitHub Light 口径），深色主题换 `hljsDark` */
+/**
+ * 代码高亮配色：浅色一套（GitHub Light 口径），深色主题换 `hljsDark`。
+ *
+ * 此前只有 6 个类，而 hljs 实产 40+ 类——`built_in`、`literal`、`type`、
+ * `variable`、`property`、`meta`、`selector`…全部落到无色默认继承。于是
+ * Python 的 `print`、SQL 的 `SELECT`、Go 的 `int` 在成品里和普通文字一模一样。
+ *
+ * 覆盖的是"读者真的会分辨"的类目，不是 hljs 的全集：把 40+ 个类都调一遍，
+ * 一半会撞色，一半会让配色变成一锅粥。判据守的是"每个语言的关键类目有颜色"。
+ */
 export const hljsLight: Record<string, StyleProps> = {
+  // 关键字族
   'hljs-keyword': { color: '#cf222e' },
+  'hljs-built_in': { color: '#8250df' },
+  'hljs-type': { color: '#953800' },
+  'hljs-literal': { color: '#0550ae' },
+  'hljs-meta': { color: '#6639ba' },
+  'hljs-meta .hljs-keyword': { color: '#cf222e' },
+  'hljs-meta .hljs-string': { color: '#0a3069' },
+  // 字面量
   'hljs-string': { color: '#0a3069' },
-  'hljs-comment': { color: '#6e7781', 'font-style': 'italic' },
+  'hljs-regexp': { color: '#0a3069' },
+  'hljs-char.escape': { color: '#116329' },
   'hljs-number': { color: '#0550ae' },
+  'hljs-symbol': { color: '#0969da' },
+  // 名字族
   'hljs-title': { color: '#8250df' },
+  'hljs-title.class': { color: '#953800' },
+  'hljs-title.class.inherited': { color: '#953800' },
+  'hljs-title.function': { color: '#8250df' },
+  'hljs-params': { color: '#24292f' },
+  'hljs-variable': { color: '#24292f' },
+  'hljs-variable.language': { color: '#cf222e' },
+  'hljs-variable.constant': { color: '#0550ae' },
+  'hljs-property': { color: '#0550ae' },
   'hljs-attr': { color: '#953800' },
+  'hljs-attribute': { color: '#953800' },
+  'hljs-selector-tag': { color: '#116329' },
+  'hljs-selector-class': { color: '#953800' },
+  'hljs-selector-id': { color: '#0550ae' },
+  'hljs-name': { color: '#116329' },
+  'hljs-tag': { color: '#24292f' },
+  'hljs-doctag': { color: '#6e7781' },
+  // 注释
+  'hljs-comment': { color: '#6e7781', 'font-style': 'italic' },
+  'hljs-quote': { color: '#6e7781', 'font-style': 'italic' },
+  // 其它
+  'hljs-operator': { color: '#cf222e' },
+  'hljs-punctuation': { color: '#24292f' },
+  'hljs-deletion': { color: '#82071e', 'background-color': '#ffebe9' },
+  'hljs-addition': { color: '#116329', 'background-color': '#dafbe1' },
+  'hljs-emphasis': { 'font-style': 'italic' },
+  'hljs-strong': { 'font-weight': '600' },
 };
 
 export const hljsDark: Record<string, StyleProps> = {
   'hljs-keyword': { color: '#ff7b72' },
+  'hljs-built_in': { color: '#d2a8ff' },
+  'hljs-type': { color: '#ffa657' },
+  'hljs-literal': { color: '#79c0ff' },
+  'hljs-meta': { color: '#d2a8ff' },
+  'hljs-meta .hljs-keyword': { color: '#ff7b72' },
+  'hljs-meta .hljs-string': { color: '#a5d6ff' },
   'hljs-string': { color: '#a5d6ff' },
-  'hljs-comment': { color: '#8b949e', 'font-style': 'italic' },
+  'hljs-regexp': { color: '#a5d6ff' },
+  'hljs-char.escape': { color: '#7ee787' },
   'hljs-number': { color: '#79c0ff' },
+  'hljs-symbol': { color: '#79c0ff' },
   'hljs-title': { color: '#d2a8ff' },
+  'hljs-title.class': { color: '#ffa657' },
+  'hljs-title.class.inherited': { color: '#ffa657' },
+  'hljs-title.function': { color: '#d2a8ff' },
+  'hljs-params': { color: '#c9d1d9' },
+  'hljs-variable': { color: '#c9d1d9' },
+  'hljs-variable.language': { color: '#ff7b72' },
+  'hljs-variable.constant': { color: '#79c0ff' },
+  'hljs-property': { color: '#79c0ff' },
   'hljs-attr': { color: '#ffa657' },
+  'hljs-attribute': { color: '#ffa657' },
+  'hljs-selector-tag': { color: '#7ee787' },
+  'hljs-selector-class': { color: '#ffa657' },
+  'hljs-selector-id': { color: '#79c0ff' },
+  'hljs-name': { color: '#7ee787' },
+  'hljs-tag': { color: '#c9d1d9' },
+  'hljs-doctag': { color: '#8b949e' },
+  'hljs-comment': { color: '#8b949e', 'font-style': 'italic' },
+  'hljs-quote': { color: '#8b949e', 'font-style': 'italic' },
+  'hljs-operator': { color: '#ff7b72' },
+  'hljs-punctuation': { color: '#c9d1d9' },
+  'hljs-deletion': { color: '#ffdcd7', 'background-color': '#67060c' },
+  'hljs-addition': { color: '#aff5b4', 'background-color': '#033a16' },
+  'hljs-emphasis': { 'font-style': 'italic' },
+  'hljs-strong': { 'font-weight': '600' },
 };
 
 export interface BaseOptions {
@@ -116,6 +192,10 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
       padding: '0.4em 0.8em',
     },
     codeLang: { 'font-weight': '600' },
+    // Mac 三色点：此前只设了 background-color，**没有任何尺寸**——空 span 是 0×0，
+    // 真浏览器里三点完全不可见，而当时的测试只断言背景色，把这个缺陷钉成了"正确"。
+    codeDots: { display: 'inline-flex', gap: '0.35em', 'align-items': 'center', 'margin-right': '0.6em' },
+    codeDot: { width: '0.62em', height: '0.62em', 'border-radius': '50%', display: 'inline-block' },
     pre: {
       margin: '0',
       padding: '0.9em 1em',

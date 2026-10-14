@@ -1,5 +1,6 @@
 import type Token from 'markdown-it/lib/token.mjs';
 import { getMarkdownParser } from '../parse/markdown';
+import { parseFenceInfo } from '../parse/lang';
 import type { IRBlock, IRDiagnostic, InlineNode, LayoutIR, LineRange } from './types';
 
 /**
@@ -200,9 +201,11 @@ export function tokensToIR(tokens: Token[], ctx?: ParseContext): IRBlock[] {
 
       case 'fence':
       case 'code_block': {
+        const info = parseFenceInfo(t.info);
         blocks.push({
           type: 'code',
-          lang: t.info.trim() || null,
+          lang: info.lang,
+          ...(info.label ? { label: info.label } : {}),
           code: t.content,
           line: lineOf(t),
         });

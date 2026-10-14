@@ -152,6 +152,14 @@ md 字符串
 
 封面字号是**测量台上二分**出来的"尽量大但仍放得下"，不是固定倍数。量的是**整页克隆件**：只把封面内容丢进没有宽度约束的测量台，标题换行更少、显得更矮，二分就会选一个过大的字号，角标与副标题在真卡片里被裁掉（这个坑基线图第一眼就看见了）。
 
+**代码块**（W1 切片 4）：三件"写了支持、产物里不成立"的事——
+
+- **围栏 info 不再整串当语言用**：` ```ts title="a.ts" ` 此前 `hljs.getLanguage('ts title="a.ts"')` 必然失败（整块不高亮），代码头标签还把整串原样显示。现在 `parse/lang.ts` 拆出「归一化语言（高亮用）+ 可读标签（显示用）」，剥掉 `{1,3}`、`js:app.js`、`title="a.ts"` 等记号，并带一张**只登记用户真会写的形式**的别名表（`ts`/`sh`/`yml`/`py`/`c++`…）。高亮与标签共用同一份归一化结果——两处各解析一次迟早漂。
+- **Mac 三色点此前是 0×0**：只设了 `background-color`，空 span 没有尺寸，真浏览器里三点完全不可见；而当时的测试只断言背景色，把这个缺陷钉成了「正确」。
+- **高亮配色从 6 类扩到 40 类**：hljs 实产 40+ 类，缺的那些（`built_in`/`type`/`literal`/`variable`/`property`/`meta`…）全部落到无色默认继承——Python 的 `print`、SQL 的 `SELECT`、Go 的 `int` 在成品里和普通文字一模一样。浅色/深色两套键集由判据守成相等。
+
+顺带删掉了解析期那份**死的** `highlight` 回调：高亮的真正作者是 `theme/apply.ts` 的 `highlightCode()`（IR 只存源码，渲染期同步重跑再把 hljs-* class 映射成内联颜色），解析期那份产物整个被丢弃。成对变异第一轮就撞上了：把它退回整串 info，285 条断言**全绿**——两个作者，留着一个是误导。
+
 **行内元素各归各槽**（W1 切片 3）：渲染了节点、却没有槽位的一类缺口——它们全都只能写死样式。
 
 - **行内图片复用的是块级 `image` 槽**，而那个槽带 `display:block; margin:0 auto`——段内插一张图，整段被撑成块级并居中，图文流彻底断掉。现在行内图有自己的 `imageInline` 槽（`inline-block` + 中线对齐），圆角仍跟 `imgRadius`。
@@ -311,7 +319,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 271 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 285 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

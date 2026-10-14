@@ -38,7 +38,15 @@ export type IRBlock =
   | { type: 'heading'; level: number; children: InlineNode[]; line: LineRange | null }
   | { type: 'para'; children: InlineNode[]; line: LineRange | null }
   | { type: 'list'; ordered: boolean; items: InlineNode[][]; line: LineRange | null }
-  | { type: 'code'; lang: string | null; code: string; line: LineRange | null }
+  | {
+      type: 'code';
+      /** 归一化后的语言（高亮用），`null` = 没写或无法识别 */
+      lang: string | null;
+      /** 代码头部的可读标签（文件名优先，其次语言名） */
+      label?: string;
+      code: string;
+      line: LineRange | null;
+    }
   | {
       type: 'table';
       header: InlineNode[][];

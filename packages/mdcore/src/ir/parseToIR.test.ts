@@ -117,7 +117,8 @@ describe('parseToIR：全块型快照', () => {
 
   it('code 带语言与原文', () => {
     const [c] = blocksOfType(ir, 'code');
-    expect(c).toMatchObject({ type: 'code', lang: 'js', code: 'const a = 1;\n' });
+    // 归一化后的内部名（用户写的是 js；高亮与代码头标签共用这一份结果）
+    expect(c).toMatchObject({ type: 'code', lang: 'javascript', code: 'const a = 1;\n' });
   });
 
   it('table 带表头与数据行', () => {

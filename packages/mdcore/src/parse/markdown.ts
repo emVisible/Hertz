@@ -14,7 +14,7 @@ import katexPlugin from '@traptitech/markdown-it-katex';
 import container from 'markdown-it-container';
 import toc from 'markdown-it-table-of-contents';
 import attrs from 'markdown-it-attrs';
-import hljs from 'highlight.js';
+
 
 /** markdown-it-container 注册的 callout 变体（:::note / :::warning ...） */
 export const CALLOUT_VARIANTS = ['note', 'tip', 'warning', 'danger', 'info', 'callout'] as const;
@@ -57,20 +57,21 @@ function validateLink(url: string): boolean {
  * shiki 异步二次 pass 留给后续导出质量优化。
  */
 export function createMarkdownParser(): MarkdownIt {
+  /**
+   * **不配 `highlight` 回调**。
+   *
+   * 高亮的唯一作者是 `theme/apply.ts` 的 `highlightCode()`：IR 只存源码，
+   * 渲染期用归一化后的 `block.lang` 同步重跑，再把 hljs-* class 映射成主题
+   * styles 的内联颜色（微信清洗器剥 class）。
+   *
+   * 早先这里也配了一份，解析期先渲染一遍、IR 随后把产物**整个丢掉**——
+   * 于是同一件事有两个作者，而只有渲染期那个有效：改这份回调不会有任何可见效果
+   * （切片 4 的成对变异第一轮就撞上了：把它退回整串 info，285 条断言全绿）。
+   */
   const md = new MarkdownIt({
     html: true,
     linkify: true,
     typographer: false,
-    highlight(code: string, lang: string): string {
-      if (lang && hljs.getLanguage(lang)) {
-        try {
-          return hljs.highlight(code, { language: lang }).value;
-        } catch {
-          // 未知/损坏语法高亮失败时降级为纯文本转义（返回 '' 走默认）
-        }
-      }
-      return '';
-    },
   });
 
   // markdown-it 默认只放行 `data:image/(gif|png|jpeg|webp);`（带分号），

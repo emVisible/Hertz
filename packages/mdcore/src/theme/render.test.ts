@@ -156,7 +156,7 @@ describe('代码卡片：头部语言标签 / Mac 三色点 / 无横滚撑破', 
     expect(card.querySelectorAll('.mdcore-code-dot').length).toBe(0);
   });
 
-  it('mac 模式：三色点是真实节点（伪元素过不了微信清洗器）', () => {
+  it('mac 模式：三色点是**有尺寸**的真实节点（伪元素过不了微信清洗器）', () => {
     const el = render(MD, { codeBar: 'mac' });
     const dots = Array.from(el.querySelectorAll('.mdcore-code-dot')) as HTMLElement[];
     expect(dots.length).toBe(3);
@@ -165,6 +165,12 @@ describe('代码卡片：头部语言标签 / Mac 三色点 / 无横滚撑破', 
       'rgb(254, 188, 46)',
       'rgb(40, 200, 64)',
     ]);
+    // 这条断言是补上的：早先只断言背景色，把「空 span 0×0、真浏览器里根本看不见」
+    // 这个缺陷钉成了"正确"。颜色对了不等于看得见——尺寸才算。
+    for (const dot of dots) {
+      expect(dot.style.width).toBeTruthy();
+      expect(dot.style.height).toBeTruthy();
+    }
   });
 
   it('none 模式：没有头部（省一条 chrome，但代码体一样在卡片里）', () => {
