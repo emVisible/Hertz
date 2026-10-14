@@ -64,6 +64,12 @@ export {
   wanfeng,
   xueshu,
   yehang,
+  CUSTOM_THEME_PREFIX,
+  clearCustomThemes,
+  isBuiltinTheme,
+  listCustomThemes,
+  registerTheme,
+  unregisterTheme,
 } from './theme/index';
 export type { StyleProps, Theme, ThemeOverrides, ThemePlatform, ThemeTokens } from './theme/types';
 export { copyToClipboard, toWechatClipboardPayload } from './platform/wechat';

@@ -4,12 +4,15 @@
  * MdStudioPage 编排（要拿 draft 全文重建渲染态 DOM），这里只发意图。
  */
 
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getTheme, listThemes, XHS_MAX_PAGES, type ThemeOverrides } from '@hertz/mdcore'
 
 import type { LayoutPlatform } from '../../api'
 import { Button, Icon, Input, Select, TabBar, useToast } from '../../components/ui'
 import type { XhsRenderInfo } from './CanvasPanel'
+import { ThemeDesigner } from './themeDesigner/ThemeDesigner'
+import { hydrateCustomThemes } from './themeDesigner/customThemes'
 
 export type ExportAction = 'copy-wechat' | 'copy-zhihu' | 'copy-caption' | 'zip' | 'longimage'
 
@@ -62,6 +65,13 @@ export function InspectorPanel({
 }: InspectorPanelProps) {
   const { t } = useTranslation()
   const toast = useToast()
+  // 自建主题从 localStorage 灌进 mdcore 注册表：模块加载时做一次即可，
+  // 正常路径是无副作用的（读不到存储就是零套）
+  useState(() => {
+    hydrateCustomThemes()
+    return true
+  })
+  const [designing, setDesigning] = useState(false)
   const themes = listThemes().filter((th) => th.platform === platform)
   const currentTheme = (() => {
     try {
@@ -73,6 +83,20 @@ export function InspectorPanel({
   const color = overrides.color ?? currentTheme?.tokens.color ?? '#c24d2c'
   const fontSize = overrides.fontSize ?? currentTheme?.tokens.fontSize ?? '16px'
   const lineHeight = overrides.lineHeight ?? currentTheme?.tokens.lineHeight ?? '1.75'
+
+  if (designing) {
+    return (
+      <div className="flex h-full min-h-0 flex-col" data-testid="mdstudio-inspector">
+        <ThemeDesigner
+          themeId={themeId}
+          overrides={overrides}
+          onOverridesChange={onOverridesChange}
+          onThemeChange={onThemeChange}
+          onClose={() => setDesigning(false)}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="mdstudio-inspector">
@@ -128,6 +152,17 @@ export function InspectorPanel({
             )
           })}
         </div>
+
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<Icon name="wand" size={12} />}
+          className="mt-3 w-full"
+          data-testid="mdstudio-open-designer"
+          onClick={() => setDesigning(true)}
+        >
+          {t('mdstudio.designer.open')}
+        </Button>
 
         {/* 微调：改动即 overrides 落稿，画布 150ms debounce 重排 */}
         <h3 className="mb-2 mt-5 text-xs font-semibold text-text-secondary">{t('mdstudio.inspector.tune')}</h3>

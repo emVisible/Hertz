@@ -141,6 +141,30 @@
         "skipped": "Skipped"
       },
       "partial": "Canceled the rest — {{count}} images delivered"
+    },
+    "designer": {
+      "open": "Theme designer",
+      "title": "Theme designer",
+      "back": "Back",
+      "loadFailed": "Failed to load theme",
+      "mine": "My themes",
+      "mineEmpty": "No custom theme yet. Tune one and hit Save as — it stays on this machine.",
+      "saveAs": "Theme name",
+      "save": "Save as",
+      "saved": "Saved “{{name}}”",
+      "delete": "Delete",
+      "export": "Export JSON",
+      "exported": "Copied to clipboard",
+      "exportFailed": "Copy failed, export manually",
+      "import": "Import JSON",
+      "imported": "Imported {{count}} theme(s)",
+      "followColor": "Follows primary",
+      "fixed": "Pinned",
+      "undoFix": "Back to following primary",
+      "reset": "Reset to theme value",
+      "sameAsBody": "Same as body",
+      "pin": "Pin",
+      "pinIt": "Pin this value (stop following primary)"
     }
   },
   "common": {

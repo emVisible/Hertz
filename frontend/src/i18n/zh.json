@@ -141,6 +141,30 @@
         "skipped": "跳过"
       },
       "partial": "已取消剩余，交付已出的 {{count}} 张"
+    },
+    "designer": {
+      "open": "主题设计器",
+      "title": "主题设计器",
+      "back": "返回",
+      "loadFailed": "主题读取失败",
+      "mine": "我的主题",
+      "mineEmpty": "还没有自建主题。调好一套配色后点「另存为」，它会跟着账号留在本机。",
+      "saveAs": "主题名",
+      "save": "另存为",
+      "saved": "已保存「{{name}}」",
+      "delete": "删除",
+      "export": "导出 JSON",
+      "exported": "已复制到剪贴板",
+      "exportFailed": "复制失败，请手动导出",
+      "import": "导入 JSON",
+      "imported": "已导入 {{count}} 套主题",
+      "followColor": "跟随主色",
+      "fixed": "已固定",
+      "undoFix": "还原成跟随主色",
+      "reset": "还原成主题自带值",
+      "sameAsBody": "与正文同族",
+      "pin": "固定",
+      "pinIt": "固定这个值（不再跟随主色）"
     }
   },
   "common": {
