@@ -231,9 +231,25 @@ md 字符串
 
 ## 8. 质量保障
 
-**门禁**：`bash scripts/verify.sh` 七步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build）。mdcore 是这次才补进闸的——新包 94 条测试一度不在闸上。
+**门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 102 条 vitest（node+jsdom，测试与源码同目录）、前端 219 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 158 条 vitest（node+jsdom，测试与源码同目录）、前端 219 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+
+### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
+
+结构层能证"标题有两个 span"，证不了"改完还好看"——而排版恰恰是观感问题。所以每套主题 × 每份样例各有一张基准图：`scripts/typography-baseline.mjs` 用 Electron 无头把 mdcore 的渲染态拍成 PNG，与基准图逐像素比（阈值 0.5%，4 字节采样步长）。
+
+- **用法**：`node scripts/typography-baseline.mjs` 比对 / `--update` 重录；退出码 0/1/2 = 通过/超阈值/环境跑不起来
+- **可比性**：只保证同机同 Chromium 同字体可比。`manifest.json` 记 platform、userAgent 与**字体探针**（固定字符串的测量宽度）；探针变了会提示"本轮读数不可比，请 --update 重录"——而不是把阈值放大
+- **内容必须像素稳定**：不用远程图片（网络抖动会让基线永久飘）、不用随机内容、示例图用内联 SVG data URL
+
+**它已经抓到的东西**（三条结构层 158 条断言一条都没红）：
+
+| 缺陷 | 现象 | 修在哪 |
+| --- | --- | --- |
+| `data:image/svg+xml` 被 markdown-it 默认 `validateLink` 拒掉 | 配图在画布上**原样打印成一行 data URL** | `parse/markdown.ts` 白名单只放行 `data:image/<子类型>`；平台层再加一道 `sanitizeImageSources` |
+| `applyCover` 把 em 当 px 乘 | 封面标题变成 **2.55px**，整张卡片最该抢眼的标题缩成一个点 | `scaleFontSize()` 保留单位 |
+| 30px 卡片上的中文着重号 | 加粗变成**一排悬空的点** | 暮橙改用主色底高亮；`dot` 样式保留可用 |
 
 **判据纪律**：
 

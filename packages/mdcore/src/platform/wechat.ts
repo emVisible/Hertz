@@ -19,6 +19,7 @@ import {
   inlineComputedStyles,
   normalizeText,
   replaceTag,
+  sanitizeImageSources,
   snapshotClone,
   stripUnsafe,
 } from './inline';
@@ -130,6 +131,7 @@ export function toWechatClipboardPayload(input: Document | HTMLElement): WechatP
   try {
     inlineComputedStyles(clone, win);
     hardenCodeBlocks(clone);
+    sanitizeImageSources(clone);
     linksToFootnotes(clone);
     flattenStructure(clone);
     stripUnsafe(clone);

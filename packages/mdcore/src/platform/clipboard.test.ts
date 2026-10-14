@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { copyToClipboard } from '../index';
+import { toWechatClipboardPayload } from './wechat';
 
 /**
  * 剪贴板降级链（真浏览器实测：窗口失焦时 ClipboardItem 写会抛
@@ -53,5 +54,34 @@ describe('copyToClipboard 降级链', () => {
     await copyToClipboard({ html: '<p>x</p>', text: '正文' });
     expect(write).toHaveBeenCalledTimes(1);
     expect(writeText).not.toHaveBeenCalled();
+  });
+});
+
+describe('图片地址白名单（进剪贴板前的最后一道）', () => {
+  /** 三类地址：http(s) 留；位图 data URL 留；其余换 1×1 占位 */
+  function payloadFor(src: string): string {
+    const el = document.createElement('section');
+    const img = document.createElement('img');
+    img.setAttribute('src', src);
+    img.setAttribute('alt', '');
+    el.appendChild(img);
+    document.body.appendChild(el);
+    const { html } = toWechatClipboardPayload(el);
+    el.remove();
+    return html;
+  }
+
+  it('http(s) 与位图 data URL 原样保留', () => {
+    expect(payloadFor('https://example.com/a.png')).toContain('https://example.com/a.png');
+    expect(payloadFor('data:image/png;base64,AAAA')).toContain('data:image/png;base64,AAAA');
+    expect(payloadFor('./local.png')).toContain('./local.png');
+  });
+
+  it('非图片 data URL / javascript: / 含 .. 的路径换成透明占位（不静默删图）', () => {
+    const blocked = payloadFor('data:text/html;base64,PHNjcmlwdD4=');
+    expect(blocked).not.toContain('text/html');
+    expect(blocked).toContain('data:image/png;base64,');
+    expect(payloadFor('javascript:alert(1)')).not.toContain('javascript:');
+    expect(payloadFor('../../etc/passwd')).not.toContain('..');
   });
 });

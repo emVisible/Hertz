@@ -19,6 +19,7 @@ import {
   inlineComputedStyles,
   normalizeText,
   replaceTag,
+  sanitizeImageSources,
   snapshotClone,
   stripUnsafe,
 } from './inline';
@@ -134,6 +135,7 @@ export async function toZhihuClipboardPayload(
   const { clone, win, cleanup } = snapshotClone(input, 'zhihuPayload');
   try {
     inlineComputedStyles(clone, win);
+    sanitizeImageSources(clone);
     await degradeTables(clone, opts.captureTable);
     formulasToTexSource(clone);
     flattenLists(clone);

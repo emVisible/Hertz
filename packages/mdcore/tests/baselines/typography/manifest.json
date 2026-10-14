@@ -1,0 +1,78 @@
+{
+  "shots": [
+    {
+      "id": "wechat-modi-article",
+      "themeId": "modi",
+      "platform": "wechat",
+      "sample": "article",
+      "width": 375,
+      "height": 0
+    },
+    {
+      "id": "wechat-wanfeng-article",
+      "themeId": "wanfeng",
+      "platform": "wechat",
+      "sample": "article",
+      "width": 375,
+      "height": 0
+    },
+    {
+      "id": "xhs-taoyao-card",
+      "themeId": "taoyao",
+      "platform": "xhs",
+      "sample": "card",
+      "width": 1242,
+      "height": 1656
+    },
+    {
+      "id": "xhs-qingning-card",
+      "themeId": "qingning",
+      "platform": "xhs",
+      "sample": "card",
+      "width": 1242,
+      "height": 1656
+    },
+    {
+      "id": "xhs-mucheng-card",
+      "themeId": "mucheng",
+      "platform": "xhs",
+      "sample": "card",
+      "width": 1242,
+      "height": 1656
+    },
+    {
+      "id": "zhihu-xueshu-article",
+      "themeId": "xueshu",
+      "platform": "zhihu",
+      "sample": "article",
+      "width": 690,
+      "height": 0
+    },
+    {
+      "id": "zhihu-qingjian-article",
+      "themeId": "qingjian",
+      "platform": "zhihu",
+      "sample": "article",
+      "width": 690,
+      "height": 0
+    },
+    {
+      "id": "xhs-yehang-card",
+      "themeId": "yehang",
+      "platform": "xhs",
+      "sample": "card",
+      "width": 1242,
+      "height": 1656
+    },
+    {
+      "id": "zhihu-moan-article",
+      "themeId": "moan",
+      "platform": "zhihu",
+      "sample": "article",
+      "width": 690,
+      "height": 0
+    }
+  ],
+  "fontProbe": 317.66,
+  "chrome": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.7204.251 Electron/37.10.3 Safari/537.36"
+}

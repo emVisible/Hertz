@@ -1,7 +1,8 @@
 import type { Theme, ThemeTokens } from '../types';
 import { baseStyles } from './base';
 
-/** 小红书向：落日橙。标题走荧光笔式涂抹、加粗用中文着重号（中文正文里比 font-weight 更地道）。 */
+/** 小红书向：落日橙。标题走荧光笔式涂抹、加粗走主色底高亮——
+ * 30px 卡片上中文着重号会变成一排点（基线图实测），高亮更干净。 */
 const tokens: ThemeTokens = {
   color: '#d9480f',
   fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
@@ -25,7 +26,7 @@ const tokens: ThemeTokens = {
   // 样式开关：决定 derivedSlots 产出哪一套装饰（主题不手写装饰槽，见 base.ts 头注）
   headingStyle: 'underline-highlight',
   quoteStyle: 'left-bar',
-  strongStyle: 'dot',
+  strongStyle: 'highlight',
   codeBar: 'mac',
   tableStyle: 'card',
   listStyle: 'cjk-numeral',

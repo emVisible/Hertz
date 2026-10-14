@@ -116,6 +116,29 @@ export function hardenCodeBlocks(root: HTMLElement): void {
   }
 }
 
+/**
+ * 图片地址白名单（进剪贴板前最后一道）。
+ *
+ * markdown-it 侧已经放过 `data:image/*`，但产物里也可能出现手写 HTML 的 `<img>`；
+ * 微信/知乎会把这段 HTML 原样粘进第三方编辑器，所以这里按参考实现（xhs 布局仓
+ * `safeImageSrc`）的白名单再筛一遍：只留 http(s)、data:image/(位图)、不含 `..` 的相对路径。
+ * 其余换成 1×1 透明占位——**不静默删图**：删掉的话用户看不出"图没了"，
+ * 而占位至少说明这里本该有图。
+ */
+const TRANSPARENT_PX =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+export function sanitizeImageSources(root: HTMLElement): void {
+  for (const img of Array.from(root.querySelectorAll('img'))) {
+    const src = (img.getAttribute('src') ?? '').trim();
+    const ok =
+      /^https?:\/\//i.test(src) ||
+      /^data:image\/(png|jpe?g|gif|webp|bmp|avif)[;,]/i.test(src) ||
+      (src !== '' && !/^([a-z][a-z0-9+.-]*:|\/\/)/i.test(src) && !src.includes('..'));
+    if (!ok) img.setAttribute('src', TRANSPARENT_PX);
+  }
+}
+
 /** 剥除 class/id、空 style、含 var() 的声明（CSS 变量已全部展开为字面值） */
 export function stripUnsafe(root: HTMLElement): void {
   const all = [root, ...Array.from(root.querySelectorAll('*'))];

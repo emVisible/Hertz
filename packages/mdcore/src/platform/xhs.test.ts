@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTheme, listThemes, parseToIR, XHS_CARD, XHS_MAX_PAGES, xhsCaption, xhsCards } from '../index';
+import { getTheme, listThemes, parseToIR, scaleFontSize, XHS_CARD, XHS_MAX_PAGES, xhsCaption, xhsCards } from '../index';
 import type { Measurer } from '../index';
 
 /** xhs 卡片内容高 = 卡高 - 上 padding - (下 padding + 页脚区) */
@@ -40,6 +40,23 @@ describe('xhs 主题', () => {
 });
 
 describe('xhsCards', () => {
+  it('scaleFontSize 保留单位：em 放大后仍是 em（封面标题曾被缩成 2.55px）', () => {
+    expect(scaleFontSize('1.7em', 1.5)).toBe('2.55em');
+    expect(scaleFontSize('54px', 1.5)).toBe('81px');
+    expect(scaleFontSize('30px', 2)).toBe('60px');
+    // 取不到 / 非数字 → 回落到缺省 54px，不产出 NaN
+    expect(scaleFontSize('', 1.5)).toBe('81px');
+    expect(scaleFontSize('inherit', 1.5)).toBe('81px');
+  });
+
+  it('封面标题字号按倍数放大（em 相对值不被当成 px）', () => {
+    const ir = parseToIR('# 封面标题\n\n正文。');
+    const { pages } = xhsCards(ir, { measurer: mockMeasurer(CONTENT_H) });
+    const h1 = pages[0].querySelector('h1') as HTMLElement;
+    // 桃夭的 h1 是 1.7em → 封面应是 2.55em，而不是 2.55px
+    expect(h1.style.fontSize).toBe('2.55em');
+  });
+
   it('首块是 heading → 第一页做成封面页', () => {
     const ir = parseToIR('# 大标题\n\n正文内容。');
     const { pages, overflow } = xhsCards(ir, { measurer: mockMeasurer(CONTENT_H) });
@@ -49,9 +66,10 @@ describe('xhsCards', () => {
     expect(cover.dataset.cover).toBe('true');
     const h1 = cover.querySelector('h1') as HTMLElement;
     expect(h1.style.textAlign).toBe('center');
-    // 封面标题放大：大于主题 h1 基础字号
-    const base = parseFloat(getTheme('taoyao').styles.h1['font-size']);
-    expect(parseFloat(h1.style.fontSize)).toBeGreaterThan(base);
+    // 封面标题放大：字号严格大于主题 h1 基础字号（相对值口径，em 与 px 混用时会在这里露馅）
+    const base = getTheme('taoyao').styles.h1['font-size'];
+    expect(h1.style.fontSize.endsWith('em')).toBe(true);
+    expect(parseFloat(h1.style.fontSize)).toBeGreaterThan(parseFloat(base));
   });
 
   it('首块不是 heading → 不做封面页', () => {

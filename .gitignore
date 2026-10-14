@@ -12,6 +12,8 @@ frontend/dist/
 electron/dist/
 electron/release/
 frontend/.vite/
+# 排版基线图的构建产物（可由 scripts/typography-baseline.mjs 重建）
+packages/mdcore/dist-typography/
 
 # ---- Runtime data ----
 data/

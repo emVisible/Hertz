@@ -85,12 +85,16 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
     quote,
     quoteL2: quotePaint('left-bar', primary, rule, soft),
     quoteL3: quotePaint('left-bar', primary, rule, soft),
+    // 大引号：float 让正文绕排（基线图实测：inline-block 时引号与正文之间裂开一段
+    // 空当，像掉了引号），且**不合成斜体**——中文的 fake italic 很难看，
+    // 中文引用靠缩进 + 字色分层就够了。
     quoteMark: {
       color: withAlpha(primary, 0.5),
-      'font-size': '2.4em',
+      'font-size': '2.2em',
       'line-height': '1',
-      display: 'inline-block',
-      'margin-right': '0.12em',
+      float: 'left',
+      'margin-right': '0.14em',
+      'margin-top': '0.12em',
       'font-family': 'Georgia, "Times New Roman", serif',
     },
 
@@ -301,7 +305,7 @@ function quotePaint(style: string, primary: string, rule: string, soft: string):
     case 'top-bottom':
       return { ...reset, 'border-top': `1px solid ${rule}`, 'border-bottom': `1px solid ${rule}`, padding: '0.6em 0' };
     case 'quote-mark':
-      return { ...reset, 'font-style': 'italic' };
+      return { ...reset, 'font-style': 'normal', 'text-indent': '0' };
     case 'boxed':
       return {
         ...reset,

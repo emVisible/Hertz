@@ -100,6 +100,28 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
   };
 }
 
+/** 封面标题放大倍数 */
+const COVER_TITLE_SCALE = 1.5;
+
+/**
+ * 按倍数放大字号，**保留单位**。
+ *
+ * 这里的坑：v0.36 起标题字号是相对值（`1.7em`）。早先的实现是
+ * `parseFloat(fontSize) * 1.5` 再拼 `px` —— `parseFloat('1.7em')` = 1.7，
+ * 于是封面标题变成 **1.7 × 1.5 = 2.55px**：整张卡片最该抢眼的那行标题缩成一个点。
+ * 结构层 158 条断言一条都没红，是排版基线图（`tests/baselines/typography/`）
+ * 第一轮就抓出来的。
+ */
+export function scaleFontSize(current: string, factor: number): string {
+  const value = current.trim();
+  const m = /^(-?[\d.]+)(em|rem|px|%)?$/.exec(value);
+  if (!m) return `${Math.round(54 * factor)}px`; // 取不到就用缺省 54px
+  const num = parseFloat(m[1]);
+  const unit = m[2] ?? 'px';
+  const scaled = unit === 'px' ? `${Math.round(num * factor)}px` : `${+(num * factor).toFixed(3)}${unit}`;
+  return scaled;
+}
+
 /** 自动封面：第一页首块是 heading → 放大居中 */
 function applyCover(page: HTMLElement): void {
   const body = page.querySelector('.mdcore-page-body') as HTMLElement | null;
@@ -109,8 +131,7 @@ function applyCover(page: HTMLElement): void {
   body.style.setProperty('display', 'flex');
   body.style.setProperty('flex-direction', 'column');
   body.style.setProperty('justify-content', 'center');
-  const base = parseFloat(first.style.fontSize || '') || 54;
-  first.style.setProperty('font-size', `${Math.round(base * 1.5)}px`);
+  first.style.setProperty('font-size', scaleFontSize(first.style.fontSize, COVER_TITLE_SCALE));
   first.style.setProperty('text-align', 'center');
   first.style.setProperty('width', '100%');
 }
