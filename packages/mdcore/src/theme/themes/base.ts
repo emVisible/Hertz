@@ -173,6 +173,15 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
 
     hr: {},
 
+    // 定义列表 / 脚注（结构件，槽位与目录同族）
+    deflist: { margin: '0.6em 0' },
+    defTerm: { 'font-weight': '600', 'margin-top': '0.6em' },
+    defDef: { 'margin-left': '1.4em', color: 'inherit' },
+    footnoteArea: { 'margin-top': '1.6em', 'padding-top': '0.8em' },
+    footnoteItem: { 'font-size': '0.86em', 'line-height': '1.7', margin: '0 0 0.3em' },
+    footnoteNum: { color: 'inherit' },
+    footnoteRef: { 'font-size': '0.7em', 'vertical-align': 'super', 'line-height': '0' },
+
     // 目录（颜色/底色由 derivedSlots 统一派生，base 只给中性骨架）
     toc: { 'margin-top': '0.5em', 'margin-bottom': '1em', padding: '0.6em 0.8em' },
     tocItem: { 'font-size': '0.92em', 'line-height': '1.9', margin: '0' },

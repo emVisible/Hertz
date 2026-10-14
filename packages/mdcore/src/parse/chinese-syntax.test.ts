@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyTheme, CALLOUT_TITLES, parseToIR } from '../index';
+import { applyTheme, CALLOUT_TITLES, parseToIR, xhsCaption } from '../index';
 import type { IRBlock, InlineNode } from '../index';
 
 /**
@@ -125,5 +125,32 @@ describe('三个插件的边界（别把它们开过头）', () => {
   it('markdown-it-mark 不吃掉行内代码里的 ==', () => {
     const text = applyTheme(parseToIR('`a == b` 的写法'), 'modi').textContent ?? '';
     expect(text).toContain('a == b');
+  });
+});
+describe('定义列表与脚注（切片 1 守卫带出来的两个缺口）', () => {
+  it('定义列表：术语一行、释义缩进挂它下面', () => {
+    const el = applyTheme(parseToIR('性能\n: 首屏 1.2s\n\n成本\n: 每月 30 元'), 'modi');
+    const dl = el.querySelector('.mdcore-deflist') as HTMLElement;
+    expect(dl.querySelectorAll('dt')).toHaveLength(2);
+    expect(dl.querySelectorAll('dd')).toHaveLength(2);
+    // 两组术语合成**一个** dl（空行不切列表）：术语行 2 条、释义行 2 条
+    expect(el.querySelectorAll('.mdcore-deflist')).toHaveLength(1);
+  });
+
+  it('脚注：正文角标 + 文末脚注区，脚注文本真的在产物里', () => {
+    const ir = parseToIR('正文里的说法[^1]\n\n[^1]: 出处：某某文档');
+    const el = applyTheme(ir, 'modi');
+    // 角标是可点的上标
+    const ref = el.querySelector('.mdcore-footnote-ref a') as HTMLAnchorElement;
+    expect(ref.getAttribute('href')).toBe('#mdcore-fn-0');
+    expect(ref.textContent).toBe('1');
+    // 文末脚注区带上了脚注正文
+    const area = el.querySelector('.mdcore-footnotes') as HTMLElement;
+    expect(area.textContent).toContain('出处：某某文档');
+  });
+
+  it('脚注文本进小红书文案（发布时不该丢角标的解释）', () => {
+    const caption = xhsCaption(parseToIR('说法[^1]\n\n[^1]: 解释在这里'));
+    expect(caption).toContain('[1] 解释在这里');
   });
 });

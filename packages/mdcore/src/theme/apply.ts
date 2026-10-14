@@ -337,6 +337,52 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
       return el;
     }
 
+    case 'deflist': {
+      // 定义列表：术语行 + 缩进释义。术语用粗体（比 <dt> 默认样式更像中文的"词条"）
+      const dl = doc.createElement('dl');
+      dl.className = 'mdcore-deflist';
+      applyProps(dl, styles.deflist);
+      for (const item of block.items) {
+        const dt = doc.createElement('dt');
+        dt.className = 'mdcore-def-term';
+        applyProps(dt, styles.defTerm);
+        for (const node of item.term) dt.appendChild(renderInline(node, ctx));
+        dl.appendChild(dt);
+        for (const def of item.defs) {
+          const dd = doc.createElement('dd');
+          dd.className = 'mdcore-def-def';
+          applyProps(dd, styles.defDef);
+          for (const node of def) dd.appendChild(renderInline(node, ctx));
+          dl.appendChild(dd);
+        }
+      }
+      return dl;
+    }
+
+    case 'footnotes': {
+      // 文末脚注区：一条细横线 + 编号条目，角标可回跳
+      const area = doc.createElement('section');
+      area.className = 'mdcore-footnotes';
+      applyProps(area, styles.footnoteArea);
+      block.items.forEach((item) => {
+        const row = doc.createElement('p');
+        row.className = 'mdcore-footnote-item';
+        row.id = `mdcore-fn-${item.id}`;
+        applyProps(row, styles.footnoteItem);
+        const num = doc.createElement('span');
+        num.className = 'mdcore-footnote-num';
+        applyProps(num, styles.footnoteNum);
+        num.textContent = `[${item.label || item.id + 1}]`;
+        row.appendChild(num);
+        for (const inner of item.blocks) {
+          const rendered = renderBlock(inner, ctx);
+          if (rendered) row.appendChild(rendered);
+        }
+        area.appendChild(row);
+      });
+      return area;
+    }
+
     case 'toc': {
       // 目录：两级（H2/H3）缩进列表。微信把 <nav> 拍平，所以这里用 section/p 造
       const box = doc.createElement('section');
@@ -488,6 +534,19 @@ function renderInline(node: InlineNode, ctx: RenderContext): Node {
       const span = doc.createElement('span');
       span.innerHTML = node.html;
       return span;
+    }
+
+    case 'footnoteRef': {
+      // 角标：上标 + 可点回跳（微信清洗器会留 <sup>/<a>，不依赖任何伪元素）
+      const sup = doc.createElement('sup');
+      sup.className = 'mdcore-footnote-ref';
+      const link = doc.createElement('a');
+      link.setAttribute('href', `#mdcore-fn-${node.id}`);
+      link.textContent = String(node.id + 1);
+      applyProps(link, styles.footnoteRef);
+      sup.appendChild(link);
+      applyProps(sup, styles.footnoteRef);
+      return sup;
     }
 
     case 'tag': {

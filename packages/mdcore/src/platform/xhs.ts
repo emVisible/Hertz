@@ -231,6 +231,14 @@ function blockText(block: IRBlock): string {
     case 'toc':
       // 目录条目也进文案：小红书发布时带上目录，读者一眼看到结构
       return block.items.map((i) => `${'　'.repeat(i.level - 2)}${i.text}`).join('\n');
+    case 'deflist':
+      return block.items
+        .map((item) => [inlineText(item.term), ...item.defs.map((d) => `　${inlineText(d)}`)].join('\n'))
+        .join('\n');
+    case 'footnotes':
+      return block.items
+        .map((item) => `[${item.label || item.id + 1}] ${item.blocks.map(blockText).join(' ')}`)
+        .join('\n');
   }
 }
 

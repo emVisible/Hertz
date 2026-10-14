@@ -20,6 +20,8 @@ export type InlineNode =
   | { type: 'ruby'; base: InlineNode[]; rt: InlineNode[] }
   /** `#话题`：小红书发布时的话题标签（导出文案与正文里都认） */
   | { type: 'tag'; text: string }
+  /** 脚注角标 `[^1]`：渲染成上标数字，可回跳文末对应条目 */
+  | { type: 'footnoteRef'; id: number }
   | { type: 'code'; text: string }
   | { type: 'link'; href: string; children: InlineNode[] }
   | { type: 'image'; src: string; alt: string }
@@ -48,9 +50,44 @@ export type IRBlock =
   | { type: 'formula'; tex: string; displayMode: boolean; line: LineRange | null }
   | { type: 'hr'; line: LineRange | null }
   /** `[toc]`：目录块，条目来自文档的 2/3 级标题（anchor 可跳） */
-  | { type: 'toc'; items: Array<{ level: number; text: string; anchor: string }>; line: LineRange | null };
+  | { type: 'toc'; items: Array<{ level: number; text: string; anchor: string }>; line: LineRange | null }
+  /** 定义列表 `术语\n: 释义`：一个术语可带多条释义 */
+  | {
+      type: 'deflist';
+      items: Array<{ term: InlineNode[]; defs: InlineNode[][] }>;
+      line: LineRange | null;
+    }
+  /**
+   * 文末脚注区（`[^1]: 正文`）。
+   *
+   * 之前整块被跳掉，脚注正文一个字都不剩——语法守卫第一次跑就报出来了。
+   * 现在按区建模：正文里的角标是 `footnoteRef`，这里是被引用的内容。
+   */
+  | {
+      type: 'footnotes';
+      items: Array<{ id: number; label: string; blocks: IRBlock[] }>;
+      line: LineRange | null;
+    };
 
 export type IRBlockType = IRBlock['type'];
 
 /** LayoutIR = 顶层块序列 */
 export type LayoutIR = IRBlock[];
+
+/**
+ * 未建模语法的记账项（Phase 5 守卫）。
+ *
+ * 为什么要有它：解析层遇到不认识的 token 只能二选一——丢，或者原样带出来。
+ * 早先选的是「丢」（`default: i += 1`），于是 `~~删除线~~`、定义列表、脚注正文
+ * 会在成品里**整段消失**，而 190 条结构断言一条都不红：它们压根不知道有这个语法。
+ * 现在改成「保内容 + 记账」：`parseToIRDetailed()` 给出清单，由判据守住
+ * 「未覆盖集合为空」。
+ */
+export interface IRDiagnostic {
+  /** markdown-it token 类型，如 `dl_open` / `s` / `footnote_def` */
+  token: string;
+  /** 出现次数（同一语法在一篇里出现多次只记一条） */
+  count: number;
+  /** 首次出现的源码行（0 起），便于定位 */
+  line: number | null;
+}

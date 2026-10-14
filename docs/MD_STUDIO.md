@@ -140,7 +140,13 @@ md 字符串
 | `[color:#xxx]文字[/color]` | 同上 | 落成**受控 span**——产物里不出现用户可写的标签，只有颜色这一个自由维度 |
 | `{70% left}` | `parseImageSizeSpec` | 图宽与对齐，宽度夹在 10%~100% |
 | `[toc]` | `fillToc` + `toc` 块 | 目录要"整篇标题"才能填，而 `[toc]` 通常在开头——所以解析时只放占位块，收尾统一回填；锚点 `h2-序号-slug`，重名不撞车 |
-| 定义列表 | `markdown-it-deflist` | |
+| 定义列表 | `markdown-it-deflist` + IR `deflist` 块 | 一个术语可带多条释义 |
+| `[^1]` 脚注 | `markdown-it-footnote` + IR `footnotes` 块 | 正文是可回跳的上标角标，文末是脚注区；两边的内容都要在产物里 |
+| 任意未建模语法 | `parseToIRDetailed()` 的 `diagnostics` | **保内容 + 记账**，不静默丢弃；见下 |
+
+**语法守卫（切片 1）**：解析层遇到不认识的 token 只有两个选择——丢，或者原样带出来。v0.36 之前选的是「丢」，于是 `~~删除线~~` 的样式没了、定义列表和脚注正文**整段从成品里消失**，而 190 条结构断言一条都不红：它们压根不知道存在这些语法。现在 `parseToIRDetailed()` 除 blocks 外还给一份 `diagnostics`（token 类型 / 次数 / 首次出现行号），判据用一份「厨房水槽」样例把未建模集合守成**空集**——加一种新语法而忘了建模，那条会立刻红。
+
+守卫同时把「未知内容不许消失」变成契约：未建模 token 一律按 content 抢救成文字/代码/HTML，无内容的纯结构 token 才静默跳过（不在正文里插空段）。
 
 **IR 是心脏层**：markdown-it 之后所有环节只认 `LayoutIR`，不回读 token。于是平台适配器不懂 markdown、分页器不懂平台、主题不懂分页，每一环可独立替换与单测。
 
@@ -264,7 +270,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 190 条 vitest（node+jsdom，测试与源码同目录）、前端 281 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 203 条 vitest（node+jsdom，测试与源码同目录）、前端 281 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

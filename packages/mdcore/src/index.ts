@@ -21,9 +21,17 @@ export {
   inlinePlain,
   parseImageSizeSpec,
   parseToIR,
+  parseToIRDetailed,
   tokensToIR,
 } from './ir/parseToIR';
-export type { IRBlock, IRBlockType, InlineNode, LayoutIR, LineRange } from './ir/types';
+export type {
+  IRBlock,
+  IRBlockType,
+  IRDiagnostic,
+  InlineNode,
+  LayoutIR,
+  LineRange,
+} from './ir/types';
 export { applyTheme, cjkNumeral, resolveThemedProps } from './theme/apply';
 export { deriveTheme, derivedSlots, mergeSlots, resolveThemeSlots, themeWithOverrides } from './theme/derive';
 export {

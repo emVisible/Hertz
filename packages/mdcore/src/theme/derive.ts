@@ -103,6 +103,13 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
       'font-family': 'Georgia, "Times New Roman", serif',
     },
 
+    // 规则 8.45：脚注是"次要信息"——比正文淡一档，角标跟主色（读者才点得动）
+    defTerm: { color: t.headInk },
+    defDef: { color: t.quoteInk },
+    footnoteNum: { color: primary },
+    footnoteRef: { color: primary, 'font-weight': '600' },
+    footnoteArea: { 'border-top': `1px solid ${rule}` },
+
     // 规则 8.5：目录是个"索引块"——和引用同族（左边线 + 浅底），但不加引号标记，
     // 行距比正文松一档（目录是扫读件，不是阅读件）
     toc: {
