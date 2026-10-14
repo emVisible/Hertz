@@ -152,6 +152,15 @@ md 字符串
 
 封面字号是**测量台上二分**出来的"尽量大但仍放得下"，不是固定倍数。量的是**整页克隆件**：只把封面内容丢进没有宽度约束的测量台，标题换行更少、显得更矮，二分就会选一个过大的字号，角标与副标题在真卡片里被裁掉（这个坑基线图第一眼就看见了）。
 
+**死样式与死 token 清算**（W1 切片 5-6）：治的是最伤信任的一类缺陷——**声明了、主题也写了值，但没有任何槽读它**。用户在设计器里拖一个滑杆，界面上毫无反应，比"没这个功能"更糟。规则是**要么接上，要么删掉**，不留第三种状态。
+
+- `shadow` → 代码壳与表格容器的 `box-shadow`；`border` → 代码壳描边（此前是字面量）；`inkSoft` → 图注与页眉字色（九套主题都声明了它，改它毫无反应）
+- `SECTION_MARGIN` 死导出删除；`quoteL3` 从死槽变成活槽——层级此前按**子块下标**算（`i > 0 && child.type === 'quote' ? 2 : 0`），只产出 0 与 2，三层引用与两层长得一模一样；现在按**真实嵌套深度**累加
+- `figure` / `toc` / `figcaption` / `cardFooter` 的双份真相源合并（base 一份、derive 一份，derive 覆盖 base，前者是"改了不生效"的温床）
+- **渲染层诊断与解析层对称**：`renderBlock` 的兜底此前是 `return null`（静默吞块），现在记账 + 产出可见的退化段落。`applyTheme()` 可选收一个 diagnostics 数组，与 `parseToIRDetailed().diagnostics` 合起来才能回答"这篇稿子里有哪些东西我们没真正支持"
+
+顺带一提：TS 会把 `renderBlock` 的 default 分支里 `block` 收窄成 `never`——也就是**新增 IR 块型却忘了写渲染分支，编译就会报错**。那是第一道防线，运行时的兜底是第二道（给绕过类型断言的路径留着）。
+
 **代码块**（W1 切片 4）：三件"写了支持、产物里不成立"的事——
 
 - **围栏 info 不再整串当语言用**：` ```ts title="a.ts" ` 此前 `hljs.getLanguage('ts title="a.ts"')` 必然失败（整块不高亮），代码头标签还把整串原样显示。现在 `parse/lang.ts` 拆出「归一化语言（高亮用）+ 可读标签（显示用）」，剥掉 `{1,3}`、`js:app.js`、`title="a.ts"` 等记号，并带一张**只登记用户真会写的形式**的别名表（`ts`/`sh`/`yml`/`py`/`c++`…）。高亮与标签共用同一份归一化结果——两处各解析一次迟早漂。
@@ -319,7 +328,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 285 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 295 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

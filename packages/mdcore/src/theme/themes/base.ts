@@ -258,7 +258,6 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
     quoteMark: {},
 
     // 图片与图注
-    figure: { 'margin-top': '1.2em', 'margin-bottom': '1.2em' },
     image: { 'max-width': '100%', height: 'auto', display: 'block', 'border-radius': '${imgRadius}', margin: '0 auto' },
     // 行内图：**不能**继承块级槽的 display:block（会撑断图文流）
     imageInline: {
@@ -268,7 +267,7 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
       'vertical-align': 'middle',
       'border-radius': '${imgRadius}',
     },
-    figcaption: { color: '${muted}', 'margin-top': '0.5em' },
+    figcaption: { 'font-size': '0.82em', 'line-height': '1.6', 'margin-top': '0.5em' },
 
     // 提示块
     callout: { padding: '0.7em 0.9em', 'border-radius': '6px', 'font-size': '0.97em', 'margin-top': '0.6em', 'margin-bottom': '0.6em' },
@@ -305,8 +304,7 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
     footnoteRef: { 'font-size': '0.7em', 'vertical-align': 'super', 'line-height': '0' },
 
     // 目录（颜色/底色由 derivedSlots 统一派生，base 只给中性骨架）
-    toc: { 'margin-top': '0.5em', 'margin-bottom': '1em', padding: '0.6em 0.8em' },
-    tocItem: { 'font-size': '0.92em', 'line-height': '1.9', margin: '0' },
+    tocItem: { 'font-size': '0.92em' },
     tocLink: { 'text-decoration': 'none', 'border-bottom': 'none', color: 'inherit' },
     tocEmpty: { 'font-size': '0.85em', opacity: '0.7' },
     // #话题
@@ -327,6 +325,8 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
     coverTitle: { margin: '0.12em 0', 'font-weight': '700', 'line-height': '1.22', 'letter-spacing': '0em' },
     coverSub: { 'font-size': '0.62em', 'line-height': '1.5', margin: '0.2em 0 0' },
     cardHeader: { 'font-size': '0.72em', 'line-height': '1.4', opacity: '0.62', 'margin-bottom': '1.2em' },
+    // 块级描边槽：给需要描边的块用（此前各处手写字面量，改 token 毫无反应）
+    blockBorder: {},
     // 页脚是左右分布的（署名靠左、页码靠右）。页壳层化的改动把旧实现里内联的
     // display:flex / space-between 弄丢了，于是两段文字贴在了一起——基线图一眼看出来
     cardFooter: {

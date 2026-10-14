@@ -103,9 +103,27 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
       'font-family': 'Georgia, "Times New Roman", serif',
     },
 
+    /**
+     * 三个"此前是摆设"的 token，现在接到真实槽位上。
+     *
+     * 声明在 `ResolvedTokens` 里、九套主题都写了值，但**没有任何样式槽读它们**：
+     * 改 `shadow` / `border` / `inkSoft` 在界面上毫无反应——这是最伤信任的一类缺陷
+     * （用户以为调了没反应，久了就不再信任设计器）。
+     * 规则：**要么接上，要么删掉**，不留第三种状态。
+     */
+    // 投影：表格容器（留白不够时用投影代替边框）
+    tableWrap: { 'box-shadow': t.shadow, 'border-radius': 'inherit', overflow: 'hidden' },
+    // 描边：块级描边走 token，而不是各处手写字面量
+    blockBorder: { border: t.border },
+    // 规则 15：xhs 品牌页脚字色 = 主色 55%（品牌位，弱一档但仍跟主色）
+    cardFooter: { color: withAlpha(primary, 0.55) },
+
+    // 次级墨色：图注与页眉这类"次要信息"的字色（页脚另有归属：规则 15 走主色 55%）
+    figcaption: { color: t.inkSoft, 'font-size': '0.82em', 'line-height': '1.6', 'letter-spacing': '0.02em', 'margin-top': '0.5em' },
+    cardHeader: { color: t.inkSoft },
+
     // 表格：圆角裁切放在外层容器上（table 自身 display:table 不产生 BFC），
     // 表头首末格单独给圆角——否则"圆角表头"在多数浏览器上根本看不到
-    tableWrap: { 'border-radius': 'inherit', overflow: 'hidden' },
 
     // 公式：字色跟正文（公式是内容的一部分，不该是另一种颜色）；回落源码用等宽 +
     // 极淡底，提示文字更淡——两层都是「异常态」，不该跟正文抢注意力
@@ -134,7 +152,7 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
       'border-radius': '0 8px 8px 0',
       padding: '0.6em 0.9em',
     },
-    tocItem: { 'line-height': '1.9', margin: '0', color: primary },
+    tocItem: { 'line-height': '1.9', margin: '0', color: primary }, // line-height 与 base 合并到这里
     tocLink: { 'text-decoration': 'none', 'border-bottom': 'none' },
 
     // 规则 8：提示块 5 变体（note/tip/warning/danger/info + callout 别名）
@@ -148,7 +166,9 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
 
     // 规则 10：代码卡片（壳画边框，pre 不画；头部是 chrome）
     codeCard: {
-      border: `1px solid ${withAlpha(primary, 0.24)}`,
+      // 描边走 `border` token：此前是字面量，改 token 完全没有反应
+      border: t.border === 'none' ? 'none' : `1px solid ${withAlpha(primary, 0.24)}`,
+      'box-shadow': t.shadow,
       'border-radius': t.radius,
       overflow: 'hidden',
     },
@@ -180,11 +200,11 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
     },
 
     // 图与图注：有 alt 才渲染 figcaption，但配色定死在这里
-    figure: { margin: '1.4em auto', 'max-width': '100%', 'text-align': 'center' },
-    figcaption: { 'font-size': '0.82em', 'line-height': '1.6', 'letter-spacing': '0.02em' },
+    // figure 只留几何，margin 归到下面 figure 那条（此前 base 写 1.2em、这里写
+    // `1.4em auto` 简写，后者生效、前者是死样式——双份真相源是"改了不生效"的温床）
+    figure: { 'max-width': '100%', 'text-align': 'center', margin: '1.4em auto' },
 
     // 规则 14：xhs 品牌页脚
-    cardFooter: { color: withAlpha(primary, 0.55) },
   };
   return slots;
 }

@@ -1,5 +1,5 @@
 import hljs from 'highlight.js';
-import type { IRBlock, InlineNode, LayoutIR } from '../ir/types';
+import type { IRBlock, InlineNode, LayoutIR, LineRange } from '../ir/types';
 import { resolveThemeSlots } from './derive';
 import { getTheme } from './index';
 import type { ResolvedTokens, StyleProps, Theme, ThemeOverrides } from './types';
@@ -26,27 +26,44 @@ import { FORMULA_TEX_ATTR, renderFormula } from './formula';
 
 interface RenderContext {
   doc: Document;
+  /**
+   * 渲染层诊断：块型命中兜底时记账。
+   *
+   * 与解析层 `parseToIRDetailed().diagnostics` 对称——两边都有账，才能回答
+   * "这篇稿子里有哪些东西我们没真正支持"。
+   */
+  diagnostics?: Array<{ token: string; count: number; line: number | null }>;
   tokens: ResolvedTokens;
   styles: Record<string, StyleProps>;
   /** section-number 样式下的章节计数器（CSS counter 不可移植 → 渲染期物化） */
   sections: { n: number };
+  /** 当前处在第几层引用（嵌套层级要真的累加，否则 quoteL3 永远是死槽） */
+  quoteDepth?: number;
 }
 
 /** 纯装饰节点的标记：分页断点二分不能把它当正文切（否则会切进 “ 里） */
 const DECO = 'data-mdcore-deco';
 
+/**
+ * IR → 渲染态 DOM。
+ *
+ * `ctx.diagnostics`（如果有传）会收到**渲染层**的未建模记账——与
+ * `parseToIRDetailed().diagnostics` 对称。两者合起来才能回答
+ * "这篇稿子里有哪些东西我们没真正支持"。
+ */
 export function applyTheme(
   ir: LayoutIR,
   theme: Theme | string,
   overrides: ThemeOverrides = {},
   doc: Document = globalThis.document,
+  diagnostics?: Array<{ token: string; count: number; line: number | null }>,
 ): HTMLElement {
   if (!doc) throw new Error('@hertz/mdcore: applyTheme 需要 DOM 环境（浏览器或 jsdom）');
   const { tokens, styles } = resolveThemeSlots(
     typeof theme === 'string' ? getTheme(theme) : theme,
     overrides,
   );
-  const ctx: RenderContext = { doc, tokens, styles, sections: { n: 0 } };
+  const ctx: RenderContext = { doc, tokens, styles, sections: { n: 0 }, diagnostics };
 
   const container = doc.createElement('section');
   container.className = 'mdcore-doc';
@@ -300,54 +317,33 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
 
     case 'quote': {
       const el = doc.createElement('blockquote');
-      applyProps(el, styles.quote);
-      // 嵌套层级：引用套引用要有层级差（参考仓库 multiquote-N 的做法）
-      block.blocks.forEach((child, i) => {
-        const childEl = renderBlock(child, ctx);
-        if (!childEl) return;
-        const depth = i > 0 && child.type === 'quote' ? 2 : 0;
-        if (depth) {
-          childEl.classList.add('mdcore-quote-l2');
-          applyProps(childEl, styles.quoteL2 ?? {});
-        }
+      const depth = ctx.quoteDepth ?? 0;
+      // 层级样式按**真实嵌套深度**选，而不是按子块下标。
+      // 早先是 `i > 0 && child.type === 'quote' ? 2 : 0`：只产出 0 与 2，三层引用与
+      // 两层长得一模一样，`quoteL3` 这个槽**永远不会被写**（死槽）。
+      if (depth === 1) {
+        el.classList.add('mdcore-quote-l2');
+        applyProps(el, styles.quoteL2 ?? {});
+      } else if (depth >= 2) {
+        el.classList.add('mdcore-quote-l2');
+        el.classList.add('mdcore-quote-l3');
+        applyProps(el, styles.quoteL3 ?? {});
+      } else {
+        applyProps(el, styles.quote);
+      }
+      const childCtx: RenderContext = { ...ctx, quoteDepth: depth + 1 };
+      for (const child of block.blocks) {
+        const childEl = renderBlock(child, childCtx);
+        if (!childEl) continue;
         el.appendChild(childEl);
-      });
+      }
       if (tokens.quoteStyle === 'quote-mark') {
         const mark = deco(doc, 'span', 'mdcore-quote-mark');
+        mark.textContent = '\u201c';
         applyProps(mark, styles.quoteMark);
-        mark.textContent = '“';
         el.insertBefore(mark, el.firstChild);
       }
       return el;
-    }
-
-    case 'image': {
-      const figure = doc.createElement('figure');
-      figure.className = 'mdcore-figure';
-      applyProps(figure, styles.figure);
-      const img = doc.createElement('img');
-      img.setAttribute('src', block.src);
-      img.setAttribute('alt', block.alt);
-      applyProps(img, styles.image);
-      // `{60% left}` 覆盖：宽度与对齐（小红书排版件；不给就用主题默认）
-      if (block.width) {
-        img.style.setProperty('width', block.width);
-        img.style.setProperty('max-width', '100%');
-        // 对齐是三个互斥取值：**逐项写死**而不是"先 auto 再改一个"——
-        // 后者会留下上一次的对齐值（左对齐时 margin-left 仍停在 auto）
-        img.style.setProperty('margin-left', block.align === 'right' ? 'auto' : '0');
-        img.style.setProperty('margin-right', block.align === 'left' ? 'auto' : '0');
-        figure.style.setProperty('width', block.width);
-      }
-      figure.appendChild(img);
-      // alt 作图注：有图注才生成figcaption（空 alt 不占位）
-      if (block.alt && styles.figcaption) {
-        const cap = doc.createElement('figcaption');
-        applyProps(cap, styles.figcaption);
-        cap.textContent = block.alt;
-        figure.appendChild(cap);
-      }
-      return figure;
     }
 
     case 'callout': {
@@ -469,9 +465,107 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
       return el;
     }
 
-    default:
-      return null;
+    case 'image': {
+      const figure = doc.createElement('figure');
+      figure.className = 'mdcore-figure';
+      applyProps(figure, styles.figure);
+      const img = doc.createElement('img');
+      img.setAttribute('src', block.src);
+      img.setAttribute('alt', block.alt);
+      applyProps(img, styles.image);
+      // `{60% left}` 覆盖：宽度与对齐（小红书排版件；不给就用主题默认）
+      if (block.width) {
+        img.style.setProperty('width', block.width);
+        img.style.setProperty('max-width', '100%');
+        // 对齐是三个互斥取值：**逐项写死**而不是"先 auto 再改一个"——
+        // 后者会留下上一次的对齐值（左对齐时 margin-left 仍停在 auto）
+        img.style.setProperty('margin-left', block.align === 'right' ? 'auto' : '0');
+        img.style.setProperty('margin-right', block.align === 'left' ? 'auto' : '0');
+        figure.style.setProperty('width', block.width);
+      }
+      figure.appendChild(img);
+      // alt 作图注：有图注才生成figcaption（空 alt 不占位）
+      if (block.alt && styles.figcaption) {
+        const cap = doc.createElement('figcaption');
+        applyProps(cap, styles.figcaption);
+        cap.textContent = block.alt;
+        figure.appendChild(cap);
+      }
+      return figure;
+    }
+
+    default: {
+      /**
+       * 未建模的块型：**记账 + 可见降级**，不静默吞。
+       *
+       * 解析层早就有 diagnostics（切片 1），而渲染层的兜底是 `return null`——
+       * 两边不对称：将来新增一个 IR 块型却忘了写渲染分支，正文会**悄悄少一块**，
+       * 结构断言还可能因为"少了一块"而全绿。
+       */
+      // 顺带说一句：TS 会把这里的 `block` 收窄成 `never`——也就是说
+      // **新增一个 IR 块型却忘了写渲染分支，编译就会报错**。那是第一道防线；
+      // 这一层是第二道（给绕过类型断言的路径兜底：至少内容不能消失）。
+      const unknown = block as unknown as { type: string; line?: LineRange | null };
+      ctx.diagnostics?.push({ token: `render:${unknown.type}`, count: 1, line: unknown.line?.[0] ?? null });
+      return fallbackFor(block, ctx);
+    }
   }
+}
+
+/**
+ * 兜底渲染：未建模的块型也要**产出可见的东西**。
+ *
+ * 能取到纯文本的（段落/列表/表格单元格）退化成一段文字；取不到的（无文本的
+ * 结构件）返回 null——那才是"这里本来就没有内容"，返回 null 不会让正文少东西。
+ */
+function fallbackFor(block: IRBlock, ctx: RenderContext): HTMLElement | null {
+  const { doc } = ctx;
+  const text = (() => {
+    const b = block as unknown as Record<string, unknown>;
+    if ('children' in b) return inlineToText(b.children as InlineNode[]);
+    if (b.type === 'code') return String(b.code ?? '');
+    if (b.type === 'image') return String(b.alt ?? '');
+    return '';
+  })();
+  if (!text.trim()) return null;
+  const p = doc.createElement('p');
+  p.className = 'mdcore-fallback';
+  p.setAttribute('data-mdcore-fallback', block.type);
+  p.textContent = text;
+  return p;
+}
+
+function inlineToText(nodes: InlineNode[]): string {
+  return nodes
+    .map((n) => {
+      switch (n.type) {
+        case 'text':
+        case 'code':
+          return n.text;
+        case 'tag':
+          return `#${n.text}`;
+        case 'image':
+          return n.alt;
+        case 'formula':
+          return n.tex;
+        case 'html':
+          return n.html.replace(/<[^>]+>/g, '');
+        case 'break':
+          return '\n';
+        case 'strong':
+        case 'em':
+        case 'mark':
+        case 'sub':
+        case 'sup':
+        case 'link':
+          return inlineToText(n.children);
+        case 'ruby':
+          return inlineToText(n.base);
+        default:
+          return '';
+      }
+    })
+    .join('');
 }
 
 function appendInlines(parent: HTMLElement, children: InlineNode[], ctx: RenderContext): void {
