@@ -15,6 +15,15 @@
  */
 export { createMarkdownParser, getMarkdownParser } from './parse/markdown';
 export {
+  cardTexture,
+  DECO_IDS,
+  decoPreset,
+  DECO_PRESETS,
+  TEXTURE_IDS,
+  TEXTURE_LABELS,
+} from './platform/decks';
+export type { CardTexture, DecoPreset, TextureId } from './platform/decks';
+export {
   CALLOUT_TITLES,
   convertInline,
   headingAnchor,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyTheme,
   getTheme,
   listThemes,
   parseToIR,
@@ -9,6 +10,10 @@ import {
   XHS_CARD,
   XHS_MAX_PAGES,
   XHS_RATIO_KEYS,
+  cardTexture,
+  decoPreset,
+  TEXTURE_IDS,
+  DECO_IDS,
 } from '../index';
 import type { Measurer } from '../index';
 
@@ -342,5 +347,161 @@ describe('卡片比例（切片 4）', () => {
       doc: globalThis.document,
     });
     expect(noNum.pages[1].querySelector('.mdcore-card-pageno')).toBeNull();
+  });
+});
+
+describe('卡片视觉身份（切片 5：底纹与装饰层）', () => {
+  const opts = { measurer: { fits: () => true }, doc: globalThis.document } as const;
+
+  it('主题声明的底纹进页壳 bg 层，并且是正片叠底（印在底色上而不是盖住）', () => {
+    const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), { ...opts, theme: 'taoyao' });
+    const bg = pages[0].querySelector('.mdcore-card-bg') as HTMLElement;
+    expect(bg).toBeTruthy();
+    expect(bg.style.backgroundImage).toContain('data:image/svg+xml');
+    expect(bg.style.backgroundBlendMode).toBe('multiply');
+    expect(bg.style.backgroundSize).toBe('24px 24px'); // 点阵纸
+  });
+
+  /**
+   * 判据必须查**正文页**。
+   *
+   * 第一版只查 pages[0]，而 pages[0] 是封面页——封面走的是另一条建壳路径
+   * （createCardShell），正文页走 paginate。第一版有个替换没匹配上，正文页拿到的是
+   * 旧结构、装饰全丢，而判据全绿：它压根没看过正文页。
+   */
+  it('正文页（不是只有封面页）也带底纹与装饰件', () => {
+    const md = ['# 标题', '', ...Array.from({ length: 5 }, () => '字'.repeat(700))].join('\n\n');
+    // jsdom 无布局，用合成测量器保证真的分出多页
+    const { pages } = xhsCards(parseToIR(md), {
+      theme: 'taoyao',
+      doc: globalThis.document,
+      measurer: mockMeasurer(CONTENT_H),
+    });
+    expect(pages.length).toBeGreaterThan(2);
+    for (const [i, page] of pages.entries()) {
+      expect(page.querySelector('.mdcore-card-bg'), `第 ${i} 页没有底纹层`).toBeTruthy();
+      expect(page.querySelectorAll('.mdcore-card-deco').length, `第 ${i} 页没有装饰件`).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * 层级关系：正文/页眉/页脚必须在 bg/deco **之上**。
+   *
+   * 定位元素（bg、deco 都是 absolute）默认画在普通流内容之上，而页眉页脚一开始
+   * 没有 z-index——于是页脚被 85% 不透明的纹理层盖住，文字淡到快看不见。
+   * jsdom 没有真实层叠，这条只能靠"三层都要显式 z-index"来钉。
+   */
+  it('正文/页眉/页脚都在底纹与装饰件之上（定位元素默认盖住普通流）', () => {
+    const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), {
+      ...opts,
+      theme: 'taoyao',
+      header: '页眉',
+    });
+    const page = pages[1];
+    const body = page.querySelector('.mdcore-page-body') as HTMLElement;
+    const header = page.querySelector('.mdcore-card-header') as HTMLElement;
+    const footer = page.querySelector('.mdcore-card-footer') as HTMLElement;
+    for (const [name, el] of [['正文', body], ['页眉', header], ['页脚', footer]] as const) {
+      expect(el.style.zIndex, name).toBe('1');
+    }
+    // 底纹在最下；装饰件可以压在内容之上（胶带本来就是"贴上去"的），
+    // 但绝不能**低于**内容层——否则它会被正文的白底吃掉
+    expect((page.querySelector('.mdcore-card-bg') as HTMLElement).style.zIndex).toBe('0');
+    for (const deco of Array.from(page.querySelectorAll('.mdcore-card-deco'))) {
+      expect(Number((deco as HTMLElement).style.zIndex)).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('装饰件里的颜色是原始 #rrggbb（不是 data URL 惯用的 %23，innerHTML 不解码）', () => {
+    const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), { ...opts, theme: 'taoyao' });
+    const html = pages[1].querySelector('.mdcore-card-deco')?.innerHTML ?? '';
+    expect(html).toMatch(/#[0-9a-f]{3,8}/i);
+    expect(html).not.toContain('%23');
+  });
+
+  it('装饰件进 deco 层（绝对定位，不在正文流里）', () => {
+    const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), { ...opts, theme: 'taoyao' });
+    const decos = pages[0].querySelectorAll('.mdcore-card-deco');
+    expect(decos.length).toBeGreaterThan(0);
+    for (const deco of Array.from(decos)) {
+      expect((deco as HTMLElement).style.position).toBe('absolute');
+    }
+    // 装饰里的 svg 是自包含的（不外链资源，基线图才稳定）
+    expect(decos[0].innerHTML).toContain('<svg');
+    expect(decos[0].querySelector('img')).toBeNull();
+  });
+
+  it('四套小红书主题各有身份（底纹或装饰件至少有一件）', () => {
+    for (const id of ['taoyao', 'qingning', 'mucheng', 'yehang']) {
+      const theme = getTheme(id);
+      expect(theme.cardChrome, `${id} 没有 cardChrome`).toBeTruthy();
+      const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), { ...opts, theme: id });
+      const bg = pages[0].querySelector('.mdcore-card-bg');
+      const deco = pages[0].querySelectorAll('.mdcore-card-deco');
+      expect(bg || deco.length > 0, `${id} 既没有底纹也没有装饰`).toBeTruthy();
+    }
+  });
+
+  it('深色主题的纹理墨色是浅色、且压得很淡（否则底纹显脏）', () => {
+    const theme = getTheme('yehang');
+    expect(theme.cardChrome?.textureInk).toMatch(/#|rgb/);
+    expect(theme.cardChrome?.textureOpacity).toBeLessThanOrEqual(0.5);
+  });
+
+  it('显式传入底纹/装饰件时覆盖主题声明（前端的设计器要走这条路）', () => {
+    const { pages } = xhsCards(parseToIR('# 标题\n\n正文。'), {
+      ...opts,
+      theme: 'taoyao',
+      cardTexture: 'grid',
+      cardDeco: [],
+    });
+    const bg = pages[0].querySelector('.mdcore-card-bg') as HTMLElement;
+    expect(bg.style.backgroundSize).toBe('40px 40px'); // 方格纸，不是主题的点阵
+    expect(pages[0].querySelectorAll('.mdcore-card-deco')).toHaveLength(0);
+  });
+
+  it('纹理库：每个 id 都能出图，纯色返回 null', () => {
+    for (const id of TEXTURE_IDS) {
+      const tex = cardTexture(id);
+      if (id === 'none') expect(tex).toBeNull();
+      else {
+        expect(tex?.bgImage, id).toContain('data:image/svg+xml');
+        expect(tex?.bgRepeat).toBe('repeat');
+      }
+    }
+    expect(cardTexture('不存在的' as never)).toBeNull();
+  });
+
+  it('装饰件库：预设都能取出，且胶带/备忘录/杂志三套互不相同', () => {
+    for (const id of DECO_IDS) {
+      expect(decoPreset(id).id).toBe(id);
+    }
+    const tapeHtml = decoPreset('tape').deco.map((d) => d.html).join('');
+    const memoHtml = decoPreset('memo').deco.map((d) => d.html).join('');
+    expect(tapeHtml).not.toBe(memoHtml);
+    expect(decoPreset('none').deco).toHaveLength(0);
+    expect(decoPreset('不存在的' as never).deco).toHaveLength(0);
+  });
+
+  it('装饰件不影响分页（贴边的东西绝不进测量流）', () => {
+    const md = ['# 标题', '', ...Array.from({ length: 6 }, () => '字'.repeat(700))].join('\n\n');
+    const plain = xhsCards(parseToIR(md), {
+      measurer: mockMeasurer(CONTENT_H),
+      cover: false,
+      cardTexture: 'none',
+      cardDeco: [],
+    }).pageCount;
+    const dressed = xhsCards(parseToIR(md), {
+      measurer: mockMeasurer(CONTENT_H),
+      cover: false,
+      cardTexture: 'kraft',
+    }).pageCount;
+    expect(dressed).toBe(plain);
+  });
+
+  it('微信/知乎不受影响：卡片装饰不进 applyTheme 的渲染态', () => {
+    const el = applyTheme(parseToIR('# 标题\n\n正文。'), 'taoyao');
+    expect(el.querySelector('.mdcore-card-bg')).toBeNull();
+    expect(el.querySelector('.mdcore-card-deco')).toBeNull();
   });
 });

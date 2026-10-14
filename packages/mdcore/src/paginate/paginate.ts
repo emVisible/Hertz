@@ -45,6 +45,14 @@ export interface CardChrome {
   bgColor?: string;
   /** 纸纹/网格背景（data URL）。与 bgColor 互斥，bgColor 作兜底色 */
   bgImage?: string;
+  /**
+   * 纹理不透明度（0~1）。
+   *
+   * 单独一个旋钮而不是直接给 rgba：纹理的 SVG 里颜色是写死的（才能平铺），
+   * "淡一点"只能靠图层透明度——底色是页壳自己的，纹理的 alpha 通道反而会
+   * 跟底色叠出脏色。
+   */
+  textureOpacity?: number;
   /** 背景平铺方式 */
   bgRepeat?: 'repeat' | 'no-repeat';
   /** 背景尺寸（默认 auto；配合 no-repeat 常配 cover） */
@@ -339,7 +347,13 @@ function makeShell(
     bg.style.setProperty('z-index', '0');
     if (chrome.bgColor) bg.style.setProperty('background-color', chrome.bgColor);
     if (chrome.bgImage) {
-      bg.style.setProperty('background-image', `url(${chrome.bgImage})`);
+      // url() 里加引号：data URL 里带分号与括号（`;charset=utf-8,`、`%3C`），
+      // 不加引号时 jsdom 直接把这张背景判为非法并丢弃——浏览器能过，测试里却"没有纹理"，
+      // 判据就成了摆设。加引号两边都稳。
+      bg.style.setProperty('background-image', `url("${chrome.bgImage}")`);
+      // 正片叠底：纹理"印"在底色上，而不是盖住底色
+      bg.style.setProperty('background-blend-mode', 'multiply');
+      bg.style.setProperty('opacity', String(chrome.textureOpacity ?? 1));
       bg.style.setProperty('background-repeat', chrome.bgRepeat ?? 'repeat');
       bg.style.setProperty('background-size', chrome.bgSize ?? 'auto');
       if (!chrome.bgColor) bg.style.setProperty('background-color', '#ffffff');
@@ -396,6 +410,11 @@ function makeShell(
     header.className = 'mdcore-card-header';
     header.textContent = chrome.header.trim();
     applyProps(header, resolveThemedProps(theme, overrides, 'cardHeader'));
+    // 页眉页脚与正文同级：定位元素（bg/deco）默认画在普通流之上，
+    // 不显式给 z-index 的话，页脚会被 85% 不透明的纹理层盖住——
+    // 症状是"页脚文字淡得快看不见"，而结构层与 jsdom 断言都看不出来。
+    header.style.setProperty('position', 'relative');
+    header.style.setProperty('z-index', '1');
     page.appendChild(header);
   }
 
@@ -414,6 +433,8 @@ function makeShell(
   if (chrome && (chrome.watermark?.trim() || chrome.pageNum !== false)) {
     const footer = doc.createElement('div');
     footer.className = 'mdcore-card-footer';
+    footer.style.setProperty('position', 'relative');
+    footer.style.setProperty('z-index', '1');
     applyProps(footer, resolveThemedProps(theme, overrides, 'cardFooter'));
     if (chrome.watermark?.trim()) {
       const wm = doc.createElement('span');

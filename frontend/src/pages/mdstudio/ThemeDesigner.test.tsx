@@ -45,6 +45,8 @@ function renderInspector(initial: Record<string, string> = {}, themeId = 'modi')
           coverBadge=""
           pageNum
           header=""
+          texture=""
+          deco=""
           exporting={null}
           onPlatformChange={noop}
           onThemeChange={(next) => {

@@ -6,6 +6,7 @@
  *  - 文案导出 xhsCaption：纯文本（标题+正文+尾部话题标签位），供复制。不做直发。
  */
 import type { InlineNode, IRBlock, LayoutIR } from '../ir/types';
+import { cardTexture, decoPreset } from './decks';
 import { createCardShell, paginate } from '../paginate/paginate';
 import type { CardChrome, Measurer, PagePadding } from '../paginate/paginate';
 import { resolveThemedProps } from '../theme/apply';
@@ -97,6 +98,12 @@ export interface XhsOptions {
   cardBgSize?: string;
   /** 贴边装饰件（主题装饰层，见 CardChrome） */
   cardDeco?: CardChrome['deco'];
+  /** 底纹/装饰件的覆盖（主题声明之外再指定一次） */
+  cardTexture?: string;
+  cardTextureInk?: string;
+  cardTextureOpacity?: number;
+  /** 装饰件预设 id（'none' 可显式关掉主题自带的那套） */
+  cardDecoPreset?: string;
 }
 
 export interface XhsResult {
@@ -115,6 +122,7 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
   const overrides = opts.overrides ?? {};
 
   const card = xhsCardSize(opts.ratio ?? '3:4');
+  const look = chromeOf(theme, opts);
   const pages = paginate(ir, {
     theme,
     overrides,
@@ -131,17 +139,7 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
     measurer: opts.measurer,
     breaks: opts.breaks,
     doc,
-    // 页壳装饰件：页脚的水印与页码由 paginate 建层，这里只传意图（内容随后填进槽里）
-    chrome: {
-      watermark: opts.footer,
-      pageNum: opts.pageNum ?? true,
-    header: opts.header,
-      bgColor: opts.cardBgColor,
-      bgImage: opts.cardBgImage,
-      bgRepeat: opts.cardBgRepeat,
-      bgSize: opts.cardBgSize,
-      deco: opts.cardDeco,
-    },
+    chrome: look,
   });
 
   /**
@@ -156,7 +154,7 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
    * ③封面标题字号在测量台上二分自适应，**保证放得下**。
    */
   const contentPages = pages;
-  const cover = opts.cover === false ? null : buildCover(doc, theme, overrides, contentPages[0], opts);
+  const cover = opts.cover === false ? null : buildCover(doc, theme, contentPages[0], opts);
   if (cover && contentPages.length) {
     // 标题摘不摘，看封面标题的**来源**：
     // - 取自正文第一个 H1 → 摘掉（否则同一句话在封面和正文各出现一次）
@@ -194,7 +192,6 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
 function buildCover(
   doc: Document,
   theme: Theme,
-  overrides: ThemeOverrides,
   firstContent: HTMLElement | undefined,
   opts: XhsOptions,
 ): { page: HTMLElement; takenFromDoc: boolean } | null {
@@ -203,19 +200,11 @@ function buildCover(
   const sourceTitle = custom || fromDoc;
   if (!sourceTitle) return null;
 
-  const chrome: CardChrome = {
-    watermark: opts.footer,
-    pageNum: false,
-    bgColor: opts.cardBgColor,
-    bgImage: opts.cardBgImage,
-    bgRepeat: opts.cardBgRepeat,
-    bgSize: opts.cardBgSize,
-    deco: opts.cardDeco,
-  };
+  const chrome: CardChrome = { ...chromeOf(theme, opts), pageNum: false };
   const { page, body } = createCardShell({
     doc,
     theme,
-    overrides,
+    overrides: opts.overrides ?? {},
     page: coverPageSpec(opts),
     chrome,
     cover: true,
@@ -231,25 +220,53 @@ function buildCover(
     const badge = doc.createElement('span');
     badge.className = 'mdcore-cover-badge';
     badge.textContent = opts.coverBadge.trim();
-    applyCoverProps(badge, theme, overrides, 'coverBadge');
+    applyCoverProps(badge, theme, opts.overrides ?? {}, 'coverBadge');
     wrap.appendChild(badge);
   }
   const title = doc.createElement('h1');
   title.className = 'mdcore-cover-title';
   title.textContent = sourceTitle;
-  applyCoverProps(title, theme, overrides, 'coverTitle');
+  applyCoverProps(title, theme, opts.overrides ?? {}, 'coverTitle');
   wrap.appendChild(title);
   if (opts.coverSubtitle?.trim()) {
     const sub = doc.createElement('p');
     sub.className = 'mdcore-cover-sub';
     sub.textContent = opts.coverSubtitle.trim();
-    applyCoverProps(sub, theme, overrides, 'coverSub');
+    applyCoverProps(sub, theme, opts.overrides ?? {}, 'coverSub');
     wrap.appendChild(sub);
   }
   body.appendChild(wrap);
 
   fitCoverTitle(doc, page);
   return { page, takenFromDoc: !custom };
+}
+
+/**
+ * 主题视觉身份 → 页壳装饰件。
+ *
+ * 优先级：显式传入（前端覆盖）> 主题声明 > 无。纹理由 decks 库按 id 取，
+ * 装饰件同理——主题只声明一个 id，不直接内联 SVG。
+ */
+function chromeOf(theme: Theme, opts: XhsOptions): CardChrome {
+  const look = theme.cardChrome;
+  const texture = cardTexture(
+    (opts.cardTexture as never) ?? look?.texture ?? 'none',
+    opts.cardTextureInk ?? look?.textureInk,
+    opts.cardTextureOpacity ?? look?.textureOpacity ?? 1,
+  );
+  return {
+    watermark: opts.footer,
+    pageNum: opts.pageNum ?? true,
+    header: opts.header,
+    bgColor: opts.cardBgColor,
+    bgImage: opts.cardBgImage ?? texture?.bgImage,
+    bgRepeat: opts.cardBgRepeat ?? texture?.bgRepeat,
+    bgSize: opts.cardBgSize ?? texture?.bgSize,
+    textureOpacity: texture?.opacity,
+    deco:
+      opts.cardDeco ??
+      decoPreset(opts.cardDecoPreset ?? look?.deco ?? 'none').deco,
+  };
 }
 
 /** 封面页尺寸（含封面页脚的留白） */

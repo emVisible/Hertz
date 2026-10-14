@@ -56,6 +56,9 @@ interface DraftState {
   coverBadge: string
   pageNum: boolean
   header: string
+  /** 卡片底纹与装饰件（切片 5，存在 cover JSON 槽） */
+  texture: string
+  deco: string
 }
 
 type SaveState = 'saved' | 'dirty' | 'saving'
@@ -93,6 +96,8 @@ function draftFromDoc(doc: LayoutDoc): DraftState {
     coverBadge: strOf(doc.cover, 'cover_badge'),
     pageNum: boolOf(doc.cover, 'page_num', true),
     header: strOf(doc.cover, 'header'),
+    texture: strOf(doc.cover, 'texture'),
+    deco: strOf(doc.cover, 'deco'),
   }
 }
 
@@ -193,6 +198,8 @@ export function MdStudioPage() {
             cover_badge: snapshot.coverBadge,
             page_num: snapshot.pageNum,
             header: snapshot.header,
+            texture: snapshot.texture,
+            deco: snapshot.deco,
           },
         })
         .then((doc) => {
@@ -423,6 +430,8 @@ export function MdStudioPage() {
           pageNum: draft.pageNum,
           coverSubtitle: draft.coverSub,
           coverBadge: draft.coverBadge,
+          cardTexture: draft.texture || undefined,
+          cardDecoPreset: draft.deco || undefined,
         })
         const blob = await exportZip(res.pages)
         downloadBlob(blob, `${name}-xhs.zip`)
@@ -685,6 +694,8 @@ export function MdStudioPage() {
                   xhsPageNum={renderDraft.pageNum}
                   xhsCoverSub={renderDraft.coverSub}
                   xhsCoverBadge={renderDraft.coverBadge}
+                  texture={renderDraft.texture || undefined}
+                  deco={renderDraft.deco || undefined}
                 />
               )}
             </div>
@@ -756,6 +767,8 @@ export function MdStudioPage() {
               coverBadge={draft.coverBadge}
               pageNum={draft.pageNum}
               header={draft.header}
+              texture={draft.texture}
+              deco={draft.deco}
               onRatioChange={(r) => patchDraft({ ratio: r })}
               onCoverFieldChange={(key, value) => patchDraft({ [key]: value } as Partial<DraftState>)}
               onExport={(a) => void runExport(a)}

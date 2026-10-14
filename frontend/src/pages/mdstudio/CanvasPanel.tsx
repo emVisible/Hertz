@@ -98,6 +98,9 @@ interface CanvasPanelProps {
   /** 封面副标题 / 角标 */
   xhsCoverSub?: string
   xhsCoverBadge?: string
+  /** 卡片底纹与装饰件（覆盖主题自带的那套） */
+  texture?: string
+  deco?: string
 }
 
 function parseLine(raw: string | null): [number, number] | null {
@@ -227,6 +230,8 @@ export function CanvasPanel({
   xhsPageNum,
   xhsCoverSub,
   xhsCoverBadge,
+  texture,
+  deco,
 }: CanvasPanelProps) {
   useEffect(() => {
     const host = mountRef.current
@@ -272,6 +277,8 @@ export function CanvasPanel({
           pageNum: xhsPageNum,
           coverSubtitle: xhsCoverSub,
           coverBadge: xhsCoverBadge,
+          cardTexture: texture,
+          cardDecoPreset: deco,
         })
         onXhsInfo({ pageCount: result.pageCount, overflow: result.overflow })
         // 单页展示（切片 4）：早先把所有卡片横向排成一条，每张只有 ~310px 宽，
@@ -383,6 +390,8 @@ export function CanvasPanel({
     xhsPageNum,
     xhsCoverSub,
     xhsCoverBadge,
+    texture,
+    deco,
     mountRef,
     onXhsInfo,
     onBlockClick,

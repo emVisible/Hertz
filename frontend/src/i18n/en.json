@@ -187,7 +187,9 @@
       "prev": "Previous",
       "next": "Next",
       "cover": "Cover",
-      "page": "Page {{n}}"
+      "page": "Page {{n}}",
+      "texture": "Card texture",
+      "deco": "Edge decoration"
     }
   },
   "common": {

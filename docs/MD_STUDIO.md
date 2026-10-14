@@ -152,6 +152,12 @@ md 字符串
 
 封面字号是**测量台上二分**出来的"尽量大但仍放得下"，不是固定倍数。量的是**整页克隆件**：只把封面内容丢进没有宽度约束的测量台，标题换行更少、显得更矮，二分就会选一个过大的字号，角标与副标题在真卡片里被裁掉（这个坑基线图第一眼就看见了）。
 
+**卡片视觉身份**（`platform/decks.ts`）：`cardTexture()` 出五种可平铺底纹（方格纸 / 点阵纸 / 横线纸 / 细网格 / 牛皮纸），`decoPreset()` 出三套贴边装饰（和纸胶带 / 备忘录状态栏 / 杂志细线）。主题用 `cardChrome: { texture, deco, textureInk, textureOpacity }` 声明自己那一套，四套小红书主题各配各的（桃夭点阵+胶带 / 青柠细网格 / 暮橙牛皮纸+杂志线 / 夜航浅色细网格）。
+
+全部是**内联 SVG**而不是外链 PNG：排版基线图必须像素稳定，外链资源换机就飘、纹理一变整张基线作废。
+
+三条层叠纪律（都是基线图抓出来的，jsdom 看不见）：①bg 与 deco 必须绝对定位、不进测量流；②**内容三层（正文/页眉/页脚）要显式 z-index:1**——定位元素默认画在普通流之上，页脚没 z-index 就会被 85% 不透明的纹理层盖住，症状是"页脚文字淡得快看不见"；③deco 里的颜色写 `#rrggbb` 而不是 data URL 惯用的 `%23`，装饰件走 innerHTML 注入、不解码。
+
 **卡片页壳五层**（`paginate/card-shell.test.ts`）：`bg 底纹 / deco 装饰 / header 页眉 / body 正文 / footer 页脚`，**只有 body 进测量流**，装饰件一律绝对定位。判据是「装饰层撑到 999px，分页结果一字不变」。之前页壳只有 body 一层，所以卡片既没有底纹也没有装饰位。
 
 **`---` 强制分页**：IR 的 `hr` 带 `kind`（`---` → pagebreak，`***`/`___` → rule）。卡片平台把它翻成收页；微信/知乎是连续长文，同一行**仍然画成横线**（不能为了卡片平台改掉长文的既有行为）。这里有个只有小红书会中的坑：三套 xhs 主题的 `hrStyle` 都是 `dots`，而分页标记早先只加在 `<hr>` 分支上，于是 `---` 在小红书上静默失效。
@@ -282,7 +288,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 232 条 vitest（node+jsdom，测试与源码同目录）、前端 290 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 244 条 vitest（node+jsdom，测试与源码同目录）、前端 291 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

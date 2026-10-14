@@ -38,5 +38,15 @@ export const qingning: Theme = {
   platform: 'xhs',
   dark: undefined,
   tokens,
+  /**
+   * 卡片视觉身份：底纹 + 装饰件。
+   * 有了这两层，卡片才不是"一块底色加一段字"——纸感与贴边物件给的是身份。
+   */
+  cardChrome: {
+    texture: 'mesh',
+    deco: 'none',
+    textureInk: '#4b7f6b',
+    textureOpacity: 0.7,
+  },
   styles: baseStyles({ card: true }),
 };

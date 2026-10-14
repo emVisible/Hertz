@@ -10,6 +10,10 @@ import {
   getTheme,
   listThemes,
   XHS_MAX_PAGES,
+  DECO_IDS,
+  DECO_PRESETS,
+  TEXTURE_IDS,
+  TEXTURE_LABELS,
   XHS_RATIO_KEYS,
   type ThemeOverrides,
   type XhsRatio,
@@ -52,6 +56,9 @@ interface InspectorPanelProps {
   coverBadge: string
   pageNum: boolean
   header: string
+  /** 卡片底纹与装饰件（切片 5） */
+  texture: string
+  deco: string
   exporting: ExportAction | null
   onPlatformChange: (p: LayoutPlatform) => void
   onThemeChange: (id: string) => void
@@ -60,7 +67,10 @@ interface InspectorPanelProps {
   onQrChange: (qr: string | null) => void
   onExport: (action: ExportAction) => void
   onRatioChange: (r: XhsRatio) => void
-  onCoverFieldChange: (key: 'coverSub' | 'coverBadge' | 'header' | 'pageNum', value: string | boolean) => void
+  onCoverFieldChange: (
+    key: 'coverSub' | 'coverBadge' | 'header' | 'pageNum' | 'texture' | 'deco',
+    value: string | boolean,
+  ) => void
 }
 
 export function InspectorPanel({
@@ -75,6 +85,8 @@ export function InspectorPanel({
   coverBadge,
   pageNum,
   header,
+  texture,
+  deco,
   exporting,
   onPlatformChange,
   onThemeChange,
@@ -289,6 +301,48 @@ export function InspectorPanel({
                 />
                 {t('mdstudio.xhs.pageNum')}
               </label>
+
+              {/* 底纹与装饰件：卡片"这是谁家的纸"的来源，主题自带一套，这里可换 */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-text-secondary">{t('mdstudio.xhs.texture')}</span>
+                <div className="grid grid-cols-3 gap-1" data-testid="mdstudio-texture">
+                  {TEXTURE_IDS.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={texture === id}
+                      onClick={() => onCoverFieldChange('texture', id)}
+                      className={`rounded border px-1 py-1 text-[10px] transition-colors ${
+                        texture === id
+                          ? 'border-primary/60 bg-primary/10 font-medium text-primary'
+                          : 'border-border text-text-secondary hover:border-primary/50'
+                      }`}
+                    >
+                      {TEXTURE_LABELS[id]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-text-secondary">{t('mdstudio.xhs.deco')}</span>
+                <div className="grid grid-cols-2 gap-1" data-testid="mdstudio-deco">
+                  {DECO_IDS.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={deco === id}
+                      onClick={() => onCoverFieldChange('deco', id)}
+                      className={`rounded border px-1 py-1 text-[10px] transition-colors ${
+                        deco === id
+                          ? 'border-primary/60 bg-primary/10 font-medium text-primary'
+                          : 'border-border text-text-secondary hover:border-primary/50'
+                      }`}
+                    >
+                      {DECO_PRESETS[id]?.label ?? id}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <p
               className={`mb-3 text-xs ${xhsInfo.overflow ? 'font-medium text-warning' : 'text-text-secondary'}`}

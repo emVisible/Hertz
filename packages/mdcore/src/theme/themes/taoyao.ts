@@ -39,5 +39,15 @@ export const taoyao: Theme = {
   platform: 'xhs',
   dark: undefined,
   tokens,
+  /**
+   * 卡片视觉身份：底纹 + 装饰件。
+   * 有了这两层，卡片才不是"一块底色加一段字"——纸感与贴边物件给的是身份。
+   */
+  cardChrome: {
+    texture: 'dots',
+    deco: 'tape',
+    textureInk: '#a8636f',
+    textureOpacity: 0.85,
+  },
   styles: baseStyles({ card: true }),
 };

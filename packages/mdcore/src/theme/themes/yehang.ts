@@ -38,5 +38,15 @@ export const yehang: Theme = {
   platform: 'xhs',
   dark: true,
   tokens,
+  /**
+   * 卡片视觉身份：底纹 + 装饰件。
+   * 有了这两层，卡片才不是"一块底色加一段字"——纸感与贴边物件给的是身份。
+   */
+  cardChrome: {
+    texture: 'mesh',
+    deco: 'none',
+    textureInk: '#8c95a8',
+    textureOpacity: 0.4,
+  },
   styles: baseStyles({ dark: true, card: true }),
 };

@@ -237,4 +237,20 @@ export interface Theme {
    * hljs-*（代码高亮 token 色）
    */
   styles: Record<string, StyleProps>;
+  /**
+   * 卡片页壳的视觉身份（只有卡片平台用得上；微信/知乎是连续长文，不读它）。
+   *
+   * 放在主题上而不是 tokens 里：底纹与装饰件是**图片与绝对定位盒**，不是 CSS 值，
+   * 也不是"换个主色就该跟着变"的东西——它更像一套版式的签名。派生层不该碰它。
+   */
+  cardChrome?: {
+    /** 底纹 id（platform/decks.ts 的库；'none' = 纯色） */
+    texture?: string;
+    /** 装饰件预设 id（同上） */
+    deco?: string;
+    /** 纹理墨色：深色主题要传浅色，否则纹理会显脏 */
+    textureInk?: string;
+    /** 纹理不透明度（0~1，默认 1） */
+    textureOpacity?: number;
+  };
 }

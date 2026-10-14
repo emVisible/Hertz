@@ -181,6 +181,28 @@ describe('比例', () => {
     })
   })
 
+  it('底纹/装饰件写进 cover 槽并真的换掉卡片外观', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitCards()
+    await user.click(await screen.findByRole('button', { name: '方格纸' }))
+    await waitFor(() => {
+      const update = calls.update?.at(-1)?.[1] as { cover?: Record<string, unknown> } | undefined
+      expect(update?.cover?.texture).toBe('grid')
+    })
+    await waitFor(() => {
+      const bg = document.querySelector('.mdcore-card-bg') as HTMLElement
+      expect(bg.style.backgroundSize).toBe('40px 40px')
+    })
+
+    await user.click(await screen.findByRole('button', { name: '无装饰' }))
+    await waitFor(() => {
+      const update = calls.update?.at(-1)?.[1] as { cover?: Record<string, unknown> } | undefined
+      expect(update?.cover?.deco).toBe('none')
+    })
+    await waitFor(() => expect(document.querySelectorAll('.mdcore-card-deco')).toHaveLength(0))
+  })
+
   it('封面副标题/角标写进 cover 槽并出现在封面上', async () => {
     const user = userEvent.setup()
     renderPage()
