@@ -99,6 +99,31 @@ export interface ResolvedTokens {
   // 节奏（em 化）
   paraSpacing: string;
   sectionSpacing: string;
+  /**
+   * 排版深度（W3）：阶跃与组件级尺寸。
+   *
+   * 为什么单列一组：这一层以前**一个字都没有**——标题阶跃写死在 base，组件字号
+   * 隐式跟正文走。于是「正文大一点、图注小一点」这种最常见的比例关系做不出来，
+   * 而它恰恰是"排版像不像给人看"的主要来源。
+   *
+   * **默认值刻意等于原来写死的那些数**（1.7/1.4/1.18、0.82em、0.97em、0.86em、
+   * 0.92em、0.35em、1.6、0.5em 0.7em）：加旋钮不该顺手改掉任何既有版式，
+   * 否则一开门禁就是一片基线飘红，然后大家就会开始"顺手更新基线"。
+   */
+  /**
+   * 标题阶梯的累乘系数（按级次 `step^(n-1)`）。
+   *
+   * `1` = **原样**（精确等于历史阶梯 1.7/1.4/1.18/1.05/1/0.94）；
+   * `>1` 层级更陡、`<1` 更平。默认取 1，是为了让"加旋钮"这件事不动既有版式。
+   */
+  headingStep: string;
+  captionSize: string;
+  quoteSize: string;
+  codeSize: string;
+  tableSize: string;
+  listSpacing: string;
+  codeLineHeight: string;
+  tableCellPad: string;
   /** 首行缩进：'0' 或 '2em' */
   indent: string;
   align: string;
@@ -160,6 +185,16 @@ export const TOKEN_DEFAULTS: ResolvedTokens = {
 
   paraSpacing: '1em',
   sectionSpacing: '1.75em',
+
+  // W3 排版深度：默认值 = 原先写死的值（见上面的说明）
+  headingStep: '1',
+  captionSize: '0.82em',
+  quoteSize: '0.97em',
+  codeSize: '0.86em',
+  tableSize: '0.92em',
+  listSpacing: '0.35em',
+  codeLineHeight: '1.6',
+  tableCellPad: '0.5em 0.7em',
   indent: '0',
   align: 'justify',
   measure: 'none',

@@ -1,4 +1,4 @@
-import type { StyleProps } from '../types';
+import type { StyleProps, ThemeTokens } from '../types';
 
 /**
  * 主题结构基座（v0.36）。
@@ -128,6 +128,26 @@ export interface BaseOptions {
   dark?: boolean;
   /** 小红书卡片向（1242px 画幅）：正文尺寸大、间距按 em 放大 */
   card?: boolean;
+  /**
+   * 排版深度（W3）：组件级尺寸与标题阶跃。
+   *
+   * 可选是有意的：**基座不依赖 token 层**，所以它也能被单独调用（老测试与
+   * 主题定义里直接用 `baseStyles()`）。没给时回落到原先写死的那些值——
+   * 「加旋钮不许顺手改掉既有版式」这条规矩，靠的就是这个回落。
+   */
+  depth?: Partial<
+    Pick<
+      ThemeTokens,
+      | 'headingStep'
+      | 'captionSize'
+      | 'quoteSize'
+      | 'codeSize'
+      | 'tableSize'
+      | 'listSpacing'
+      | 'codeLineHeight'
+      | 'tableCellPad'
+    >
+  >;
 }
 
 /**
@@ -141,6 +161,18 @@ export interface BaseOptions {
 export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
   const { dark = false, card = false } = opts;
   const mono = '${fontMono}';
+  // 回落值 = 原先写死的那几个数（见 BaseOptions.depth 的说明）
+  const depth = {
+    headingStep: '1.18',
+    captionSize: '0.82em',
+    quoteSize: '0.97em',
+    codeSize: '0.86em',
+    tableSize: '0.92em',
+    listSpacing: '0.35em',
+    codeLineHeight: '1.6',
+    tableCellPad: '0.5em 0.7em',
+    ...opts.depth,
+  };
   const styles: Record<string, StyleProps> = {
     container: {
       'background-color': '${canvasBg}',
@@ -201,11 +233,19 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
       padding: '0.9em 1em',
       'overflow-x': 'auto',
       'background-color': 'transparent',
+
     },
     code: {
       'font-family': mono,
-      'font-size': '0.86em',
-      'line-height': '1.6',
+      /**
+       * 字号与行距**都挂在 `code` 槽**，而且只此一处。
+       *
+       * `code` 槽是**行内代码与块级代码共用**的（块级是 `<pre><code>`），
+       * 所以：挂 `pre` 上 → 行内代码失去缩小（实测长文页面高了 8px，基线图抓到）；
+       * 两处都挂 → 变成 0.86 × 0.86 的双重缩小（页面矮 20px）。**只能挂一处，挂 code。**
+       */
+      'font-size': depth.codeSize,
+      'line-height': depth.codeLineHeight,
       'background-color': 'transparent',
       color: '${codeInk}',
       // min-width: max-content 让 <pre> 自己产生横向滚动，而不是把卡片撑破
@@ -223,7 +263,7 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
     br: {},
     // `[color:#xxx]` 彩色文字
     coloredText: {},
-    listItem: { 'margin-bottom': '0.35em' },
+    listItem: { 'margin-bottom': depth.listSpacing },
     listMarker: { 'margin-right': '0.45em', 'min-width': '1.2em', 'font-variant-numeric': 'tabular-nums' },
 
     // 表格：结构与内边距；表头底色/斑马纹由派生给
@@ -235,7 +275,7 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
       'border-collapse': 'separate',
       'border-spacing': '0',
       width: '100%',
-      'font-size': '0.92em',
+      'font-size': depth.tableSize,
       'line-height': '1.5',
       'border-radius': '6px',
       overflow: 'hidden',
@@ -247,12 +287,12 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
     // 表头首/末格的圆角（逐格写死，见 apply 的说明）
     thFirst: { 'border-top-left-radius': '6px', 'border-bottom-left-radius': '6px' },
     thLast: { 'border-top-right-radius': '6px', 'border-bottom-right-radius': '6px' },
-    th: { 'font-weight': '600', padding: '0.5em 0.7em', 'text-align': 'left' },
-    td: { padding: '0.5em 0.7em', 'border-top': '1px solid ${rule}', 'vertical-align': 'top' },
+    th: { 'font-weight': '600', padding: depth.tableCellPad, 'text-align': 'left' },
+    td: { padding: depth.tableCellPad, 'border-top': '1px solid ${rule}', 'vertical-align': 'top' },
     tbodyEven: {},
 
     // 引用：字号与行距（边框与底色由派生给）
-    quote: { 'font-size': '0.97em', 'line-height': '1.75' },
+    quote: { 'font-size': depth.quoteSize, 'line-height': '1.75' },
     quoteL2: {},
     quoteL3: {},
     quoteMark: {},

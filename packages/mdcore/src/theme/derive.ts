@@ -246,7 +246,75 @@ export function resolveThemeSlots(
     }
     declared[key] = resolvedProps;
   }
-  return { tokens, styles: mergeSlots(declared, slots) };
+  return { tokens, styles: mergeSlots(declared, mergeSlots(slots, depthSlots(tokens))) };
+}
+
+/**
+ * 标题的历史阶梯（em）。**唯一一份**——base.ts 里那份 HEADING_SCALE 只管字重，
+ * 尺寸这份在 derive 侧，因为它是 token 可调的。
+ */
+const HEADING_BASE: Record<number, number> = {
+  1: 1.7,
+  2: 1.4,
+  3: 1.18,
+  4: 1.05,
+  5: 1.0,
+  6: 0.94,
+};
+
+/**
+ * W3 排版深度：把「阶跃 + 组件级尺寸」这一层接到产物上。
+ *
+ * 为什么在 derive 接、而不是让 9 个主题各写一遍 `baseStyles({ depth })`：
+ * 主题文件是**颜色与性格**，尺寸属于结构；而且 9 处复制同一个默认值，
+ * 早晚有一处忘了同步——那正是 W1 切片 5 清理过的那类"双份真相源"。
+ *
+ * 三个要点：
+ * ①默认值等于原先写死的数，所以加旋钮之后既有版式**纹丝不动**；
+ * ②标题阶跃是**比值递推**：h_n = h_{n-1} / step。用固定表写死的话，
+ *   「层级陡一点」这件事根本无从下手；
+ * ③这一层是 patch，主题真要自己写死某个尺寸时仍然覆盖得掉。
+ */
+function depthSlots(t: ResolvedTokens): Record<string, StyleProps> {
+  const step = clampNumber(t.headingStep, 0.8, 1.4, 1);
+  /**
+   * 标题阶梯：**在历史阶梯上按级次累乘**，而不是用单一比值递推。
+   *
+   * 为什么不用比值递推：历史阶梯 1.7 / 1.4 / 1.18 / 1.05 / 1 / 0.94 每一级的比值
+   * 都不一样（1.21 / 1.19 / 1.12 / 1.05 / 1.06），**没有任何单一比值能复现它**。
+   * 于是改成 `第 n 级 = 历史值 ÷ step^(n-1)`（**除**：step>1 时下级更小、层级更陡）：
+   * - `step = 1`（默认）**逐级精确等于**历史阶梯 → 加旋钮不动既有版式，基线一张不飘；
+   * - `step > 1` 层级更陡、`step < 1` 更平，是一个**单调、可解释**的旋钮。
+   *
+   * （第一版写成 `× step^(n-1)`，方向反了：step=1.2 会让 h2 比 h1 还大。）
+   */
+  const headings: Record<string, StyleProps> = {};
+  for (const [level, baseSize] of Object.entries(HEADING_BASE)) {
+    const n = Number(level) - 1;
+    headings[`h${level}`] = { 'font-size': `${round2(baseSize / step ** n)}em` };
+  }
+  return {
+    ...headings,
+    figcaption: { 'font-size': t.captionSize },
+    quote: { 'font-size': t.quoteSize },
+    // 字号与行距收在 `code` 槽（行内/块级共用，只此一处——见 base.ts 里的说明）
+    code: { 'font-size': t.codeSize, 'line-height': t.codeLineHeight },
+    table: { 'font-size': t.tableSize },
+    th: { padding: t.tableCellPad },
+    td: { padding: t.tableCellPad },
+    listItem: { 'margin-bottom': t.listSpacing },
+  };
+}
+
+/** token 是自由文本：非法值退回默认，而不是把 NaN 写进样式表 */
+function clampNumber(raw: string, min: number, max: number, fallback: number): number {
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function strongPaint(style: string, primary: string, hl: string): StyleProps {

@@ -127,6 +127,28 @@ export const TOKEN_SECTIONS: readonly TokenSection[] = [
     ],
   },
   {
+    id: 'depth',
+    label: '层级与组件尺寸',
+    hint:
+      '标题阶跃与各组件的相对字号——这一区以前一个字都没有，于是"正文大一点、图注小一点"这种最常见的比例关系做不出来。',
+    tokens: [
+      {
+        key: 'headingStep',
+        label: '标题层递',
+        hint: '按级次累除：1 = 原样，越大层级越陡、越小越平',
+        control: 'text',
+        presets: ['0.9', '0.95', '1', '1.1', '1.2'],
+      },
+      { key: 'captionSize', label: '图注字号', hint: '相对正文', control: 'text', presets: ['0.72em', '0.78em', '0.82em', '0.88em'] },
+      { key: 'quoteSize', label: '引用字号', hint: '相对正文', control: 'text', presets: ['0.92em', '0.97em', '1em'] },
+      { key: 'codeSize', label: '代码字号', hint: '行内与块级代码共用这一档', control: 'text', presets: ['0.8em', '0.86em', '0.92em'] },
+      { key: 'codeLineHeight', label: '代码行距', hint: '等宽字行距太小会挤成一坨', control: 'text', presets: ['1.45', '1.6', '1.75'] },
+      { key: 'tableSize', label: '表格字号', hint: '窄表最需要小一号', control: 'text', presets: ['0.86em', '0.92em', '1em'] },
+      { key: 'tableCellPad', label: '单元格内边距', hint: '表格挤不挤全看它', control: 'text', presets: ['0.35em 0.5em', '0.5em 0.7em', '0.7em 1em'] },
+      { key: 'listSpacing', label: '列表项间距', hint: '项与项之间', control: 'text', presets: ['0.2em', '0.35em', '0.5em', '0.7em'] },
+    ],
+  },
+  {
     id: 'shape',
     label: '形状',
     hint: '圆角与投影。克制一点，装饰多了层级反而难读。',
