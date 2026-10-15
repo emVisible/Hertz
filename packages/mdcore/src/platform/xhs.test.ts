@@ -191,8 +191,13 @@ describe('页壳基线字体（真浏览器抓出的缺陷）', () => {
       theme: 'taoyao',
       measurer: mockMeasurer(CONTENT_H),
     });
-    expect(pages[0].style.fontSize).toBe('30px');
-    expect(pages[0].style.lineHeight).toBe('1.55');
+    // 断言**读主题**而不是写字面量：这条守的是"页壳挂了主题的基线"这个结构，
+    // 不是"桃夭恰好是 30px"。写成字面量之后，每换一次刻度就会有人来改测试——
+    // 而改测试比改代码容易，于是这条回归守卫会一点点被磨掉。
+    // 刻度本身由 `xhs-measure.test.ts` 守。
+    const theme = getTheme('taoyao');
+    expect(pages[0].style.fontSize).toBe(theme.tokens.fontSize);
+    expect(pages[0].style.lineHeight).toBe(theme.tokens.lineHeight);
     expect(pages[0].style.fontFamily).toContain('PingFang SC');
   });
 

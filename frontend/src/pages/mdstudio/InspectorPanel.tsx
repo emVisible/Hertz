@@ -27,11 +27,28 @@ import { hydrateCustomThemes } from './themeDesigner/customThemes'
 
 export type ExportAction = 'copy-wechat' | 'copy-zhihu' | 'copy-caption' | 'zip' | 'longimage'
 
-const FONT_SIZES = ['14px', '15px', '16px', '17px', '18px']
+/**
+ * 字号档位**按坐标系给**。
+ *
+ * 微信是 375 逻辑宽、正文 16px 上下；小红书是 1080 导出坐标系、正文 36px 上下。
+ * 早先两个平台共用 `['14px' … '18px']`，于是小红书卡片下也摆着手机档位——
+ * 用户点一下（哪怕只是想调大），正文就掉到 16px @ 1080，卡片字小到离谱。
+ * 控件没坏，档位的**量纲**错了：这类错最难自查，因为它不报错、点下去还有反应。
+ *
+ * 刻度取自参考仓（`/Users/young/Code/xiaohongshu-text-layout`，DEFAULTS.fontSize = 36）。
+ */
+const FONT_SIZES_PHONE = ['14px', '15px', '16px', '17px', '18px']
+const FONT_SIZES_CARD = ['26px', '28px', '30px', '32px', '34px', '36px', '38px', '40px']
 const LINE_HEIGHTS = ['1.5', '1.6', '1.75', '1.9', '2.0']
 
+/** 字号档位：1080 坐标系（小红书）与 375/690 逻辑宽（微信、知乎）不是同一个量纲 */
+export function fontSizeOptions(platform: LayoutPlatform, current: string): Array<{ value: string; label: string }> {
+  const sizes = platform === 'xhs' ? FONT_SIZES_CARD : FONT_SIZES_PHONE
+  return optionsWith(sizes, current)
+}
+
 /** 主题自带的值必须出现在选项里：否则 Select 显示的是「离它最近的那档」，
- *  等于谎报当前行距（墨滴 1.8 会被显示成 1.5，小红书主题 30px 会被显示成 18px）。 */
+ *  等于谎报当前行距（墨滴 1.8 会被显示成 1.5，小红书主题 36px 会被显示成 18px）。 */
 function optionsWith(values: string[], current: string): Array<{ value: string; label: string }> {
   const all = values.includes(current) ? values : [...values, current]
   return [...all]
@@ -234,7 +251,7 @@ export function InspectorPanel({
           <Select
             label={t('mdstudio.inspector.fontSize')}
             value={fontSize}
-            options={optionsWith(FONT_SIZES, fontSize)}
+            options={fontSizeOptions(platform, fontSize)}
             onChange={(e) => onOverridesChange({ ...overrides, fontSize: e.target.value })}
           />
           <Select

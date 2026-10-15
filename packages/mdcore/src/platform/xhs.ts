@@ -43,8 +43,15 @@ export function xhsCardSize(ratio: XhsRatio = '3:4'): {
   return { ...size, padding: XHS_PADDING, footerSpace: XHS_FOOTER_SPACE };
 }
 
-/** 边距与页脚预留（按 1080 宽定，约 6.7%/7.8%） */
-export const XHS_PADDING = 72;
+/**
+ * 边距与页脚预留（按 1080 宽定）。
+ *
+ * 96px 是跟参考仓（`--pad-x: 96px`）对齐的值，理由不是"像素对齐"，而是**每行字数**：
+ * 边距与字号是一枚硬币的两面——36px 配 72px 边距会让正文列变成 936px / 25 字以上，
+ * 眼睛从行尾扫回行首的距离太长，中文长文会读得累。96 + 36 落在 25 字上下。
+ * 判据见 `xhs-measure.test.ts`。
+ */
+export const XHS_PADDING = 96;
 export const XHS_FOOTER_SPACE = 84;
 
 /** 缺省 3:4 的卡片尺寸（保持旧导出名可用；新代码请用 xhsCardSize(ratio)） */

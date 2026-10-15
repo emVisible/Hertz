@@ -5,8 +5,8 @@ import { baseStyles } from './base';
 const tokens: ThemeTokens = {
   color: '#6ea8fe',
   fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
-  fontSize: '30px',
-  lineHeight: '1.6',
+  fontSize: '36px',
+  lineHeight: '1.75',
   radius: '12px',
   ink: '#e6eaf2',
   inkSoft: '#aab4c6',

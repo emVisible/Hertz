@@ -61,6 +61,7 @@ vi.mock('../../api', () => ({
   docsApi: { list: () => Promise.resolve([]) },
 }))
 
+import { getTheme } from '@hertz/mdcore'
 import { MdStudioPage } from './MdStudioPage'
 
 const wrapper = ({ children }: { children: ReactNode }) => {
@@ -150,12 +151,15 @@ describe('MdStudioPage smoke', () => {
     docData = { ...DOC, platform: 'xhs', theme_id: 'taoyao' }
     listData = [{ id: DOC.id, title: DOC.title, platform: 'xhs', theme_id: 'taoyao', updated_at: DOC.updated_at }]
     render(<MdStudioPage />, { wrapper })
-    // 桃夭 tokens: fontSize 30px / lineHeight 1.55，都不在预设档位里
+    // 断言读**主题**而不是写字面量：这条守的是"主题自带值必须出现在下拉里、
+    // 不被就近档位顶替"（见 handover §4 第 5 条），不是"桃夭恰好是 30px"。
+    // 换成读主题之后，改一次刻度不必来改这条测试——而改测试总比改代码容易。
+    const theme = getTheme('taoyao')
     const size = (await screen.findByLabelText('mdstudio.inspector.fontSize')) as HTMLSelectElement
     const lh = (await screen.findByLabelText('mdstudio.inspector.lineHeight')) as HTMLSelectElement
-    expect(size.value).toBe('30px')
-    expect(Array.from(size.options).map((o) => o.value)).toContain('30px')
-    expect(lh.value).toBe('1.55')
+    expect(size.value).toBe(theme.tokens.fontSize)
+    expect(Array.from(size.options).map((o) => o.value)).toContain(theme.tokens.fontSize)
+    expect(lh.value).toBe(theme.tokens.lineHeight)
   })
 
   it('小红书平台显示二维码上传入口', async () => {    docData = { ...DOC, platform: 'xhs', theme_id: 'taoyao' }
