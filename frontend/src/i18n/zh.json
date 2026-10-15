@@ -119,7 +119,8 @@
       "save": "写回源文",
       "close": "关闭块编辑",
       "text": "块 markdown 源码",
-      "noLine": "这一块没有独立源码行号，请到左栏改源文"
+      "noLine": "这一块没有独立源码行号，请到左栏改源文",
+      "keyHint": "Esc 取消 · Cmd+Enter 保存"
     },
     "batch": {
       "toggle": "批量",

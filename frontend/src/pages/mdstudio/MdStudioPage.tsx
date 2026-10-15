@@ -314,6 +314,40 @@ export function MdStudioPage() {
     setSaveState('dirty');
   }, []);
 
+  /**
+   * 文档级撤销/重做的键盘通道（W4）。
+   *
+   * 只有按钮不算数：Cmd+Z 是肌肉记忆。但**不能全局绑**——CodeMirror 已经用
+   * Cmd+Z 撤销文字，两边都管就是"按一次退了两步"，其中一步还发生在看不见的地方。
+   *
+   * 所以按焦点作用域分：
+   * - 焦点在编辑器里 → Cmd+Z 归 CodeMirror，我们不插手（文字撤销）；
+   * - 焦点在编辑器外 → Cmd+Z 是文档级（主题/平台/字号/封面…）。
+   *
+   * 焦点在编辑器里时**整组**（含 Shift+Z）都让给 CodeMirror——否则"重做"会在一处
+   * 指文字、在另一处指样式，同一个快捷键两种语义，比没有快捷键更让人困惑。
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      if (e.key.toLowerCase() !== 'z') return
+      const target = e.target as HTMLElement | null
+      /*
+       * 焦点在**任何文本编辑区**里 → 整组都让出去：CodeMirror（`.cm-editor`）
+       * 与画布块编辑器（`textarea`）。一次撤销只该退一步，且那一步是文字。
+       *
+       * 块编辑器最初漏在作用域外，于是那里按 Cmd+Z 会撤**主题**——
+       * 一个看不见的按钮被键盘触发，退的还是无关的东西。
+       */
+      if (target?.closest('.cm-editor, textarea, [contenteditable="true"]')) return
+      e.preventDefault()
+      if (e.shiftKey) redoDoc()
+      else undoDoc()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undoDoc])
+
   const patchDraft = useCallback((patch: Partial<DraftState>, opts: { history?: boolean } = {}) => {
     const keys = Object.keys(patch);
     const withText = keys.includes('source_md');
@@ -1012,6 +1046,17 @@ export function MdStudioPage() {
                 onChange={(e) => setEditText(e.target.value)}
                 spellCheck={false}
                 aria-label={t('mdstudio.edit.text')}
+                // Esc 取消 / Cmd+Enter 保存：此刻用户的手还在键盘上（他刚点完画布上的
+                // 段落正是为了改它），让他去够那两个小图标是多余的往返
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setEditing(null)
+                  } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault()
+                    commitBlockEdit()
+                  }
+                }}
                 className="h-24 w-full resize-none overflow-y-auto bg-transparent px-3 pb-2 font-mono text-xs leading-relaxed text-text-primary outline-none"
               />
               <div className="flex shrink-0 justify-end gap-2 px-3 pb-2">

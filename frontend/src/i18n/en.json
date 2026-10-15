@@ -119,7 +119,8 @@
       "save": "Write back",
       "close": "Close block editor",
       "text": "Block markdown source",
-      "noLine": "This block has no source line range — edit it in the source pane"
+      "noLine": "This block has no source line range — edit it in the source pane",
+      "keyHint": "Esc to cancel · Cmd+Enter to save"
     },
     "batch": {
       "toggle": "Batch",
