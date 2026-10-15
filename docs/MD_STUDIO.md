@@ -161,6 +161,16 @@ md 字符串
 
 顺带一提：TS 会把 `renderBlock` 的 default 分支里 `block` 收窄成 `never`——也就是**新增 IR 块型却忘了写渲染分支，编译就会报错**。那是第一道防线，运行时的兜底是第二道（给绕过类型断言的路径留着）。
 
+**输入性能**（切片 11，W0 第一片）：万字稿单次解析约 15ms，而一条输入路径上叠了三段——**大纲**各解析一次、**光标反查**每按一键同步解析一次、**画布**渲染时再解析一次。光标那条还挂在 `setFocusBlock` 的 updater 里（updater 必须纯，StrictMode 下跑两次），而且挂在 `renderDraft.source_md` 依赖上 → 回调身份每键都换 → 那个回调进了画布渲染 effect 的依赖 → **每按一键整篇重排 + 重新分页**。150ms 防抖只挡文本，挡不住回调身份变化。
+
+现在：**全页唯一的 IR**（一个 memo，解析失败不兜底成空数组——那会让画布"看着正常其实没渲染"，比报错更难查），大纲/画布/光标反查/导出都从这一份读；两个回调依赖清空、最新值走 ref；画布 effect 的依赖从 `sourceMd` 换成 `parsed`。
+
+判据测的是**画布重排次数**而不是"解析了几次"。这里有个教训值得留着：`@hertz/mdcore` 是 workspace 源码包，测试里的 `vi.mock` 拦得住自己 import 的那份，**却拦不住 `MdStudioPage` 内部的调用**（自检显示 mock 是活的，测试里直接调计数 +1，页面里调同一个函数计数纹丝不动）。数一个自己观测不到的量，得到的判据就是幻觉——第一版判据正是这么绿的。**DOM 上量得到的东西才是判据**：渲染态由 effect 全权重建，重排一次就换一批子节点，而这正是用户看见的"每按一键整篇重排"。
+
+同一条教训还有第二处：合成 `keydown` 驱动不了 CodeMirror（内容根本没变），所以"输 20 个字符只解析 N 次"是**空判据**——它通过是因为什么都没发生。改成用 `user.type` 并**先断言内容真的变了**，再用大纲点击（jsdom 里唯一真能触发 `onCursorLine` 的路，见 `MdStudioEditor.test.tsx`）。
+
+成对变异两处精确打红：点画布回调身份又随 draft 变 / 画布依赖里塞回会变的原始文本。
+
 **四件事一起收**（切片 10，人话四连）：「部分 md 渲染不完全，比如标题渲染 / 页码不固定，应该固定到右下角 / 切换部分比例会出现溢出 / 不同栏目需要有对应的配置缓存，切换会有样式污染」。
 
 - **标题**：`headInk` 对标题是个**死 token**——`base.ts` 给 h1..h6 写死 `color: 'inherit'`，而 derive 头注第 6 条写着"标题字色默认 headInk"、设计器里也摆着「标题」色槽。于是标题恒与正文同色：层级塌成一片，**拖那个滑块毫无反应**。与「投影/描边/次要字色」同一类病。顺带修掉一条**把 bug 固化成判据**的老断言：它的注释写的是 headInk，断言钉的却是 `inherit`，改对了反而会红。
@@ -349,7 +359,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 328 条 vitest（node+jsdom，测试与源码同目录）、前端 315 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 328 条 vitest（node+jsdom，测试与源码同目录）、前端 318 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

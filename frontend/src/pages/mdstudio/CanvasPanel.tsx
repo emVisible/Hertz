@@ -21,13 +21,13 @@ import {
   xhsCardSize,
   xhsCards,
   type IRDiagnostic,
+  type parseToIRDetailed,
   type ThemeOverrides,
   type XhsRatio,
 } from '@hertz/mdcore'
 
 import type { LayoutPlatform } from '../../api'
 import { DiagnosticsBanner, type DiagnosticsLabels } from './CanvasDiagnostics'
-import { withDiagnostics } from './diagnosticsWire'
 
 /**
  * xhs 卡片展示缩放基值：1080 宽导出坐标系 → 约 420px 展示宽。
@@ -115,7 +115,13 @@ export interface CanvasBlockTarget {
 }
 
 interface CanvasPanelProps {
-  sourceMd: string
+  /**
+   * 宿主解析好的 IR（W0：一次解析多处复用）。
+   *
+   * 给了就用这一份，不自己再 parse——早先画布每次渲染都重解一遍全篇，于是
+   * 「大纲一次 + 光标一次 + 画布一次」叠成三段。null = 宿主还没解析出来。
+   */
+  parsed?: ReturnType<typeof parseToIRDetailed> | null
   platform: LayoutPlatform
   themeId: string
   overrides: ThemeOverrides
@@ -259,7 +265,7 @@ function attachBoundary(
 }
 
 export function CanvasPanel({
-  sourceMd,
+  parsed = null,
   platform,
   themeId,
   overrides,
@@ -297,7 +303,7 @@ export function CanvasPanel({
     const host = mountRef.current
     if (!host) return
     host.innerHTML = ''
-    if (!sourceMd.trim()) {
+    if (!parsed) {
       // 空稿也要有反馈：留一行提示，避免中栏看起来像坏了
       const hint = document.createElement('div')
       hint.textContent = emptyHint
@@ -320,8 +326,17 @@ export function CanvasPanel({
         }
       : null
     try {
-      // 一次解析拿两份账（见 diagnosticsWire.ts：接线本身也要有判据）
-      withDiagnostics(sourceMd, (ir, collected) => {
+      // IR 由宿主解析好（W0：一次解析多处复用）。账要**新开一份**：
+      // 直接复用 parsed.diagnostics 会把渲染层的记账追加进宿主的数组，
+      // 下次渲染时又追加一遍——诊断条会随输入越来越长。
+      if (!parsed) {
+        setDiagnostics([])
+        onXhsInfo({ pageCount: 0, overflow: false })
+        return
+      }
+      const ir = parsed.blocks
+      const collected: IRDiagnostic[] = [...parsed.diagnostics]
+      {
           // 深色预览：优先切到该平台的真深色主题（晚风/夜航/墨案），只影响预览不改稿；
           // 平台无深色款时保持原主题，由外层容器深底近似（见 MdStudioPage 画布外框）。
           const darkPreset = dark ? darkThemeFor(platform) : undefined
@@ -435,7 +450,7 @@ export function CanvasPanel({
             host.appendChild(el)
         }
         setDiagnostics(collected)
-      })
+      }
     } catch {
       // markdown 编辑中间态解析失败：静默留空画布，不打断输入。
       // 但账要清空——留着上一次解析的诊断，等于报一个已经不存在的毛病。
@@ -444,7 +459,7 @@ export function CanvasPanel({
     }
     // overrides 对象随 draft 变更重建，引用即变更信号
   }, [
-    sourceMd,
+    parsed,
     platform,
     themeId,
     overrides,

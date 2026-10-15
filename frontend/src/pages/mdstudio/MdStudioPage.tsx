@@ -16,6 +16,7 @@ import {
   defaultThemeFor,
   exportZip,
   parseToIR,
+  parseToIRDetailed,
   renderLongImage,
   xhsCaption,
   xhsCards,
@@ -267,14 +268,34 @@ export function MdStudioPage() {
    * 大纲与联动都从**已解析的 IR** 取，不重扫 Markdown：行号在 IR 里已经是解析产物，
    * 再扫一遍就有了第二套行号，两套迟早漂（表现为"点标题跳到隔壁段落"）。
    */
-  const outline: OutlineItem[] = useMemo(() => {
-    if (!renderDraft?.source_md) return []
+  /** 最新 IR 的 ref：给身份必须稳定的回调读（见 handleCursorLine） */
+  const parsedRef = useRef<ReturnType<typeof parseToIRDetailed> | null>(null)
+
+  /**
+   * **全页唯一的 IR**（W0：一次解析多处复用）。
+   *
+   * 早先大纲、光标反查、画布渲染各自调 `parseToIR`：万字稿单次解析约 15ms，
+   * 一段输入下来是三段叠加。而光标那条还挂在 `setFocusBlock` 的 updater 里——
+   * updater 必须是纯函数，于是每按一键都**同步**跑一遍全篇解析，150ms 防抖形同虚设。
+   *
+   * 现在解析只在这里发生一次，下游（大纲 / 画布 / 光标反查 / 导出）都从这一份读。
+   * 解析失败不兜底成空数组：那会让画布变成"看着正常其实没渲染"，比报错更难查。
+   */
+  const parsed = useMemo(() => {
+    if (!renderDraft?.source_md) return null
     try {
-      return buildOutline(parseToIR(renderDraft.source_md))
+      return parseToIRDetailed(renderDraft.source_md)
     } catch {
-      return []
+      return null
     }
   }, [renderDraft?.source_md])
+
+  parsedRef.current = parsed
+
+  const outline: OutlineItem[] = useMemo(
+    () => (parsed ? buildOutline(parsed.blocks) : []),
+    [parsed],
+  )
 
   const activeHeading = useMemo(() => {
     let best: OutlineItem | null = null
@@ -285,19 +306,26 @@ export function MdStudioPage() {
     return best
   }, [outline, cursorLine])
 
-  /** 光标行 → 画布该高亮哪一块 */
+  /**
+   * 光标行 → 画布该高亮哪一块。
+   *
+   * 两个要点：
+   * ①**依赖数组为空**——身份必须稳定。早先它的依赖是 `source_md`，于是每次按键都换
+   *    一个新函数，而 `CanvasPanel` 的渲染 effect 把 `onBlockClick` 放在依赖里，
+   *    结果**每按一键就重排 + 重新分页一次**（防抖只挡文本，挡不住回调身份变化）。
+   * ②**不在 setState 的 updater 里做解析**——updater 必须纯，StrictMode 下会跑两次，
+   *    于是"一次按键两次解析"。最新 IR 走 ref 读。
+   */
   const handleCursorLine = useCallback((line: number) => {
     setCursorLine(line)
-    setFocusBlock((prev) => {
-      if (!renderDraft?.source_md) return null
-      try {
-        const next = blockIndexAtLine(parseToIR(renderDraft.source_md), line)
-        return next === prev ? prev : next
-      } catch {
-        return null
-      }
-    })
-  }, [renderDraft?.source_md])
+    const ir = parsedRef.current
+    if (!ir) {
+      setFocusBlock(null)
+      return
+    }
+    const next = blockIndexAtLine(ir.blocks, line)
+    setFocusBlock((prev) => (next === prev ? prev : next))
+  }, [])
 
   /** 拖分栏：pointer 事件跟着窗口走，鼠标移出侧栏也不断 */
   useEffect(() => {
@@ -337,8 +365,12 @@ export function MdStudioPage() {
   )
 
   /** 画布点段落：取出该块的源码行段进编辑器（markdown 仍是唯一真相源，不做 IR 反序列化） */
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+
   const handleBlockClick = useCallback(
     (target: CanvasBlockTarget) => {
+      const draft = draftRef.current
       if (!draft) return
       if (!target.line) {
         toast(t('mdstudio.edit.noLine'), 'warning')
@@ -350,7 +382,10 @@ export function MdStudioPage() {
       // 编辑器同步定位到这一段（CodeMirror 的选区 + 滚动，居中在视线里）
       editorRef.current?.selectRange(target.line[0], Math.max(target.line[0], target.line[1] - 1))
     },
-    [draft, t, toast],
+    // 依赖里不能有 `draft`：它每次输入都换对象，而这个回调进了 CanvasPanel 的
+    // 渲染 effect 依赖——于是**每按一键就整篇重排 + 重新分页**，
+    // 150ms 防抖只挡文本，挡不住回调身份变化。最新 draft 走 ref 读。
+    [t, toast],
   )
 
   /** 保存块编辑：按行区间回写 source_md；其余行的行号随后由重新解析自然对齐 */
@@ -741,7 +776,7 @@ export function MdStudioPage() {
             >
               {renderDraft && (
                 <CanvasPanel
-                  sourceMd={renderDraft.source_md}
+                  parsed={parsed}
                   platform={renderDraft.platform}
                   themeId={renderDraft.theme_id}
                   overrides={renderDraft.overrides}
