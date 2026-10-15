@@ -161,6 +161,8 @@ md 字符串
 
 顺带一提：TS 会把 `renderBlock` 的 default 分支里 `block` 收窄成 `never`——也就是**新增 IR 块型却忘了写渲染分支，编译就会报错**。那是第一道防线，运行时的兜底是第二道（给绕过类型断言的路径留着）。
 
+**预览图片预载**（切片 12，W0 剩余）：闸门抽成 `waitForImages()` 两处共用。
+
 **输入性能**（切片 11，W0 第一片）：万字稿单次解析约 15ms，而一条输入路径上叠了三段——**大纲**各解析一次、**光标反查**每按一键同步解析一次、**画布**渲染时再解析一次。光标那条还挂在 `setFocusBlock` 的 updater 里（updater 必须纯，StrictMode 下跑两次），而且挂在 `renderDraft.source_md` 依赖上 → 回调身份每键都换 → 那个回调进了画布渲染 effect 的依赖 → **每按一键整篇重排 + 重新分页**。150ms 防抖只挡文本，挡不住回调身份变化。
 
 现在：**全页唯一的 IR**（一个 memo，解析失败不兜底成空数组——那会让画布"看着正常其实没渲染"，比报错更难查），大纲/画布/光标反查/导出都从这一份读；两个回调依赖清空、最新值走 ref；画布 effect 的依赖从 `sourceMd` 换成 `parsed`。
@@ -359,7 +361,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 328 条 vitest（node+jsdom，测试与源码同目录）、前端 318 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 330 条 vitest（node+jsdom，测试与源码同目录）、前端 319 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

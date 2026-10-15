@@ -86,6 +86,40 @@ async function blobChecksum(blob: Blob): Promise<number> {
 /** 单张图片的等待上限（超时后照常导出，让用户看到缺图而不是无限转圈） */
 const IMG_WAIT_TIMEOUT_MS = 8000;
 
+
+/**
+ * 等 `root` 下的图**真的能画**（元数据就绪 + 解码完成）。
+ *
+ * 为什么要有这个函数而不是各处内联：分页用 `getBoundingClientRect()` 量高，
+ * 而**未加载的图片高度是 0**——于是分页会以为那块很矮，把更多内容塞进这一页；
+ * 等图加载完高度撑开，内容被推下去，**卡片会在你眼前重排一次**。
+ * 导出路径早就有这道闸门，预览路径没有，于是同一个稿子在预览里"会动"、导出却稳。
+ *
+ * 两条都不是可选项：
+ * - `img.complete` 只代表元数据就绪，解码可能仍在进行——截图会截到半张图，所以要
+ *   `decode()`；
+ * - **必须有超时**：既不 load 也不 error 的连接（挂起的代理、被墙的域名）会让这个
+ *   Promise 永远不 resolve，调用方随之永久挂起，用户只看到转圈。
+ */
+export async function waitForImages(root: ParentNode, timeoutMs = IMG_WAIT_TIMEOUT_MS): Promise<void> {
+  await Promise.all(
+    Array.from(root.querySelectorAll('img')).map((img) => {
+      if (img.complete) {
+        return typeof img.decode === 'function' ? img.decode().catch(() => undefined) : Promise.resolve();
+      }
+      return new Promise<void>((resolve) => {
+        const done = (): void => {
+          clearTimeout(timer);
+          resolve();
+        };
+        const timer = setTimeout(done, timeoutMs);
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+      });
+    }),
+  );
+}
+
 export function createBrowserReadyGate(probe?: CaptureEngine): ReadyGate {
   return {
     async waitReady(root) {
@@ -102,28 +136,7 @@ export function createBrowserReadyGate(probe?: CaptureEngine): ReadyGate {
       if (root.querySelector('.katex')) {
         await waitForKatexFonts(doc);
       }
-      const imgs = Array.from(root.querySelectorAll('img'));
-      await Promise.all(
-        imgs.map((img) => {
-          if (img.complete) {
-            // complete 只代表元数据就绪，解码可能仍在进行——snapdom 会截到半张图
-            return typeof img.decode === 'function'
-              ? img.decode().catch(() => undefined)
-              : Promise.resolve();
-          }
-          // **必须有超时**：既不 load 也不 error 的连接（挂起的代理、被墙的域名）
-          // 会让这个 Promise 永远不 resolve，导出随之永久挂起，用户只看到转圈。
-          return new Promise<void>((resolve) => {
-            const done = (): void => {
-              clearTimeout(timer);
-              resolve();
-            };
-            const timer = setTimeout(done, IMG_WAIT_TIMEOUT_MS);
-            img.addEventListener('load', done, { once: true });
-            img.addEventListener('error', done, { once: true });
-          });
-        }),
-      );
+      await waitForImages(root);
       const raf = nextFrame(doc);
       await raf();
       await raf();

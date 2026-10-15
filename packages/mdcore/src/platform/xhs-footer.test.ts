@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { parseToIR } from '../ir/parseToIR'
+import { waitForImages } from '../export/exporter'
 import { xhsCards } from './xhs'
 
 const MEASURER = { fits: () => true }
@@ -83,5 +84,43 @@ describe('页码钉在右下角', () => {
   it('页码内容是「第 N / 共 M 页」的形式', () => {
     const { num } = probe(card('图文工坊'))
     expect(num.textContent).toMatch(/^\d+ \/ \d+$/)
+  })
+})
+
+describe('等图（分页前预载）', () => {
+  /**
+   * 为什么这条重要：分页用 `getBoundingClientRect()` 量高，而**未加载的图片高度是 0**。
+   * 于是分页以为那块很矮、把更多内容塞进这一页；等图加载完高度撑开，内容被推下去，
+   * **卡片会在用户眼前重排一次**。导出路径早有闸门，预览路径没有——
+   * 同一个稿子"预览里会动、导出却稳"，这类不一致最难自查。
+   */
+  it('图没就位时等待；就位了立刻返回', async () => {
+    const doc = globalThis.document
+    const host = doc.createElement('div')
+    const img = doc.createElement('img')
+    Object.defineProperty(img, 'complete', { configurable: true, get: () => false })
+    host.appendChild(img)
+
+    let settled = false
+    const waiting = waitForImages(host, 50).then(() => {
+      settled = true
+    })
+    await Promise.resolve()
+    expect(settled, '图还没就位就不该返回').toBe(false)
+
+    img.dispatchEvent(new Event('load'))
+    await waiting
+    expect(settled).toBe(true)
+  })
+
+  it('永不 load 的图靠超时兜底（挂起的代理不能把画布卡死）', async () => {
+    const doc = globalThis.document
+    const host = doc.createElement('div')
+    const img = doc.createElement('img')
+    Object.defineProperty(img, 'complete', { configurable: true, get: () => false })
+    host.appendChild(img)
+    // 既不 load 也不 error：没有超时的话这个 Promise 永远不 resolve
+    await waitForImages(host, 20)
+    expect(true).toBe(true)
   })
 })

@@ -122,6 +122,7 @@ export {
   exportZip,
   isCanvasTooLargeError,
   SCALE_LADDER,
+  waitForImages,
   zipBlobs,
 } from './export/exporter';
 export type { CaptureEngine, ExportCardsResult, ExportOptions, ReadyGate } from './export/exporter';

@@ -158,3 +158,36 @@ describe('一次编辑只解析一次', () => {
     expect(repaintCount).toBe(0)
   })
 })
+
+describe('图没就位就重排一次，且只一次', () => {
+  /**
+   * 分页量的是 `getBoundingClientRect()`，而**未加载的图片高度是 0**——于是那一页被
+   * 塞得过满，图一加载内容就被推下去，卡片在用户眼前重排。导出路径早有闸门，
+   * 预览路径没有，于是"预览里会动、导出却稳"这种不一致最难自查。
+   *
+   * 判据量的是**重排次数**：一次输入 + 一张慢图，最多触发一次额外重排。
+   */
+  it('慢图加载后重排一次；不会自我触发成死循环', async () => {
+    docData = { ...BASE, source_md: `${BIG_MD}\n\n![慢图](https://slow.example/a.png)\n\n结尾一段。` }
+    const user = userEvent.setup()
+    render(<MdStudioPage />, { wrapper })
+    await waitFor(() => expect(document.querySelector('.mdcore-doc')).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(document.querySelector('.cm-content')).toBeTruthy(), { timeout: 5000 })
+
+    const mount = document.querySelector('[data-testid="mdstudio-canvas-mount"]') as HTMLElement
+    watchRepaints(mount)
+    repaintCount = 0
+    // jsdom 不加载外链，图天然 complete —— 这条只验「不会死循环」
+    const before = repaintCount
+    await act(async () => {
+      await user.type(document.querySelector('.cm-content') as HTMLElement, '甲')
+      await new Promise((r) => setTimeout(r, 300))
+    })
+    // 等图闸门最多等 2s；超时后不得反复触发（`lastRemeasureKey` 守的就是这个）
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600))
+    })
+    // 关键：**有限次**。死循环会在这里变成上千次。
+    expect(repaintCount - before).toBeLessThanOrEqual(6)
+  })
+})

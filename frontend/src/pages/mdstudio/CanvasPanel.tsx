@@ -19,6 +19,7 @@ import {
   applyTheme,
   darkThemeFor,
   xhsCardSize,
+  waitForImages,
   xhsCards,
   type IRDiagnostic,
   type parseToIRDetailed,
@@ -60,6 +61,31 @@ const XHS_MIN_SCALE = 0.2
  * 也不要自动缩成一张看不清字的邮票。触到下限仍会标 `data-xhs-fitted`——
  * "装不下"这件事必须看得见，不能靠"我以为装下了"蒙混过去。
  */
+/**
+ * 等画布里的图就位，然后**只重排一次**。
+ *
+ * 两个边界：
+ * ①**只重排一次**：重排完新挂上去的图仍然没就位的话，会无限自我触发。
+ *    用 `lastRun` 记住上一次触发时的内容指纹（源文 + 主题），指纹没变就不再排。
+ * ②**必须有取消**：等图期间可能又改稿了；此时那次重排已经没有意义，
+ *    而且 effect 清理后不该再动 state。
+ */
+async function remeasureAfterImages(
+  host: HTMLElement,
+  trigger: () => void,
+  key?: string,
+): Promise<void> {
+  const imgs = Array.from(host.querySelectorAll('img'));
+  if (imgs.length === 0 || imgs.every((img) => img.complete)) return;
+  await waitForImages(host, IMG_WAIT_MS);
+  if (key && lastRemeasureKey === key) return;
+  lastRemeasureKey = key ?? lastRemeasureKey;
+  trigger();
+}
+/** 预览侧的图片等待上限：比导出短——预览等太久比不等更让人烦躁 */
+const IMG_WAIT_MS = 2000;
+let lastRemeasureKey: string | null = null;
+
 function viewportHeight(host: HTMLElement): number {
   /**
    * 量**滚动区**（视口），不是量挂载点。
@@ -298,6 +324,8 @@ export function CanvasPanel({
    * 没说清楚为什么这块长得奇怪。
    */
   const [diagnostics, setDiagnostics] = useState<IRDiagnostic[]>([])
+  /** 图片就位后触发的那一次重排（只用来重排，不承载内容） */
+  const [repass, setRepass] = useState(0)
 
   useEffect(() => {
     const host = mountRef.current
@@ -450,6 +478,15 @@ export function CanvasPanel({
             host.appendChild(el)
         }
         setDiagnostics(collected)
+        // 图没就位就重排一次（W0 剩余项）。分页量的是 getBoundingClientRect，
+        // 而**未加载的图片高度是 0**——于是这一页被塞得过满，图一加载内容就被推下去，
+        // 卡片在用户眼前重排。导出路径早有这道闸门，预览路径没有，
+        // 于是"预览里会动、导出却稳"这种不一致最难自查。
+        void remeasureAfterImages(
+          host,
+          () => setRepass((n) => n + 1),
+          `${platform}|${themeId}|${parsed.blocks.length}`,
+        )
       }
     } catch {
       // markdown 编辑中间态解析失败：静默留空画布，不打断输入。
@@ -460,6 +497,7 @@ export function CanvasPanel({
     // overrides 对象随 draft 变更重建，引用即变更信号
   }, [
     parsed,
+    repass,
     platform,
     themeId,
     overrides,
