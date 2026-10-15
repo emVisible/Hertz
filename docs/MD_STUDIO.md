@@ -161,6 +161,20 @@ md 字符串
 
 顺带一提：TS 会把 `renderBlock` 的 default 分支里 `block` 收窄成 `never`——也就是**新增 IR 块型却忘了写渲染分支，编译就会报错**。那是第一道防线，运行时的兜底是第二道（给绕过类型断言的路径留着）。
 
+**列表项里的块级内容**（切片 13）：核对「部分 md 渲染不完全」时挖出来的，比标题那条重得多——
+
+```
+- 甲
+
+  ```js
+  const a = 1
+  ```
+
+- 丙          →  成品里只剩「• 甲 • 丙」
+```
+
+`collectListItems` 早先只挑 `inline` token，其余**静默丢弃**。嵌套列表、表格、引用同理被压平成一行。这是 handover §4 那一类「内容整段从成品里消失，而 190 条结构断言一条都不红——它们不知道列表项里可以有块」。列表项结构因此从 `InlineNode[][]` 改为 `{ inlines, blocks }`（项内两种内容可以同现），渲染与文案导出同步跟进。
+
 **预览图片预载**（切片 12，W0 剩余）：闸门抽成 `waitForImages()` 两处共用。
 
 **输入性能**（切片 11，W0 第一片）：万字稿单次解析约 15ms，而一条输入路径上叠了三段——**大纲**各解析一次、**光标反查**每按一键同步解析一次、**画布**渲染时再解析一次。光标那条还挂在 `setFocusBlock` 的 updater 里（updater 必须纯，StrictMode 下跑两次），而且挂在 `renderDraft.source_md` 依赖上 → 回调身份每键都换 → 那个回调进了画布渲染 effect 的依赖 → **每按一键整篇重排 + 重新分页**。150ms 防抖只挡文本，挡不住回调身份变化。
@@ -361,7 +375,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 330 条 vitest（node+jsdom，测试与源码同目录）、前端 319 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 345 条 vitest（node+jsdom，测试与源码同目录）、前端 319 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 

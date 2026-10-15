@@ -203,8 +203,14 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
         const span = doc.createElement('span');
         span.className = 'mdcore-li-content';
         applyProps(span, styles.liContent);
-        appendInlines(span, item, ctx);
+        appendInlines(span, item.inlines, ctx);
         li.appendChild(span);
+        // 项内的块级内容（代码块 / 表格 / 嵌套列表 / 引用 / 标题）。
+        // 早先这里只渲染行内内容，于是列表项里的 ``` 代码块**整段从成品里消失**。
+        for (const blk of item.blocks) {
+          const child = renderBlock(blk, ctx);
+          if (child) li.appendChild(child);
+        }
         el.appendChild(li);
       });
       return el;

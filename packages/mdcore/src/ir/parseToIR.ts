@@ -342,19 +342,34 @@ function salvageBlock(t: Token): IRBlock | null {
 function collectListItems(
   tokens: Token[],
   ctx?: ParseContext,
-): { items: InlineNode[][] } {
-  const items: InlineNode[][] = [];
+): { items: Array<{ inlines: InlineNode[]; blocks: IRBlock[] }> } {
+  const items: Array<{ inlines: InlineNode[]; blocks: IRBlock[] }> = [];
   let i = 0;
   while (i < tokens.length) {
     const t = tokens[i];
     if (t.type === 'list_item_open') {
       const end = findClose(tokens, i, 'list_item_open', 'list_item_close');
-      const itemKids: InlineNode[] = [];
+      const inlines: InlineNode[] = [];
+      const blocks: IRBlock[] = [];
       const inner = tokens.slice(i + 1, end);
       for (let k = 0; k < inner.length; k++) {
-        if (inner[k].type === 'inline') itemKids.push(...convertInline(inner[k].children ?? [], ctx));
+        if (inner[k].type === 'inline') inlines.push(...convertInline(inner[k].children ?? [], ctx));
       }
-      items.push(itemKids);
+      /**
+       * 项内**块级**内容（代码块 / 表格 / 嵌套列表 / 引用 / 标题）。
+       *
+       * 早先这里只取 `inline` token，其余静默丢弃——于是列表项里的 ``` 代码块
+       * **整段从成品里消失**，嵌套列表与表格被压平成一行文字，而没有任何断言会红。
+       * 做法是把项内 token 流按 markdown-it 的层级原样过一遍 `tokensToIR`，
+       * 它处理什么就得到什么（我们不建模的语法它会记账，不是静默丢）。
+       */
+      const produced = tokensToIR(inner, ctx);
+      for (const blk of produced) {
+        // 顶层 paragraph 就是项内的行内内容，不重复放进 blocks
+        if (blk.type === 'para') inlines.push(...blk.children);
+        else blocks.push(blk);
+      }
+      items.push({ inlines, blocks });
       i = end + 1;
       continue;
     }

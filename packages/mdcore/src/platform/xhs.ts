@@ -428,7 +428,12 @@ function blockText(block: IRBlock): string {
       return inlineText(block.children);
     case 'list':
       return block.items
-        .map((item, i) => `${block.ordered ? `${i + 1}.` : '•'} ${inlineText(item)}`)
+        .map((item, i) => {
+          const head = `${block.ordered ? `${i + 1}.` : '•'} ${inlineText(item.inlines)}`;
+          // 项内的块（代码/表格/嵌套列表）也要出现在文案里——导出成纯文本时它们同样不许消失
+          const tail = item.blocks.map((b) => blockText(b)).join('\n');
+          return tail ? `${head}\n${tail}` : head;
+        })
         .join('\n');
     case 'code':
       return block.code;

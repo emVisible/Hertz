@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  applyTheme,
   getMarkdownParser,
   parseToIRDetailed,
   tokensToIR,
@@ -142,6 +143,11 @@ function irText(blocks: IRBlock[]): string {
       if (block.type === 'footnotes')
         return (block.items as Array<{ blocks: IRBlock[] }>).map((i) => irText(i.blocks)).join('\n');
       if ('blocks' in block) return irText(block.blocks as IRBlock[]);
+      if (block.type === 'list')
+        // 列表项现在分 inlines / blocks 两半（项内可以同现行内与块级内容）
+        return (block.items as Array<{ inlines: InlineNode[]; blocks: IRBlock[] }>)
+          .map((item) => [inline(item.inlines), ...item.blocks.map((b) => irText([b]))].join(' '))
+          .join('\n');
       if ('items' in block)
         return (block.items as InlineNode[][]).map((item) => inline(item)).join('\n');
       if ('header' in block) return inline(block.header as InlineNode[]);
@@ -252,5 +258,71 @@ describe('未建模语法的兜底行为', () => {
     const { blocks } = parseTokensWithDiag(tokens);
     expect(blocks).toHaveLength(1);
     expect(irText(blocks)).toBe('正常段落');
+  });
+});
+/**
+ * 列表项里的**块级内容不许消失**（切片 13）。
+ *
+ * 这是核对人话「部分 md 渲染不完全」时挖出来的，比标题那条重得多：
+ *
+ *   - 甲\n\n  ```js\n  const a = 1\n  ```\n\n- 丙   →  成品里只剩「• 甲 • 丙」
+ *   - 嵌套列表 / 表格 / 引用                              →  被压平成一行文字
+ *
+ * `collectListItems` 早先只挑 `inline` token，其余**静默丢弃**——代码块整段消失，
+ * 而 190 条结构断言一条都不红：它们不知道列表项里可以有块。
+ * 这正是 handover §4 那一类「内容整段从成品里消失且无人察觉」。
+ *
+ * 判据钉两件事：①**内容一定还在**（这是底线）；②**结构尽量保住**（块级内容仍是块）。
+ */
+describe('列表项里的块级内容', () => {
+  const cases: Record<string, string> = {
+    代码块: '- 甲\n\n  ```js\n  const a = 1\n  ```\n\n- 丙',
+    嵌套无序: '- 甲\n  - 乙\n  - 丙\n- 丁',
+    嵌套有序: '1. 甲\n   1. 乙\n2. 丙',
+    表格: '- 甲\n\n  | a | b |\n  | --- | --- |\n  | 1 | 2 |',
+    引用: '- 甲\n  > 引用乙\n- 丙',
+    标题: '- ## 小标题\n- 正文。',
+    松散多段: '- 第一段\n\n  第二段\n\n- 下一项',
+  };
+
+  it.each(Object.keys(cases))('%s：内容一个字符都不许丢', (name) => {
+    const ir = parseToIRDetailed(cases[name]);
+    const text = irText(ir.blocks);
+    // 逐个点名那些"曾经整段消失"的东西
+    const mustHave: Record<string, string[]> = {
+      代码块: ['const a = 1'],
+      嵌套无序: ['甲', '乙', '丙', '丁'],
+      嵌套有序: ['甲', '乙', '丙'],
+      表格: ['a', 'b', '1', '2'],
+      引用: ['甲', '引用乙', '丙'],
+      标题: ['小标题', '正文'],
+      松散多段: ['第一段', '第二段', '下一项'],
+    };
+    for (const needle of mustHave[name]) {
+      expect(text, `${name}：内容「${needle}」消失了`).toContain(needle);
+    }
+  });
+
+  it.each(Object.keys(cases))('%s：块级内容仍渲染成块（不是压平成一行）', (name) => {
+    const ir = parseToIRDetailed(cases[name]);
+    const list = ir.blocks.find((b) => b.type === 'list') as { items: unknown[] } | undefined;
+    expect(list, `${name}：列表都没解析出来`).toBeTruthy();
+    const rendered = applyTheme(ir.blocks, 'modi');
+    // 只要项里有块级内容，渲染态就该出现对应的元素类型
+    const html = rendered.innerHTML;
+    if (name === '代码块') expect(html).toContain('<pre');
+    if (name === '表格') expect(html).toContain('<table');
+    if (name === '嵌套无序' || name === '嵌套有序') expect(html.match(/<ul|<ol/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    if (name === '引用') expect(html).toContain('blockquote');
+    if (name === '标题') expect(html).toMatch(/<h[1-6]/);
+  });
+
+  it('没有静默丢弃：降级到文字时要有诊断', () => {
+    // 上面七条现在都保住了结构，所以不该再有 list-item 相关的诊断；
+    // 这条守着"将来有人改回去时，至少诊断会先红"
+    for (const [name, md] of Object.entries(cases)) {
+      const diags = parseToIRDetailed(md).diagnostics.filter((d) => d.token.startsWith('list-item'));
+      expect(diags, `${name} 出现了 list-item 降级`).toEqual([]);
+    }
   });
 });

@@ -112,7 +112,12 @@ describe('parseToIR：全块型快照', () => {
     expect(l).toMatchObject({ type: 'list', ordered: false });
     if (l.type !== 'list') throw new Error('unreachable');
     expect(l.items).toHaveLength(2);
-    expect(l.items[0]).toEqual([{ type: 'text', text: '项目一' }]);
+    // 项结构是 { inlines, blocks }：项内可以同现行内内容与块级内容
+    // （见 types.ts 里这个字段的注释——早先只有 InlineNode[][]，项内代码块整段消失）
+    const textOf = (nodes: Array<{ type: string; text?: string }>) =>
+      nodes.map((n) => n.text ?? '').join('');
+    expect(textOf(l.items[0].inlines)).toContain('项目一');
+    expect(l.items[0].blocks).toEqual([]);
   });
 
   it('code 带语言与原文', () => {

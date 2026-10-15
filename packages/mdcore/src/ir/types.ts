@@ -37,7 +37,20 @@ export type InlineNode =
 export type IRBlock =
   | { type: 'heading'; level: number; children: InlineNode[]; line: LineRange | null }
   | { type: 'para'; children: InlineNode[]; line: LineRange | null }
-  | { type: 'list'; ordered: boolean; items: InlineNode[][]; line: LineRange | null }
+  /**
+   * 列表项：`inlines` 是项内的行内内容，`blocks` 是项内的块级内容。
+   *
+   * 为什么拆成两半而不是 `InlineNode[] | IRBlock[]`：Markdown 里这两种东西**可以同现**
+   * （列表项先一段文字再一个代码块），拆开才能既保住文字又保住块。
+   * 早先这里只有 `InlineNode[][]`，于是项内的代码块**整段消失**、嵌套列表与表格被压平，
+   * 而没有任何断言会红——见 `syntax-coverage.test.ts` 的「列表项里的块级内容」。
+   */
+  | {
+      type: 'list';
+      ordered: boolean;
+      items: Array<{ inlines: InlineNode[]; blocks: IRBlock[] }>;
+      line: LineRange | null;
+    }
   | {
       type: 'code';
       /** 归一化后的语言（高亮用），`null` = 没写或无法识别 */
