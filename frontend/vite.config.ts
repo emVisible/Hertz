@@ -18,6 +18,14 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // 并发上限（原来用默认值 = CPU 核数，10 核机器上就是 10 个 jsdom worker）。
+    //
+    // 为什么卡：每个 jsdom worker 是独立 node 进程（100–200MB），10 个就是 1.5–2GB。
+    // 而这台机器上 Chrome 常驻 6–8GB、swap 已经用掉 4GB——测试再叠上去，
+    // 系统会直接卡死只能重启，而那种卡很难归罪到某一条测试头上。
+    // 留 4 个 worker：并发还在，速度差得有限，内存峰值少一半。
+    maxWorkers: 4,
+    pool: 'threads',
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
     include: ['src/**/*.test.{ts,tsx}'],

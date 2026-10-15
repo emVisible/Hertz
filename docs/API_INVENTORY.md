@@ -95,6 +95,10 @@
 `DELETE /api/layout/{layout_id}`
 `GET /api/layout/{layout_id}`
 `PUT /api/layout/{layout_id}`
+`POST /api/layout/{layout_id}/purge`
+`GET /api/layout/{layout_id}/revisions`
+`POST /api/layout/{layout_id}/revisions/{seq}/restore`
+`POST /api/layout/{layout_id}/restore`
 `POST /api/library/ai-organize`
 `GET /api/library/duplicates`
 `DELETE /api/library/file`

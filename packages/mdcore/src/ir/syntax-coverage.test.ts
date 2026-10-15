@@ -134,6 +134,15 @@ function irText(blocks: IRBlock[]): string {
       if (block.type === 'image') return String(block.alt ?? '');
       if (block.type === 'formula') return String(block.tex ?? '');
       if (block.type === 'hr') return '';
+      if (block.type === 'table') {
+        // 表格在列表项里也是常见内容，助手读不出表格就会把"内容消失"误判成失败
+        // 形状（实测）：header = 单元格[]；rows = 行[]（每行是单元格[]）
+        const head = (block.header as unknown as InlineNode[][]) ?? [];
+        const rows = (block.rows as unknown as InlineNode[][][]) ?? [];
+        return [...head, ...rows.flat()]
+          .map((cell) => inline(cell))
+          .join(' ');
+      }
       if (block.type === 'toc')
         return (block.items as Array<{ text: string }>).map((i) => i.text).join('\n');
       if (block.type === 'deflist')

@@ -15,6 +15,18 @@ export interface LayoutSummary {
   platform: LayoutPlatform
   theme_id: string
   updated_at: string | null
+  /** 软删时间（W2 回收站）；列表里用它区分"活的"与"回收站里的" */
+  deleted_at?: string | null
+}
+
+/** 版本历史的一行（列表里只给摘要，全文要按 seq 取回） */
+export interface LayoutRevisionSummary {
+  seq: number
+  title: string
+  created_at: string | null
+  /** 前 120 字预览 */
+  preview: string
+  chars: number
 }
 
 /** 完整单稿 */
@@ -24,6 +36,8 @@ export interface LayoutDoc extends LayoutSummary {
   overrides: Record<string, unknown>
   cover: Record<string, unknown>
   created_at: string | null
+  /** 软删时间（W2 回收站）；非 null = 在回收站里 */
+  deleted_at?: string | null
 }
 
 export interface LayoutCreateBody {
@@ -53,7 +67,20 @@ export const layoutApi = {
   create: (body: LayoutCreateBody) => api.post<LayoutDoc>('/api/layout', body),
   get: (id: string) => api.get<LayoutDoc>(`/api/layout/${id}`),
   update: (id: string, body: LayoutUpdateBody) => api.put<LayoutDoc>(`/api/layout/${id}`, body),
+  /** 软删：进回收站，可恢复（W2） */
   remove: (id: string) => api.delete<{ ok: boolean }>(`/api/layout/${id}`),
+  /** 回收站列表 */
+  listDeleted: () => api.get<LayoutSummary[]>('/api/layout?deleted=true'),
+  /** 从回收站捞回来 */
+  restore: (id: string) => api.post<LayoutDoc>(`/api/layout/${id}/restore`),
+  /** 真删（不可逆，只对回收站里的稿开放） */
+  purge: (id: string) => api.post<{ ok: boolean }>(`/api/layout/${id}/purge`),
+  /** 版本历史（最近的在前） */
+  revisions: (id: string, limit = 20) =>
+    api.get<{ revisions: LayoutRevisionSummary[] }>(`/api/layout/${id}/revisions?limit=${limit}`),
+  /** 回到某一版；服务端会先给当前内容再存一份，所以这一步本身可逆 */
+  restoreRevision: (id: string, seq: number) =>
+    api.post<LayoutDoc>(`/api/layout/${id}/revisions/${seq}/restore`),
   importDocs: (path: string) =>
     api.get<LayoutImportResult>(`/api/layout/import/docs?path=${encodeURIComponent(path)}`),
   importStudio: (run: string) =>

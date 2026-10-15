@@ -21,9 +21,12 @@ async def _layout_cleanup():
     yield
     from sqlalchemy import delete
 
-    from backend.models.layout import Layout
+    from backend.models.layout import Layout, LayoutRevision
 
     async with session_factory() as session:
+        # 版本表有 ON DELETE CASCADE，硬删稿件时会跟着走；但软删的稿**行还在**，
+        # 所以这里两边都显式清，免得上一条用例的历史漏到下一条
+        await session.execute(delete(LayoutRevision))
         await session.execute(delete(Layout))
         await session.commit()
 
@@ -104,7 +107,8 @@ async def test_list_excludes_source_md_and_orders_by_updated_desc(
     assert [i["title"] for i in items] == ["A2", "B"]
     for item in items:
         assert "source_md" not in item
-        assert set(item) == {"id", "title", "platform", "theme_id", "updated_at"}
+        # `deleted_at` 是 W2 回收站加的：列表行要能标出「这篇在回收站里」
+        assert set(item) == {"id", "title", "platform", "theme_id", "updated_at", "deleted_at"}
     assert {i["id"] for i in items} == {a["id"], b["id"]}
 
 
@@ -131,6 +135,7 @@ async def test_delete_layout(client, _layout_cleanup) -> None:
     created = await _create(client)
     resp = await client.delete(f"/api/layout/{created['id']}")
     assert resp.status_code == 200
+    # 已删的稿按 404 处理：否则还能打开编辑、保存又把它写活，回收站形同虚设
     resp = await client.get(f"/api/layout/{created['id']}")
     assert resp.status_code == 404
 
@@ -258,4 +263,130 @@ async def test_import_studio_bad_slug_422(client, studio_root) -> None:
 @pytest.mark.asyncio
 async def test_import_studio_missing_404(client, studio_root) -> None:
     resp = await client.get("/api/layout/import/studio", params={"run": "no-such-run"})
+    assert resp.status_code == 404
+
+
+# ---------- W2 数据安全：回收站 + 版本历史 ----------
+
+
+@pytest.mark.asyncio
+async def test_delete_is_soft_and_recoverable(client, _layout_cleanup) -> None:
+    """删除是**软删**：点错了还能捞回来。
+
+    这一条是本组判据的底线。原来 DELETE 是硬删——点一下"删除"就没了，没有后悔药。
+    """
+    created = await _create(client, title="待删的稿")
+    lid = created["id"]
+    assert (await client.delete(f"/api/layout/{lid}")).status_code == 200
+
+    # 默认列表里没了
+    live = (await client.get("/api/layout")).json()
+    assert lid not in [row["id"] for row in live]
+
+    # 回收站里有
+    trash = (await client.get("/api/layout", params={"deleted": "true"})).json()
+    row = next(r for r in trash if r["id"] == lid)
+    assert row["deleted_at"], "软删必须带删除时间（不然回答不了什么时候删的）"
+
+    # 捞回来，内容原样
+    restored = (await client.post(f"/api/layout/{lid}/restore")).json()
+    assert restored["title"] == "待删的稿"
+    assert restored["source_md"] == created["source_md"]
+    assert restored["deleted_at"] is None
+    live_again = (await client.get("/api/layout")).json()
+    assert lid in [r["id"] for r in live_again]
+
+
+@pytest.mark.asyncio
+async def test_restore_is_idempotent(client, _layout_cleanup) -> None:
+    created = await _create(client)
+    lid = created["id"]
+    await client.delete(f"/api/layout/{lid}")
+    first = (await client.post(f"/api/layout/{lid}/restore")).status_code
+    second = (await client.post(f"/api/layout/{lid}/restore")).status_code
+    assert first == 200 and second == 200
+    assert (await client.get(f"/api/layout/{lid}")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_purge_requires_deleted_first(client, _layout_cleanup) -> None:
+    """真删只对回收站里的稿开放，且是真删——没有"30 天自动清空"这种默认。"""
+    created = await _create(client)
+    lid = created["id"]
+    assert (await client.post(f"/api/layout/{lid}/purge")).status_code == 400
+
+    await client.delete(f"/api/layout/{lid}")
+    assert (await client.post(f"/api/layout/{lid}/purge")).status_code == 200
+    assert (await client.get("/api/layout", params={"deleted": "true"})).json() == []
+
+
+@pytest.mark.asyncio
+async def test_update_snapshots_the_previous_state(client, _layout_cleanup) -> None:
+    """每次更新都落一份**改之前**的快照——用户改砸了要能退回去。"""
+    created = await _create(client, source_md="# 原稿")
+    lid = created["id"]
+
+    await client.put(f"/api/layout/{lid}", json={"source_md": "# 改坏了"})
+
+    hist = (await client.get(f"/api/layout/{lid}/revisions")).json()["revisions"]
+    assert hist, "更新后一份历史都没有"
+    assert hist[0]["preview"].startswith("# 原稿"), "存的是改之后的内容——那退回去没意义"
+
+    # 回到那一版
+    seq = hist[0]["seq"]
+    back = (await client.post(f"/api/layout/{lid}/revisions/{seq}/restore")).json()
+    assert back["source_md"] == "# 原稿"
+
+
+@pytest.mark.asyncio
+async def test_revision_restore_is_itself_reversible(client, _layout_cleanup) -> None:
+    """"回到旧版"本身也是一次改动，所以要**先给当前内容存一份**。
+
+    否则用户点一次"回到旧版"就又不可逆了——这正是回收站存在的理由。
+    """
+    created = await _create(client, source_md="# v1")
+    lid = created["id"]
+    await client.put(f"/api/layout/{lid}", json={"source_md": "# v2"})
+
+    hist = (await client.get(f"/api/layout/{lid}/revisions")).json()["revisions"]
+    v1_seq = hist[0]["seq"]
+    await client.post(f"/api/layout/{lid}/revisions/{v1_seq}/restore", json=None)
+    assert (await client.get(f"/api/layout/{lid}")).json()["source_md"] == "# v1"
+
+    after = (await client.get(f"/api/layout/{lid}/revisions")).json()["revisions"]
+    # 最新的那份应当是 v2（回退前的当前内容）
+    assert after[0]["preview"].startswith("# v2")
+    await client.post(f"/api/layout/{lid}/revisions/{after[0]['seq']}/restore")
+    assert (await client.get(f"/api/layout/{lid}")).json()["source_md"] == "# v2"
+
+
+@pytest.mark.asyncio
+async def test_revision_seq_increments_and_history_is_bounded(client, _layout_cleanup) -> None:
+    created = await _create(client)
+    lid = created["id"]
+    for i in range(5):
+        await client.put(f"/api/layout/{lid}", json={"source_md": f"# 第{i}版"})
+    hist = (await client.get(f"/api/layout/{lid}/revisions", params={"limit": 100})).json()
+    seqs = [r["seq"] for r in hist["revisions"]]
+    assert seqs == sorted(seqs, reverse=True), "历史应当按 seq 倒序"
+    assert len(set(seqs)) == len(seqs), "seq 不能重复（同一秒两次保存会撞时间戳）"
+
+
+@pytest.mark.asyncio
+async def test_delete_also_snapshots(client, _layout_cleanup) -> None:
+    """删除前也要留一份：万一用户发现自己删错了，捞回来时内容还在。"""
+    created = await _create(client, source_md="# 会被删掉的正文")
+    lid = created["id"]
+    await client.delete(f"/api/layout/{lid}")
+    hist = (await client.get(f"/api/layout/{lid}/revisions")).json()["revisions"]
+    assert hist and hist[0]["preview"].startswith("# 会被删掉的正文")
+
+
+@pytest.mark.asyncio
+async def test_updated_deleted_layout_is_404(client, _layout_cleanup) -> None:
+    """已删的稿不许被更新：否则一次自动保存就能把它写活。"""
+    created = await _create(client)
+    lid = created["id"]
+    await client.delete(f"/api/layout/{lid}")
+    resp = await client.put(f"/api/layout/{lid}", json={"title": "偷偷复活"})
     assert resp.status_code == 404

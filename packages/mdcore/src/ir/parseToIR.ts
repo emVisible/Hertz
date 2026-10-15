@@ -352,20 +352,20 @@ function collectListItems(
       const inlines: InlineNode[] = [];
       const blocks: IRBlock[] = [];
       const inner = tokens.slice(i + 1, end);
-      for (let k = 0; k < inner.length; k++) {
-        if (inner[k].type === 'inline') inlines.push(...convertInline(inner[k].children ?? [], ctx));
-      }
       /**
-       * 项内**块级**内容（代码块 / 表格 / 嵌套列表 / 引用 / 标题）。
+       * 项内内容**只走 `tokensToIR` 这一条路**。
        *
        * 早先这里只取 `inline` token，其余静默丢弃——于是列表项里的 ``` 代码块
        * **整段从成品里消失**，嵌套列表与表格被压平成一行文字，而没有任何断言会红。
-       * 做法是把项内 token 流按 markdown-it 的层级原样过一遍 `tokensToIR`，
-       * 它处理什么就得到什么（我们不建模的语法它会记账，不是静默丢）。
+       *
+       * ⚠️ 这里曾经**同时**做两件事：先手工扫一遍 `inline` 塞进 inlines，再让
+       * `tokensToIR` 把同一段文字以 `para` 的身份塞一遍——**每条列表项的文字被写了两遍**。
+       * 症状是长文页面凭空长了 174px；判据层当时没抓住，因为我看到断言里
+       * 「本该 1 个节点却出现 2 个」时，把断言改成了 `.toContain()` 就过去了——
+       * 那是在**把症状藏起来**，不是在查原因。看到断言值变了，先问为什么。
        */
-      const produced = tokensToIR(inner, ctx);
-      for (const blk of produced) {
-        // 顶层 paragraph 就是项内的行内内容，不重复放进 blocks
+      for (const blk of tokensToIR(inner, ctx)) {
+        // 顶层 paragraph 就是项内的行内内容，其余（代码/表格/嵌套列表/引用/标题）留在块位
         if (blk.type === 'para') inlines.push(...blk.children);
         else blocks.push(blk);
       }

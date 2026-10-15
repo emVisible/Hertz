@@ -179,6 +179,10 @@ export function InspectorPanel({
               <button
                 key={th.id}
                 type="button"
+                // 选中态挂到 DOM 上：判据要能从页面读回"当前选中哪个主题"，
+                // 而不是去猜哪个按钮有勾（那耦合了视觉实现）
+                data-active={active ? 'true' : 'false'}
+                aria-pressed={active}
                 onClick={() => onThemeChange(th.id)}
                 className={`flex items-center gap-2.5 rounded-md border px-2.5 py-2 text-left transition-all duration-150 ${
                   active

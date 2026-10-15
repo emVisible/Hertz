@@ -197,6 +197,11 @@
       "page": "Page {{n}}",
       "texture": "Card texture",
       "deco": "Edge decoration"
+    },
+    "history": {
+      "undo": "Undo",
+      "redo": "Redo",
+      "undoHint": "Undo theme/platform/size changes (text uses the editor’s own undo)"
     }
   },
   "common": {

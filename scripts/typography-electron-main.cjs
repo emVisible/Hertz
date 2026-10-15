@@ -14,6 +14,7 @@
  * 退出码：0 全部完成 / 1 截图或比对失败 / 2 页面缺失。
  */
 const { app, BrowserWindow, nativeImage } = require('electron');
+
 const path = require('node:path');
 const fs = require('node:fs');
 

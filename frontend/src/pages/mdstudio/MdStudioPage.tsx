@@ -30,6 +30,16 @@ import { layoutApi, type LayoutDoc, type LayoutPlatform } from '../../api'
 import { Button, EmptyState, Icon, Input, Select, ToggleChip, useToast } from '../../components/ui'
 import { BatchExportModal, type BatchTarget } from './BatchExportModal'
 import { CanvasPanel, type CanvasBlockTarget, type XhsRenderInfo } from './CanvasPanel'
+import {
+  canRedo,
+  canUndo,
+  createHistory,
+  currentOf,
+  pushState,
+  redo,
+  undo,
+  type DraftHistory,
+} from './draftHistory'
 import { MarkdownEditor, type MarkdownEditorHandle } from './editor/MarkdownEditor'
 import { OutlinePanel } from './editor/OutlinePanel'
 import { blockIndexAtLine, buildOutline, type OutlineItem } from './editor/outline'
@@ -174,6 +184,16 @@ export function MdStudioPage() {
   const [draft, setDraft] = useState<DraftState | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [exporting, setExporting] = useState<ExportAction | null>(null)
+  /**
+   * 文档级撤销/重做（W2）：只管**非文字**变更（主题/平台/字号/封面/比例/分页边界）。
+   * 文字归 CodeMirror——两边都管会打架，用户按一次撤销会退两段历史。
+   */
+  const [history, setHistory] = useState<DraftHistory<DraftState>>(() => createHistory<DraftState>({
+    title: '', source_md: '', platform: 'wechat', theme_id: '', overrides: {},
+    footer: '', qr: null, breaks: [], ratio: '3:4', coverSub: '', coverBadge: '',
+    pageNum: true, header: '', texture: '', deco: '',
+    platformOverrides: {}, platformThemes: {},
+  }))
   const [zoom, setZoom] = useState(1)
   const [dark, setDark] = useState(false)
   const [xhsInfo, setXhsInfo] = useState<XhsRenderInfo>({ pageCount: 0, overflow: false })
@@ -207,13 +227,58 @@ export function MdStudioPage() {
     if (!doc || doc.id !== selectedId) return
     if (loadedDocRef.current?.id === doc.id) return
     loadedDocRef.current = doc
-    setDraft(draftFromDoc(doc))
+    const loaded = draftFromDoc(doc)
+    setDraft(loaded)
+    // 历史栈随稿件重置（W2）：撤销的起点必须是"这篇稿刚打开的样子"，
+    // 否则第一次撤销会把稿子退成加载前的占位状态（主题空、平台错）。
+    setHistory(createHistory(loaded))
     setSaveState('saved')
   }, [docQuery.data, selectedId])
 
-  const patchDraft = useCallback((patch: Partial<DraftState>) => {
-    setDraft((prev) => (prev ? { ...prev, ...patch } : prev))
-    setSaveState('dirty')
+  /**
+   * 改稿的统一入口。
+   *
+   * 除了写进 draft，它还**记一笔文档级历史**（W2）：CodeMirror 的撤销只管文字，
+   * 而拖一个主题/字号滑杆同样把稿子改了，而 `Ctrl+Z` 撤不回来——用户于是
+   * 养成"不敢动样式"的习惯，那等于产品没做。
+   *
+   * `text` 的变更**不入栈**：CodeMirror 已经管着文字撤销了，两边都管会打架
+   * （用户按一次撤销，文字退了、样式也退了，变成两段历史）。
+   */
+  const undoDoc = useCallback(() => {
+    setHistory((h) => {
+      const next = undo(h);
+      const target = currentOf(next);
+      if (target) setDraft(target);
+      return next;
+    });
+    setSaveState('dirty');
+  }, []);
+
+  const redoDoc = useCallback(() => {
+    setHistory((h) => {
+      const next = redo(h);
+      const target = currentOf(next);
+      if (target) setDraft(target);
+      return next;
+    });
+    setSaveState('dirty');
+  }, []);
+
+  const patchDraft = useCallback((patch: Partial<DraftState>, opts: { history?: boolean } = {}) => {
+    const keys = Object.keys(patch);
+    const withText = keys.includes('source_md');
+    const record = opts.history ?? !withText;
+    setDraft((prev) => {
+      if (!prev) return prev
+      const next = { ...prev, ...patch };
+      if (record) {
+        setHistory((h) => pushState(h, next, keys));
+        loadedDocRef.current = null; // 别让"未落库的 doc"把新状态盖回去
+      }
+      return next;
+    });
+    setSaveState('dirty');
   }, [])
 
   // 自动保存：draft 变更 800ms debounce PUT 全稿字段
@@ -429,7 +494,9 @@ export function MdStudioPage() {
       loadedDocRef.current = null
       await invalidateList()
       setSelectedId(doc.id)
-      setDraft(draftFromDoc(doc))
+      const created = draftFromDoc(doc)
+      setDraft(created)
+      setHistory(createHistory(created))
       loadedDocRef.current = doc
       toast(t('mdstudio.created'), 'success')
     } catch {
@@ -609,6 +676,30 @@ export function MdStudioPage() {
           />
           {saveLabel}
         </span>
+        {/* 文档级撤销/重做（W2）：只管非文字变更（主题/平台/字号/封面/比例）。
+            置灰时是真的撤不回去——不摆一个按下去没反应的按钮。 */}
+        <div className="ml-2 flex items-center gap-1" data-testid="mdstudio-history">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!canUndo(history)}
+            onClick={undoDoc}
+            title={t('mdstudio.history.undo')}
+            aria-label={t('mdstudio.history.undo')}
+          >
+            {t('mdstudio.history.undo')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!canRedo(history)}
+            onClick={redoDoc}
+            title={t('mdstudio.history.redo')}
+            aria-label={t('mdstudio.history.redo')}
+          >
+            {t('mdstudio.history.redo')}
+          </Button>
+        </div>
         <div className="ml-auto">
           <Button
             size="sm"
