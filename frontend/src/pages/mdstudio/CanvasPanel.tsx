@@ -37,6 +37,37 @@ import { withDiagnostics } from './diagnosticsWire'
  */
 const XHS_FIT_SCALE = 0.39
 
+/**
+ * 缩略图条的高度预留（单页时不存在，所以要单独记一笔）。
+ *
+ * 自动适配算可用高度时必须把它减掉，否则"卡片装下了、缩略图条被挤出画布"——
+ * 而缩略图条正是判断"全篇几页、哪页是封面"的入口。
+ */
+const XHS_STRIP_RESERVE = 64
+
+/** 展示缩放下限：低于此值正文就只剩 7px，那不是排版而是邮票，所以改为滚动 */
+const XHS_MIN_SCALE = 0.2
+
+/**
+ * 展示缩放：先按设定比例，再**不许超过窗口装得下的那一条**。
+ *
+ * 早先这里是写死的 `XHS_FIT_SCALE * zoom`，完全不看窗口多高，于是
+ * 9:16（1080×1920）一律按 749px 显示——窗口矮一点就把卡片下半截切掉，
+ * 而切掉的恰好是页脚与缩略图条：用户既看不到"这一页还有没有内容"，
+ * 也点不到缩略图。现象就是「上下布局把核心部分挤出去了」。
+ *
+ * 下限 0.2 是有意的：再矮的窗口，宁可让用户滚动（滚动是明确的信号），
+ * 也不要自动缩成一张看不清字的邮票。触到下限仍会标 `data-xhs-fitted`——
+ * "装不下"这件事必须看得见，不能靠"我以为装下了"蒙混过去。
+ */
+function fitScale(card: { width: number; height: number }, zoom: number, hostHeight: number): { scale: number; fitted: boolean } {
+  const base = XHS_FIT_SCALE * zoom
+  if (!(hostHeight > 0)) return { scale: base, fitted: false }
+  const cap = (hostHeight - XHS_STRIP_RESERVE) / card.height
+  if (cap >= base) return { scale: base, fitted: false }
+  return { scale: Math.max(cap, XHS_MIN_SCALE), fitted: true }
+}
+
 /** 画布交互的样式层（悬停描边 / 边界手柄），只活在预览 DOM 里，不进任何导出产物 */
 const CANVAS_CSS = `
 [data-mdcore-block] { cursor: pointer; border-radius: 3px; }
@@ -300,7 +331,9 @@ export function CanvasPanel({
             // 30px 的正文缩到约 7.5px——看不见、也点不准，用户实际是在"盲操作"。
             // 现在一次只铺一页，翻页条 + 缩略图条负责导航。
             const card = xhsCardSize(ratio)
-            const scale = XHS_FIT_SCALE * zoom
+            // 卡片只展示当前页，但缩略图条会跟着卡片一起出现在下面，所以预留照算
+            const fit = fitScale(card, zoom, host.clientHeight)
+            const scale = fit.scale
             const band = document.createElement('div')
             band.style.display = 'flex'
             band.style.gap = '12px'
@@ -312,6 +345,8 @@ export function CanvasPanel({
               // 1080 原始坐标系（与导出产物同规格）
               const slot = document.createElement('div')
               slot.dataset.xhsPage = String(index)
+              // 降级必须可见：自动缩过就在 DOM 上留痕，便于判据与排障
+              if (fit.fitted) slot.dataset.xhsFitted = 'true'
               slot.style.position = 'relative'
               slot.style.width = `${card.width * scale}px`
               slot.style.height = `${card.height * scale}px`

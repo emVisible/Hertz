@@ -663,12 +663,16 @@ export function MdStudioPage() {
             )}
           </div>
           <div
-            className={`min-h-0 flex-1 overflow-auto p-4 transition-colors duration-150 ${dark ? 'bg-[#14161c]' : ''}`}
+            // 小红书只收窄留白（p-2）：卡片本身占了满屏宽，四周再垫 28px 纯浪费。
+            // 微信/知乎是长文章页，留白是呼吸感，不动。
+            className={`min-h-0 flex-1 overflow-auto transition-colors duration-150 ${
+              renderDraft?.platform === 'xhs' ? 'p-2' : 'p-4'
+            } ${dark ? 'bg-[#14161c]' : ''}`}
           >
             <div
-              className={`mx-auto w-fit rounded-lg border border-border p-3 shadow-md ${
-                dark ? 'bg-[#1c1f28]' : 'bg-surface-1'
-              }`}
+              className={`mx-auto w-fit rounded-lg border border-border shadow-md ${
+                renderDraft?.platform === 'xhs' ? 'p-2' : 'p-3'
+              } ${dark ? 'bg-[#1c1f28]' : 'bg-surface-1'}`}
             >
               {renderDraft && (
                 <CanvasPanel
