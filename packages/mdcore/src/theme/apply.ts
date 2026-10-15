@@ -636,6 +636,15 @@ function renderInline(node: InlineNode, ctx: RenderContext): Node {
       return el;
     }
 
+    case 'ins': {
+      // `<u>` 在 HTML 里是"非文本注解"，语义比"插入"更弱；
+      // `<ins>` 是 HTML5 的"插入内容"，且带默认下划线，不写样式也读得懂
+      const el = doc.createElement('ins');
+      applyProps(el, styles.ins);
+      appendInlines(el, node.children, ctx);
+      return el;
+    }
+
     case 'link': {
       const el = doc.createElement('a');
       el.setAttribute('href', node.href);

@@ -560,7 +560,18 @@ export function convertInline(tokens: Token[], ctx?: ParseContext, parentContent
         break;
       }
 
-      case 'ruby': {
+      // 令牌类型是 `ruby_open`（**不是** `ruby`）——写成 'ruby' 时这个分支永远进不来，
+      // 于是 `汉字{拼音|hàn zì}` 整段降级成文字并记一笔诊断。
+      // 而诊断只说"没支持"，没人知道**支持的写法就在同一份 switch 里等着**。
+      // `++插入++`（mdcore 自写规则，见 parse/markdown.ts 的 insRule）
+      case 'ins_open': {
+        const end = findCloseInline(tokens, i, 'ins_open', 'ins_close');
+        out.push({ type: 'ins', children: convertInline(tokens.slice(i + 1, end), ctx) });
+        i = end;
+        break;
+      }
+
+      case 'ruby_open': {
         // markdown-it-ruby：ruby_open → text → rt_open → text → rt_close → ruby_close
         const end = findCloseInline(tokens, i, 'ruby_open', 'ruby_close');
         const inner = tokens.slice(i + 1, end);

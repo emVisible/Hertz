@@ -335,3 +335,63 @@ describe('列表项里的块级内容', () => {
     }
   });
 });
+
+/**
+ * W5 语法补齐：作者真会写、我们却吐字面量的两种语法。
+ *
+ * ①`汉字{拼音|hàn zì}`（markdown-it-ruby）——**令牌早就产出来了**，
+ *   `InlineNode` 早就有 `ruby` 这个类型，可 `convertInline` 里那条分支写的是
+ *   `case 'ruby'`，而令牌类型叫 `ruby_open`。一处字符的错，让整个拼音语法
+ *   降级成文字并记一笔诊断——而诊断只说"没支持"，没人知道**支持的写法就在
+ *   同一份 switch 里等着**。`<ruby>` 手写标签那条一直能用，所以更没人发现。
+ *
+ * ②`++插入++`——插件压根没装，于是原样吐字面量，**而且没有任何诊断**
+ *   （没有令牌，自然无从记账）。这是最糟的一类缺口：它不报错、不留痕，
+ *   只是安静地在成品里显示成 `++插入++`。
+ */
+describe('W5：拼音与插入', () => {
+  it('拼音：{拼音|注音} 出真 <ruby>，不再是字面量', () => {
+    const ir = parseToIRDetailed('汉字{拼音|hàn zì}');
+    expect(ir.diagnostics, '拼音不该再降级（诊断应当为空）').toEqual([]);
+    const ruby = ir.blocks[0] as { children?: Array<{ type: string }> };
+    const kinds = (ruby.children ?? []).map((c) => c.type);
+    expect(kinds).toContain('ruby');
+  });
+
+  it('拼音：手写 <ruby> 与 {…|…} 两条路都能出 ruby 元素', () => {
+    const a = applyTheme(parseToIRDetailed('汉字{拼音|hàn zì}').blocks, 'modi');
+    const b = applyTheme(parseToIRDetailed('<ruby>汉字<rt>hàn zì</rt></ruby>').blocks, 'modi');
+    expect(a.querySelectorAll('ruby').length).toBeGreaterThan(0);
+    expect(b.querySelectorAll('ruby').length).toBeGreaterThan(0);
+  });
+
+  it('插入：++文字++ 进 <ins>，不再吐字面量', () => {
+    const ir = parseToIRDetailed('这是++插入++内容');
+    const el = applyTheme(ir.blocks, 'modi');
+    expect(el.querySelector('ins'), '++插入++ 没有变成 <ins>').toBeTruthy();
+    expect(el.textContent ?? '').not.toContain('++')
+  });
+
+  it('插入：单个 + 不是插入（邮箱、算式不能被吃）', () => {
+    for (const md of ['联系 a+b.com', '1+1=2', 'C++ 语言']) {
+      const el = applyTheme(parseToIRDetailed(md).blocks, 'modi')
+      expect(el.querySelector('ins'), `${md} 被误判成插入`).toBeNull()
+    }
+  })
+
+  it('插入：内容含空格/换行时不成立（`++ 插入 ++` 多半是误触）', () => {
+    // 这条守的是"三条硬约束"里的②：不拦空白的话，`++ 插入 ++` 会被当成插入，
+    // 而中文正文里 `++` 两侧常带空格——作者随手敲就会中招。
+    const cases = ['这是 ++ 插入 ++ 内容', '甲\n++\n乙', '++ 多行\n内容 ++']
+    for (const md of cases) {
+      const el = applyTheme(parseToIRDetailed(md).blocks, 'modi')
+      expect(el.querySelector('ins'), `${JSON.stringify(md)} 被误判成插入`).toBeNull()
+    }
+  })
+
+  it('插入：\\+\\+转义后按字面量输出', () => {
+    const el = applyTheme(parseToIRDetailed('\\+\\+不是插入\\+\\+').blocks, 'modi')
+    expect(el.querySelector('ins')).toBeNull()
+    expect(el.textContent ?? '').toContain('++')
+  })
+});

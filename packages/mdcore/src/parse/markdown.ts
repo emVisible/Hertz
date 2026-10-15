@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
 import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
+import type StateInline from 'markdown-it/lib/rules_inline/state_inline.mjs';
 import deflist from 'markdown-it-deflist';
 // markdown-it-emoji v3 是纯具名导出（full/light/bare），没有 default
 import { full as emojiFull } from 'markdown-it-emoji';
@@ -103,7 +104,72 @@ export function createMarkdownParser(): MarkdownIt {
   // 中文/小红书行内扩展：必须在 emoji 之后（`:名:` 先被 emoji 吃掉，
   // `#话题` 里不会有冒号，互不打架）
   md.core.ruler.push('mdcore_inline_ext', inlineExtensions);
+  // `++插入++`：自写一条行内规则（W5）
+  md.inline.ruler.before('emphasis', 'mdcore_ins', insRule);
   return md;
+}
+
+/**
+ * `++文字++` → `<ins>`（下划线插入段）。
+ *
+ * 为什么自写而不用 markdown-it-ins：为了一个语法引入一个新依赖，
+ * 意味着 lockfile、CI、打包体积都要跟着动，代价与收益不成比例。
+ * 这条规则只有二十行，且**比现成插件更保守**——见下面的三条硬约束。
+ *
+ * 三条硬约束（都是"不该被吃"的真实场景）：
+ * ①必须成对出现两个 `++`，单个 `++` 原样保留——否则 `C++`、`a+b.com`、`1+1=2`
+ *   会被拦腰截断；
+ * ②内容不能含空白与换行：`++ 插入 ++` 这种多半是误触，按字面量走；
+ * ③开头的 `\+\+` 已被转义规则处理成 `text` 令牌，不会再进这条规则。
+ */
+function insRule(state: StateInline, silent: boolean): boolean {
+  const start = state.pos;
+  const src: string = state.src;
+  const OPEN = '++';
+  const MAX = 64; // 更长的多半不是插入标记，是一段被 `++` 包起来的正文
+
+  // ①开标记：必须是 `++` 且其后不是 `++`（否则是 `+++`）
+  if (src.charCodeAt(start) !== 0x2b || src.charCodeAt(start + 1) !== 0x2b) return false;
+  if (src.charCodeAt(start + 2) === 0x2b) return false;
+  const contentStart = start + 2;
+
+  // ②找闭标记，且不能跨空白
+  let end = -1;
+  for (let i = contentStart; i < Math.min(src.length, contentStart + MAX); i += 1) {
+    const ch = src[i];
+    if (ch === '\n' || ch === ' ' || ch === '\t') return false;
+    if (ch === '\\') {
+      i += 1; // 跳过被转义的下一个字符
+      continue;
+    }
+    if (ch === '+' && src[i + 1] === '+') {
+      // 闭标记后不能紧跟 `+`（`+++` 一律不当插入）
+      if (src[i + 2] === '+') return false;
+      end = i;
+      break;
+    }
+  }
+  if (end < 0 || end === contentStart) return false;
+
+  if (!silent) {
+    const token = state.push('ins_open', 'ins', 1);
+    token.markup = OPEN;
+    /*
+     * 递归 tokenize 内容段，两件事缺一不可：
+     * ①`state.pos` 移到内容开头——否则内容被跳过，`<ins>` 里是空的；
+     * ②`state.posMax` 收到闭标记处——否则递归会**冲过闭标记把后面的正文也吃掉**，
+     *   于是 `这是++插入++内容` 渲染成「插入++内容内容」（实测踩过）。
+     */
+    const savedMax = state.posMax;
+    state.pos = contentStart;
+    state.posMax = end;
+    state.md.inline.tokenize(state);
+    state.posMax = savedMax;
+    const close = state.push('ins_close', 'ins', -1);
+    close.markup = OPEN;
+  }
+  state.pos = end + 2;
+  return true;
 }
 
 /**

@@ -18,6 +18,8 @@ export type InlineNode =
   | { type: 'sup'; children: InlineNode[] }
   /** `<ruby>注音<rt>zhùyīn</rt></ruby>` */
   | { type: 'ruby'; base: InlineNode[]; rt: InlineNode[] }
+  /** `++插入++`：下划线插入段（中文排版里常用来标"这里要补"） */
+  | { type: 'ins'; children: InlineNode[] }
   /** `#话题`：小红书发布时的话题标签（导出文案与正文里都认） */
   | { type: 'tag'; text: string }
   /** 脚注角标 `[^1]`：渲染成上标数字，可回跳文末对应条目 */
