@@ -346,7 +346,8 @@ export function baseStyles(opts: BaseOptions = {}): Record<string, StyleProps> {
       'font-size': size,
       'font-weight': weight,
       'font-family': '${fontHead}',
-      color: 'inherit',
+      // 字色由 derive 接到 `headInk`（见 derive 头注第 6 条）。这里曾写死
+      // `color: 'inherit'`，于是标题恒与正文同色——设计器里那个「标题」色槽成了摆设。
       'line-height': '1.4',
       'margin-bottom': '0.45em',
       'letter-spacing': level === '1' ? '-0.01em' : '0',

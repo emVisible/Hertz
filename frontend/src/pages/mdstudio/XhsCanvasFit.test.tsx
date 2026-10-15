@@ -17,7 +17,7 @@
  * ②**不白缩**：窗口够高时仍是那个比例，不因为自动适配而无故变小。
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -62,11 +62,19 @@ beforeEach(() => {
   docData = { ...BASE, cover: { footer: '图文工坊' } }
 })
 
-function stubCanvasHeight(px: number): void {
+/**
+ * 给**画布滚动区**造一个视口高度。
+ *
+ * 关键：造高度的必须是滚动区（`data-mdstudio-canvas-viewport`），不是画布挂载点。
+ * 第一版判据给挂载点造高度，于是「正反馈一路缩到下限」这个 bug 全绿——因为挂载 div
+ * 的高度**就是卡片自己的高度**，真实浏览器里拿它当可用高度只会越来越矮。
+ * 判据造的数必须与浏览器里真实存在的那个元素对上，否则验的是幻觉。
+ */
+function stubViewportHeight(px: number): void {
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
     configurable: true,
     get(this: HTMLElement) {
-      return this.dataset.testid === 'mdstudio-canvas-mount' ? px : 400
+      return this.hasAttribute('data-mdstudio-canvas-viewport') ? px : 400
     },
   })
 }
@@ -78,7 +86,7 @@ function slotSize(): { height: number; width: number } {
 
 describe('卡片整张装得下（不靠滚动才看全）', () => {
   it('窗口矮（520px）时自动缩到装得下，且标记出「已缩放」', async () => {
-    stubCanvasHeight(520)
+    stubViewportHeight(520)
     render(<MdStudioPage />, { wrapper })
     await waitFor(() => expect(document.querySelector('[data-xhs-page]')).toBeTruthy(), { timeout: 3000 })
     const { height } = slotSize()
@@ -89,7 +97,7 @@ describe('卡片整张装得下（不靠滚动才看全）', () => {
   })
 
   it('窗口够高（1600px）时不缩——比例就是设定值，不被自动适配无故改小', async () => {
-    stubCanvasHeight(1600)
+    stubViewportHeight(1600)
     render(<MdStudioPage />, { wrapper })
     await waitFor(() => expect(document.querySelector('[data-xhs-page]')).toBeTruthy(), { timeout: 3000 })
     const { height, width } = slotSize()
@@ -101,7 +109,7 @@ describe('卡片整张装得下（不靠滚动才看全）', () => {
   })
 
   it('9:16 这种高比例在矮窗口里同样装得下（最容易被切的那种）', async () => {
-    stubCanvasHeight(500)
+    stubViewportHeight(500)
     // 比例存在 cover JSON 槽里（ratioOf(doc.cover)），不是顶层字段
     docData.cover = { footer: '图文工坊', ratio: '9:16' }
     render(<MdStudioPage />, { wrapper })
@@ -114,7 +122,7 @@ describe('卡片整张装得下（不靠滚动才看全）', () => {
 
 describe('缩到不可读时停下来并说清楚', () => {
   it('极矮窗口（300px）触到下限：不再继续缩，且仍标记「装不下」', async () => {
-    stubCanvasHeight(300)
+    stubViewportHeight(300)
     render(<MdStudioPage />, { wrapper })
     await waitFor(() => expect(document.querySelector('[data-xhs-page]')).toBeTruthy(), { timeout: 3000 })
     const { height, width } = slotSize()
@@ -126,9 +134,44 @@ describe('缩到不可读时停下来并说清楚', () => {
   })
 })
 
+describe('不越缩越小（正反馈）', () => {
+  /**
+   * 这条是为一个真 bug 写的：自动适配当时量的是**画布挂载点**的高度，
+   * 而挂载 div 没有高度约束——它的高度**就是卡片自己的高度**。于是
+   * 「拿上一张卡片的高度去约束这一张」，每次重渲染都更矮，一路缩到下限。
+   *
+   * jsdom 完全看不出来（不排版、clientHeight 恒 0），而第一版判据还给挂载点造了个
+   * 高度，正好造出一个真实浏览器里永不存在的数——判据绿灯，线上卡片一路缩小。
+   *
+   * 现在判据两处都咬：①高度造在**滚动区**上（浏览器里真实存在的那个元素）；
+   * ②这条断言同一视口下两次重渲染尺寸**稳定**。
+   */
+  it('缩放档位改来改去，同一档位尺寸不变（不漂移）', async () => {
+    stubViewportHeight(520)
+    render(<MdStudioPage />, { wrapper })
+    await waitFor(() => expect(document.querySelector('[data-xhs-page]')).toBeTruthy(), { timeout: 3000 })
+    const zoom = screen.getByLabelText('缩放') as HTMLSelectElement
+    const home = slotSize()
+
+    await act(async () => {
+      fireEvent.change(zoom, { target: { value: '0.75' } })
+    })
+    await waitFor(() => expect(slotSize().width).not.toBe(home.width))
+
+    // 关键不变式：回到原档位，尺寸必须**回到原值**。
+    // 反馈环一旦成立，每一轮重渲染都在拿"上一张卡片的高度"当输入，
+    // 于是来回切几次尺寸会一路漂——这条会立刻抓住。
+    await act(async () => {
+      fireEvent.change(zoom, { target: { value: '1' } })
+    })
+    await waitFor(() => expect(slotSize().width).toBeCloseTo(home.width, 0))
+    expect(slotSize().height).toBeCloseTo(home.height, 0)
+  })
+})
+
 describe('画布上下不留白不叠加', () => {
   it('卡片上下留白收窄到每边 ≤16px（原先 p-4 + p-3 = 28px）', async () => {
-    stubCanvasHeight(900)
+    stubViewportHeight(900)
     render(<MdStudioPage />, { wrapper })
     await waitFor(() => expect(document.querySelector('[data-xhs-page]')).toBeTruthy(), { timeout: 3000 })
     const scroll = document.querySelector('[data-xhs-page]')!.closest('.overflow-auto') as HTMLElement

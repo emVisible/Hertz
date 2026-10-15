@@ -60,6 +60,22 @@ const XHS_MIN_SCALE = 0.2
  * 也不要自动缩成一张看不清字的邮票。触到下限仍会标 `data-xhs-fitted`——
  * "装不下"这件事必须看得见，不能靠"我以为装下了"蒙混过去。
  */
+function viewportHeight(host: HTMLElement): number {
+  /**
+   * 量**滚动区**（视口），不是量挂载点。
+   *
+   * 这是个真踩过的坑：挂载 div 没有高度约束，它的高度**就是卡片的高度**——
+   * 拿它当"可用高度"，等于拿上一张卡片的高度去约束这一张，于是每次重渲染都比上一张
+   * 更矮（正反馈），卡片一路缩到下限；切比例时尤其明显，因为上一张是别的比例。
+   *
+   * 代价是这个 bug 在 jsdom 里完全看不出来：jsdom 不排版，`clientHeight` 恒为 0，
+   * 判据只好自己 stub 一个高度——而那个 stub 出来的数，真实浏览器里永远不存在。
+   * 所以判据改成"给视口造高度"，与浏览器里真实存在的那个元素对上。
+   */
+  const viewport = host.closest('[data-mdstudio-canvas-viewport]') as HTMLElement | null;
+  return (viewport ?? host).clientHeight;
+}
+
 function fitScale(card: { width: number; height: number }, zoom: number, hostHeight: number): { scale: number; fitted: boolean } {
   const base = XHS_FIT_SCALE * zoom
   if (!(hostHeight > 0)) return { scale: base, fitted: false }
@@ -332,7 +348,7 @@ export function CanvasPanel({
             // 现在一次只铺一页，翻页条 + 缩略图条负责导航。
             const card = xhsCardSize(ratio)
             // 卡片只展示当前页，但缩略图条会跟着卡片一起出现在下面，所以预留照算
-            const fit = fitScale(card, zoom, host.clientHeight)
+            const fit = fitScale(card, zoom, viewportHeight(host))
             const scale = fit.scale
             const band = document.createElement('div')
             band.style.display = 'flex'

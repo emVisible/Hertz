@@ -473,17 +473,45 @@ function makeShell(
     footer.className = 'mdcore-card-footer';
     footer.style.setProperty('position', 'relative');
     footer.style.setProperty('z-index', '1');
+    /**
+     * 页脚是 flex 行，页码靠 `margin-left: auto` 顶到右端。
+     *
+     * 早先它是普通块，里面 `[署名][页码]` 按文档流排：页码紧跟署名，于是它落在
+     * **左下角**，而且署名一长（或带了二维码）就换行、页码跟着往下掉。
+     * 「页码固定在右下角」这条要求此前一点没被满足——而结构层看着"有个页码节点"，
+     * 没有任何断言会红。
+     *
+     * 用 flex 行而不是绝对定位：绝对定位的页码在二维码、页码、页眉同时开时容易压到
+     * 彼此；flex 行里"右端"是布局算出来的，改内容也不会跑位。
+     */
+    footer.style.setProperty('display', 'flex');
+    footer.style.setProperty('align-items', 'baseline');
+    footer.style.setProperty('justify-content', 'space-between');
+    footer.style.setProperty('gap', '12px');
     applyProps(footer, resolveThemedProps(theme, overrides, 'cardFooter'));
     if (chrome.watermark?.trim()) {
       const wm = doc.createElement('span');
       wm.className = 'mdcore-card-watermark';
       wm.textContent = chrome.watermark.trim();
+      // 署名吃掉剩余空间：太长就自己省略，而不是把页码挤下去
+      wm.style.setProperty('flex', '1 1 auto');
+      wm.style.setProperty('min-width', '0');
+      wm.style.setProperty('overflow', 'hidden');
+      wm.style.setProperty('text-overflow', 'ellipsis');
+      wm.style.setProperty('white-space', 'nowrap');
       footer.appendChild(wm);
     }
     if (chrome.pageNum !== false) {
       const num = doc.createElement('span');
       num.className = 'mdcore-card-pageno';
       num.dataset.pageSlot = '1';
+      // 顶到右端且不被压缩：`auto` 左边距 + `none` 弹性 + 不换行，三条一起才叫"固定"
+      num.style.setProperty('margin-left', 'auto');
+      // 用长写而不是 `flex: none` 简写：简写读回来是 '0 0 auto'，判据只能盯着
+      // 一串魔数。长写读回来就是 '0'/'1'，判据读得懂，产品行为也一样。
+      num.style.setProperty('flex-grow', '0');
+      num.style.setProperty('flex-shrink', '0');
+      num.style.setProperty('white-space', 'nowrap');
       footer.appendChild(num);
     }
     page.appendChild(footer);

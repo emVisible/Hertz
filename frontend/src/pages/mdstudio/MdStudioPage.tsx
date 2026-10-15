@@ -20,6 +20,7 @@ import {
   xhsCaption,
   xhsCards,
   XHS_RATIO_KEYS,
+  getTheme,
   type ThemeOverrides,
   type XhsRatio,
 } from '@hertz/mdcore'
@@ -59,6 +60,17 @@ interface DraftState {
   /** 卡片底纹与装饰件（切片 5，存在 cover JSON 槽） */
   texture: string
   deco: string
+  /**
+   * **按栏目各存一份**的样式配置与主题（切片 10，存在 cover JSON 槽）。
+   *
+   * 为什么必须分栏存：`overrides` 早先是一个跨栏目共用的袋子，于是小红书上调过的
+   * 字号 36px、主色、投影，原封不动跟着进知乎——690 宽的文章用 36px 正文，
+   * 标题撑成两行、表格挤成竖条。用户看到的「部分 md 渲染不完全 + 样式污染」，
+   * 根子上就是这一个袋子。现在切走时把当前这份存进 `platform_overrides`，
+   * 切回来时取回，没去过的栏目用该栏默认主题 + 空配置。
+   */
+  platformOverrides: Record<string, ThemeOverrides>
+  platformThemes: Record<string, string>
 }
 
 type SaveState = 'saved' | 'dirty' | 'saving'
@@ -75,6 +87,32 @@ function boolOf(cover: Record<string, unknown> | undefined, key: string, fallbac
   return typeof cover?.[key] === 'boolean' ? (cover[key] as boolean) : fallback;
 }
 
+/** cover.platform_overrides：按栏目存的 overrides 袋，读不出就当空的 */
+function mapOf(raw: unknown): Record<string, ThemeOverrides> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, ThemeOverrides> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = v as ThemeOverrides
+  }
+  return out
+}
+/** cover.platform_themes：按栏目存的主题 id */
+function strMapOf(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'string' && v) out[k] = v
+  }
+  return out
+}
+/** 主题是不是属于这个平台——右栏本来就只列本平台主题，缓存里那份也得守同一条 */
+function isPlatformTheme(themeId: string, platform: LayoutPlatform): boolean {
+  try {
+    return getTheme(themeId).platform === platform
+  } catch {
+    return false
+  }
+}
 function breaksOf(cover: Record<string, unknown> | undefined): number[] {
   const raw = cover?.breaks
   return Array.isArray(raw) ? raw.filter((n): n is number => Number.isInteger(n) && n > 0) : []
@@ -98,6 +136,8 @@ function draftFromDoc(doc: LayoutDoc): DraftState {
     header: strOf(doc.cover, 'header'),
     texture: strOf(doc.cover, 'texture'),
     deco: strOf(doc.cover, 'deco'),
+    platformOverrides: mapOf(doc.cover?.platform_overrides),
+    platformThemes: strMapOf(doc.cover?.platform_themes),
   }
 }
 
@@ -200,6 +240,9 @@ export function MdStudioPage() {
             header: snapshot.header,
             texture: snapshot.texture,
             deco: snapshot.deco,
+            // 按栏目缓存跟着落库：只存内存的话一刷新就没了，那不叫缓存
+            platform_overrides: snapshot.platformOverrides,
+            platform_themes: snapshot.platformThemes,
           },
         })
         .then((doc) => {
@@ -397,9 +440,30 @@ export function MdStudioPage() {
     setXhsPage(index)
   }, [])
 
-  /** 切平台：稿的 platform + theme_id 一起换到该平台默认主题（自动保存接管落库） */
+  /**
+   * 切栏目：先把当前这份配置存进它自己的格子，再换上目标栏目的那份。
+   *
+   * 早先这里只改 `platform` + `theme_id`，`overrides` 原样带着走——于是小红书的
+   * 36px 字号进知乎，标题直接撑成两行。**换平台而不换配置，等于只换了个标签。**
+   */
   const changePlatform = (p: LayoutPlatform) => {
-    patchDraft({ platform: p, theme_id: defaultThemeFor(p).id })
+    if (!draft || draft.platform === p) return
+    const platformOverrides = {
+      ...draft.platformOverrides,
+      [draft.platform]: draft.overrides,
+    }
+    const platformThemes = { ...draft.platformThemes, [draft.platform]: draft.theme_id }
+    // 去过的栏目取回自己那份；没去过的用该栏默认主题 + 空配置
+    const saved = platformOverrides[p]
+    const theme = platformThemes[p] ?? defaultThemeFor(p).id
+    patchDraft({
+      platform: p,
+      platformOverrides,
+      platformThemes,
+      overrides: saved ? { ...saved } : {},
+      // 主题必须属于目标平台：拿小红书主题去渲染知乎文章，换平台就等于没换
+      theme_id: isPlatformTheme(theme, p) ? theme : defaultThemeFor(p).id,
+    })
   }
 
   /** 导出：按 draft 同参数离屏重建渲染态 DOM（画布带预览缩放/深色滤镜，不直接导出） */
@@ -665,6 +729,7 @@ export function MdStudioPage() {
           <div
             // 小红书只收窄留白（p-2）：卡片本身占了满屏宽，四周再垫 28px 纯浪费。
             // 微信/知乎是长文章页，留白是呼吸感，不动。
+            data-mdstudio-canvas-viewport=""
             className={`min-h-0 flex-1 overflow-auto transition-colors duration-150 ${
               renderDraft?.platform === 'xhs' ? 'p-2' : 'p-4'
             } ${dark ? 'bg-[#14161c]' : ''}`}

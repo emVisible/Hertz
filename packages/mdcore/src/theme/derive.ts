@@ -66,7 +66,7 @@ export function derivedSlots(t: ResolvedTokens): Record<string, StyleProps> {
   const rule = t.rule;
   const hl = t.hl;
   const linkInk = deepen(primary, 10);
-  const heading = headingPaint(t.headingStyle, primary, rule, soft, accentInk);
+  const heading = headingPaint(t.headingStyle, primary, rule, soft, accentInk, t.headInk);
   const quote = quotePaint(t.quoteStyle, primary, rule, soft);
 
   const slots: Record<string, StyleProps> = {
@@ -294,8 +294,14 @@ function headingPaint(
   rule: string,
   soft: string,
   accentInk: string,
+  /**
+   * 标题字色（规则 6，主色留给装饰）。这里曾写死 `color: 'inherit'`，
+   * 于是标题恒与正文同色：层级靠字色区分时就是塌的，而设计器里那个「标题」色槽
+   * 拖了毫无反应——声明了、主题也写了值、却没有槽读它。
+   */
+  headInk: string,
 ): { block: StyleProps; content: StyleProps; prefix: StyleProps } {
-  const block: StyleProps = { ...DECOR_RESET, color: 'inherit' };
+  const block: StyleProps = { ...DECOR_RESET, color: headInk };
   // 内容 span 恒为 inline-block：药丸/下划线要贴着文字走，不撑满版心；
   // box-decoration-break: clone 让荧光笔渐变在标题折行时每行都染上
   const content: StyleProps = { display: 'inline-block', 'box-decoration-break': 'clone' };

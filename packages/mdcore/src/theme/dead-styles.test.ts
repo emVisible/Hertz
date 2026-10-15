@@ -198,3 +198,43 @@ describe('诊断能从每一个平台出口拿到（不只是 applyTheme 直调�
     expect(diagnostics.some((d) => d.token === 'render:rogue_block')).toBe(true);
   });
 });
+
+describe('headInk 对标题是死 token（切片 10）', () => {
+  /**
+   * 起因是人话「部分 md 渲染不完全，比如标题渲染」。
+   *
+   * `derive.ts` 头注第 6 条写着「标题字色默认 headInk（不是主色）——主色留给装饰，
+   * 层级才不糊成一片」，设计器里也摆着「标题」色槽、提示语写着"比正文更重，标题才立得住"。
+   * 但 `base.ts` 给 h1..h6 写死了 `color: 'inherit'`——于是标题永远跟正文同色：
+   * **设计器拖那个滑块毫无反应**，而界面上看不出任何异样。
+   *
+   * 这与「投影/描边/次要字色」是同一类病：声明了、主题也写了值、但没有槽读它。
+   */
+  it('标题字色跟着 headInk 走（拖设计器要有反应）', () => {
+    const theme = getTheme('modi');
+    const el = applyTheme(parseToIR('# 标题'), {
+      ...theme,
+      tokens: { ...theme.tokens, headInk: '#00ff00' },
+    });
+    expect((el.querySelector('h1') as HTMLElement).style.color).toBe('rgb(0, 255, 0)');
+  });
+
+  it.each([1, 2, 3, 4, 5, 6])('h%s 都用 headInk，不是只修 h1', (lvl) => {
+    const theme = getTheme('modi');
+    const el = applyTheme(parseToIR('#'.repeat(lvl) + ' 标题'), {
+      ...theme,
+      tokens: { ...theme.tokens, headInk: '#ff0000' },
+    });
+    expect((el.querySelector(`h${lvl}`) as HTMLElement).style.color).toBe('rgb(255, 0, 0)');
+  });
+
+  it('内置主题的标题确实比正文重（层级不糊成一片）', () => {
+    for (const id of ['modi', 'taoyao', 'qingjian', 'wanfeng', 'yehang']) {
+      const theme = getTheme(id);
+      const el = applyTheme(parseToIR('# 标题\n\n正文。'), id);
+      const head = (el.querySelector('h1') as HTMLElement).style.color;
+      expect(head, `${theme.name} 的标题没有自己的字色`).toBeTruthy();
+      expect(head).not.toBe('inherit');
+    }
+  });
+});

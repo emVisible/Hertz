@@ -184,8 +184,11 @@ describe('deriveTheme', () => {
     // 切到 none 要**清掉**基题自带的左边条（墨滴 h2 就有），否则两套装饰叠着
     expect(blockOf('none')['border-left']).toBe('none');
     expect(blockOf('bottom-line')['border-left']).toBe('none');
-    // 规则 7：默认字色回到 headInk，主色只出现在装饰上
-    expect(blockOf('left-bar').color).toBe('inherit');
+    // 规则 6+7：字色是 headInk，主色只出现在装饰上。
+    // 这条曾断言 `inherit`——**注释写的是 headInk，断言钉的却是坏行为**：
+    // 典型的"判据把 bug 固化"，改对了反而会红。读主题断言，别写死字面量。
+    expect(blockOf('left-bar').color).toBe(base.tokens.headInk);
+    expect(blockOf('left-bar').color).not.toBe('inherit');
   });
 
   it('规则 7：section-number 样式把主色写进编号前缀槽', () => {
