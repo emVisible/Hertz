@@ -45,6 +45,7 @@ export type {
   LayoutDoc,
   LayoutImportResult,
   LayoutPlatform,
+  LayoutRevisionSummary,
   LayoutSummary,
   LayoutUpdateBody,
 } from './layout'

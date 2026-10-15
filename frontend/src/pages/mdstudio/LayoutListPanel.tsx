@@ -40,6 +40,10 @@ interface LayoutListPanelProps {
   onToggleBatchId: (id: string) => void
   onToggleBatchAll: () => void
   onBatchExport: () => void
+  /** 回收站（W2）：删掉的稿子要看得见、捞得回 */
+  trashed: LayoutSummary[]
+  onRestore: (id: string) => void
+  onPurge: (id: string) => void
 }
 
 export function LayoutListPanel({
@@ -57,10 +61,15 @@ export function LayoutListPanel({
   onToggleBatchId,
   onToggleBatchAll,
   onBatchExport,
+  trashed,
+  onRestore,
+  onPurge,
 }: LayoutListPanelProps) {
   const { t } = useTranslation()
   const toast = useToast()
   const [deleteTarget, setDeleteTarget] = useState<LayoutSummary | null>(null)
+  const [trashOpen, setTrashOpen] = useState(false)
+  const [purgeTarget, setPurgeTarget] = useState<LayoutSummary | null>(null)
   const [docsOpen, setDocsOpen] = useState(false)
   const [studioOpen, setStudioOpen] = useState(false)
   const [studioRun, setStudioRun] = useState('')
@@ -129,7 +138,18 @@ export function LayoutListPanel({
             e.target.value = ''
           }}
         />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          {/* 回收站入口：删除是软删，所以"删掉的稿在哪"必须能一眼看见。
+              没有入口 = 用户以为删了就没了，而其实还在——那比硬删更让人不放心。 */}
+          <ToggleChip
+            active={trashOpen}
+            onClick={() => setTrashOpen((v) => !v)}
+            title={t('mdstudio.trash.hint')}
+            testId="mdstudio-trash-toggle"
+          >
+            <Icon name="trash" size={11} /> {t('mdstudio.trash.title')}
+            {trashed.length > 0 ? ` ${trashed.length}` : ''}
+          </ToggleChip>
           <ToggleChip
             active={batchMode}
             onClick={() => onBatchModeChange(!batchMode)}
@@ -218,6 +238,68 @@ export function LayoutListPanel({
           })}
         </ul>
       </div>
+
+      {trashOpen && (
+        <div
+          className="max-h-56 shrink-0 overflow-y-auto border-t border-border bg-surface-2/40 p-2"
+          data-testid="mdstudio-trash"
+        >
+          {trashed.length === 0 ? (
+            <p className="px-1 py-2 text-[11px] text-text-secondary">{t('mdstudio.trash.empty')}</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {trashed.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex items-center gap-1 rounded-md border border-border bg-surface-1 px-2 py-1.5"
+                >
+                  <span className="flex-1 truncate text-xs text-text-primary">{item.title}</span>
+                  <button
+                    type="button"
+                    data-testid={`mdstudio-trash-restore-${item.id}`}
+                    onClick={() => onRestore(item.id)}
+                    className="rounded px-1.5 py-0.5 text-[11px] text-primary hover:underline"
+                  >
+                    {t('mdstudio.trash.restore')}
+                  </button>
+                  {/* 彻底删除与「删除」分开摆，而且要二次确认：
+                      不可逆的操作不该和"移到回收站"长得一样，更不该一击生效。 */}
+                  <button
+                    type="button"
+                    data-testid={`mdstudio-trash-purge-${item.id}`}
+                    onClick={() => setPurgeTarget(item)}
+                    className="rounded px-1.5 py-0.5 text-[11px] text-danger hover:underline"
+                  >
+                    {t('mdstudio.trash.purge')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {purgeTarget && (
+        <Modal open onClose={() => setPurgeTarget(null)} title={t('mdstudio.trash.purgeTitle')}>
+          <p className="text-xs text-text-secondary">{t('mdstudio.trash.purgeBody', { title: purgeTarget.title })}</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setPurgeTarget(null)}>
+              {t('mdstudio.trash.cancel')}
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              data-testid="mdstudio-purge-confirm"
+              onClick={() => {
+                onPurge(purgeTarget.id)
+                setPurgeTarget(null)
+              }}
+            >
+              {t('mdstudio.trash.purge')}
+            </Button>
+          </div>
+        </Modal>
+      )}
 
       {/* 批量模式的计数与出图入口 */}
       {batchMode && (

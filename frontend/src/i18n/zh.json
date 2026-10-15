@@ -202,6 +202,26 @@
       "undo": "撤销",
       "redo": "重做",
       "undoHint": "撤销主题/平台/字号等设置（文字用编辑器自己的撤销）"
+    },
+    "trash": {
+      "title": "回收站",
+      "hint": "删除是软删：稿子还在这里，随时能捞回来",
+      "empty": "回收站是空的",
+      "restore": "恢复",
+      "purge": "彻底删除",
+      "purgeTitle": "彻底删除",
+      "purgeBody": "「{{title}}」将被永久删除，无法恢复。确定吗？",
+      "cancel": "取消",
+      "restored": "已从回收站恢复",
+      "purged": "已彻底删除"
+    },
+    "revisions": {
+      "title": "版本历史",
+      "open": "历史版本",
+      "empty": "还没有历史版本（改动并保存后会自动留档）",
+      "restore": "回到这一版",
+      "restored": "已回到该版本（当前内容也留了一份，可再退回来）",
+      "loadFailed": "版本历史加载失败"
     }
   },
   "common": {

@@ -202,6 +202,26 @@
       "undo": "Undo",
       "redo": "Redo",
       "undoHint": "Undo theme/platform/size changes (text uses the editor’s own undo)"
+    },
+    "trash": {
+      "title": "Trash",
+      "hint": "Deleting is soft: drafts stay here and can be restored",
+      "empty": "Trash is empty",
+      "restore": "Restore",
+      "purge": "Delete forever",
+      "purgeTitle": "Delete forever",
+      "purgeBody": "“{{title}}” will be permanently deleted. This cannot be undone. Continue?",
+      "cancel": "Cancel",
+      "restored": "Restored from trash",
+      "purged": "Deleted forever"
+    },
+    "revisions": {
+      "title": "Version history",
+      "open": "History",
+      "empty": "No history yet (a snapshot is kept on each save)",
+      "restore": "Go back to this version",
+      "restored": "Restored that version (the current one is snapshotted too)",
+      "loadFailed": "Failed to load version history"
     }
   },
   "common": {

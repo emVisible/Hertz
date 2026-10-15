@@ -26,8 +26,8 @@ import {
   type XhsRatio,
 } from '@hertz/mdcore'
 
-import { layoutApi, type LayoutDoc, type LayoutPlatform } from '../../api'
-import { Button, EmptyState, Icon, Input, Select, ToggleChip, useToast } from '../../components/ui'
+import { layoutApi, type LayoutDoc, type LayoutPlatform, type LayoutRevisionSummary } from '../../api'
+import { Button, EmptyState, Icon, Input, Modal, Select, ToggleChip, useToast } from '../../components/ui'
 import { BatchExportModal, type BatchTarget } from './BatchExportModal'
 import { CanvasPanel, type CanvasBlockTarget, type XhsRenderInfo } from './CanvasPanel'
 import {
@@ -40,6 +40,7 @@ import {
   undo,
   type DraftHistory,
 } from './draftHistory'
+import { clearLocalDraft, writeLocalDraft } from './localDraft'
 import { MarkdownEditor, type MarkdownEditorHandle } from './editor/MarkdownEditor'
 import { OutlinePanel } from './editor/OutlinePanel'
 import { blockIndexAtLine, buildOutline, type OutlineItem } from './editor/outline'
@@ -184,10 +185,58 @@ export function MdStudioPage() {
   const [draft, setDraft] = useState<DraftState | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [exporting, setExporting] = useState<ExportAction | null>(null)
-  /**
-   * 文档级撤销/重做（W2）：只管**非文字**变更（主题/平台/字号/封面/比例/分页边界）。
-   * 文字归 CodeMirror——两边都管会打架，用户按一次撤销会退两段历史。
-   */
+  /** 版本历史（W2）：跨会话的最后一道防线，内存撤销救不了"重启之后想退回去" */
+  const [revisions, setRevisions] = useState<LayoutRevisionSummary[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
+  /** 回收站（W2）：删除是软删，所以列表要能把"还在但已删"的稿子显示出来 */
+  const trashQuery = useQuery({
+    queryKey: ['layout-trash'],
+    queryFn: () => layoutApi.listDeleted(),
+  })
+  const restoreTrashed = async (id: string) => {
+    try {
+      await layoutApi.restore(id)
+      await Promise.all([invalidateList(), trashQuery.refetch()])
+      toast(t('mdstudio.trash.restored'), 'success')
+    } catch {
+      toast(t('mdstudio.actionFailed'), 'error')
+    }
+  }
+  const purgeTrashed = async (id: string) => {
+    try {
+      await layoutApi.purge(id)
+      await trashQuery.refetch()
+      toast(t('mdstudio.trash.purged'), 'success')
+    } catch {
+      toast(t('mdstudio.actionFailed'), 'error')
+    }
+  }
+  const openRevisionHistory = async () => {
+    if (!selectedId) return
+    try {
+      const res = await layoutApi.revisions(selectedId)
+      setRevisions(res.revisions)
+      setHistoryOpen(true)
+    } catch {
+      toast(t('mdstudio.revisions.loadFailed'), 'error')
+    }
+  }
+  const restoreRevision = async (seq: number) => {
+    if (!selectedId) return
+    try {
+      const doc = await layoutApi.restoreRevision(selectedId, seq)
+      const loaded = draftFromDoc(doc)
+      loadedDocRef.current = doc
+      setDraft(loaded)
+      setHistory(createHistory(loaded))
+      setHistoryOpen(false)
+      setSaveState('saved')
+      toast(t('mdstudio.revisions.restored'), 'success')
+    } catch {
+      toast(t('mdstudio.actionFailed'), 'error')
+    }
+  }
+
   const [history, setHistory] = useState<DraftHistory<DraftState>>(() => createHistory<DraftState>({
     title: '', source_md: '', platform: 'wechat', theme_id: '', overrides: {},
     footer: '', qr: null, breaks: [], ratio: '3:4', coverSub: '', coverBadge: '',
@@ -281,6 +330,18 @@ export function MdStudioPage() {
     setSaveState('dirty');
   }, [])
 
+  /**
+   * 改动**立刻**写一份本地快照（W2 自动保存加固）。
+   *
+   * 自动保存是 800ms debounce 的 PUT，它会失败——后端没起、网络断了、磁盘满。
+   * 失败时内容只活在内存里，用户此刻切走/关窗口，刚写的那段就**永久消失**。
+   * 这份快照就是那张后悔药：落库成功后才清（见下面的 .then）。
+   */
+  useEffect(() => {
+    if (!draft || !selectedId) return
+    writeLocalDraft(selectedId, draft, loadedDocRef.current?.updated_at ?? null)
+  }, [draft, selectedId])
+
   // 自动保存：draft 变更 800ms debounce PUT 全稿字段
   useEffect(() => {
     if (!draft || !selectedId || saveState !== 'dirty') return
@@ -313,10 +374,15 @@ export function MdStudioPage() {
         })
         .then((doc) => {
           loadedDocRef.current = doc
+          // 落库成功 = 本地快照完成使命，清掉。
+          // 不清的话 localStorage 会变成第二真相源，下次打开会拿旧快照去"恢复"。
+          if (selectedId) clearLocalDraft(selectedId)
           setSaveState((s) => (s === 'saving' ? 'saved' : s))
           void queryClient.invalidateQueries({ queryKey: ['layout-list'] })
         })
         .catch(() => {
+          // 失败时**保留本地快照**并把状态退回 dirty：那份快照是这段内容的唯一副本。
+          // 只弹一个 toast 是不够的——用户看到的是"存不上"，而"还在"才是他需要的答案。
           setSaveState('dirty')
           toast(t('mdstudio.save.failed'), 'error')
         })
@@ -703,6 +769,15 @@ export function MdStudioPage() {
         <div className="ml-auto">
           <Button
             size="sm"
+            variant="secondary"
+            data-testid="mdstudio-history-open"
+            disabled={!selectedId}
+            onClick={() => void openRevisionHistory()}
+          >
+            {t('mdstudio.revisions.open')}
+          </Button>
+          <Button
+            size="sm"
             loading={exporting === primaryExport.action}
             disabled={exporting !== null || !draft}
             onClick={() => void runExport(primaryExport.action)}
@@ -739,6 +814,9 @@ export function MdStudioPage() {
               onToggleBatchId={toggleBatchId}
               onToggleBatchAll={toggleBatchAll}
               onBatchExport={() => setBatchOpen(true)}
+              trashed={trashQuery.data ?? []}
+              onRestore={(id) => void restoreTrashed(id)}
+              onPurge={(id) => void purgeTrashed(id)}
             />
           </div>
           {/* 源文编辑：CodeMirror 6（Phase 4）。自带行号/搜索面板(Cmd+F)/撤销重做/
@@ -991,6 +1069,45 @@ export function MdStudioPage() {
           }
         }}
       />
+
+      {/* 版本历史（W2）：跨会话退不回来的那道防线 */}
+      {historyOpen && (
+        <Modal
+          open
+          onClose={() => setHistoryOpen(false)}
+          title={t('mdstudio.revisions.title')}
+        >
+          {revisions.length === 0 ? (
+            <p className="text-xs text-text-secondary">{t('mdstudio.revisions.empty')}</p>
+          ) : (
+            <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto">
+              {revisions.map((rev) => (
+                <li
+                  key={rev.seq}
+                  className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-xs text-text-primary">
+                      {rev.preview || t('mdstudio.untitled')}
+                    </span>
+                    <span className="text-[10px] text-text-secondary">
+                      #{rev.seq} · {rev.chars} 字符
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    data-testid={`mdstudio-revision-${rev.seq}`}
+                    onClick={() => void restoreRevision(rev.seq)}
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-primary hover:underline"
+                  >
+                    {t('mdstudio.revisions.restore')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Modal>
+      )}
     </div>
   )
 }

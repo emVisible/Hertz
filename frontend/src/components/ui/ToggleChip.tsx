@@ -6,12 +6,15 @@ export function ToggleChip({
   onClick,
   title,
   tone = 'primary',
+  testId,
   children,
 }: {
   active: boolean
   onClick: () => void
   title?: string
   tone?: 'primary' | 'warning'
+  /** 判据要能从页面读回"哪个开关被点了"——不透传就只能靠文案猜 */
+  testId?: string
   children: ReactNode
 }) {
   const activeClass =
@@ -23,6 +26,8 @@ export function ToggleChip({
       type="button"
       onClick={onClick}
       title={title}
+      data-testid={testId}
+      aria-pressed={active}
       className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
         active ? activeClass : 'border-transparent text-text-disabled hover:border-border hover:text-text-secondary'
       }`}
