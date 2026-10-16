@@ -57,6 +57,23 @@ def test_migration_graph_parses() -> None:
     assert heads, "迁移图解析不出 head——脚本目录或 down_revision 已损坏"
 
 
+def test_revision_ids_fit_alembic_version_column() -> None:
+    """revision id 不得超 32 字符：alembic 自建的 alembic_version.version_num 是 VARCHAR(32)。
+
+    id 超长会在迁移事务的最后一步 UPDATE version_num 时
+    StringDataRightTruncation——整条迁移连同它的 alter 一起回滚，
+    而错误信息指向 version_num、看不出真正想做的事（wave34 实测踩过）。
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config(str(ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(ROOT / "alembic"))
+    script = ScriptDirectory.from_config(cfg)
+    too_long = [rev.revision for rev in script.walk_revisions() if len(rev.revision) > 32]
+    assert not too_long, f"revision id 超 32 字符（alembic_version.version_num 上限）: {too_long}"
+
+
 # ---------- 外部库口令透传 ----------
 
 class _FakeConn:
