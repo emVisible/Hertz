@@ -7,7 +7,53 @@
 
 ## [Unreleased]
 
-（本节留空：v0.36.0 已收版，下一批改动从这里开始记）
+### 修复：图文工坊保存/删除 500（模型与迁移漂移）
+
+- **现象**：MD Studio 里保存提示「保存失败，请检查后端」，删除点了没反应。后端日志
+  `asyncpg UndefinedColumnError: column layout_revisions.updated_at does not exist`——
+  每次 PUT（快照改前内容）与 DELETE（删除前也要快照）都 500。
+- **根因**：`LayoutRevision` 继承 `BaseModel`（声明 created_at + updated_at），而
+  `wave10_layout_data_safety` 手写建表 SQL 只给了 created_at。ORM 的 INSERT 带
+  `RETURNING updated_at`，库里没这列。测试没拦住：hertz_test 的 schema 由
+  `create_all` 从**模型**重建，永远带着这列——只有走 alembic 的库才缺
+  （create_all 与迁移两条建 schema 路径分叉，AXIOM §22.1 口径的漂移）。
+- **修法**：新增迁移 `wave34_layout_revisions_updated`（接在 wave10 之后，heads 仍为 2），
+  加列并回填 created_at（快照落盘后不会再改，两列本就同值）。存量行不抹成迁移执行时间。
+- **附带**：`tests/test_migration_bootstrap.py` 新增 `test_revision_ids_fit_alembic_version_column`——
+  alembic 自建的 `alembic_version.version_num` 是 VARCHAR(32)，超长 revision id 会让
+  整条迁移在最后一步 UPDATE version_num 时回滚（本迁移第一版 33 字符实测踩中）。
+- **验证**：真机 API 全路径 200（create/PUT/revisions/DELETE/restore/revision-restore/purge）；
+  pytest 56 条过（test_layout 25 + migration_bootstrap + board_domain heads 守卫）；
+  `alembic check` 的 `layout_revisions.updated_at` add_column 漂移消失。
+
+### 完善：漂移看守（E1/E2）与合规横幅（P0-1）
+
+- **结构漂移守卫（E1）**：新库 `alembic upgrade heads` → autogenerate 比对模型元数据，
+  断言零 add/remove table/column——「模型加了列、迁移没加」这类漂移此前在测试里永远绿。
+  口径只报会在运行时炸 ORM 的类别（`backend/infrastructure/drift.py`，守卫测试与 CLI 共用
+  唯一实现）。成对变异：从迁移里删一列 → 测试红。
+- **漂移检查 CLI（E2）**：`scripts/drift_check.py` 只打印结构漂移，`modify_nullable` /
+  JSON→JSONB / 索引反映差异等存量噪音降级为计数——`alembic check` 全量输出里真信号
+  被噪音淹没，此前就是这么漏的。退出码：0 无结构漂移 / 1 有。
+- **违禁词合规横幅（P0-1）**：mdcore 违禁词检测层（通用 5 类 + 命理话术两层词表、
+  拼音首字母别名、`[\s·*-_~]*` 逃逸分隔符、代码块剥离且行号不变、白名单豁免、按词整体
+  正则匹配、结果按行排序；9 项单测）；`CanvasPanel` 接线（findings/labels/ignore 3 props）；
+  `ComplianceBanner.tsx` 折叠横幅（词分组、行号跳转、忽略）；判据：无命中的正常稿
+  横幅完全不出现。忽略词入白名单、随稿存 `cover.compliance_whitelist`（加键不需迁移），
+  刷新/换稿再回来仍豁免。
+  **忽略接线的成对变异判据**：宿主按 `term`（词表原形）过滤，此前误用 `matched`
+  （逃逸原文）——「改·运」「gy」这类命中点忽略有去无回；`ComplianceIgnore.test.tsx`
+  守在宿主层（改回 `matched` 即红；去掉落库/读回各打红一条）。合规 10 个 key 的
+  `en.json` 文案补齐（此前是中文）。
+- **测试环境治理**：`frontend/src/test/setup.ts` 顶部固定 `NODE_ENV=test` + 预热 React，
+  防 vitest worker 缓存生产构建导致 `act is not a function`。
+- **公式契约保真进微信产物（P1-2 结构层）**：`data-mdcore-formula-tex` 不再被
+  `stripUnsafe` 剥掉——它不是编辑器状态，是公式在平台产物里的数据契约（公众号清洗器
+  剥 @font-face，落地方案与真机验收都要靠它在产物里认出公式、取回原始 TeX）；
+  其余 `data-mdcore-*` 编辑器标记照旧剥。成对变异：去掉例外 → 保真断言红。
+- **稿件列表搜索（P1-4）**：按稿名过滤（大小写不敏感、空结果给明确提示、Esc 清空），
+  与选中态不互斥——过滤只是显示层，不换当前打开的稿。顺带修掉一个真 bug：
+  **点击已选中的稿行会把画布清空**（清 draft 后 effect 依赖未变、不会重载）。
 
 ## [v0.36.0] - 2026-10-15
 

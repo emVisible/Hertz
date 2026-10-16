@@ -4,17 +4,17 @@
 
 ---
 
-## 1. 恢复点（2026-10-15 实测）
+## 1. 恢复点（2026-10-16 实测）
 
 | 项 | 值 | 怎么重取 |
 | --- | --- | --- |
-| 分支 / HEAD | `main` / `a6e2369`（W0–W5 五件全做完） | `git log --oneline -2` |
+| 分支 / HEAD | `emVisible/main`，本轮 v0.37 首批已推 `origin/main`（见 `git log --oneline -5`） | `git log --oneline -2` |
 | **手动测试基点** | tag `test-point/w1` → `a20d627`；当前 HEAD 已在测试单范围内 | `git tag -l "test-point/*"` |
-| 版本 | `0.36.0`（CHANGELOG 已收版） | `grep -m1 version frontend/package.json` |
-| 本模块提交 | v0.36.0 共 23 个（`a20d627` W1 五六片 → … → `a6e2369` 测试单），逐条见 CHANGELOG `[v0.36.0]` | `git log --oneline -25` |
+| 版本 | `0.36.0`（CHANGELOG 已收版；本轮变更仍在 `[Unreleased]`） | `grep -m1 version frontend/package.json` |
+| 本模块提交 | v0.36.0 共 23 个（`a20d627` W1 五六片 → … → `a6e2369` 测试单）；v0.37 首批 4 个提交（wave34 漂移修复+E1/E2 看守 / mdcore 合规扫描器+公式契约 / mdstudio 横幅+搜索 / 文档同步） | `git log --oneline -30` |
 | 工作树 | 干净 | `git status --short` |
-| 门禁 | `verify.sh` 八步全绿：pytest 796 / mdcore 366 / 前端 357（51 文件）/ 两包 tsc / vite build / 13 张排版基线；**产物级 `release-check.sh` 有一项红**，见 §4 第 11 条 | `bash scripts/verify.sh --quick`（跳过最重的基线那步）、`bash scripts/release-check.sh` |
-| 远端 | `main` 已与 `origin/main` 同步；**v0.36.0 尚未打 tag**（等手动测试通过） | `git log origin/main..HEAD` |
+| 门禁 | 涉及域全绿：ruff 0 / test_layout 25 + migration_bootstrap + test_migration_drift / mdcore 376 / 前端 371（54 文件）/ 两包 tsc / vite build / 13 张排版基线；**全量 pytest 808 收集里本机 26 条红是本地数据缺口**（见 §4 第 13 条）；**产物级 `release-check.sh` 有一项红**，见 §4 第 11 条 | `bash scripts/verify.sh --quick`（跳过最重的基线那步）、`bash scripts/release-check.sh` |
+| 远端 | `origin/main` 已含本轮首批；**v0.36.0 尚未打 tag**（等手动测试通过） | `git log origin/main..HEAD` |
 
 ## 2. 真相源地图
 
@@ -27,6 +27,8 @@
 | `packages/mdcore/src/platform/inline.ts` | 微信/知乎共享的快照内联与降级链 | 改这里同时跑 `wechat.test.ts`（8 条）与 `zhihu.test.ts`（14 条） |
 | `packages/mdcore/src/export/exporter.ts` | 闸门 + 降级链 + 游离节点挂载 + DPR 除回 | 新引擎选项保持注入式，否则测不到 |
 | `backend/routers/layout.py` | 7 端点，containment 复用 `docs.py:_resolve_doc` | 加端点要跑 `scripts/api_inventory.py`（`test_api_surface` 硬约束） |
+| `packages/mdcore/src/compliance/wordlists.ts` | 违禁词词表唯一维护点（通用 5 类 + 命理话术），主编按本号红线增删 | 增删词后跑 `scan.test.ts`（命理词每词一条红测）；别名一律小写、ASCII 关键词 ≥4 字符 |
+| `backend/infrastructure/drift.py` | 结构漂移口径唯一实现（E1 守卫测试与 E2 CLI 共用） | 改口径同时看 `STRUCTURAL_KINDS` 与两个消费方 |
 | `frontend/src/pages/mdstudio/*` | 三栏宿主；导出按稿参数离屏重建 | 文案必须双语同加（`mdstudio.*`，有 catalog 对齐测试） |
 | `packages/mdcore/src/paginate/paginate.ts` 的 `breaks` | 强制分页边界（画布拖出来的断点）；**只增不减**，不裁内容 | 改语义前先看 D-226 的字数守恒论证 |
 | `packages/mdcore/src/theme/apply.ts` 的 `data-mdcore-block/-line` | 画布点段落与拖边界的反查通道 | 加新清洗器/导出路径时确认 `data-mdcore-*` 不进产物 |
@@ -77,6 +79,21 @@ bash scripts/dev.sh
     - **`code` 槽被行内与块级代码共用，字号只能挂那一处**：挂 `pre` 上 → 行内代码失去缩小
       （长文页面高 8px）；两处都挂 → 0.86 × 0.86 双重缩小（矮 20px）。两次都靠基线图抓到。
 
+13. **本机 26 条 pytest 红是本地数据缺口，不是代码缺陷**（2026-10-16 逐条隔离复核）：
+    `.gitignore` 第 19 行是裸 `data/`，匹配**任意层级**的 data 目录——`backend/monoline/data/icons.json`
+    （`icons.py` 导入期必读，生成脚本 `scripts/build_icons.py` 不在仓内）就这样从未入库；
+    没拷过本地数据的检出里，monoline 17 条 + 2 条静态卫生体检（`test_packaging_hygiene` /
+    `test_studio_transcribe` 的函数级 import 检查会 import 到它）全红且报 `FileNotFoundError`。
+    `data/reference/33-anti-ai-rules.md` 同理（anti_ai 1 条）；pipeline produce/chain 6 条要本机装模型
+    （produce → 502）。**别当成"环境问题"放过、也别去改代码**——先从原开发机拷回这两个本地文件（或补回
+    生成脚本）；长期解是把忽略规则收紧成 `/data/` 并把包内数据 `git add -f`。
+
+14. **组件测试全绿 ≠ 宿主接线对**（合规横幅，与第 12 条"纯函数对了不等于接线对了"同宗）：
+    ① 宿主忽略过滤误用 `matched`（逃逸原文）而非 `term`（词表原形）→「改·运」「gy」点忽略有去无回；
+    ② 白名单第一版只存会话内存，刷新即失忆。两处都在组件测试的射程之外，
+    由 `ComplianceIgnore.test.tsx` 3 条判据守宿主层（过滤字段 / 落库 `cover.compliance_whitelist` /
+    读回，各自成对变异打红）。**给"发现"类 UI 写判据时，组件层一条、宿主接线一条，缺哪条都会漏。**
+
 **通用教训**：结构层（jsdom + 注入 mock）能证"对不对"，证不了"看起来对不对"。观感与像素只能在产物层判——上面 1/2/3 条全是真浏览器抓的。
 
 **另一条通用教训（本轮最有价值的一条）**：**jsdom 量不出来的量，就不要拿它当判据**。
@@ -94,13 +111,15 @@ bash scripts/dev.sh
 
 | 事项 | 在谁手里 | 备注 |
 | --- | --- | --- |
-| **走一遍 `docs/MD_STUDIO_TEST_SHEET.md`**（12 组，三段稿可直接粘贴） | **你** | 建议顺序见文档开头：先数据安全与交互（不可逆损失），再排版深度（纯视觉）。D6/D7 需先停后端 |
-| 打 `v0.36.0` tag 并发布 | **你**（需单独授权） | CHANGELOG 已收版、版本号已 bump、四处 package.json 与 pyproject 已同步；**等手测通过再打** |
+| **走一遍 `docs/MD_STUDIO_TEST_SHEET.md`**（13 组，三段稿可直接粘贴） | **你** | 建议顺序见文档开头：先数据安全与交互（不可逆损失），再排版深度（纯视觉）。D6/D7 需先停后端 |
+| 打 tag 并发布 | **你**（需单独授权） | v0.36.0 等手测通过再打；v0.37 首批（漂移看守/合规横幅/列表搜索）变更已在 `[Unreleased]`，可随后一并收版 |
 | Electron 里点一次四个导出按钮（复制/ZIP/长图/文案） | **你** | 已收进测试单 §2.6；自动化浏览器证不到宿主剪贴板权限与另存路径 |
 | v0.35 的两个新交互在真浏览器里走一遍（点段落改文、拖分页边界、多选批量出图） | **你** | 已收进测试单 §2.5；jsdom 证不了吸附手感与截图交互，见 §4 第 9 条 |
+| 合规词表调校（本科目按本号红线增删；初版偏宽，「收藏」「一键」这类日常词会命中） | **你**（主编口径） | 调校点 `packages/mdcore/src/compliance/wordlists.ts`；测试单 §2.13；误报先用「忽略」（随稿落库） |
+| 本机本地数据缺口（`backend/monoline/data/icons.json`、`data/reference/33-anti-ai-rules.md`、pipeline 模型） | **你** | 26 条 pytest 红全由它起，详见 §4 第 13 条；从原开发机拷回文件即可回转，与代码无关 |
 | 字体分片 | 已判**不做** | 理由与重启条件见 `docs/MD_STUDIO.md` §9 |
-| 候选下一步（违禁词、Shiki、图床、掘金/头条） | 我，等你点单 | 排序与理由见 `docs/MD_STUDIO.md` §10 |
+| 候选下一步（Shiki、图床、掘金/头条） | 我，等你点单 | 排序与理由见 `docs/MD_STUDIO_UPDATE_PLAN.md` §5 与 `docs/MD_STUDIO.md` §10 |
 
 ## 7. 一个收口建议
 
-现在这个模块**功能完整、门禁在闸、产物层验过**，最划算的一步不是加功能，而是：你在 Electron 里走一遍四个导出按钮（约 5 分钟），确认无误后把 CHANGELOG 的 `[Unreleased]` 收成一个版本号、打 tag 推上去——把"已落地"变成"已发布"。若发现任何一处产物不对，把现象贴回来，判据层已经铺好，定位会很快。
+现在这个模块**功能完整、门禁在闸、产物层验过**，最划算的一步不是加功能，而是：你在 Electron 里走一遍四个导出按钮（约 5 分钟），确认无误后把 CHANGELOG 的 `[Unreleased]` 收成一个版本号、打 tag 推上去——把"已落地"变成"已发布"。若发现任何一处产物不对，把现象贴回来，判据层已经铺好，定位会很快。顺手把测试单 §2.13 的合规横幅看一眼：**词表宽窄是你的红线，机器替不了这个判断**（误报调校点在 `wordlists.ts`，机制层不动）。

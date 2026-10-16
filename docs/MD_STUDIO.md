@@ -380,13 +380,19 @@ md 字符串
 
 `cover` 是自由 JSON 槽：三个平台专有位都落在它里面（小红书占两席：品牌页脚与手动分页边界），加键**不需要迁移**。
 
+**表 `layout_revisions`**（`alembic/versions/wave10_layout_data_safety.py` 后续由 `wave34_layout_revisions_updated.py` 补 `updated_at`）：每次更新/删除落一份**改之前**的整份快照，`seq` 递增，按 `ORDER BY seq DESC` 取最近版。双头分支里 `wave21_glossary_remove` 按定档不动（`tests/test_board_domain.py` 守卫），`alembic upgrade heads` 走复数 spec。
+
 **端点**（`backend/routers/layout.py`，前缀 `/api`）：
 
 | 端点 | 说明 |
 | --- | --- |
 | `GET /layout` | 列表，**不含 source_md**，按 updated_at 倒序 |
 | `POST /layout` | 新建，platform 由 pydantic `Literal` 拦非法值 |
-| `GET/PUT/DELETE /layout/{id}` | 单稿；PUT 是局部更新（未给字段不动） |
+| `GET/PUT/DELETE /layout/{id}` | 单稿；PUT 是局部更新（未给字段不动）；DELETE 是**软删**（进回收站） |
+| `POST /layout/{id}/restore` | 回收站恢复（W2） |
+| `POST /layout/{id}/purge` | 彻底删除（W2，不可逆；界面要二次确认） |
+| `GET /layout/{id}/revisions` | 版本历史列表（W2，整份快照摘要） |
+| `POST /layout/{id}/revisions/{seq}/restore` | 回版（W2）；服务端先给当前内容留一份，**这一步本身可逆** |
 | `GET /layout/import/docs?path=` | 复用 `routers/docs.py` 的 `_resolve_doc` containment：越界 403、绝对路径/非 .md 422、缺失 404 |
 | `GET /layout/import/studio?run=` | 读 `data/output/studio/<run>/final.md`；slug 含 `..` `/` `\` fail-closed 422 |
 
@@ -400,7 +406,7 @@ md 字符串
 
 **门禁**：`bash scripts/verify.sh` 八步（backend lint → pytest → mdcore typecheck → mdcore test → frontend typecheck → frontend test → vite build → **排版基线图**）。mdcore 是 v0.35 才补进闸的——新包 94 条测试一度不在闸上；基线图是 v0.36 加的第八步。
 
-**测试分布**（数字由命令产生，见 §11）：mdcore 366 条 vitest（node+jsdom，测试与源码同目录）、前端 357 条、后端 796 条（其中 `tests/test_layout.py` 17 条）。
+**测试分布**（数字由命令产生，见 §11）：mdcore 376 条 vitest（node+jsdom，测试与源码同目录）、前端 371 条、后端 808 条（其中 `tests/test_layout.py` 25 条）。
 
 ### 排版基线图（产物层判据，`packages/mdcore/tests/baselines/typography/`）
 
@@ -433,18 +439,28 @@ md 字符串
 | 中文字体分片（cn-font-split） | 微信清洗器剥 `@font-face`，对富文本零收益；只有图片导出受益，而 macOS 上 PingFang 已保证同机一致；24 页 ZIP 已 14.3MB，再叠思源宋体全量（10MB+）顶图集体积与安装包大小 | 要跨机一致的招牌字体，或要发 Windows/Linux 包时 |
 | 平台直发 | 小红书无面向普通开发者的发布 API（社区逆向有封号风险）；微信直发需公众号后台凭证 | 拿到官方凭证/服务商资格 |
 | 后端渲染（Playwright） | 打包体积、双渲染真相源、参考代码零复用，手动分发场景自动化收益为零 | 出现"无人值守批量出图"的真实日常需求 |
-| 可视化主题设计器 | 工作量换不回使用率 | 主题 overrides 通道不够用时 |
-| 违禁词检测 / AI 润色 / 批量生成 | 属另一条能力线（写作与合规），与排版内核正交；已列入 §10 候选而非本期 | 见候选切片 |
+| 可视化主题设计器 | 逐元素可视化设计器（拖每个元素的样式）不做；**token 级设计器已于 v0.36.0 落地**（35 变量 / 10 分区，右栏抽屉） | 主题 overrides 通道不够用时 |
 
 ---
 
-## 10. 候选下一步（未开工，按收益/成本排）
+## 10. 候选下一步（已落地项 + 未开工项，按收益/成本排）
+
+**已落地（原候选，2026-10-16）：**
+
+| 能力 | 落点 | 已知限度 |
+| --- | --- | --- |
+| 违禁词/敏感词检测（P0-1） | mdcore 两层词表（通用 5 类 + 命理话术）+ 扫描引擎（逃逸分隔符、拼音首字母别名、代码块剥离、白名单豁免、按词整体正则、行号排序）；`ComplianceBanner.tsx`（展开/忽略/跳转）+ CanvasPanel 接线 | 谐音/变体规则第一版子集；忽略词会话内生效、白名单随稿存 cover 槽（逐条豁免的界面留待有需要时补） |
+| 稿件列表搜索（P1-4） | `LayoutListPanel.tsx` 按稿名过滤（大小写不敏感、空结果提示、Esc 清空） | 只搜稿名，不搜正文——正文全量检索是另一个量级的事 |
+| 结构漂移看守（E1/E2） | `tests/test_migration_drift.py`（新库全量迁移 → autogenerate 断言零结构漂移）+ `scripts/drift_check.py`（只报会在运行时炸 ORM 的类别） | 只守结构类（add/remove table/column）；modify_nullable 等存量噪音不进断言 |
+| 公式契约保真进微信产物（P1-2 结构层） | `stripUnsafe` 对 `data-mdcore-formula-tex` 开例外；保真断言在 `theme/formula.test.ts` | **落地形态（SVG / 转图）待真机验收后定**（公众号清洗器剥 @font-face）；这一步只保证产物里认得出公式、取回原始 TeX |
+
+**未开工：**
 
 1. **Electron 内人工走通四个导出按钮**（唯一剩下的验收腿：自动化浏览器证不到宿主剪贴板权限与另存路径）
-2. **违禁词/敏感词检测**（小红书发布前刚需，Reditor 验证过的差异化卖点；纯前端词表可做第一版）
-3. **Shiki 二次 pass 高亮**（换掉 highlight.js 的 token 色映射，代码卡观感更好）
-4. **图床**：微信要求图片必须在微信图床，现在图片走 dataURL/同源；要发带图长文得接图床
-5. **掘金/头条适配器**：mdnice 证明"一份内容多处粘贴"是真需求，适配器形状已就位
+2. **公式在公众号的落地（P1-2 后半）与图床（P1-1）**：微信要求图片必须在微信图床；公式先真机验收再定 SVG / 转图路线，若结论是转图则与图床合并做
+3. **Shiki 二次 pass 高亮（P1-3）与代码高亮主题可选（P1-5）**：与代码 token 色映射合并评估（现状：hljs 浅深两套固定字典，无独立主题集）
+4. **掘金/头条适配器（P2-1）**：mdnice 证明"一份内容多处粘贴"是真需求，适配器形状已就位
+5. **主题导出独立 CSS（P2-2）/ 反向导入（P2-3）/ Mermaid（P2-4）/ PDF 导出（P2-5）**：收益递减，按实际发布平台取舍
 
 **已于 v0.35 落地**（原候选第 2、4 条）：
 
@@ -457,18 +473,26 @@ md 字符串
 
 ## 11. 事实与再生成命令
 
-本文引用的数字会腐烂。当前读数取于 2026-10-13（HEAD 见 git log），重取命令：
+本文引用的数字会腐烂。当前读数取于 2026-10-16（HEAD 见 git log），重取命令：
 
 ```bash
-# 全部门禁（七步，含真实退出码）
+# 全部门禁（八步，含真实退出码）
 bash scripts/verify.sh
 
-# 各层规模与测试条数
+# 各层规模与测试条数（收集口径；vitest 报表尾部的 "Tests N" 一致）
+(cd frontend && npx vitest list 2>/dev/null | wc -l)
+(cd packages/mdcore && npx vitest list 2>/dev/null | wc -l)
+uv run pytest --collect-only -q tests/ 2>/dev/null | tail -1
+uv run pytest --collect-only -q tests/test_layout.py 2>/dev/null | tail -1
 find packages/mdcore/src -name '*.ts' ! -name '*.test.ts' | xargs wc -l | tail -1
 for f in $(find packages/mdcore/src -name '*.test.ts'); do echo "$f $(grep -c '  it(' $f)"; done
 node -e "const z=require('./frontend/src/i18n/zh.json'),e=require('./frontend/src/i18n/en.json');\
 const f=(o,p='')=>Object.entries(o).flatMap(([k,v])=>v&&typeof v==='object'?f(v,p+k+'.'):[p+k]);\
 console.log('zh',f(z).length,'en',f(e).length,'mdstudio',f(z).filter(k=>k.startsWith('mdstudio.')).length)"
+
+# 结构漂移（模型 vs 迁移；只报会在运行时炸 ORM 的类别，E2）
+# 对全新迁移库跑应零结构漂移；modify_nullable 等存量噪音降级为计数
+uv run python scripts/drift_check.py --db postgresql+asyncpg://hertz:hertz@localhost:5432/hertz_fresh
 
 # 主题清单与端点
 grep -n "export const" packages/mdcore/src/theme/themes/*.ts
