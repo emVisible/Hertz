@@ -7,7 +7,7 @@
  * 只在批量模式里才出现勾选框——平时那列复选框是纯噪声。
  */
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 
@@ -33,7 +33,7 @@ interface LayoutListPanelProps {
   onImportDocs: (path: string) => void
   onImportStudio: (run: string) => void
   onDelete: (id: string) => void
-  /** 批量模式：勾选集由宿主持有（批量出图 Modal 要用同一份 id 列表） */
+  /** 批量模式：勾选集由宿主持有（批量出图 Modal 要用同一份 id 列表）*/
   batchMode: boolean
   batchIds: string[]
   onBatchModeChange: (on: boolean) => void
@@ -71,9 +71,18 @@ export function LayoutListPanel({
   const [trashOpen, setTrashOpen] = useState(false)
   const [purgeTarget, setPurgeTarget] = useState<LayoutSummary | null>(null)
   const [docsOpen, setDocsOpen] = useState(false)
-  const [studioOpen, setStudioOpen] = useState(false)
   const [studioRun, setStudioRun] = useState('')
+  const [studioOpen, setStudioOpen] = useState(false)
+  const [search, setSearch] = useState('')
+
   const fileRef = useRef<HTMLInputElement>(null)
+  const filteredLayouts = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return layouts ?? []
+    return (layouts ?? []).filter((item) =>
+      (item.title ?? '').toLowerCase().includes(q),
+    )
+  }, [layouts, search])
 
   // docs 空间文件清单：仅在导入弹窗打开时拉取（低频动作，不常驻轮询）
   const docsQuery = useQuery({
@@ -109,35 +118,42 @@ export function LayoutListPanel({
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="mdstudio-list-panel">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <Button size="sm" icon={<Icon name="plus" size={12} />} onClick={() => onCreate()}>
-          {t('mdstudio.new')}
-        </Button>
-        <Menu
-          align="left"
-          trigger={(open) => (
-            <Button size="sm" variant="secondary" icon={<Icon name="upload" size={12} />}>
-              {t('mdstudio.import.trigger')}
-              <Icon name={open ? 'chevron-up' : 'chevron-down'} size={12} />
-            </Button>
-          )}
-          items={[
-            { label: t('mdstudio.import.fromDocs'), icon: 'briefs', onClick: () => setDocsOpen(true) },
-            { label: t('mdstudio.import.fromStudio'), icon: 'studio', onClick: () => setStudioOpen(true) },
-            { label: t('mdstudio.import.paste'), icon: 'copy', onClick: () => void pasteCreate() },
-            { label: t('mdstudio.import.upload'), icon: 'file', onClick: () => fileRef.current?.click() },
-          ]}
+        <Input
+          placeholder={t('mdstudio.list.searchPlaceholder')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') setSearch('') }}
+          className="max-w-xs"
+          aria-label={t('mdstudio.list.search')}
         />
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".md,.markdown,text/markdown,text/plain"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) uploadLocal(file)
-            e.target.value = ''
-          }}
-        />
+        <div className="ml-auto flex items-center gap-1">
+          <Menu
+            align="left"
+            trigger={(open) => (
+              <Button size="sm" variant="secondary" icon={<Icon name="upload" size={12} />}>
+                {t('mdstudio.import.trigger')}
+                <Icon name={open ? 'chevron-up' : 'chevron-down'} size={12} />
+              </Button>
+            )}
+            items={[
+              { label: t('mdstudio.import.fromDocs'), icon: 'briefs', onClick: () => setDocsOpen(true) },
+              { label: t('mdstudio.import.fromStudio'), icon: 'studio', onClick: () => setStudioOpen(true) },
+              { label: t('mdstudio.import.paste'), icon: 'copy', onClick: () => void pasteCreate() },
+              { label: t('mdstudio.import.upload'), icon: 'file', onClick: () => fileRef.current?.click() },
+            ]}
+          />
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".md,.markdown,text/markdown,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) uploadLocal(file)
+              e.target.value = ''
+            }}
+          />
+        </div>
         <div className="ml-auto flex items-center gap-1">
           {/* 回收站入口：删除是软删，所以"删掉的稿在哪"必须能一眼看见。
               没有入口 = 用户以为删了就没了，而其实还在——那比硬删更让人不放心。 */}
@@ -166,15 +182,17 @@ export function LayoutListPanel({
             <Spinner size={16} />
           </div>
         )}
-        {!loading && (layouts ?? []).length === 0 && (
+        {!loading && filteredLayouts.length === 0 && (
           <EmptyState
-            icon="briefs"
-            title={t('mdstudio.list.empty')}
-            description={t('mdstudio.list.emptyHint')}
+            icon="search"
+            title={search.trim() ? t('mdstudio.list.noResults') : t('mdstudio.list.empty')}
+            description={search.trim()
+              ? t('mdstudio.list.noResults')
+              : t('mdstudio.list.emptyHint')}
           />
         )}
         <ul className="flex flex-col gap-1">
-          {(layouts ?? []).map((item) => {
+          {filteredLayouts.map((item) => {
             const active = item.id === selectedId
             const checked = batchIds.includes(item.id)
             return (

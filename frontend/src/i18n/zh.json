@@ -31,7 +31,10 @@
     },
     "list": {
       "empty": "还没有排版稿",
-      "emptyHint": "新建或导入一篇 Markdown 开始排版"
+      "emptyHint": "新建或导入一篇 Markdown 开始排版",
+      "search": "搜索稿",
+      "searchPlaceholder": "按稿名搜索",
+      "noResults": "没有找到匹配的稿"
     },
     "delete": {
       "title": "删除排版稿",
@@ -73,6 +76,20 @@
         "collapse": "收起",
         "line": "行 {{line}}",
         "times": "×{{count}}"
+      },
+      "compliance": {
+        "summary": "发现 {{count}} 处敏感内容",
+        "expand": "展开",
+        "collapse": "收起",
+        "ignore": "忽略 {{term}}",
+        "category": {
+          "violence": "暴恐",
+          "sexual": "色情低俗",
+          "political": "政治敏感",
+          "abuse": "低俗辱骂",
+          "spam": "低质灌水",
+          "metaphysics": "命理话术"
+        }
       }
     },
     "theme": {

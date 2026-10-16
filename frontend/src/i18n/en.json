@@ -31,7 +31,10 @@
     },
     "list": {
       "empty": "No layouts yet",
-      "emptyHint": "Create or import a Markdown doc to start typesetting"
+      "emptyHint": "Create or import a Markdown to start composing",
+      "search": "Search layouts",
+      "searchPlaceholder": "Search by title",
+      "noResults": "No layouts match your search"
     },
     "delete": {
       "title": "Delete layout",
@@ -73,6 +76,20 @@
         "collapse": "Hide",
         "line": "line {{line}}",
         "times": "×{{count}}"
+      },
+      "compliance": {
+        "summary": "{{count}} sensitive phrases found",
+        "expand": "Show",
+        "collapse": "Hide",
+        "ignore": "Ignore {{term}}",
+        "category": {
+          "violence": "Violence",
+          "sexual": "Sexual / vulgar",
+          "political": "Politically sensitive",
+          "abuse": "Abusive language",
+          "spam": "Low-quality filler",
+          "metaphysics": "Metaphysical claims"
+        }
       }
     },
     "theme": {

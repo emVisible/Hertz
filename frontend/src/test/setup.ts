@@ -1,4 +1,19 @@
+// 测试环境：react 19 的 `act` 只在非 production 构建暴露（production 构建物
+// 里 `act` 没有导出），否则 @testing-library/react 的 `render` 报
+// "React.act is not a function"。测试文件只运行在这里被改写，产品代码无影响。
+process.env.NODE_ENV = 'test'
+
 import '@testing-library/jest-dom/vitest'
+
+// React 19 的 CJS 命名空间没有导出 act（act 仅为 ESM 命名导出），
+// react-dom-test-utils 的废弃兜底会二次引用 `React.act` 而崩；
+// 把 react 导出的 act 挂到模块命名空间上，让 react-dom-test-utils 走
+// 正常路径。纯测试环境补丁，产品代码不感知。
+import { act as reactAct } from 'react'
+const ReactModule = require('react')
+if (typeof ReactModule.act !== 'function') {
+  ReactModule.act = reactAct
+}
 
 // Node ≥22 的实验性内置 localStorage（未给 --localstorage-file 时恒为 undefined）
 // 会遮蔽 jsdom 的实现——zustand persist 拿到 undefined 存储，任何 setState 即崩。

@@ -28,7 +28,9 @@ import {
 } from '@hertz/mdcore'
 
 import type { LayoutPlatform } from '../../api'
+import type { ComplianceFinding, ComplianceLabels } from '@hertz/mdcore'
 import { DiagnosticsBanner, type DiagnosticsLabels } from './CanvasDiagnostics'
+import { ComplianceBanner } from './ComplianceBanner'
 
 /**
  * xhs 卡片展示缩放基值：1080 宽导出坐标系 → 约 420px 展示宽。
@@ -184,6 +186,10 @@ interface CanvasPanelProps {
   deco?: string
   /** 语法诊断横幅的文案（i18n 由宿主传入） */
   diagnosticsLabels?: DiagnosticsLabels
+  /** 敏感词合规横幅的数据与文案 */
+  complianceFindings?: ComplianceFinding[]
+  complianceLabels?: ComplianceLabels
+  onComplianceIgnore?: (term: string) => void
 }
 
 function parseLine(raw: string | null): [number, number] | null {
@@ -316,6 +322,9 @@ export function CanvasPanel({
   texture,
   deco,
   diagnosticsLabels,
+  complianceFindings,
+  complianceLabels,
+  onComplianceIgnore,
 }: CanvasPanelProps) {
   /**
    * 两本账合起来：解析层（哪些语法没建模）+ 渲染层（哪些块型没渲染分支）。
@@ -551,6 +560,22 @@ export function CanvasPanel({
     <div className="min-h-0">
       {diagnosticsLabels ? (
         <DiagnosticsBanner items={diagnostics} labels={diagnosticsLabels} />
+      ) : null}
+      {complianceFindings && complianceFindings.length > 0 ? (
+        <ComplianceBanner
+          findings={complianceFindings}
+          labels={complianceLabels ?? {
+            summary: '发现 {{count}} 处敏感内容',
+            expand: '展开',
+            collapse: '收起',
+            ignore: '忽略 {{term}}',
+            category: {},
+            line: '行 {{line}}',
+          }}
+          onIgnore={onComplianceIgnore ?? (() => {})}
+          onJumpToLine={onBlockClick ? ((line: number) =>
+            onBlockClick({ index: -1, line: [line, line] })) : undefined}
+        />
       ) : null}
       <div ref={mountRef} data-testid="mdstudio-canvas-mount" className="min-h-0" />
     </div>

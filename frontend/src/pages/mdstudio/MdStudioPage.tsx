@@ -18,10 +18,12 @@ import {
   parseToIR,
   parseToIRDetailed,
   renderLongImage,
+  scanCompliance,
   xhsCaption,
   xhsCards,
   XHS_RATIO_KEYS,
   getTheme,
+  type ComplianceLabels,
   type ThemeOverrides,
   type XhsRatio,
 } from '@hertz/mdcore'
@@ -72,6 +74,12 @@ interface DraftState {
   /** 卡片底纹与装饰件（切片 5，存在 cover JSON 槽） */
   texture: string
   deco: string
+  /**
+   * 合规白名单：被「忽略」的违禁词（词表原形 term）。随稿存
+   * `cover.compliance_whitelist`——忽略是为了这篇稿继续写下去，刷新/换稿再回来
+   * 必须还在；只存内存的话每次打开都得重新唠一遍。
+   */
+  complianceWhitelist: string[]
   /**
    * **按栏目各存一份**的样式配置与主题（切片 10，存在 cover JSON 槽）。
    *
@@ -129,6 +137,10 @@ function breaksOf(cover: Record<string, unknown> | undefined): number[] {
   const raw = cover?.breaks
   return Array.isArray(raw) ? raw.filter((n): n is number => Number.isInteger(n) && n > 0) : []
 }
+function whitelistOf(cover: Record<string, unknown> | undefined): string[] {
+  const raw = cover?.compliance_whitelist
+  return Array.isArray(raw) ? raw.filter((s): s is string => typeof s === 'string' && s.length > 0) : []
+}
 
 function draftFromDoc(doc: LayoutDoc): DraftState {
   return {
@@ -148,6 +160,7 @@ function draftFromDoc(doc: LayoutDoc): DraftState {
     header: strOf(doc.cover, 'header'),
     texture: strOf(doc.cover, 'texture'),
     deco: strOf(doc.cover, 'deco'),
+    complianceWhitelist: whitelistOf(doc.cover),
     platformOverrides: mapOf(doc.cover?.platform_overrides),
     platformThemes: strMapOf(doc.cover?.platform_themes),
   }
@@ -240,7 +253,7 @@ export function MdStudioPage() {
   const [history, setHistory] = useState<DraftHistory<DraftState>>(() => createHistory<DraftState>({
     title: '', source_md: '', platform: 'wechat', theme_id: '', overrides: {},
     footer: '', qr: null, breaks: [], ratio: '3:4', coverSub: '', coverBadge: '',
-    pageNum: true, header: '', texture: '', deco: '',
+    pageNum: true, header: '', texture: '', deco: '', complianceWhitelist: [],
     platformOverrides: {}, platformThemes: {},
   }))
   const [zoom, setZoom] = useState(1)
@@ -265,12 +278,14 @@ export function MdStudioPage() {
   const [batchIds, setBatchIds] = useState<string[]>([])
   const [batchOpen, setBatchOpen] = useState(false)
 
+
+
   const mountRef = useRef<HTMLDivElement | null>(null)
   // 自动保存计时器与「载入中文档」的去抖守卫
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadedDocRef = useRef<LayoutDoc | null>(null)
 
-  // 单稿到达 → 载入 draft（只在换稿时重置，保存回流的同稿不覆盖正在编辑的内容）
+  /** 违禁词合规账：source_md 在解析层跑一次（纯函数），横幅只承担展示与忽略 */
   useEffect(() => {
     const doc = docQuery.data
     if (!doc || doc.id !== selectedId) return
@@ -401,6 +416,8 @@ export function MdStudioPage() {
             header: snapshot.header,
             texture: snapshot.texture,
             deco: snapshot.deco,
+            // 忽略过的违禁词不是编辑器状态，是这篇稿的处置记录——必须随稿走
+            compliance_whitelist: snapshot.complianceWhitelist,
             // 按栏目缓存跟着落库：只存内存的话一刷新就没了，那不叫缓存
             platform_overrides: snapshot.platformOverrides,
             platform_themes: snapshot.platformThemes,
@@ -428,6 +445,32 @@ export function MdStudioPage() {
 
   // 画布输入 150ms debounce（改 overrides/源文时避免每次按键都重排）
   const renderDraft = useDebounced(draft, RENDER_DEBOUNCE_MS)
+
+  /** 违禁词合规账：source_md 在解析层跑一次（纯函数），横幅只承担展示与忽略 */
+  const complianceFindings = useMemo(() => {
+    if (!renderDraft?.source_md) return []
+    // 按 term（词表原形）过滤：横幅 onIgnore 传的也是 term；matched 是逃逸原文，
+    // 拿它比对会让「改·运」「gy」这类命中忽略不掉。白名单随稿存 cover。
+    const ignored = renderDraft.complianceWhitelist
+    return scanCompliance(renderDraft.source_md).filter((f) => !ignored.includes(f.term))
+  }, [renderDraft?.source_md, renderDraft?.complianceWhitelist])
+
+  const complianceLabels: ComplianceLabels = {
+    summary: t('mdstudio.canvas.compliance.summary'),
+    expand: t('mdstudio.canvas.compliance.expand'),
+    collapse: t('mdstudio.canvas.compliance.collapse'),
+    ignore: t('mdstudio.canvas.compliance.ignore'),
+    category: t('mdstudio.canvas.compliance.category') as unknown as Record<string, string>,
+    line: t('mdstudio.canvas.compliance.line'),
+  }
+
+  /** 忽略某词：入白名单并随稿落库（点一次，这篇稿里所有出现处一起安静） */
+  const handleComplianceIgnore = useCallback((term: string) => {
+    const current = draftRef.current
+    if (!current || current.complianceWhitelist.includes(term)) return
+    patchDraft({ complianceWhitelist: [...current.complianceWhitelist, term] })
+  }, [patchDraft])
+
 
   /**
    * 大纲与联动都从**已解析的 IR** 取，不重扫 Markdown：行号在 IR 里已经是解析产物，
@@ -834,6 +877,10 @@ export function MdStudioPage() {
               loading={listQuery.isLoading}
               selectedId={selectedId}
               onSelect={(id) => {
+                // 点已选中的那行 = 没换稿。若照常清 draft，effect 的依赖
+                // （docQuery.data/selectedId）都没变、不会重载，画布就空着不动——
+                // 用户以为稿丢了。这里直接短路。
+                if (id === selectedId) return
                 loadedDocRef.current = null
                 setDraft(null)
                 setSelectedId(id)
@@ -996,6 +1043,9 @@ export function MdStudioPage() {
                     line: t('mdstudio.canvas.diagnostics.line'),
                     times: t('mdstudio.canvas.diagnostics.times'),
                   }}
+                  complianceFindings={complianceFindings}
+                  complianceLabels={complianceLabels}
+                  onComplianceIgnore={handleComplianceIgnore}
                   mountRef={mountRef}
                   onXhsInfo={handleXhsInfo}
                   onBlockClick={handleBlockClick}
