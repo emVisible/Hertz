@@ -6,6 +6,7 @@
  * 参考声明：快照内联白名单、pre 空格/Tab → &nbsp;、剥 class/id/<style> 等
  * 清洗器对抗思路参考了 mdsea/WeMD（MIT License）的规则清单，代码为本仓库重写。
  */
+import { FORMULA_TEX_ATTR } from '../theme/formula';
 
 /** 渲染态快照内联白名单（getComputedStyle 逐节点写回 style） */
 export const STYLE_WHITELIST = [
@@ -145,8 +146,12 @@ export function stripUnsafe(root: HTMLElement): void {
   for (const el of all) {
     el.removeAttribute('class');
     el.removeAttribute('id');
-    // mdcore 自己的定位标记（画布交互用）不进产物：它们是编辑器状态，不是排版结果
+    // mdcore 自己的定位标记（画布交互用）不进产物：它们是编辑器状态，不是排版结果。
+    // 唯一的例外是公式源码属性——它不是编辑器状态，是**公式在平台产物里的数据契约**：
+    // 微信粘贴通道会丢 class 与 @font-face（公式字体落不了地），后续的落地处理
+    // （SVG/转图）与验收断言都要靠这个属性在产物里认出公式、取回原始 TeX。
     for (const attr of Array.from(el.attributes)) {
+      if (attr.name === FORMULA_TEX_ATTR) continue;
       if (attr.name.startsWith('data-mdcore-')) el.removeAttribute(attr.name);
     }
     const htmlEl = el as HTMLElement;

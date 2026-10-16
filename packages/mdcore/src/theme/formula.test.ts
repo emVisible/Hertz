@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
-import { applyTheme, parseToIR, zhihuPayload } from '../index';
+import { applyTheme, parseToIR, wechatPayload, zhihuPayload } from '../index';
 import { FORMULA_TEX_ATTR, formulaTexOf, katexCssMissing, renderFormula, resetKatexCssProbe } from './formula';
 
 const require = createRequire(import.meta.url);
@@ -150,6 +150,34 @@ describe('平台适配器的源码契约', () => {
     try {
       const { text } = await zhihuPayload(el);
       expect(text).toContain('$x^2$');
+    } finally {
+      el.remove();
+    }
+  });
+
+  /**
+   * 微信通道的**保真断言**（P1-2 结构层）：公众号清洗器会剥 @font-face，
+   * KaTeX 的 CSS 字体落不了地——落地方案（SVG / 转图）与真机验收都要先在
+   * 产物里认出公式、取回原始 TeX。class 是渲染实现，属性才是契约：
+   * 其余 data-mdcore-* 编辑器标记照旧剥，唯独公式源码属性必须保真进入产物。
+   * 成对变异：去掉 stripUnsafe 里的 FORMULA_TEX_ATTR 例外 → 本条红。
+   */
+  it('微信：公式携带 data-mdcore-formula-tex 契约进产物（TeX 保真，其余标记仍剥）', () => {
+    const el = applyTheme(parseToIR('正文 $x^2$ 与\n\n$$\n\\int_0^1 t\\,dt\n$$'), 'modi');
+    document.body.appendChild(el);
+    try {
+      const { html } = wechatPayload(el);
+      const holder = document.createElement('div');
+      holder.innerHTML = html;
+      const texes = Array.from(holder.querySelectorAll(`[${FORMULA_TEX_ATTR}]`)).map(
+        (n) => n.getAttribute(FORMULA_TEX_ATTR) ?? '',
+      );
+      expect(texes).toHaveLength(2);
+      expect(texes[0]).toBe('x^2');
+      expect(texes[1]).toContain('\\int_0^1');
+      // 编辑器状态标记（块定位/行号）仍然不进产物——例外只给公式契约
+      expect(html).not.toContain('data-mdcore-block');
+      expect(html).not.toContain('data-mdcore-line');
     } finally {
       el.remove();
     }

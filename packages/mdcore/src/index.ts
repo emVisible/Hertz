@@ -96,7 +96,11 @@ export { copyToClipboard, toWechatClipboardPayload, WECHAT_FOOTNOTE } from './pl
 export type { WechatPayload } from './platform/wechat';
 export { toZhihuClipboardPayload } from './platform/zhihu';
 export type { TableCapture, ZhihuOptions, ZhihuPayload } from './platform/zhihu';
-export { panguSpacing, panguSpacingDOM } from './platform/pangu';
+export { panguSpacing, panguSpacingDOM } from './platform/pangu'
+// 切片 E：内容合规（违禁词扫描）
+export { BUILT_IN, GENERAL_LISTS, METAPHYSICS_LIST, type ComplianceWord } from './compliance/wordlists'
+export { scanCompliance, SEPARATOR } from './compliance/scan'
+export type { ComplianceFinding, ComplianceCategory, ComplianceResult, ComplianceLabels } from './compliance/types';
 // 切片 B：分页引擎（测量可注入）
 export { domMeasurer, paginate } from './paginate/paginate';
 export type { Measurer, PagePadding, PageSpec, PaginateOptions } from './paginate/paginate';
