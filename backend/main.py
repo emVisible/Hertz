@@ -17,6 +17,7 @@ from backend.infrastructure.logging import log_manager
 from backend.models.crew import Crew
 from backend.models.plan import Plan
 from backend.models.session import session_factory
+from backend.orchestration.errors import InvalidPlanError
 from backend.orchestration.phases import LEGACY_PHASE_ALIASES, PHASE_INDEX
 from backend.orchestration.plans import PlanService
 from backend.routers import api_router
@@ -28,19 +29,38 @@ async def _heal_legacy_plans() -> None:
     老计划仍存着 preflight/scout/image_gen/quality_gate 等已删除 key，
     若不愈合，UI 会显示已废弃的旧工序、运行日志会刷"工序已移除"跳过行。
     别名折叠（growth_director→distribution 等）+ 剔除空别名，只留现行工序。
+
+    **坏数据不许连坐**：一条 `phase_order` 为空的旧计划曾让整批愈合抛异常
+    并中止——外层 except 拦得住崩溃，却让**其余计划永远修不好**，而且每次启动
+    都刷一条完整 traceback（实测一次会话 1320 条，日志直接涨到 4.4MB）。
+    所以校验放在**循环内**：单条非法 → 计数跳过，一条 traceback 都不打。
+    不自动改写这类数据（空 phase_order 是要人工判断的语义问题，静默补全会
+    掩盖真正的数据损坏），只把它点名报出来。
     """
     try:
         async with session_factory() as session:
             rows = (await session.execute(select(Plan))).scalars().all()
             healed = 0
+            skipped: list[tuple[str, str]] = []
             for plan in rows:
-                cleaned = PlanService.validate_phase_order(plan.phase_order)
+                try:
+                    cleaned = PlanService.validate_phase_order(plan.phase_order)
+                except InvalidPlanError as exc:
+                    skipped.append((str(plan.id), exc.args[0] if exc.args else "invalid"))
+                    continue
                 if cleaned is not None and cleaned != plan.phase_order:
                     plan.phase_order = cleaned
                     healed += 1
             if healed:
                 await session.commit()
                 log_manager.get().info("healed %d legacy plan(s) phase_order", healed)
+            if skipped:
+                # 只报一次汇总，不逐条刷屏：这些行需要人来决定怎么处理
+                log_manager.get().warning(
+                    "skipped %d plan(s) with invalid phase_order（需人工处理，未自动改写）: %s",
+                    len(skipped),
+                    ", ".join(f"{pid}:{reason}" for pid, reason in skipped[:5]),
+                )
     except Exception:  # noqa: BLE001 — 启动不因愈合失败而中断
         log_manager.get().exception("failed to heal legacy plans")
 
