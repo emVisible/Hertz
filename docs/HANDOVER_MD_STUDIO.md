@@ -140,7 +140,19 @@ ls -t data/logs/hertz*.log | head
       conftest 改了 `HERTZ_DATA_DIR`，而 `log_dir: Path("logs")` 与它无关，于是测试
       一直往仓库日志里写。**加隔离项时先问"这条路径真的跟着 data_dir 走吗"**。
 
-17. **依赖审计的一个坑（2026-10-16 实测）**：`pnpm audit` 报出的 55 条 electron
+17. **富文本编辑器不是浏览器（2026-10-17，用户实测带进来）**：粘进公众号后
+    `---` 右居中（左侧一大片空白）、标题被硬性拆成多行。**两个症状同一个病根**：
+    我们的渲染态大量依赖浏览器的行内/块内语义（`margin:auto` 居中、
+    `display:inline-block` 并排），而编辑器按**块级**排版，且不吃 auto 外边距。
+    画布上完全正常、结构断言全绿——**只有产物层看得见**。
+    修法两条：分隔线改 `text-align:center` + 内层 `inline-block`（居中交给编辑器
+    真正支持的那一样）；标题里的 inline-block 拍成 `inline`（药丸那种**自身**是
+    inline-block 的例外，拍平会把底色摊满整行）。
+    **两条规则已抽到 `platform/editorCompat.ts` 供微信/知乎同规格复用**——但
+    **判据不共享**：两个出口各自钉（wechat 7 条 + zhihu 2 条），规则共享不等于
+    判据共享，改坏一边另一边仍可能全绿。
+
+18. **依赖审计的一个坑（2026-10-16 实测）**：`pnpm audit` 报出的 55 条 electron
     advisory 里，**18 条是误报**——它把 `electron/` 这个**工作区包**（name `hertz-electron`，
     version `0.36.0`）当成了 npm 包 `electron`（实际运行库 `37.10.3`）来比对版本，
     于是 `vulnerable <1.6.14` 这种远古条目也"命中"。

@@ -190,3 +190,25 @@ describe('copyForZhihu：ClipboardItem 双写', () => {
     expect(await written[0]['text/plain'].text()).toContain('正文');
   });
 });
+
+/**
+ * 与微信同规格的编辑器对抗（2026-10-17，用户实测反馈带进来）。
+ *
+ * 两条规则现在住在 `platform/editorCompat.ts`（一个事实一个作者），
+ * 但**两个出口都要各自钉住**——规则共享不等于判据共享：微信那边被改坏，
+ * 这边可能仍然绿（就像 MD Studio 里"组件测试全绿 ≠ 宿主接线对"）。
+ */
+describe('zhihuPayload：分隔线与标题的编辑器对抗', () => {
+  it('分隔线改成 text-align 居中，不再靠 auto 外边距', async () => {
+    const { html } = await zhihuPayload(renderAndAttach('正文\n\n---\n\n结尾'));
+    expect(html).not.toContain('<hr');
+    expect(html).toMatch(/<section[^>]*text-align:\s*center/);
+  });
+
+  it('标题里不再有 inline-block（编辑器按块排 → 标题被拆成多行）', async () => {
+    const { html } = await zhihuPayload(renderAndAttach('# 一级标题\n\n## 二级标题'));
+    const headings = html.match(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/g) ?? [];
+    expect(headings).toHaveLength(2);
+    for (const h of headings) expect(h).not.toContain('inline-block');
+  });
+});

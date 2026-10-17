@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { applyTheme, parseToIR, wechatPayload } from '../index';
+import { applyTheme, getTheme, parseToIR, wechatPayload } from '../index';
 
 const MD = [
   '# 你好World',
@@ -19,9 +19,9 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-function renderAndAttach(md: string): HTMLElement {
+function renderAndAttach(md: string, overrides?: Record<string, string>): HTMLElement {
   const ir = parseToIR(md);
-  const el = applyTheme(ir, 'modi');
+  const el = applyTheme(ir, 'modi', overrides ?? {});
   // 模拟真实场景：画布 DOM 是挂载态，getComputedStyle 才有值
   document.body.appendChild(el);
   return el;
@@ -115,5 +115,81 @@ describe('wechatPayload：渲染态快照内联产物', () => {
     const { html } = wechatPayload(parseToIR('# 直投Test\n'), 'modi');
     expect(html).toContain('直投 Test');
     expect(html).not.toMatch(/\sclass\s*=/);
+  });
+});
+
+/**
+ * 微信编辑器两条清洗器对抗（2026-10-17，用户实测反馈带进来）。
+ *
+ * 这两条都是**产物层**缺陷：结构断言全绿，而粘进公众号编辑器里
+ * 分隔线右居中、标题被拆成多行。判据因此打在**产物 HTML** 上——
+ * "不得再依赖 auto 外边距 / 像素宽度来居中"、"标题里不得再有 inline-block"。
+ */
+describe('wechatPayload：分隔线与标题的编辑器对抗', () => {
+  const RULE_MD = ['# 标题', '', '正文。', '', '---', '', '结尾。'].join('\n');
+
+  it('分隔线不再靠 auto 外边距居中（auto 在微信里失效 → 右居中 + 左侧大空白）', () => {
+    const { html } = wechatPayload(renderAndAttach(RULE_MD));
+    expect(html).not.toContain('<hr');
+    // 居中只认 text-align
+    const rule = /<section[^>]*text-align:\s*center[^>]*>/.exec(html);
+    expect(rule, `分隔线容器没有 text-align:center：${html}`).toBeTruthy();
+    // auto 外边距在产物里必须绝迹（它是"右居中"的直接成因）
+    expect(html).not.toMatch(/margin:[^;"]*auto/);
+  });
+
+  it('分隔线本体是内联元素，线色取自原样式', () => {
+    const { html } = wechatPayload(renderAndAttach(RULE_MD));
+    const bar = /<span style="([^"]*)"><\/span>/.exec(html)?.[1] ?? '';
+    expect(bar).toContain('display:inline-block');
+    expect(bar).toContain('height:2px'); // 默认 hrStyle=short：实心短横
+    // 线色来自主题（不是浏览器默认灰）
+    expect(bar.toLowerCase()).toContain('background-color:rgb(');
+    // 线色来自主题本身（不是浏览器默认灰）：getTheme 的主色应出现在产物里
+    const primary = getTheme('modi').tokens.color;
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(primary.slice(i, i + 2), 16));
+    expect(bar.toLowerCase()).toContain(`rgb(${r}, ${g}, ${b})`);
+  });
+
+  it('虚线分隔线保住虚线形态（不是一律实心）', () => {
+    const html = wechatPayload(
+      renderAndAttach(['---', ''].join('\n'), { hrStyle: 'dashed' }),
+    ).html;
+    expect(html).toMatch(/border-top:[^;"]*dashed/);
+  });
+
+  it('药丸分隔线保住圆角与半高', () => {
+    const html = wechatPayload(
+      renderAndAttach(['---', ''].join('\n'), { hrStyle: 'pill' }),
+    ).html;
+    expect(html).toContain('border-radius:999px');
+    expect(html).toMatch(/border-top:4px solid/);
+  });
+
+  it('三圆点分隔线不用 flex 居中（微信对 flex 支持不稳）', () => {
+    const html = wechatPayload(
+      renderAndAttach(['---', ''].join('\n'), { hrStyle: 'dots' }),
+    ).html;
+    // 判据打"生效值"：三个点改 inline-block（不靠 flex 排版）、容器 text-align 居中。
+    // 残留的 justify-content 串无害（display 已非 flex），所以不断言它消失。
+    expect(html).toMatch(/text-align:\s*center/);
+    expect(html).not.toMatch(/display:\s*flex/);
+    expect(html.match(/display:\s*inline-block/g)?.length ?? 0).toBeGreaterThanOrEqual(3); // 三个点
+  });
+
+  it('标题里不再有 inline-block（微信把它当块 → 标题被拆成多行）', () => {
+    const { html } = wechatPayload(renderAndAttach('# 一级标题\n\n## 二级标题'));
+    const headings = html.match(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/g) ?? [];
+    expect(headings.length).toBe(2);
+    for (const h of headings) {
+      expect(h, `标题里仍有 inline-block：${h}`).not.toContain('inline-block');
+    }
+  });
+
+  it('药丸标题（自身就是 inline-block）保持药丸，不被拍平', () => {
+    const { html } = wechatPayload(renderAndAttach('# 药丸标题', { headingStyle: 'pill' }));
+    const h1 = /<h1[^>]*>/.exec(html)?.[0] ?? '';
+    expect(h1, '药丸标题的 h1 开标签没找到').toBeTruthy();
+    expect(h1).toContain('display: inline-block');
   });
 });

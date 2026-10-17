@@ -13,6 +13,7 @@
  * 共享层：快照内联/代码块硬化/剥除/序列化/剪贴板双写已抽至 platform/inline.ts
  * （知乎 §3.2 复用同规格基础件）；本文件保留微信专有步骤（外链转脚注、扁平化映射）。
  */
+import { flattenHeadingInlineBlocks, hruleToCenteredSection } from './editorCompat';
 import { panguSpacingDOM } from './pangu';
 import {
   hardenCodeBlocks,
@@ -150,6 +151,8 @@ export function toWechatClipboardPayload(input: Document | HTMLElement): WechatP
     hardenCodeBlocks(clone);
     sanitizeImageSources(clone);
     linksToFootnotes(clone);
+    hruleToCenteredSection(clone);
+    flattenHeadingInlineBlocks(clone);
     flattenStructure(clone);
     stripUnsafe(clone);
     panguSpacingDOM(clone);

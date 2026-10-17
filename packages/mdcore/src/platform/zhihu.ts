@@ -14,6 +14,7 @@
  *    <a href>（知乎支持链接卡片，不转脚注）。
  */
 import { formulaTexOf } from '../theme/formula';
+import { flattenHeadingInlineBlocks, hruleToCenteredSection } from './editorCompat';
 import { panguSpacingDOM } from './pangu';
 import {
   hardenCodeBlocks,
@@ -139,6 +140,10 @@ export async function toZhihuClipboardPayload(
     sanitizeImageSources(clone);
     await degradeTables(clone, opts.captureTable);
     formulasToTexSource(clone);
+    // 与微信同规格的两条编辑器对抗（同一份 DOM 在富文本编辑器里会被按块排版）：
+    // 分隔线不靠 auto 外边距居中、标题不靠 inline-block 并排。
+    hruleToCenteredSection(clone);
+    flattenHeadingInlineBlocks(clone);
     flattenLists(clone);
     hardenCodeBlocks(clone);
     flattenStructureZhihu(clone);
