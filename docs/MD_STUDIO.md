@@ -3,7 +3,7 @@
 超级 Markdown 模块：把 agent 已生成的 Markdown，按目标平台重排、导出成能直接发的形状。
 
 - 状态：首版已落地（2026-10-13），顶级功能，路由 `/mdstudio`，侧边栏「生产」组
-- 批准过的设计记录：`docs/superpowers/specs/2026-10-13-mdcore-design.md`（含 §9-§10 验收读数）
+- 批准过的设计记录：`docs/specs/2026-10-13-mdcore-design.md`（含 §9-§10 验收读数）
 - 本文是**给读者的解释文档**：为什么这么设计、规则住在哪个文件、哪些是刻意不做的
 
 ---
@@ -469,7 +469,7 @@ md 字符串
 
 原来 13 张基线图里，代码只在微信/知乎长文样例里出现一块。整页图里代码块只占千分之几
 的像素，而阈值是**全图差异比例 0.5%**——于是"把 hljs 换成 Shiki"这件事在基线层
-**完全看不见**：实测去掉二次 pass，13 张全绿（实测数字，见 `docs/DECISIONS.md`）。
+**完全看不见**：实测去掉二次 pass，13 张全绿（实测数字，见 `docs/archive/DECISIONS.md`）。
 
 补了一组**只装代码**的样例（4 段 × 6 套微信/知乎主题 = 5 张，基线 13 → 18 张），
 同一变异让 5 张转红（1.19%~2.87%）。**可复述的判据**：给"局部改动"配产物层判据时，
@@ -521,4 +521,4 @@ grep -n "CODE_THEMES" packages/mdcore/src/theme/types.ts
 ls packages/mdcore/src/theme/shiki*.ts packages/mdcore/src/theme/mermaid*.ts packages/mdcore/src/theme/css*.ts packages/mdcore/src/export/pdf*.ts
 ```
 
-真浏览器验收方法（产物层取证，探针页验完即删）：在 `frontend/public/` 放一个临时 html 引 `src/tmp-*/entry.ts`，直接调 mdcore 的导出函数断言**字节**（PNG 魔数、`createImageBitmap` 尺寸、ZIP 头、耗时），用 browser-use 打开 `http://localhost:3000/<probe>.html` 读报告并截图。**不要**把导出验收只留在 jsdom 层——`docs/HANDOVER_MD_STUDIO.md` §4 记的 7 个坑里有 3 个只有真浏览器抓得到。
+真浏览器验收方法（产物层取证，探针页验完即删）：在 `frontend/public/` 放一个临时 html 引 `src/tmp-*/entry.ts`，直接调 mdcore 的导出函数断言**字节**（PNG 魔数、`createImageBitmap` 尺寸、ZIP 头、耗时），用 browser-use 打开 `http://localhost:3000/<probe>.html` 读报告并截图。**不要**把导出验收只留在 jsdom 层——`docs/archive/HANDOVER_MD_STUDIO.md` §4 记的 7 个坑里有 3 个只有真浏览器抓得到。

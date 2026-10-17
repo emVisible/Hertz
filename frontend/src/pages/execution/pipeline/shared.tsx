@@ -92,7 +92,7 @@ export type PipelineTabId = 'run' | 'workshop' | 'preReview' | 'inReview' | 'exc
 // 于是 board 整体搬去顶级页（`pages/dashboard/`，v0.34 重设计后是 `TodayPanel` 那一栏），
 // 流水线回到 5 个子 tab；
 // 发布动作跟着走（「待发布」列在顶级看板上，复用的还是同一批 `PublishCard`）。
-// 取舍与否决方案记在 `docs/SPEC_V034_BOARD.md` §4.4b/§4.4c 与 D-216。
+// 取舍与否决方案记在 `docs/archive/SPEC_V034_BOARD.md` §4.4b/§4.4c 与 D-216。
 // 异常区仍留在 exceptions，看板不承载（§二 非目标不变）。
 export const PIPELINE_TABS = [
   { id: 'run', labelKey: 'console.stageCollect' },

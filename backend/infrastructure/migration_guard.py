@@ -1,4 +1,4 @@
-"""alembic autogenerate 数据保护闸（v0.32 S1，见 docs/PLAN_V040.md）。
+"""alembic autogenerate 数据保护闸（v0.32 S1，见 docs/archive/PLAN_V040.md）。
 
 存在理由：`uv run alembic check` 当前会报 **2 个 remove_table**
 （`messages` / `conversations`——wave5 遗留表，模型侧早已删除但库里带着用户历史数据）。

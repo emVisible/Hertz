@@ -31,11 +31,11 @@ dependencies = [
     # 与翻译」在开发态和打包态同时不可用（v0.31 spike 实测暴露）。
     "faster-whisper>=1.2.1",
     "ctranslate2>=4.8.1",
-    # Monoline 融合域（docs/monoline-fusion.md）：markdown 块解析 + compose 模板渲染——
+    # Monoline 融合域（docs/archive/monoline-fusion.md）：markdown 块解析 + compose 模板渲染——
     # 被 backend/monoline 直接 import，主依赖（同上注释的 v0.31 教训）。
     "markdown-it-py>=4.2.0",
     "jinja2>=3.1",
-    # Monoline 融合域 TTS/字体（docs/monoline-fusion.md D-024，Phase 0 已在 py3.12 验证）：
+    # Monoline 融合域 TTS/字体（docs/archive/monoline-fusion.md D-024，Phase 0 已在 py3.12 验证）：
     # kokoro-onnx 为 py3-none-any 纯包，3.11 pin 已是过期约束。
     "kokoro-onnx>=0.6",
     "misaki[zh]>=0.9",
@@ -73,7 +73,7 @@ select = ["E", "F", "I", "N", "UP", "B", "ASYNC"]
 # 多行字符串内长行无法行内 noqa（AI 提示词 / XML fixture 内容），保留原样
 "backend/ai/prompts/title.py" = ["E501"]
 "tests/test_download_resilience.py" = ["E501"]
-# Monoline 融合域逐行移植文件（docs/monoline-fusion.md）：与上游同行号可 diff，
+# Monoline 融合域逐行移植文件（docs/archive/monoline-fusion.md）：与上游同行号可 diff，
 # E501 豁免，逻辑类规则（F/I/N/UP/B）仍全量执行
 "backend/monoline/audio_mix.py" = ["E501"]
 "backend/monoline/compose.py" = ["E501"]

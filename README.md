@@ -93,7 +93,7 @@ git clone https://github.com/emVisible/Hertz.git && cd Hertz
 ./scripts/dev.sh          # migrations → backend :8787 → frontend :3000 → Electron
 ```
 
-Web-only mode: `./webui.sh`
+Web-only mode: `./scripts/webui.sh`
 
 ### Quality gate
 
@@ -125,11 +125,17 @@ tests/              pytest suite (shared test DB, rebuilt per session)
 
 ## Documentation
 
+Start with **[docs/README.md](./docs/README.md)** — it maps every document to the fact it is authoritative for.
+
 | Doc | Contents |
 |---|---|
+| [AGENTS.md](./AGENTS.md) | gate commands, invariants, known traps |
+| [docs/README.md](./docs/README.md) | **the authority map — read this first** |
+| [PROJECT.md](./PROJECT.md) | current version, phase, risks, open items |
 | [User Guide](./docs/USER_GUIDE.md) | install, environment variables, packaging |
 | [Roadmap](./docs/ROADMAP.md) | shipped milestones & known gaps |
-| [Decision Records](./docs/DECISIONS.md) | engineering decisions D-001 → |
+| [Decision Records](./docs/decisions/) | one decision per file, with its 判据 |
+| [Archived Decisions](./docs/archive/DECISIONS.md) | D-001 → D-232 (historical) |
 | [AI Base](./docs/AI_BASE.md) | provider registry & role routing design |
 | [Changelog](./CHANGELOG.md) | release notes |
 

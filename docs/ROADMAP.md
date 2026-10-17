@@ -51,11 +51,11 @@
 > - **ai-story 真跑一轮，暴露两条只有「真跑」才露出来的缺陷（D-224，2026-10-05）**：用户授权接入试跑 ⇒ `pipeline_sources` 加了 `- ai-story/情感夜话`（`data/runtime.yaml`，改前备份）。第一次 collect 65 秒后 `sources_err=1`、零条目，日志两条独立缺陷：① 模型按要求**分段**写故事，段落之间是裸换行，而 `_parse_story` 用默认严格模式 `json.loads` ⇒ 「只要分段就永远采不进来」（修：`strict=False`，非 JSON/过短照旧拒）；② 新建 `SourceState` 实例的 `fail_count` 在 flush 前是 `None`，`+= 1` 直接 TypeError 且被外层吞 ⇒ **每个新数据源的第一次失败不留任何健康度记录**（冷却/连续失败/界面徽章全无；reddit 那 40 个源看不出是因为行早就存在。修：`SourceState.for_source()` 单作者显式归零，三处建站点全改用）。门禁 **ruff 0 / pytest 607（602+5）/ tsc 0 / vitest 117 / build OK**；新测试自己在共享库留下非 reddit 行、把既有全局断言碰红 ⇒ 自带清理夹具，并用「删夹具⇒那条红」证明夹具真在跑。实测产出：本地 ollama `batiai/gemma4-e4b:q4` 56 秒一条、**零 API 费用**（`ai_roles.fast` 指的就是它，我先前「会花 DeepSeek 额度」那句是错的），真实返回文本经修好的解析得 **617 字 / 7 段**、标题「深夜十点的秘密电波」。**第二轮起不来是环境**：`:11434` 回 `000`（20 分钟前还 200），同时他的 `:8787`/`:3000` 一起退了 ⇒ 未验「条目真进库 + 评分 `basis=body`」，等 ollama 回来连跑几轮。下一个空闲决策编号 **D-225**。
 > - **设置页新增「规范与计划」一节（D-215，2026-10-04 之前那轮的最后一格；之后还有 D-217 的「每日目标」一节）**：用户要的是「自己能编辑的一本册子」（大概规范 + 固定计划），不是又一个生效配置。两个长文本字段 `creator_norms` / `standing_plan` 落 `runtime.yaml`（无新表无迁移），**不注入任何 prompt**、也不并进 `channel_persona`（那个会被 `ai/router.py` 拼进脚本与标题提示词，合成一格就等于「改备注 → 改口播」）。全量 pytest 587 passed，3 条新测试（含真 PATCH→GET 往返）+ 3 处变异。
 > - **`webui.sh` 起不来已修**：SIGTERM 杀不动卡死的 uvicorn（优雅退出要事件循环还转得动）→ 改 TERM→轮询→SIGKILL→复查；另 `lsof -ti tcp:$PORT` 会连**已连接的客户端**一起返回（旧写法能 kill 到浏览器），已加 `-sTCP:LISTEN`。真复现体验过（`SIG_IGN` 的监听者被强杀成功、客户端存活）。
-> - **spec §4.6 的第 8 条体检项已交付（D-214）**：原判据照抄会造出长期红的报警器（「今天捞入又被拒」是日常操作，谁都不清 focus）。改两步做：先给「清」一个作者（`board_store.clear_focus` 接进 `engine.reject` / `service_archive.archive` / 发布三处），再上 `check_focus_orphan`；视图层另留兜底 `FOCUS_EXCLUDED_STATUSES`（已拒/已发不进今日列、也不计进完成度的 M）。全量 pytest 因此 **578 → 584**。决策与两条教训写在 `docs/DECISIONS.md` 的 D-213 / D-214。
+> - **spec §4.6 的第 8 条体检项已交付（D-214）**：原判据照抄会造出长期红的报警器（「今天捞入又被拒」是日常操作，谁都不清 focus）。改两步做：先给「清」一个作者（`board_store.clear_focus` 接进 `engine.reject` / `service_archive.archive` / 发布三处），再上 `check_focus_orphan`；视图层另留兜底 `FOCUS_EXCLUDED_STATUSES`（已拒/已发不进今日列、也不计进完成度的 M）。全量 pytest 因此 **578 → 584**。决策与两条教训写在 `docs/decisions/` 的 D-213 / D-214。
 > - **供给这条底座没变**：`items.selftext` 全库 **0/5281**；隔离池 2196 条里 **2013 条（91.7%）就是情感**、1982 条来自文字为主子版，未隔离的同子版只剩 6 条。你要做的情感**文字**垂直，弹药是 6 条而不是 1982 条——差的缺的只是正文，且 2196 条**全部带 `source_id`，可回填**（= 上面的 C-run）。
 > - **还开着的三件事**：① 授权 `release-check.sh` + push + 打 tag `v0.34.0`（口径见本段第一条）；② C-run（要出网）；③ Reddit OAuth 凭证要你在外部注册后填进设置页（能力矩阵已能看到「已配置/未配置」，`probe=true` 会真去换一次 token）。
 > - **一条既存缺陷本轮顺手修了**：`/queue` 深链指向 `?mode=queue`，而 `ExecutionPage` 只认 `pipeline|monoline` ⇒ 书签进来一直是 Studio。改指 `mode=pipeline`。
-> - **两条按证据作废的 spec 判据**（细节在 `docs/SPEC_V034_BOARD.md` §4.4c / §4.6）：`queueView()` 不能删（运营看板是活读者）；`focus_orphan` 不变量不做（正常「捞入后又拒绝」就会红 = 新造长期红报警器）。
+> - **两条按证据作废的 spec 判据**（细节在 `docs/archive/SPEC_V034_BOARD.md` §4.4c / §4.6）：`queueView()` 不能删（运营看板是活读者）；`focus_orphan` 不变量不做（正常「捞入后又拒绝」就会红 = 新造长期红报警器）。
 > - 另留一条自己的错：修 I3 时发现 `monkeypatch` 撤销会把旧值写成配置代理的实例属性，从此遮蔽 `runtime.yaml` 的 read-through（CHANGELOG 遗留第 4 条）——真正的修法在 `backend/config.py` 的代理形状，属独立切片。
 
 - **v0.31 尾巴**：B1/B3 引擎入包 ✅（D-200）；B4/B5「模型搬家 + 一键下载」✅ 已并入 v0.32 S4（D-203）。**仍未做**：141MB 全量冷启动首下的成功实测——本机代理 egress 两次中断，只拿到 30MB/141MB 进度与完整失败路径证据；判据已沉淀为 `scripts/sim-newmachine.sh --with-download`（断言模型落进应用目录且 `~/.cache/huggingface` 一个字节不长）
@@ -105,4 +105,4 @@
 
 - 每个迭代跑 `./scripts/verify.sh`（ruff → pytest → tsc → vitest → vite build）全绿才算完成
 - **打 tag 前必跑 `./scripts/release-check.sh`**（v0.32 S5）：源码门禁 → 重建固化包 → 产物级门禁（空库首启 / head 对比 / schema / API 契约 / 转写 / 进程守卫）。v0.30–v0.32 有四个缺陷全部绕过了 `verify.sh`——源码级绿不代表装得上
-- 新决策记入 `docs/DECISIONS.md`，波次回顾记入 `HERTZ_RECONSTRUCTION.md`
+- 新决策记入 `docs/decisions/`（一决策一文件，模板见该目录 README）；波次回顾见 `docs/archive/HERTZ_RECONSTRUCTION.md`（历史）

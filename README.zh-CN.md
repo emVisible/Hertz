@@ -93,7 +93,7 @@ git clone https://github.com/emVisible/Hertz.git && cd Hertz
 ./scripts/dev.sh          # 迁移 → 后端 :8787 → 前端 :3000 → Electron
 ```
 
-仅 Web 模式：`./webui.sh`
+仅 Web 模式：`./scripts/webui.sh`
 
 ### 质量门禁
 
@@ -125,11 +125,17 @@ tests/              pytest 套件（独立测试库，每会话重建）
 
 ## 文档
 
+先看 **[docs/README.md](./docs/README.md)** —— 它把每份文档对应到「它是哪个事实的权威」。
+
 | 文档 | 内容 |
 |---|---|
+| [AGENTS.md](./AGENTS.md) | 门禁命令、不变量、已踩过的坑 |
+| [docs/README.md](./docs/README.md) | **权威地图——先读这份** |
+| [PROJECT.md](./PROJECT.md) | 当前版本、阶段、风险、待办 |
 | [用户指南](./docs/USER_GUIDE.md) | 安装、环境变量、打包说明 |
 | [路线图](./docs/ROADMAP.md) | 已交付里程碑与已知缺口 |
-| [决策记录](./docs/DECISIONS.md) | 工程设计决策 D-001 → |
+| [决策记录](./docs/decisions/) | 一决策一文件，各带判据 |
+| [决策归档](./docs/archive/DECISIONS.md) | D-001 → D-232（历史） |
 | [AI 底座](./docs/AI_BASE.md) | Provider 注册表与角色路由设计 |
 | [变更记录](./CHANGELOG.md) | 版本说明 |
 

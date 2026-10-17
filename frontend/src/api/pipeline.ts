@@ -188,7 +188,7 @@ export type BoardColumn = 'focus' | 'in_work' | 'review' | 'ready_to_publish' | 
 
 /** 发布队列相位（v0.12）：与后端 publish_queue 常量一致。
  *  v0.34 B：界面上的入队写点撤了（「全部手动发」），这个**字段**留着——
- *  只读呈现与后端机制都不动，见 `docs/SPEC_V034_BOARD.md` §4.4。 */
+ *  只读呈现与后端机制都不动，见 `docs/archive/SPEC_V034_BOARD.md` §4.4。 */
 export type QueuePhase = '' | 'holding' | 'ready'
 
 /** 发布队列看板（v0.12；v0.13 增账号画像）。

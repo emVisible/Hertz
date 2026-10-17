@@ -20,7 +20,7 @@ packages/mdcore/dist-typography/
 # 曾经写成裸 `data/`，它匹配**任意层级**：于是 `backend/monoline/data/icons.json`
 # 这类**随包发布的数据**从未入库——新克隆的检出里 `monoline` 17 条测试 + 2 条
 # 静态卫生体检全红报 FileNotFoundError，而本机因为文件在，从来是绿的
-# （见 docs/HANDOVER_MD_STUDIO.md §4 第 13 条）。
+# （见 AGENTS.md §3）。
 /data/*
 # 例外：33 条反 AI 铁律是**产品自带的可维护清单**（默认工序引用它，
 # `tests/test_anti_ai.py` 断言它在且有 33 条），不是本机运行数据。

@@ -5,6 +5,10 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+> **读法**：本文件只写「变了什么」。「为什么」在 `docs/decisions/`，「现在在哪」在 `PROJECT.md`，
+> 「哪份文档是哪个事实的权威」在 `docs/README.md`。
+> **历史条目里的路径按当时原样保留**（2026-10-17 的目录治理只改活跃文档的引用），要找现在的位置请查 `docs/README.md`。
+
 ## [Unreleased]
 
 > 本节只写**变了什么**；「为什么」在 `docs/decisions/`，判据在代码与测试里。发版时收成版本号并打 tag。

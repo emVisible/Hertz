@@ -1,4 +1,4 @@
-"""Monoline 融合域：文稿转解说视频（移植自 monoline/，见 docs/monoline-fusion.md）。
+"""Monoline 融合域：文稿转解说视频（移植自 monoline/，见 docs/archive/monoline-fusion.md）。
 
 纯逻辑模块（segment/markdown/display_text/rotation/timings/sceneplan/viz/icons/
 themes/subtitles/narration）与上游同语义；Hertz 适配点：
