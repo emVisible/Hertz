@@ -15,6 +15,7 @@ v0.2.9（参考原项目 Autarkeia download.py）：候选链降级 + CDN 熔断
 import logging
 from pathlib import Path
 
+from backend.infrastructure.redact import redact_secrets
 from backend.infrastructure.storage import next_output_slug
 from backend.models.session import session_factory
 from backend.pipeline.base import Pipe, ProcessResult, StepContext, StepError
@@ -216,9 +217,11 @@ class DownloadStep(Pipe):
             if signed and _signed_url_safe(signed) and checker(signed):
                 if signed not in candidates:
                     candidates.insert(0, signed)
-                    ctx.log(f"[download] OAuth signed direct link ✓ {signed[:64]}")
+                    # 签名直链的 query 里带凭证，落进运行日志等于落盘一份凭据。
+                    # 截断只挡住长 URL，挡不住 `?token=...` 这种短而致命的。
+                    ctx.log(f"[download] OAuth signed direct link ✓ {redact_secrets(signed)[:64]}")
         except Exception:  # noqa: BLE001 — 签名解析失败不阻塞匿名链
-            logger.info("oauth direct resolve failed for %s: skip", url[:48])
+            logger.info("oauth direct resolve failed for %s: skip", redact_secrets(url)[:48])
 
         root = Path(ctx.settings.data_dir) / "pipeline"
         if not item.output_dir:

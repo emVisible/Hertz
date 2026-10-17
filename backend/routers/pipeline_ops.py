@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.factory.registry import ServiceRegistry
+from backend.infrastructure.redact import redact_exception
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +108,12 @@ async def reddit_auth_status(probe: bool = False) -> dict:
             token_ok = False
             # 前端可见的 hint 只报异常类型名（同 `_verify_reddit_channel`）：现在的异常
             # 文本不含 secret，但回显 str(exc) 的宽度由异常作者决定——哪天有人把响应体
-            # 塞进异常，这里就等于开了条外泄通道。完整原因进日志。
-            logger.info("reddit-auth probe failed: %s", exc)
+            # 塞进异常，这里就等于开了条外泄通道。
+            # 日志侧保留完整原因**但先脱敏**：日志是明文文件，会进备份、会被贴进工单、
+            # 会被 grep 出来，而 API 侧那道限制管不到它。
+            # （`tests/test_reddit_auth_card.py` 里的 `client_secret=do-not-echo-me`
+            #   就是这条通道的现成反例：同一条异常，API 不漏、日志曾原样落盘。）
+            logger.info("reddit-auth probe failed: %s", redact_exception(exc))
             hint = (
                 f"取 token 失败（{exc.__class__.__name__}）——"
                 "请核对设置页的 client_id/client_secret 是否属于同一个 script 应用"
