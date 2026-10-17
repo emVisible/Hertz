@@ -5,6 +5,19 @@ process.env.NODE_ENV = 'test'
 
 import '@testing-library/jest-dom/vitest'
 
+import { setCodeHighlighter } from '@hertz/mdcore'
+
+// mdcore 的异步重引擎在测试里替身化（Shiki 二次 pass）。
+//
+// 为什么不靠 `vi.mock('@hertz/mdcore')`：workspace 源码包的 mock 拦不住**页面内部**
+// 的调用（handover §4 有实测记录），替身必须走 mdcore 自己暴露的注入通道。
+// 默认返回 null = "不接管"，于是页面渲染树与改动前一致，
+// 渲染真身另有判据：mdcore 的 shikiEngine.test.ts（真引擎）与排版基线图（真浏览器）。
+setCodeHighlighter(async () => null)
+
+// Mermaid 的注入通道同理由 renderMermaidCache 的 render 选项承担；这里不预置，
+// 需要 mermaid 行为的用例各自在 beforeEach 里装替身（见 mermaid 接线判据）。
+
 // React 19 的 CJS 命名空间没有导出 act（act 仅为 ESM 命名导出），
 // react-dom-test-utils 的废弃兜底会二次引用 `React.act` 而崩；
 // 把 react 导出的 act 挂到模块命名空间上，让 react-dom-test-utils 走
