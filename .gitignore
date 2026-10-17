@@ -16,7 +16,17 @@ frontend/.vite/
 packages/mdcore/dist-typography/
 
 # ---- Runtime data ----
-data/
+# **只忽略仓库根的 data/ 下的运行时数据**（模型权重、导出产物、媒体缓存都在这里）。
+# 曾经写成裸 `data/`，它匹配**任意层级**：于是 `backend/monoline/data/icons.json`
+# 这类**随包发布的数据**从未入库——新克隆的检出里 `monoline` 17 条测试 + 2 条
+# 静态卫生体检全红报 FileNotFoundError，而本机因为文件在，从来是绿的
+# （见 docs/HANDOVER_MD_STUDIO.md §4 第 13 条）。
+/data/*
+# 例外：33 条反 AI 铁律是**产品自带的可维护清单**（默认工序引用它，
+# `tests/test_anti_ai.py` 断言它在且有 33 条），不是本机运行数据。
+# 用 `/data/*` 而不是 `/data/`：目录级忽略无法用 `!` 反选回来。
+!/data/reference/
+!/data/reference/33-anti-ai-rules.md
 output/
 logs/
 *.db
