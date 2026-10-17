@@ -9,10 +9,26 @@
       "height": 0
     },
     {
+      "id": "wechat-modi-code",
+      "themeId": "modi",
+      "platform": "wechat",
+      "sample": "code",
+      "width": 375,
+      "height": 0
+    },
+    {
       "id": "wechat-wanfeng-article",
       "themeId": "wanfeng",
       "platform": "wechat",
       "sample": "article",
+      "width": 375,
+      "height": 0
+    },
+    {
+      "id": "wechat-wanfeng-code",
+      "themeId": "wanfeng",
+      "platform": "wechat",
+      "sample": "code",
       "width": 375,
       "height": 0
     },
@@ -73,10 +89,26 @@
       "height": 0
     },
     {
+      "id": "zhihu-xueshu-code",
+      "themeId": "xueshu",
+      "platform": "zhihu",
+      "sample": "code",
+      "width": 690,
+      "height": 0
+    },
+    {
       "id": "zhihu-qingjian-article",
       "themeId": "qingjian",
       "platform": "zhihu",
       "sample": "article",
+      "width": 690,
+      "height": 0
+    },
+    {
+      "id": "zhihu-qingjian-code",
+      "themeId": "qingjian",
+      "platform": "zhihu",
+      "sample": "code",
       "width": 690,
       "height": 0
     },
@@ -101,6 +133,14 @@
       "themeId": "moan",
       "platform": "zhihu",
       "sample": "article",
+      "width": 690,
+      "height": 0
+    },
+    {
+      "id": "zhihu-moan-code",
+      "themeId": "moan",
+      "platform": "zhihu",
+      "sample": "code",
       "width": 690,
       "height": 0
     }

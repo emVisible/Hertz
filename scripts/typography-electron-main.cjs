@@ -27,8 +27,15 @@ const THRESHOLD = Number(process.env.TYPOGRAPHY_THRESHOLD ?? '0.005');
 
 /** 只截「那张图」而不是整个视口：body.scrollWidth 等于窗口宽，整屏截图图里会带大片白边 */
 async function captureShot(win, shot) {
-  const rect = await win.webContents.executeJavaScript(
-    `(() => {
+  /**
+   * 整段是一个 async IIFE：`executeJavaScript` 会 await 返回的 Promise，
+   * 所以「异步富集 → 量尺寸 → 返回」三步在页面里顺序发生，一次往返即可。
+   *
+   * 顺序是判据的一部分：**先量后升级会量到 hljs 版的树**，而截图里是升级后的树——
+   * 两棵树混在一起，基线从此不可比（v0.37 接入 Shiki 二次 pass 时踩过这条）。
+   */
+  const r = JSON.parse(
+    await win.webContents.executeJavaScript(`(async () => {
       document.body.innerHTML = '';
       document.body.style.margin = '0';
       document.body.style.background = '#ffffff';
@@ -38,6 +45,7 @@ async function captureShot(win, shot) {
       holder.style.width = s.width + 'px';
       document.body.appendChild(holder);
       holder.appendChild(s.el);
+      await window.__typographyUpgrade(s.el);
       const r = s.el.getBoundingClientRect();
       return JSON.stringify({
         id: s.id,
@@ -46,9 +54,8 @@ async function captureShot(win, shot) {
         width: Math.min(Math.ceil(r.width), 3000),
         height: Math.min(Math.ceil(r.height), 3000),
       });
-    })()`,
+    })()`),
   );
-  const r = JSON.parse(rect);
   win.setContentSize(Math.min(r.width + 20, 3000), Math.min(r.height + 20, 3000));
   // 等两帧：渲染态 DOM 是 appendChild 进去的，字体也要落位
   await new Promise((done) => setTimeout(done, 150));

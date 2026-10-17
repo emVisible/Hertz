@@ -36,9 +36,12 @@ if (typeof document !== 'undefined' && !document.getElementById('mdcore-katex-cs
 
 import {
   applyTheme,
+  codeThemeNameFor,
   getTheme,
+  highlightCodeBlocks,
   listThemes,
   parseToIR,
+  renderMermaidCache,
   xhsCards,
   XHS_CARD,
   type Theme,
@@ -155,6 +158,40 @@ export const CARD_LONG_MD = [
   '',
 ].join('\n');
 
+/**
+ * 样例 4：**代码块专属**——一张图只装代码（v0.37 / P1-3）。
+ *
+ * 为什么单独一张，而不在长文样例里"顺便"看代码：整页图里代码块只占千分之几的像素，
+ * 而基线阈值是**全图差异比例 0.5%**——把 hljs 换成 Shiki，整页差异算下来仍在阈值内，
+ * 于是"接上二次 pass"这件事在基线层完全看不见（实测：去掉二次 pass，13 张全绿）。
+ * 判据必须**放大被观察的东西**：一张只装代码的图里，token 色就是全部观感。
+ * 补完这张之后，去掉二次 pass 有 5 张转红（1.19%~2.87%）。
+ */
+export const CODE_MD = [
+  '```ts title="rhythm.ts"',
+  'const spacing = "0.62em" // 改字号时它跟着缩放',
+  'interface Token { size: string; color: string }',
+  'if (spacing) { paint(theme, 0.86) }',
+  '```',
+  '',
+  '```python',
+  'def total(values: list[int]) -> int:',
+  '    """求和，空列表返回 0"""',
+  '    return sum(values) or 0',
+  '```',
+  '',
+  '```sql',
+  'SELECT id, COUNT(*) AS n FROM posts',
+  'GROUP BY id HAVING n > 10 ORDER BY n DESC;',
+  '```',
+  '',
+  '```',
+  '没有语言标记的块：高亮不接管，但底色与行距照样在。',
+  '```',
+  '',
+  '行内 `const x = 1` 与 ==荧光== 并排。',
+].join('\n');
+
 /** 内联 SVG 占位图：像素稳定，且能看出圆角/边框/图注是否生效 */
 // 内联 SVG 占位图：像素稳定，且能看出圆角/边框/图注是否生效。
 // **不能含字面空格**：markdown 的链接地址在空格处终止，整行会退化成普通文本
@@ -187,7 +224,7 @@ export interface BaselineShot {
   id: string;
   themeId: string;
   platform: string;
-  sample: 'article' | 'card' | 'card-page';
+  sample: 'article' | 'card' | 'card-page' | 'code';
   width: number;
   height: number;
   /** 渲染好的元素（已挂进 body） */
@@ -216,6 +253,7 @@ export function buildShots(): BaselineShot[] {
       const coverSlot = document.createElement('div');
       coverSlot.style.width = `${XHS_CARD.width}px`;
       coverSlot.appendChild(cover.pages[0]);
+      coverSlot.dataset.mdcoreTypographyTheme = themeId
       shots.push({
         id: `${platform}-${themeId}-card`,
         themeId,
@@ -231,6 +269,7 @@ export function buildShots(): BaselineShot[] {
       const pageSlot = document.createElement('div');
       pageSlot.style.width = `${XHS_CARD.width}px`;
       pageSlot.appendChild(contentPage);
+      pageSlot.dataset.mdcoreTypographyTheme = themeId
       shots.push({
         id: `${platform}-${themeId}-card-page`,
         themeId,
@@ -246,6 +285,7 @@ export function buildShots(): BaselineShot[] {
     const el = applyTheme(parseToIR(platform === 'zhihu' ? ARTICLE_MD : ARTICLE_WITH_IMAGE), theme);
     el.style.width = `${width}px`;
     el.style.boxSizing = 'border-box';
+    el.dataset.mdcoreTypographyTheme = themeId
     shots.push({
       id: `${platform}-${themeId}-article`,
       themeId,
@@ -255,6 +295,21 @@ export function buildShots(): BaselineShot[] {
       height: 0,
       el,
     });
+
+    // ②代码块专属图（P1-3）：一图只装代码，让 token 色的差异在阈值之上
+    const codeEl = applyTheme(parseToIR(CODE_MD), theme);
+    codeEl.style.width = `${width}px`;
+    codeEl.style.boxSizing = 'border-box';
+    codeEl.dataset.mdcoreTypographyTheme = themeId
+    shots.push({
+      id: `${platform}-${themeId}-code`,
+      themeId,
+      platform,
+      sample: 'code',
+      width,
+      height: 0,
+      el: codeEl,
+    })
   }
   return shots;
 }
@@ -279,12 +334,35 @@ const TOKEN_PROBE_FONT = "'PingFang SC', 'Songti SC', -apple-system, sans-serif"
 declare global {
   interface Window {
     __typographyShots: () => BaselineShot[];
+    /**
+     * 二次 pass：Shiki 高亮 + Mermaid 预渲染，**capture 之前必须 await 它**。
+     *
+     * 为什么单列一个入口：`__typographyShots()` 是同步的（主进程一次性拿全部元数据），
+     * 而这两件事是异步的。截图发生在主进程侧，于是必须有一个"等它跑完"的钩子——
+     * 不等就是**拿 hljs 版旧基线去比对 Shiki 产物**：产物层判据自己骗自己。
+     */
+    __typographyUpgrade: (el: HTMLElement) => Promise<void>;
     __fontProbe: number;
   }
 }
 
+/**
+ * 对一张已挂载的 shot 跑异步富集（Shiki 二次 pass）。
+ *
+ * Mermaid 不进基线：它依赖真实排版布局，而基线要的是"像素稳定"。
+ * 图的观感由画布与导出产物验（P2-4 判据在 mermaid.test.ts 与人工验收）。
+ */
+async function upgradeShot(el: HTMLElement, theme: Theme): Promise<void> {
+  await highlightCodeBlocks(el, { themeName: codeThemeNameFor(theme) });
+}
+
 if (typeof window !== 'undefined') {
   window.__typographyShots = buildShots;
+  window.__typographyUpgrade = async (el: HTMLElement) => {
+    const themeId = el.dataset.mdcoreTypographyTheme;
+    const theme = themeId ? getTheme(themeId) : getTheme('modi');
+    await upgradeShot(el, theme);
+  };
   window.__fontProbe = fontProbe();
 }
 
