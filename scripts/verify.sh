@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hertz pre-commit gate: lint + backend tests + mdcore + frontend typecheck/tests/build
+# Hertz pre-commit gate: doc links + lint + backend tests + mdcore + frontend typecheck/tests/build
 # + 排版基线图（Electron 产物层逐像素比对）。
 set -euo pipefail
 
@@ -28,41 +28,44 @@ echo $$ > "$LOCK_DIR/pid"
 cleanup() { rm -rf "$LOCK_DIR"; }
 trap cleanup EXIT INT TERM
 
-# 门禁是最吃内存的一类操作，单独跑；加 --quick 只跑结构性那几步。
+# 门禁是最吃内存的一类操作，单独跑；加 --quick 只跑结构性那几步（跳过排版基线）。
 QUICK=0
 [[ "${1:-}" == "--quick" ]] && QUICK=1
 
-echo "==> [1/8] backend lint (ruff)"
+echo "==> [1/9] 文档链接与 docs 路径引用"
+bash scripts/check-doc-links.sh
+
+echo "==> [2/9] backend lint (ruff)"
 uv run ruff check backend tests
 
-echo "==> [2/8] backend tests (pytest)"
+echo "==> [3/9] backend tests (pytest)"
 uv run pytest -q
 
-echo "==> [3/8] mdcore typecheck (tsc)"
+echo "==> [4/9] mdcore typecheck (tsc)"
 pnpm --filter @hertz/mdcore typecheck
 
-echo "==> [4/8] mdcore tests (vitest)"
+echo "==> [5/9] mdcore tests (vitest)"
 pnpm --filter @hertz/mdcore test
 
-echo "==> [5/8] frontend typecheck (tsc)"
+echo "==> [6/9] frontend typecheck (tsc)"
 pnpm --filter hertz-frontend typecheck
 
-echo "==> [6/8] frontend tests (vitest)"
+echo "==> [7/9] frontend tests (vitest)"
 pnpm --filter hertz-frontend test
 
-echo "==> [7/8] frontend build (vite)"
+echo "==> [8/9] frontend build (vite)"
 pnpm --filter hertz-frontend build
 
 # 排版是观感问题，观感只能在产物层判：这步把每套主题 × 每份样例重拍一遍，
 # 与 packages/mdcore/tests/baselines/typography/ 的基准图逐像素比（阈值 0.5%）。
 # 退出码：0 通过 / 1 超阈值（门禁红）/ 2 环境跑不起来（打印警告，不冒充通过）。
 if [[ "$QUICK" == "1" ]]; then
-  echo "==> [8/8] 排版基线图 —— 跳过（--quick）"
+  echo "==> [9/9] 排版基线图 —— 跳过（--quick）"
   echo "==> ALL GATES PASSED（--quick：未跑排版基线）"
   exit 0
 fi
 
-echo "==> [8/8] 排版基线图（Electron 产物层比对）"
+echo "==> [9/9] 排版基线图（Electron 产物层比对）"
 BASELINE_EXIT=0
 node scripts/typography-baseline.mjs || BASELINE_EXIT=$?
 if [ "$BASELINE_EXIT" = "2" ]; then

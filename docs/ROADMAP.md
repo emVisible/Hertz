@@ -1,6 +1,6 @@
 # Hertz 路线图
 
-> 各波次进度与验收详见 [HERTZ_RECONSTRUCTION.md](./HERTZ_RECONSTRUCTION.md)（九、实施波次）。
+> 各波次进度与验收详见 [HERTZ_RECONSTRUCTION.md](./archive/HERTZ_RECONSTRUCTION.md)（九、实施波次）。
 
 ## 已交付
 
@@ -67,7 +67,7 @@
 
 ## v0.30 战略方向
 
-> 详见 [VISION_V030.md](./VISION_V030.md)
+> 详见 [VISION_V030.md](./archive/VISION_V030.md)
 
 **定位转向**：从「内容工厂」到「创作者工坊」——工具优化机械环节，创意决策归人。
 
