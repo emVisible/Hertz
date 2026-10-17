@@ -20,6 +20,7 @@ import {
   codeThemeNameFor,
   darkThemeFor,
   highlightCodeBlocks,
+  mermaidCacheSignature,
   renderMermaidCache,
   xhsCardSize,
   waitForImages,
@@ -366,7 +367,12 @@ export function CanvasPanel({
       const signature = (list: IRDiagnostic[]) =>
         list.map((d) => `${d.token}:${d.line}:${d.count}`).join('|')
       setMermaid((prev) => {
-        const sameCache = (prev.cache?.size ?? 0) === cache.size
+        // ⚠️ 比**内容**（`mermaidCacheSignature`），不是比 `cache.size`：cache 的键是
+        // 源码内容的哈希，"块数没变"不等于"内容没变"。曾有一版比 size，于是用户改完
+        // 图看到画布毫无反应——键早就变了，只是数量恰好相同，state 被判成"没变"而
+        // 交回旧引用，旧 SVG 就一直挂在画布上。
+        const sameCache =
+          mermaidCacheSignature(prev.cache) === mermaidCacheSignature(cache)
         const sameDiag = signature(prev.diagnostics) === signature(diagnostics)
         // 内容没变就交回同一个引用：下游 effect 不该因为"又跑了一次"而重排
         if (sameCache && sameDiag) return prev

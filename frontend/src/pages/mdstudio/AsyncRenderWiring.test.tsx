@@ -10,6 +10,9 @@
  * `vi.mock('@hertz/mdcore')` 拦不住页面内部的调用（workspace 源码包的身份问题）。
  */
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
@@ -103,6 +106,19 @@ describe('Mermaid 的宿主接线（分页之前）', () => {
       const pres = Array.from(document.querySelectorAll('.mdcore-code pre'))
       expect(pres.some((p) => p.textContent?.includes('flowchart'))).toBe(true)
     })
+  })
+
+  // 判据只能落在源码级：jsdom 里 mermaid 必失败 → cache 恒为空 →"改图之后画布有没有
+  // 换引用"在这里根本观测不到（症状只在真浏览器里出现）。所以守接线本身。
+  it('画布判"内容变没变"用内容签名，不许退回比 cache.size', () => {
+    const src = readFileSync(
+      resolve(process.cwd(), 'src/pages/mdstudio/CanvasPanel.tsx'),
+      'utf-8',
+    )
+    expect(src).toContain('mermaidCacheSignature')
+    // cache 的键是源码内容的哈希：块数相同 ≠ 内容相同，比 size 会让改图后的画布
+    // 交回旧引用（旧 SVG 一直挂着），症状是"编辑 mermaid 偶尔不响应"。
+    expect(src).not.toMatch(/sameCache\s*=\s*\(?prev\.cache\?\.size/)
   })
 })
 

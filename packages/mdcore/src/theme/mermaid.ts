@@ -124,6 +124,28 @@ export async function renderMermaidCache(
   return { cache, diagnostics };
 }
 
+/**
+ * cache 的**内容**签名：宿主判断"这次渲染结果与上次是否相同"的唯一依据。
+ *
+ * 为什么不能用 `cache.size`：键是源码内容的哈希（见 `mermaidKeyOf`），所以
+ * "块数没变"与"内容没变"完全是两件事——改一张图里的一个字，块数不变而键变了。
+ * 曾经有一版宿主就是比 `size`，于是用户改完图发现画布纹丝不动，得删掉一张图
+ * 或重开页面才生效（症状是"编辑 mermaid 偶尔不响应"，且只在真浏览器里看得见）。
+ *
+ * 形态：排序后的 `键:长度` 串。排序是为了让"同样的图换了位置"不算变化（键集相同
+ * 而已，Map 的插入顺序会跟着文档顺序变）；带长度是因为键只覆盖源码，主题切换
+ * 这类"源码没变、SVG 变了"的情况要靠它兜住。不比 SVG 全文：栅格化后那是一张
+ * dataURL，每敲一键把所有图的全文拼一遍纯属浪费，而"同源码同长度的两张不同 SVG"
+ * 在视觉上无差别。
+ */
+export function mermaidCacheSignature(cache?: Map<string, string> | null): string {
+  if (!cache || cache.size === 0) return '';
+  return [...cache.entries()]
+    .map(([key, svg]) => `${key}:${svg.length}`)
+    .sort()
+    .join('|');
+}
+
 /** 默认 SVG 栅格化：snapdom.toBlob → dataURL（与知乎表格截图同一引擎） */
 async function defaultSvgCapture(el: HTMLElement): Promise<string> {
   const { snapdom } = await import('@zumer/snapdom');

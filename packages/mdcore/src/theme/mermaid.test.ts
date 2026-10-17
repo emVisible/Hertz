@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyTheme,
   mermaidBlocksOf,
+  mermaidCacheSignature,
   mermaidKeyOf,
   paginate,
   parseToIR,
@@ -35,6 +36,66 @@ const MD = [
 ].join('\n');
 
 const SVG = '<svg viewBox="0 0 100 40"><rect width="100" height="40"/></svg>';
+
+describe('cache 内容签名（宿主判断"这次结果变了没有"的唯一依据）', () => {
+  const svg = (n: number) => '<svg>' + 'x'.repeat(n) + '</svg>';
+
+  it('块数相同、内容不同 → 签名不同（这就是那个 bug）', () => {
+    // 键是源码内容的哈希：改一个字，size 不变而键变了。
+    const before = new Map([[mermaidKeyOf('flowchart TD\n A --> B'), svg(10)]]);
+    const after = new Map([[mermaidKeyOf('flowchart TD\n A --> C'), svg(10)]]);
+
+    expect(before.size).toBe(after.size);
+    expect(mermaidCacheSignature(before)).not.toBe(mermaidCacheSignature(after));
+  });
+
+  it('内容与顺序都没变 → 签名相同（宿主才能交回同一个引用，不白重排）', () => {
+    const a = new Map([
+      [mermaidKeyOf('A'), svg(10)],
+      [mermaidKeyOf('B'), svg(20)],
+    ]);
+    const b = new Map([
+      [mermaidKeyOf('B'), svg(20)],
+      [mermaidKeyOf('A'), svg(10)],
+    ]);
+
+    expect(mermaidCacheSignature(a)).toBe(mermaidCacheSignature(b));
+  });
+
+  it('同一份 cache 重复取签名稳定（不能每次调用都不同）', () => {
+    const cache = new Map([[mermaidKeyOf('A'), svg(10)]]);
+
+    expect(mermaidCacheSignature(cache)).toBe(mermaidCacheSignature(cache));
+  });
+
+  it('同键但 SVG 不同（主题切换）→ 签名不同', () => {
+    const key = mermaidKeyOf('A');
+    const light = new Map([[key, svg(10)]]);
+    const dark = new Map([[key, svg(999)]]);
+
+    expect(mermaidCacheSignature(light)).not.toBe(mermaidCacheSignature(dark));
+  });
+
+  it('undefined / 空 Map 都算"没有 cache"（首次渲染与清空走同一条路）', () => {
+    expect(mermaidCacheSignature(undefined)).toBe('');
+    expect(mermaidCacheSignature(null)).toBe('');
+    expect(mermaidCacheSignature(new Map())).toBe('');
+  });
+
+  it('多图同键去重后仍按内容判同（省渲染不影响判同的正确性）', () => {
+    const key = mermaidKeyOf('flowchart TD\n A --> B');
+    const one = new Map([[key, svg(30)]]);
+    const two = new Map([
+      [key, svg(30)],
+      [key, svg(30)],
+    ]);
+
+    // Map 按键去重，重复源码天然共用一份 SVG
+    expect(one.size).toBe(1);
+    expect(two.size).toBe(1);
+    expect(mermaidCacheSignature(one)).toBe(mermaidCacheSignature(two));
+  });
+});
 
 describe('发现与键', () => {
   it('只认 mermaid 语言块，键取自源码内容（与位置无关）', () => {

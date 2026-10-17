@@ -81,7 +81,12 @@ export {
 } from './theme/shiki';
 export type { CodeHighlighter, HighlightCodeOptions } from './theme/shiki';
 // P2-4：Mermaid 预渲染（必须在分页之前）
-export { mermaidBlocksOf, rasterizeMermaid, renderMermaidCache } from './theme/mermaid';
+export {
+  mermaidBlocksOf,
+  mermaidCacheSignature,
+  rasterizeMermaid,
+  renderMermaidCache,
+} from './theme/mermaid';
 export type { MermaidOptions, MermaidRenderer, MermaidResult, SvgCapture } from './theme/mermaid';
 export { mermaidKeyOf } from './theme/mermaidKey';
 // P2-2：主题导出独立 CSS
