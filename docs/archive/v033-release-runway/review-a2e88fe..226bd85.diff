@@ -1,0 +1,443 @@
+# Review package: a2e88fe..HEAD
+
+## Commits
+226bd85 refactor(net): 代理旁路收成单一作者——8 处各自实现改调 infrastructure/net
+
+## Files changed
+ backend/ai/providers/comfyui.py       |  8 +++---
+ backend/ai/providers/openai_compat.py | 14 ++++++-----
+ backend/infrastructure/hf.py          |  6 ++---
+ backend/infrastructure/net.py         | 23 +++++++++++++++++
+ backend/monoline/hf.py                |  7 +++++-
+ backend/pipeline/collectors/reddit.py | 15 +++++------
+ backend/pipeline/producers/asr.py     |  9 +++++--
+ backend/pipeline/reddit_media.py      |  9 ++-----
+ tests/test_net_proxy_bypass.py        | 33 ++++++++++++++++++++++++
+ tests/test_proxy_authority.py         | 47 +++++++++++++++++++++++++++++++++++
+ 10 files changed, 140 insertions(+), 31 deletions(-)
+
+## Diff
+diff --git a/backend/ai/providers/comfyui.py b/backend/ai/providers/comfyui.py
+index 8600643..589616a 100644
+--- a/backend/ai/providers/comfyui.py
++++ b/backend/ai/providers/comfyui.py
+@@ -18,24 +18,26 @@ class ComfyUIProvider:
+         self,
+         base_url: str = "http://127.0.0.1:8188",
+         output_dir: Path | None = None,
+         poll_interval: float = 2.0,
+         timeout: float = 300.0,
+     ) -> None:
+         self.base_url = base_url.rstrip("/")
+         self.output_dir = output_dir
+         self.poll_interval = poll_interval
+         self.timeout = timeout
++        from backend.infrastructure.net import client_kwargs
++
+         self._client = httpx.AsyncClient(
+-            timeout=httpx.Timeout(30.0, read=120.0),
+-            # 本地服务直连：绕过 HTTP_PROXY 环境变量（同 openai_compat 注释）。
+-            trust_env=False,
++            # 本地服务（默认 127.0.0.1:8188）必须直连：代理到不了回环地址，
++            # Clash 在时只会回 502；判据在 infrastructure/net。
++            **client_kwargs(self.base_url, timeout=httpx.Timeout(30.0, read=120.0)),
+         )
+ 
+     def _build_workflow(
+         self,
+         prompt: str,
+         negative_prompt: str,
+         *,
+         width: int,
+         height: int,
+         steps: int,
+diff --git a/backend/ai/providers/openai_compat.py b/backend/ai/providers/openai_compat.py
+index 41ce221..8706389 100644
+--- a/backend/ai/providers/openai_compat.py
++++ b/backend/ai/providers/openai_compat.py
+@@ -40,28 +40,30 @@ class OpenAICompatProvider:
+     def __init__(
+         self,
+         api_key: str,
+         base_url: str = "https://api.deepseek.com/v1",
+         model: str = "deepseek-chat",
+         max_retries: int = 2,
+     ) -> None:
+         self.model = model
+         self.max_retries = max_retries
+         self.last_usage: dict | None = None  # v0.5 E：流式 usage 探测（成本估算）
++        from backend.infrastructure.net import client_kwargs
++
++        base = base_url.rstrip("/")
+         self._client = httpx.AsyncClient(
+-            base_url=base_url.rstrip("/"),
++            base_url=base,
+             headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+-            timeout=httpx.Timeout(30.0, read=180.0),
+-            # 服务端直连：绝不读 HTTP_PROXY/HTTPS_PROXY 环境变量——
+-            # 本地 ollama/comfyui 经代理转一圈极易 502（实测 Clash 下必现），
+-            # 远端 API 走直连同样可预期（用户另有代理需求再显式配置）。
+-            trust_env=False,
++            # 本地 Provider（Ollama/ComfyUI/xinference 常在 127.0.0.1）必须直连：
++            # 代理到不了回环地址，Clash 在时只会回 502；判据在 infrastructure/net。
++            # 远端主机则正常跟随环境/系统代理（v0.33 收口后有意的行为变化）。
++            **client_kwargs(base, timeout=httpx.Timeout(30.0, read=180.0)),
+         )
+ 
+     async def chat_stream(
+         self,
+         messages: list[ChatMessage],
+         *,
+         temperature: float = 0.7,
+         max_tokens: int = 4096,
+         model: str | None = None,
+         response_format: dict | None = None,
+diff --git a/backend/infrastructure/hf.py b/backend/infrastructure/hf.py
+index 05d8e3b..213ac51 100644
+--- a/backend/infrastructure/hf.py
++++ b/backend/infrastructure/hf.py
+@@ -86,24 +86,24 @@ def _reason(exc: BaseException) -> str:
+     挂了」是两个完全不同的修复动作。
+     """
+     name = type(exc).__name__
+     msg = str(exc).strip()
+     if not msg:
+         cause = exc.__cause__
+         if cause is not None:
+             msg = str(cause).strip() or type(cause).__name__
+     if name in {"ConnectError", "ConnectTimeout", "ProxyError"}:
+         try:
+-            import urllib.request
++            from backend.infrastructure.net import system_proxies
+ 
+-            prox = urllib.request.getproxies()
+-        except Exception:  # noqa: BLE001 — 代理探测失败不该盖住真实原因
++            prox = system_proxies()
++        except Exception:  # noqa: BLE001 — 探测失败不该盖住真实原因
+             prox = {}
+         detail = "、".join(f"{k}→{v}" for k, v in sorted(prox.items())) or "直连（未设代理）"
+         msg = f"{msg}；代理：{detail}" if msg else f"连不上，代理：{detail}"
+     return f"{name}: {msg}" if msg else name
+ 
+ 
+ async def download_files(
+     repo: str,
+     files: Sequence[tuple[str, bool]],
+     dest: Path,
+diff --git a/backend/infrastructure/net.py b/backend/infrastructure/net.py
+index cb15f9f..3c585e6 100644
+--- a/backend/infrastructure/net.py
++++ b/backend/infrastructure/net.py
+@@ -32,10 +32,33 @@ def is_loopback_url(url: str) -> bool:
+         return ipaddress.ip_address(host).is_loopback
+     except ValueError:
+         return False
+ 
+ 
+ def client_kwargs(url: str, **kwargs) -> dict:
+     """httpx client 的构造参数：外部地址按默认（跟随环境变量/系统代理），
+     回环地址关掉 `trust_env`（代理到不了你的本机，留着只会换来 502）。"""
+     kwargs.setdefault("trust_env", not is_loopback_url(url))
+     return kwargs
++
++
++def system_proxies() -> dict[str, str]:
++    """系统/环境代理全表（唯一发现入口）。
++
++    macOS 的代理设置不在环境变量里，`urllib.request.getproxies()` 会去读
++    SystemConfiguration；Reddit 采集、签名直链与 infra/hf 的失败诊断此前各写
++    了一份这段逻辑，于是「谁走代理」这件事有三个作者（D-205 同类形状）。
++    探测失败一律按无代理处理——这是诊断辅助，不许反手把调用方崩掉。
++    """
++    try:
++        import urllib.request
++
++        # 必须是「模块属性查找」形态（测试按属性打桩 urllib.request.getproxies）
++        return dict(urllib.request.getproxies())
++    except Exception:  # noqa: BLE001 — 探测失败按无代理处理，不让采集/下载崩
++        return {}
++
++
++def system_proxy() -> str | None:
++    """最常被用到的那一条：https 优先、http 其次的代理 URL（自 system_proxies）。"""
++    proxies = system_proxies()
++    return proxies.get("https") or proxies.get("http") or None
+diff --git a/backend/monoline/hf.py b/backend/monoline/hf.py
+index 187246b..3019510 100644
+--- a/backend/monoline/hf.py
++++ b/backend/monoline/hf.py
+@@ -215,26 +215,31 @@ class HF:
+         if not r.ok:
+             raise HFError(f"render failed rc={r.returncode}: {_tail_error(r.stderr)}")
+         return r
+ 
+     async def render_via_sidecar(self, sidecar_url: str, project_dir: str, out_path: str, *,
+                                  fps: int = 30, quality: str = "standard",
+                                  fmt: str = "mp4") -> dict:
+         """二期预留：常驻 sidecar 渲染。CLI-first 阶段默认不调用。"""
+         import httpx
+ 
++        from backend.infrastructure.net import client_kwargs
++
+         payload = {"projectDir": str(project_dir), "output": str(out_path), "fps": fps,
+                    "quality": self.lint_quality(quality), "format": fmt,
+                    "workers": RENDER_WORKERS}
+         try:
++            # sidecar 在本机：必须直连——代理到不了回环地址，Clash 在时只会回
++            # 502；判据在 infrastructure/net。
+             async with httpx.AsyncClient(
+-                    timeout=httpx.Timeout(self.timeout, connect=5), trust_env=False) as client:
++                    **client_kwargs(sidecar_url.rstrip("/"),
++                                    timeout=httpx.Timeout(self.timeout, connect=5))) as client:
+                 resp = await client.post(f"{sidecar_url.rstrip('/')}/render", json=payload)
+         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+             raise SidecarUnavailableError(str(e)) from e
+         except httpx.TimeoutException as e:
+             raise HFError(f"sidecar render timed out after {self.timeout}s") from e
+         except httpx.HTTPError as e:
+             raise SidecarUnavailableError(str(e)) from e
+         if resp.status_code in (502, 503, 504):
+             raise SidecarUnavailableError(f"HTTP {resp.status_code}")
+         try:
+diff --git a/backend/pipeline/collectors/reddit.py b/backend/pipeline/collectors/reddit.py
+index 5bc77f9..239833b 100644
+--- a/backend/pipeline/collectors/reddit.py
++++ b/backend/pipeline/collectors/reddit.py
+@@ -5,21 +5,20 @@ API). Anonymous www.reddit.com JSON 极易被 403 Blocked（TLS/IP 指纹），
+ 配置 ``pipeline_reddit_client_id/secret``（设置页）即自动启用认证通道；
+ 无凭证时降级匿名 JSON → RSS 兜底（参考原项目 RSS 路径）。
+ 媒体 URL 从 RSS 的 content:encoded 中正则提取（v.redd.it / i.redd.it）。
+ """
+ 
+ import logging
+ import random
+ import re
+ import time
+ import urllib.parse
+-import urllib.request
+ import xml.etree.ElementTree as ET
+ 
+ import httpx
+ 
+ from backend.config import settings
+ from backend.pipeline.collectors.base import RawPost, SourceCollector
+ 
+ logger = logging.getLogger(__name__)
+ 
+ # 真实浏览器 UA（v0.3.1）：自定义 UA 的匿名 JSON 请求会被 Reddit 403 Blocked
+@@ -94,30 +93,28 @@ def _parse_channel(channel: str) -> tuple[str, str]:
+         raise RuntimeError(
+             f"采集源 '{sub}' 是排序词不是 subreddit——请配置真实版块名，"
+             f"如 'Damnthatsinteresting'；格式为 'subreddit' 或 'subreddit:{'|'.join(_SORTS)}'"
+         )
+     if sort not in _SORTS:
+         sort = random.choice(_SORTS)
+     return sub, sort
+ 
+ 
+ def _system_proxy() -> str | None:
+-    """macOS 系统代理（httpx 只认环境变量，不读系统网络设置）。
++    """系统代理发现已收进 infrastructure/net（唯一作者）——此处只留转发。
+ 
+-    墙内访问 Reddit 时用户通常在系统设置里配了代理；这里把
+-    urllib 解析出的系统代理喂给 httpx，无代理则返回 None。
++    routers/pipeline_ops 与本模块的调用方都认这个名字，签名保持不变；
++    macOS 系统设置里的代理不在环境变量里，判据与探测都在 net.system_proxy。
+     """
+-    try:
+-        proxies = urllib.request.getproxies()
+-    except Exception:  # noqa: BLE001 — proxy discovery is best-effort
+-        return None
+-    return proxies.get("https") or proxies.get("http") or None
++    from backend.infrastructure.net import system_proxy
++
++    return system_proxy()
+ 
+ 
+ def _b64(data: bytes) -> bytes:
+     """Local base64 to keep this module free of import-time churn."""
+     import base64
+ 
+     return base64.b64encode(data)
+ 
+ 
+ # ---- Reddit OAuth token（v0.3.5 起采集/下载共用，模块级缓存） ----
+diff --git a/backend/pipeline/producers/asr.py b/backend/pipeline/producers/asr.py
+index bc6c55c..93a43b6 100644
+--- a/backend/pipeline/producers/asr.py
++++ b/backend/pipeline/producers/asr.py
+@@ -327,31 +327,36 @@ async def transcribe_with_whisper(
+         return out_srt
+     except Exception as exc:  # noqa: BLE001 — 转写失败回退脚本字幕
+         logger.warning("whisper transcription failed: %s", exc)
+         return None
+ 
+ 
+ async def transcribe_with_xinference(media_path: Path, out_srt: Path) -> Path | None:
+     """xinference STT 服务（OpenAI 兼容 /v1/audio/transcriptions multipart）。"""
+     import httpx
+ 
++    from backend.infrastructure.net import client_kwargs
++
+     if not xinference_configured():
+         return None
+     url = f"{settings.xinference_stt_base_url.rstrip('/')}/audio/transcriptions"
+     headers = {
+         "Authorization": f"Bearer {settings.xinference_api_key or 'not-needed'}"
+     }
+     data = {"model": settings.xinference_stt_model_id}
+     try:
+         audio = await asyncio.to_thread(media_path.read_bytes)
+-        # xinference 是本地服务（默认 127.0.0.1:9997）——绕过环境代理，同 openai_compat。
+-        async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
++        # xinference 是本地服务（默认 127.0.0.1:9997）——必须直连：代理到不了
++        # 回环地址，Clash 在时只会回 502；判据在 infrastructure/net。
++        async with httpx.AsyncClient(
++            **client_kwargs(settings.xinference_stt_base_url, timeout=120.0)
++        ) as client:
+             resp = await client.post(
+                 url,
+                 headers=headers,
+                 files={"file": ("audio.wav", audio, "application/octet-stream")},
+                 data=data,
+             )
+             resp.raise_for_status()
+             result = resp.json()
+         text = (
+             str((result or {}).get("text") or "").strip()
+diff --git a/backend/pipeline/reddit_media.py b/backend/pipeline/reddit_media.py
+index c9cbb09..344db31 100644
+--- a/backend/pipeline/reddit_media.py
++++ b/backend/pipeline/reddit_media.py
+@@ -69,28 +69,23 @@ async def resolve_direct_video(
+     """
+     from urllib.parse import urlparse
+ 
+     if not media_url or (urlparse(media_url).hostname or "") != "v.redd.it":
+         return None
+     if not source_id:
+         return None
+     token = await ensure_reddit_token()
+     if not token:
+         return None
+-    proxy = None
+-    try:
+-        import urllib.request
++    from backend.infrastructure.net import system_proxy
+ 
+-        proxies = urllib.request.getproxies()
+-        proxy = proxies.get("https") or proxies.get("http") or None
+-    except Exception:  # noqa: BLE001 — 代理发现 best-effort
+-        proxy = None
++    proxy = system_proxy()
+ 
+     owns_client = client is None
+     if client is None:
+         client = httpx.AsyncClient(
+             headers={"User-Agent": _UA, "Authorization": f"Bearer {token}"},
+             timeout=20,
+             proxy=proxy,
+         )
+     else:
+         client.headers["Authorization"] = f"Bearer {token}"  # 注入 client 同样补齐
+diff --git a/tests/test_net_proxy_bypass.py b/tests/test_net_proxy_bypass.py
+index 4b998e9..bb8e286 100644
+--- a/tests/test_net_proxy_bypass.py
++++ b/tests/test_net_proxy_bypass.py
+@@ -22,10 +22,43 @@ def test_loopback_detection_covers_real_shapes() -> None:
+ 
+ def test_client_kwargs_only_disables_trust_env_for_loopback() -> None:
+     """外部地址保持默认（跟随系统代理，Reddit 就靠它）；回环关掉 trust_env。"""
+     assert client_kwargs("http://127.0.0.1:9/x.mp4")["trust_env"] is False
+     assert client_kwargs("https://api.siliconflow.cn/v1")["trust_env"] is True
+     # 显式传进来的值优先，不覆盖调用方的决定
+     assert client_kwargs("http://127.0.0.1:9/x.mp4", trust_env=True)["trust_env"] is True
+     # 其余参数原样透传（这里不重新发明 httpx 的构造签名）
+     kw = client_kwargs("http://127.0.0.1:9/x.mp4", timeout=30, follow_redirects=True)
+     assert kw["timeout"] == 30 and kw["follow_redirects"] is True
++
++
++def test_system_proxy_returns_usable_url(monkeypatch) -> None:
++    import urllib.request
++
++    from backend.infrastructure.net import system_proxy
++
++    monkeypatch.setattr(urllib.request, "getproxies", lambda: {"http": "http://127.0.0.1:7897"})
++    assert system_proxy() == "http://127.0.0.1:7897"
++    monkeypatch.setattr(urllib.request, "getproxies", lambda: {})
++    assert system_proxy() is None
++
++
++def test_system_proxies_is_the_full_table_author(monkeypatch) -> None:
++    """全量表（infra/hf 诊断要的就是这个）同样只认按属性打桩的调用形态。"""
++    import urllib.request
++
++    from backend.infrastructure.net import system_proxies
++
++    monkeypatch.setattr(
++        urllib.request, "getproxies", lambda: {"https": "http://p:1", "all": "http://a:2"}
++    )
++    assert system_proxies() == {"https": "http://p:1", "all": "http://a:2"}
++    # https 优先由 system_proxy 导出（不是 all/other）
++    from backend.infrastructure.net import system_proxy
++
++    assert system_proxy() == "http://p:1"
++
++
++def test_remote_provider_still_follows_env_proxy() -> None:
++    """本地直连不等于「所有 Provider 都不走代理」——远端主机必须照旧。"""
++    assert client_kwargs("http://127.0.0.1:11434/v1")["trust_env"] is False
++    assert client_kwargs("https://comfyui.example.com:8188")["trust_env"] is True
+diff --git a/tests/test_proxy_authority.py b/tests/test_proxy_authority.py
+new file mode 100644
+index 0000000..0905456
+--- /dev/null
++++ b/tests/test_proxy_authority.py
+@@ -0,0 +1,47 @@
++"""代理旁路只有一个作者（v0.33 收口）。
++
++实测形状：同一件「本地直连、外部走系统代理」的事被写了 8 遍——
++ai/providers/openai_compat.py、ai/providers/comfyui.py、monoline/hf.py、
++pipeline/producers/asr.py 各自手写关环境代理，collectors/reddit.py、
++reddit_media.py 与 infrastructure/hf.py 各有一份系统代理读取，加上本片为
++回环 502 新建的 infrastructure/net.py。并发工作流还独立「修好」过一次同类
++502，说明不收敛就会继续长。
++"""
++from __future__ import annotations
++
++import ast
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++OWNER = Path("backend/infrastructure/net.py")
++
++
++def _hits(needle: str) -> list[str]:
++    out: list[str] = []
++    for path in (ROOT / "backend").rglob("*.py"):
++        if "__pycache__" in str(path):
++            continue
++        rel = path.relative_to(ROOT)
++        if rel == OWNER:
++            continue
++        if needle in path.read_text(encoding="utf-8"):
++            out.append(str(rel))
++    return out
++
++
++def test_no_hand_rolled_trust_env_outside_net() -> None:
++    offenders = _hits("trust_env")
++    assert not offenders, f"trust_env 又被自己判了一次: {sorted(offenders)}"
++
++
++def test_no_second_proxy_discovery() -> None:
++    offenders = _hits("getproxies")
++    assert not offenders, f"代理发现出现第二个作者: {sorted(offenders)}"
++
++
++def test_net_owner_actually_exists() -> None:
++    """守卫不许是空转的：作者文件必须真在被要求的位置上。"""
++    src = (ROOT / OWNER).read_text(encoding="utf-8")
++    tree = ast.parse(src)
++    names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
++    assert {"client_kwargs", "is_loopback_url", "system_proxy", "system_proxies"} <= names

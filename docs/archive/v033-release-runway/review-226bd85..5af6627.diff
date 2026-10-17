@@ -1,0 +1,234 @@
+# Review package: 226bd85..HEAD
+
+## Commits
+5af6627 test(net): 代理守卫改正向棘轮——回退收口即红，行为断言落到真实 client
+
+## Files changed
+ backend/ai/providers/openai_compat.py |  2 +-
+ backend/infrastructure/hf.py          |  9 ++++-----
+ backend/infrastructure/net.py         |  6 +++++-
+ tests/test_net_proxy_bypass.py        | 35 +++++++++++++++++++++++++++++++----
+ tests/test_proxy_authority.py         | 34 ++++++++++++++++++++++++++++++++++
+ 5 files changed, 75 insertions(+), 11 deletions(-)
+
+## Diff
+diff --git a/backend/ai/providers/openai_compat.py b/backend/ai/providers/openai_compat.py
+index 8706389..47bd4a8 100644
+--- a/backend/ai/providers/openai_compat.py
++++ b/backend/ai/providers/openai_compat.py
+@@ -48,21 +48,21 @@ class OpenAICompatProvider:
+         self.max_retries = max_retries
+         self.last_usage: dict | None = None  # v0.5 E：流式 usage 探测（成本估算）
+         from backend.infrastructure.net import client_kwargs
+ 
+         base = base_url.rstrip("/")
+         self._client = httpx.AsyncClient(
+             base_url=base,
+             headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+             # 本地 Provider（Ollama/ComfyUI/xinference 常在 127.0.0.1）必须直连：
+             # 代理到不了回环地址，Clash 在时只会回 502；判据在 infrastructure/net。
+-            # 远端主机则正常跟随环境/系统代理（v0.33 收口后有意的行为变化）。
++            # 远端主机则照常跟随环境变量里的代理设置（v0.33 收口后有意的行为变化）。
+             **client_kwargs(base, timeout=httpx.Timeout(30.0, read=180.0)),
+         )
+ 
+     async def chat_stream(
+         self,
+         messages: list[ChatMessage],
+         *,
+         temperature: float = 0.7,
+         max_tokens: int = 4096,
+         model: str | None = None,
+diff --git a/backend/infrastructure/hf.py b/backend/infrastructure/hf.py
+index 213ac51..858f0ba 100644
+--- a/backend/infrastructure/hf.py
++++ b/backend/infrastructure/hf.py
+@@ -85,26 +85,25 @@ def _reason(exc: BaseException) -> str:
+     最后一条信息不该是这个，所以空消息兜底带上代理状态——「切镜像」和「你的代理
+     挂了」是两个完全不同的修复动作。
+     """
+     name = type(exc).__name__
+     msg = str(exc).strip()
+     if not msg:
+         cause = exc.__cause__
+         if cause is not None:
+             msg = str(cause).strip() or type(cause).__name__
+     if name in {"ConnectError", "ConnectTimeout", "ProxyError"}:
+-        try:
+-            from backend.infrastructure.net import system_proxies
++        from backend.infrastructure.net import system_proxies
+ 
+-            prox = system_proxies()
+-        except Exception:  # noqa: BLE001 — 探测失败不该盖住真实原因
+-            prox = {}
++        # 探测失败不该盖住真实原因——吞成空表是 net.system_proxies 的职责，
++        # 这里不再自己套一层只能接住 import 拼错的 try。
++        prox = system_proxies()
+         detail = "、".join(f"{k}→{v}" for k, v in sorted(prox.items())) or "直连（未设代理）"
+         msg = f"{msg}；代理：{detail}" if msg else f"连不上，代理：{detail}"
+     return f"{name}: {msg}" if msg else name
+ 
+ 
+ async def download_files(
+     repo: str,
+     files: Sequence[tuple[str, bool]],
+     dest: Path,
+     endpoints: Sequence[str],
+diff --git a/backend/infrastructure/net.py b/backend/infrastructure/net.py
+index 3c585e6..7d31e0e 100644
+--- a/backend/infrastructure/net.py
++++ b/backend/infrastructure/net.py
+@@ -40,21 +40,25 @@ def client_kwargs(url: str, **kwargs) -> dict:
+     kwargs.setdefault("trust_env", not is_loopback_url(url))
+     return kwargs
+ 
+ 
+ def system_proxies() -> dict[str, str]:
+     """系统/环境代理全表（唯一发现入口）。
+ 
+     macOS 的代理设置不在环境变量里，`urllib.request.getproxies()` 会去读
+     SystemConfiguration；Reddit 采集、签名直链与 infra/hf 的失败诊断此前各写
+     了一份这段逻辑，于是「谁走代理」这件事有三个作者（D-205 同类形状）。
+-    探测失败一律按无代理处理——这是诊断辅助，不许反手把调用方崩掉。
++
++    依赖方不止诊断：collectors/reddit.py 与 reddit_media.py 拿导出的
++    `system_proxy()` 当 client 的 proxy 参数用，是真正的出网路径——所以这里
++    吞异常等于「探测失败就静默直连」，绝不许把调用方崩掉；infra/hf 的失败诊断
++    同理（探测失败不该盖住真实原因，它要的是全表）。
+     """
+     try:
+         import urllib.request
+ 
+         # 必须是「模块属性查找」形态（测试按属性打桩 urllib.request.getproxies）
+         return dict(urllib.request.getproxies())
+     except Exception:  # noqa: BLE001 — 探测失败按无代理处理，不让采集/下载崩
+         return {}
+ 
+ 
+diff --git a/tests/test_net_proxy_bypass.py b/tests/test_net_proxy_bypass.py
+index bb8e286..4cb1634 100644
+--- a/tests/test_net_proxy_bypass.py
++++ b/tests/test_net_proxy_bypass.py
+@@ -51,14 +51,41 @@ def test_system_proxies_is_the_full_table_author(monkeypatch) -> None:
+     monkeypatch.setattr(
+         urllib.request, "getproxies", lambda: {"https": "http://p:1", "all": "http://a:2"}
+     )
+     assert system_proxies() == {"https": "http://p:1", "all": "http://a:2"}
+     # https 优先由 system_proxy 导出（不是 all/other）
+     from backend.infrastructure.net import system_proxy
+ 
+     assert system_proxy() == "http://p:1"
+ 
+ 
+-def test_remote_provider_still_follows_env_proxy() -> None:
+-    """本地直连不等于「所有 Provider 都不走代理」——远端主机必须照旧。"""
+-    assert client_kwargs("http://127.0.0.1:11434/v1")["trust_env"] is False
+-    assert client_kwargs("https://comfyui.example.com:8188")["trust_env"] is True
++async def test_openai_compat_client_carries_the_owner_decision() -> None:
++    """判据要落在**真构造出来的 client** 上，不是落在 helper 的返回值上。
++
++    只调 `client_kwargs(...)` 的断言是自证：把 Provider 里那行 `**client_kwargs(...)`
++    整个删掉（退回 httpx 默认，本地照旧被代理吃掉），字面量断言照样绿。
++    这里让两类主机各构造一个真 client，回退即红。
++    """
++    from backend.ai.providers.openai_compat import OpenAICompatProvider
++
++    local = OpenAICompatProvider(api_key="", base_url="http://127.0.0.1:11434/v1", model="m")
++    remote = OpenAICompatProvider(api_key="", base_url="https://api.siliconflow.cn/v1", model="m")
++    try:
++        assert local._client.trust_env is False
++        assert remote._client.trust_env is True
++    finally:
++        await local.aclose()
++        await remote.aclose()
++
++
++async def test_comfyui_client_carries_the_owner_decision() -> None:
++    """ComfyUI 的 client 不带 base_url，目标是 self.base_url——同样钉真实构造。"""
++    from backend.ai.providers.comfyui import ComfyUIProvider
++
++    local = ComfyUIProvider(base_url="http://127.0.0.1:8188")
++    remote = ComfyUIProvider(base_url="https://comfyui.example.com:8188")
++    try:
++        assert local._client.trust_env is False
++        assert remote._client.trust_env is True
++    finally:
++        await local.aclose()
++        await remote.aclose()
+diff --git a/tests/test_proxy_authority.py b/tests/test_proxy_authority.py
+index 0905456..036f433 100644
+--- a/tests/test_proxy_authority.py
++++ b/tests/test_proxy_authority.py
+@@ -1,27 +1,45 @@
+ """代理旁路只有一个作者（v0.33 收口）。
+ 
+ 实测形状：同一件「本地直连、外部走系统代理」的事被写了 8 遍——
+ ai/providers/openai_compat.py、ai/providers/comfyui.py、monoline/hf.py、
+ pipeline/producers/asr.py 各自手写关环境代理，collectors/reddit.py、
+ reddit_media.py 与 infrastructure/hf.py 各有一份系统代理读取，加上本片为
+ 回环 502 新建的 infrastructure/net.py。并发工作流还独立「修好」过一次同类
+ 502，说明不收敛就会继续长。
++
++守卫两个方向都要有：只禁旧形状（下面前两条）挡不住「把收口删掉、退回 httpx
++默认」这种回退——它不含被禁的字面量，于是回环 502 原地复活。最后一条是正向棘轮。
+ """
+ from __future__ import annotations
+ 
+ import ast
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ OWNER = Path("backend/infrastructure/net.py")
+ 
++# 收口清单（含收口前就已调用权威的两位消费者）。守卫是**正向**的：这些点必须
++# 实际引用作者的 API，否则「删掉收口 + 什么都不传」也能过两条禁令。
++CONVERGED = (
++    "backend/ai/providers/openai_compat.py",
++    "backend/ai/providers/comfyui.py",
++    "backend/monoline/hf.py",
++    "backend/pipeline/producers/asr.py",
++    "backend/pipeline/collectors/reddit.py",
++    "backend/pipeline/reddit_media.py",
++    "backend/infrastructure/hf.py",
++    "backend/pipeline/download.py",
++    "backend/download/engine.py",
++)
++OWNER_API = ("client_kwargs", "system_prox")  # 后者同时覆盖 system_proxy 与 system_proxies
++
+ 
+ def _hits(needle: str) -> list[str]:
+     out: list[str] = []
+     for path in (ROOT / "backend").rglob("*.py"):
+         if "__pycache__" in str(path):
+             continue
+         rel = path.relative_to(ROOT)
+         if rel == OWNER:
+             continue
+         if needle in path.read_text(encoding="utf-8"):
+@@ -38,10 +56,26 @@ def test_no_second_proxy_discovery() -> None:
+     offenders = _hits("getproxies")
+     assert not offenders, f"代理发现出现第二个作者: {sorted(offenders)}"
+ 
+ 
+ def test_net_owner_actually_exists() -> None:
+     """守卫不许是空转的：作者文件必须真在被要求的位置上。"""
+     src = (ROOT / OWNER).read_text(encoding="utf-8")
+     tree = ast.parse(src)
+     names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+     assert {"client_kwargs", "is_loopback_url", "system_proxy", "system_proxies"} <= names
++
++
++def test_converged_sites_still_call_the_owner() -> None:
++    """正向棘轮：每个收口点都必须还在调作者的 API。
++
++    删掉一处 `**client_kwargs(...)`（连旁路判断一起消失）不会命中前两条禁令——
++    字面量没了就是「干净」，但那台 Clash 又会把本地请求回成 502。所以这里认的是
++    引用本身，收口被回退即红。
++    """
++    missing = [
++        rel
++        for rel in CONVERGED
++        if not any(needle in (ROOT / rel).read_text(encoding="utf-8") for needle in OWNER_API)
++    ]
++    assert not missing, f"这些收口点不再调用唯一作者（收口被回退？）: {missing}"
++

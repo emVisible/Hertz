@@ -1,0 +1,117 @@
+# Review package: 95da87e8c1903c2ae13001b84bea2f593124a00c..HEAD
+
+## Commits
+a2e88fe fix(monoline): 代修门禁红——suggest 提升为模块级 import 恢复打桩位
+
+## Files changed
+ backend/monoline/runner.py |  7 ++++---
+ tests/test_monoline_llm.py | 10 +++++-----
+ 2 files changed, 9 insertions(+), 8 deletions(-)
+
+## Diff
+diff --git a/backend/monoline/runner.py b/backend/monoline/runner.py
+index 6d8d6a2..5a3d4ac 100644
+--- a/backend/monoline/runner.py
++++ b/backend/monoline/runner.py
+@@ -8,23 +8,24 @@ render/deliver 完整链（CLI-first：render 经 HyperFrames CLI，见 hf.py）
+ from __future__ import annotations
+ 
+ import asyncio
+ import hashlib
+ import json
+ import shutil
+ from datetime import UTC, datetime
+ from pathlib import Path
+ from uuid import UUID
+ 
+-from . import llm_plan as _llm_plan
+-from .display_text import tidy_slots as _tidy_slots
+ from .hf import HF, _lint_summary
++
++# 模块级导入是测试的打桩位（tests/test_monoline_llm 用 monkeypatch 换 suggest）
++from .llm_plan import suggest
+ from .store import MonolineStore
+ from .timings import Timings
+ from .workspace import Workspace
+ 
+ VENDOR_DIR = Path(__file__).parent / "vendor"
+ # A0：TTS 输入语义版本（clean+rate 对齐后旧 wav 缓存失效一次）
+ TTS_INPUT_VERSION = "v2-clean"
+ _MIME = {"mp4": "video/mp4", "webm": "video/webm", "mov": "video/quicktime"}
+ 
+ 
+@@ -570,21 +571,21 @@ BREAKOUT_RUN_LENGTH = 4
+ 
+ 
+ async def _breakout_long_run(ai, beats: list[str], scenes: list[dict], *, model: str,
+                              log=None) -> int | None:
+     """最长 statement 连播段（≥阈值）取中点强制问模型，成功返回拍号，否则 None。
+ 
+     每轮最多一次（预算封顶）；走 suggest() 故拍级缓存命中时零成本；
+     落盘用 _clean_slots + tidy_slots 全套守卫，与 upgrade() 同口径。
+     """
+     from .display_text import tidy_slots
+-    from .llm_plan import _clean_slots, suggest
++    from .llm_plan import _clean_slots
+ 
+     best: list[int] = []
+     cur: list[int] = []
+     for i, sc in enumerate(scenes):
+         if sc.get("kind") == "statement":
+             cur.append(i)
+         else:
+             if len(cur) > len(best):
+                 best = cur
+             cur = []
+diff --git a/tests/test_monoline_llm.py b/tests/test_monoline_llm.py
+index 9b5ebbd..0976f48 100644
+--- a/tests/test_monoline_llm.py
++++ b/tests/test_monoline_llm.py
+@@ -124,42 +124,42 @@ class _SuggestAI:
+ 
+         self.payload = _json.dumps(payload)
+         self.calls = 0
+ 
+     async def chat_messages(self, messages, **kw) -> str:
+         self.calls += 1
+         return self.payload
+ 
+ 
+ async def test_breakout_upgrades_mid_of_long_run(tmp_path, monkeypatch) -> None:
+-    from backend.monoline import runner as R
++    from backend.monoline import runner as mono
+ 
+-    monkeypatch.setattr(R, "suggest", _fake_suggest_changed())
++    monkeypatch.setattr(mono, "suggest", _fake_suggest_changed())
+     beats = [f"第{i}拍纯文字" for i in range(5)]
+     scenes = [{"i": i, "kind": "statement", "source": "rules", "slots": {}} for i in range(5)]
+     logged: list[str] = []
+ 
+     async def _log(msg: str, **kw) -> None:
+         logged.append(msg)
+ 
+-    mid = await R._breakout_long_run(object(), beats, scenes, model="m", log=_log)
++    mid = await mono._breakout_long_run(object(), beats, scenes, model="m", log=_log)
+     assert mid == 2
+     assert scenes[2]["kind"] == "quote" and scenes[2]["source"] == "llm:breakout"
+     assert any("破格" in m for m in logged)
+ 
+ 
+ async def test_breakout_skips_short_run() -> None:
+-    from backend.monoline import runner as R
++    from backend.monoline import runner as mono
+ 
+     beats = ["a", "b", "c"]
+     scenes = [{"i": i, "kind": "statement", "source": "rules", "slots": {}} for i in range(3)]
+-    assert await R._breakout_long_run(object(), beats, scenes, model="m") is None
++    assert await mono._breakout_long_run(object(), beats, scenes, model="m") is None
+ 
+ 
+ def _fake_suggest_changed():
+     async def _suggest(ai, beat: str, scene: dict, *, model: str, **kw) -> dict:
+         return {"status": "changed", "kind": "quote", "slots": {"q": beat[:6]},
+                 "model": model, "seconds": 1.0, "why": [], "error": "", "cached": False}
+ 
+     return _suggest
+ 
+ 
