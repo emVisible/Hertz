@@ -7,6 +7,56 @@
 
 ## [Unreleased]
 
+### 完善：代码高亮升级 Shiki + Mermaid + PDF/CSS 导出（P1-3/P1-5/P2-2/P2-4/P2-5）
+
+- **Shiki 二次 pass（P1-3）**：hljs 的同步产物仍**先在**（用户立刻看到东西），
+  随后异步升级为 Shiki 的 token 精度，产出仍是**内联色**（微信/知乎清洗器剥 class 与
+  `<style>`，颜色必须落 style）。细粒度打包（`shiki/core` + JS 正则引擎，31 种语言
+  对齐原 hljs common 子集、10 套主题），只在**稿子里真的有代码块**时按需装载；
+  用 JS 引擎而非默认 oniguruma 是为了不给离线桌面端引入 WASM 装载链路。
+  引擎失败/语言不在包内 → **保留 hljs 产物**，一次高亮都不白做，也不外抛拖挂导出。
+  发现通道是渲染期写在 `<code>` 上的 `data-mdcore-lang`（`data-mdcore-*` 会被剥掉，
+  不进产物；行内代码不带该标记，二次 pass 天然只动块级代码）。
+- **代码高亮预设（P1-5，核实项落地）**：此前 hljs 浅深两套字典写死在主题里、
+  用户无从选择；现为 7 套预设（跟随主题/GitHub/Vitesse/Catppuccin/Dracula/Nord/One Dark）
+  走 `codeTheme` token（随稿 overrides 落库），设计器「代码块」分区可切。
+  默认 `auto` = GitHub 口径，**与原配色同源**——接上 Shiki 后首屏观感不变。
+- **排版基线新增「代码专属」一组（5 张）**：整页图里代码块占比太小，把 hljs 换成 Shiki
+  的差异算下来仍在 0.5% 阈值内——**判据等于没接上二次 pass**（实测去掉二次 pass，
+  13 张全绿）。补一张只装代码的图之后，同样的变异让 5 张转红（1.19%~2.87%）。
+- **Mermaid 图表（P2-4）**：```mermaid 围栏渲染为 SVG（`htmlLabels:false`，标签落在
+  SVG `<text>` 里，进得了 canvas 栅格化）。**先异步渲染成 cache、再由渲染期同步消费**——
+  分页量的是真实高度，顺序反了就是"按源码高度排版、图一落地卡片就溢出"。
+  渲染失败记 `render:mermaid` 诊断（横幅可见，带源码行号）并保留源码代码块，
+  不留空白图框；微信/知乎粘贴路径先栅格化成 `<img>`（清洗器剥 SVG）。
+- **PDF 导出（P2-5）**：走分页页壳 → 每页一张图 → A4 纵向，**页数守恒**
+  （`addPage()` 从第 2 页起调：jsPDF 实例自带第 1 页，无脑先调会多一张空白页）。
+  字节头 `%PDF` 由真 jsPDF 判据守住。
+- **主题导出独立 CSS（P2-2）**：`themeToCss()` 输出可分享的样式表（分享形态，非本工具的
+  渲染通道）。核心判据是**纯净页面复现主题**：同一份稿渲染两棵树（内联样式树 vs
+  剥光 + 注入 CSS 的树），逐元素逐属性比 `getComputedStyle`。这条判据当场抓出
+  5 处映射缺失（列表 marker、提示块变体、单元格换行、目录链接、脚注角标）——
+  其中目录链接那条是 apply.ts 忘了给 `<a>` 挂类名，**修在渲染侧而不是导出侧**。
+- **宿主接线判据**：`AsyncRenderWiring.test.tsx` 守画布/导出/设计器三条线
+  （组件测试全绿 ≠ 宿主接线对）；`PerfBudget` 判据当场抓出一处真实回归——
+  mermaid 状态每次渲染都造新数组，等于每敲一键多触发一次画布重排（6 次 vs 预算 2 次）。
+- **测试环境**：前端 `setup.ts` 预置引擎替身（`setCodeHighlighter`）——
+  `vi.mock('@hertz/mdcore')` 拦不住页面内部的调用，替身必须走内核自带的注入通道。
+
+### 修复：工程卫生——包内数据从未入库（26 条 pytest 红的长期根因）
+
+- **现象**：新克隆的检出里 `tests/test_monoline_*.py` 17 条 + `test_packaging_hygiene` /
+  `test_studio_transcribe` 的静态体检 2 条 + `test_anti_ai` 1 条全红报
+  `FileNotFoundError`，而本机因为文件在，从来是绿的。
+- **根因**：`.gitignore` 写的是裸 `data/`，它匹配**任意层级**的 data 目录——
+  `backend/monoline/data/icons.json`（`icons.py` 导入期必读）就这样从未入库，
+  生成脚本 `scripts/build_icons.py` 也不在仓内；`data/reference/33-anti-ai-rules.md`
+  同理（默认工序引用它，`test_anti_ai` 断言它在且有 33 条）。
+- **修法**：`data/` 收紧为 `/data/*`（目录级忽略无法用 `!` 反选回来），并对
+  `data/reference/33-anti-ai-rules.md` 显式放行——它是**产品自带的可维护清单**，
+  不是本机运行数据。两个文件入库后上述 34 条测试全绿。
+- 长期解的另一半记在 handover §4 第 13 条：缺数据要先拷回文件，不要改代码。
+
 ### 修复：图文工坊保存/删除 500（模型与迁移漂移）
 
 - **现象**：MD Studio 里保存提示「保存失败，请检查后端」，删除点了没反应。后端日志

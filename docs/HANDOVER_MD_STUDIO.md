@@ -11,9 +11,9 @@
 | 分支 / HEAD | `emVisible/main`，本轮 v0.37 首批已推 `origin/main`（见 `git log --oneline -5`） | `git log --oneline -2` |
 | **手动测试基点** | tag `test-point/w1` → `a20d627`；当前 HEAD 已在测试单范围内 | `git tag -l "test-point/*"` |
 | 版本 | `0.36.0`（CHANGELOG 已收版；本轮变更仍在 `[Unreleased]`） | `grep -m1 version frontend/package.json` |
-| 本模块提交 | v0.36.0 共 23 个（`a20d627` W1 五六片 → … → `a6e2369` 测试单）；v0.37 首批 4 个提交（wave34 漂移修复+E1/E2 看守 / mdcore 合规扫描器+公式契约 / mdstudio 横幅+搜索 / 文档同步） | `git log --oneline -30` |
+| 本模块提交 | v0.36.0 共 23 个（`a20d627` W1 五六片 → … → `a6e2369` 测试单）；v0.37 首批 4 个提交（wave34 漂移修复+E1/E2 看守 / mdcore 合规扫描器+公式契约 / mdstudio 横幅+搜索 / 文档同步）；v0.37 第三轮（Shiki+预设 / Mermaid / PDF+CSS / .gitignore 与包内数据 / 文档与测试单） | `git log --oneline -30` |
 | 工作树 | 干净 | `git status --short` |
-| 门禁 | 涉及域全绿：ruff 0 / test_layout 25 + migration_bootstrap + test_migration_drift / mdcore 376 / 前端 371（54 文件）/ 两包 tsc / vite build / 13 张排版基线；**全量 pytest 808 收集里本机 26 条红是本地数据缺口**（见 §4 第 13 条）；**产物级 `release-check.sh` 有一项红**，见 §4 第 11 条 | `bash scripts/verify.sh --quick`（跳过最重的基线那步）、`bash scripts/release-check.sh` |
+| 门禁 | 涉及域全绿：ruff 0 / test_layout 25 + migration_bootstrap + test_migration_drift / **mdcore 422**（33 文件）/ **前端 371+7**（55 文件）/ 两包 tsc / vite build / **18 张排版基线**；**全量 pytest 808 收集里本机原有 26 条红已从根因修掉 20 条**（包内数据入库；剩 6 条 pipeline 用例要本机装模型）；**产物级 `release-check.sh` 有一项红**，见 §4 第 11 条 | `bash scripts/verify.sh --quick`（跳过最重的基线那步）、`bash scripts/release-check.sh` |
 | 远端 | `origin/main` 已含本轮首批；**v0.36.0 尚未打 tag**（等手动测试通过） | `git log origin/main..HEAD` |
 
 ## 2. 真相源地图
@@ -33,6 +33,9 @@
 | `packages/mdcore/src/paginate/paginate.ts` 的 `breaks` | 强制分页边界（画布拖出来的断点）；**只增不减**，不裁内容 | 改语义前先看 D-226 的字数守恒论证 |
 | `packages/mdcore/src/theme/apply.ts` 的 `data-mdcore-block/-line` | 画布点段落与拖边界的反查通道 | 加新清洗器/导出路径时确认 `data-mdcore-*` 不进产物 |
 | `frontend/src/pages/mdstudio/BatchExportModal.tsx` | 批量出图队列（一个批次一个 ZIP） | 平台判定与单篇导出同源，改一处要两处看 |
+| `packages/mdcore/src/theme/shikiRuntime.ts` | Shiki 细粒度打包（31 语言 + 10 主题 + JS 正则引擎） | 语言表与 `parse/lang.ts` 的别名表对不齐 = 某语言静默不高亮（仍是 hljs 产物，不报错） |
+| `packages/mdcore/src/theme/css.ts` 的 `SLOT_SELECTORS` | slot → CSS 选择器映射（导出 CSS 用） | **与 `apply.ts` 的 switch 是两份真相源**：漂移时两边测试都不红，唯一看守是 `css.test.ts` 的"纯净页面复现主题"。改 apply 的元素结构必须同步这里 |
+| `packages/mdcore/fixtures/typography.ts` 的 `CODE_MD` | 排版基线的代码专属样例 | 删掉它 → Shiki 二次 pass 在基线层失去判据（实测：13 张全绿也"通过"） |
 | `docs/superpowers/specs/2026-10-13-mdcore-design.md` | §1-§8 设计、§9 实现自检、§10 宿主层验收 | 新验收读数追加，不改写历史段 |
 
 ## 3. 怎么跑
@@ -94,6 +97,21 @@ bash scripts/dev.sh
     由 `ComplianceIgnore.test.tsx` 3 条判据守宿主层（过滤字段 / 落库 `cover.compliance_whitelist` /
     读回，各自成对变异打红）。**给"发现"类 UI 写判据时，组件层一条、宿主接线一条，缺哪条都会漏。**
 
+15. **v0.37 第三轮新增的两条**（同样有判据，别踩回去）：
+    - **判据必须放大被观察的东西**。整页排版基线图里代码块只占千分之几的像素，
+      而阈值是**全图差异比例 0.5%**——于是"把 hljs 换成 Shiki"这件事，判据层
+      **完全看不见**：实测去掉二次 pass，13 张基线**全绿**。补了一张"只装代码"
+      的样例后，同一个变异让 5 张转红（1.19%~2.87%）。
+      **给局部改动配产物层判据时，先问：这个判据放大被观察的东西了吗。**
+    - **派生 state 进渲染 effect 的依赖时，引用必须稳定**。mermaid 预渲染结果
+      进了画布渲染 effect 的依赖，而每次都 `setMermaidDiagnostics([])` 造新数组
+      ——等于每敲一键多触发一次画布重排。`PerfBudget` 判据当场抓出（6 次 vs 预算
+      2 次）。修法是**内容没变就交回同一个引用**（`setState(prev => …)` 里比签名），
+      而不是"少调一次 setState"。
+    - 附：`vi.mock('@hertz/mdcore')` 拦不住页面内部的调用（见第 12/14 条），
+      所以前端测试要让 mdcore 的异步引擎不落真身，得走内核自带的注入通道
+      （`setCodeHighlighter`），不是 mock 模块。
+
 **通用教训**：结构层（jsdom + 注入 mock）能证"对不对"，证不了"看起来对不对"。观感与像素只能在产物层判——上面 1/2/3 条全是真浏览器抓的。
 
 **另一条通用教训（本轮最有价值的一条）**：**jsdom 量不出来的量，就不要拿它当判据**。
@@ -116,9 +134,10 @@ bash scripts/dev.sh
 | Electron 里点一次四个导出按钮（复制/ZIP/长图/文案） | **你** | 已收进测试单 §2.6；自动化浏览器证不到宿主剪贴板权限与另存路径 |
 | v0.35 的两个新交互在真浏览器里走一遍（点段落改文、拖分页边界、多选批量出图） | **你** | 已收进测试单 §2.5；jsdom 证不了吸附手感与截图交互，见 §4 第 9 条 |
 | 合规词表调校（本科目按本号红线增删；初版偏宽，「收藏」「一键」这类日常词会命中） | **你**（主编口径） | 调校点 `packages/mdcore/src/compliance/wordlists.ts`；测试单 §2.13；误报先用「忽略」（随稿落库） |
-| 本机本地数据缺口（`backend/monoline/data/icons.json`、`data/reference/33-anti-ai-rules.md`、pipeline 模型） | **你** | 26 条 pytest 红全由它起，详见 §4 第 13 条；从原开发机拷回文件即可回转，与代码无关 |
+| ~~本机本地数据缺口~~ **已修（v0.37 第三轮）** | 已修 | `.gitignore` 的裸 `data/` 收紧为 `/data/*` 并放行产品自带清单，两个文件已入库；34 条因缺数据而红的测试回转。剩余 6 条 pipeline 用例仍需本机装模型（produce/chain），与代码无关 |
 | 字体分片 | 已判**不做** | 理由与重启条件见 `docs/MD_STUDIO.md` §9 |
-| 候选下一步（Shiki、图床、掘金/头条） | 我，等你点单 | 排序与理由见 `docs/MD_STUDIO_UPDATE_PLAN.md` §5 与 `docs/MD_STUDIO.md` §10 |
+| 走一遍新增的测试单 §2.14 / §2.15（代码高亮预设、Mermaid、PDF、CSS 导出） | **你** | 这四条是本轮新增能力，jsdom 与基线图都证不到"在真浏览器里好不好看" |
+| 候选下一步（图床、掘金/头条、反向导入） | 我，等你点单 | Shiki/CSS/PDF/Mermaid 已落地；剩下三项的排序与理由见 `docs/MD_STUDIO_UPDATE_PLAN.md` §5 与 `docs/MD_STUDIO.md` §10 |
 
 ## 7. 一个收口建议
 

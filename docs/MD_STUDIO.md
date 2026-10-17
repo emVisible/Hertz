@@ -453,14 +453,27 @@ md 字符串
 | 稿件列表搜索（P1-4） | `LayoutListPanel.tsx` 按稿名过滤（大小写不敏感、空结果提示、Esc 清空） | 只搜稿名，不搜正文——正文全量检索是另一个量级的事 |
 | 结构漂移看守（E1/E2） | `tests/test_migration_drift.py`（新库全量迁移 → autogenerate 断言零结构漂移）+ `scripts/drift_check.py`（只报会在运行时炸 ORM 的类别） | 只守结构类（add/remove table/column）；modify_nullable 等存量噪音不进断言 |
 | 公式契约保真进微信产物（P1-2 结构层） | `stripUnsafe` 对 `data-mdcore-formula-tex` 开例外；保真断言在 `theme/formula.test.ts` | **落地形态（SVG / 转图）待真机验收后定**（公众号清洗器剥 @font-face）；这一步只保证产物里认得出公式、取回原始 TeX |
+| Shiki 二次 pass 高亮（P1-3）+ 代码高亮预设（P1-5） | `theme/shiki.ts` + `theme/shikiRuntime.ts`（细粒度打包，JS 正则引擎，真有代码块时才装载）；`codeTheme` token + 设计器下拉 | hljs 那一版永远先在（同步、立即可见）；引擎失败保留 hljs 产物。默认 `auto` = GitHub 口径，**默认观感不变** |
+| Mermaid 图表（P2-4） | `theme/mermaid.ts`：预渲染 cache → 渲染期同步消费（分页量真实高度） | 失败记诊断 + 保留源码；微信/知乎粘贴先栅格化成 `<img>`（清洗器剥 SVG）。**未进排版基线**（图依赖真实布局，基线要像素稳定） |
+| 主题导出独立 CSS（P2-2） | `theme/css.ts` + 设计器「导出 CSS」 | 分享形态，**不是**本工具的渲染通道；判据是纯净页面复现主题（逐属性比 computed） |
+| PDF 导出（P2-5） | `export/pdf.ts`：分页页壳 → 每页一图 → A4 | 页数守恒；与长图并存（长图贴聊天、PDF 发文件） |
 
 **未开工：**
 
-1. **Electron 内人工走通四个导出按钮**（唯一剩下的验收腿：自动化浏览器证不到宿主剪贴板权限与另存路径）
+1. **Electron 内人工走通导出按钮 + 真实粘贴**（唯一剩下的验收腿：自动化浏览器证不到宿主剪贴板权限与另存路径）
 2. **公式在公众号的落地（P1-2 后半）与图床（P1-1）**：微信要求图片必须在微信图床；公式先真机验收再定 SVG / 转图路线，若结论是转图则与图床合并做
-3. **Shiki 二次 pass 高亮（P1-3）与代码高亮主题可选（P1-5）**：与代码 token 色映射合并评估（现状：hljs 浅深两套固定字典，无独立主题集）
-4. **掘金/头条适配器（P2-1）**：mdnice 证明"一份内容多处粘贴"是真需求，适配器形状已就位
-5. **主题导出独立 CSS（P2-2）/ 反向导入（P2-3）/ Mermaid（P2-4）/ PDF 导出（P2-5）**：收益递减，按实际发布平台取舍
+3. **掘金/头条适配器（P2-1）**：mdnice 证明"一份内容多处粘贴"是真需求，适配器形状已就位
+4. **反向导入（P2-3）**：sitdown 规则引擎可参考；采集产物 IR 结构断言，采集失败不静默
+
+### 10.1 排版基线新增「代码专属」样例（v0.37）
+
+原来 13 张基线图里，代码只在微信/知乎长文样例里出现一块。整页图里代码块只占千分之几
+的像素，而阈值是**全图差异比例 0.5%**——于是"把 hljs 换成 Shiki"这件事在基线层
+**完全看不见**：实测去掉二次 pass，13 张全绿（实测数字，见 `docs/DECISIONS.md`）。
+
+补了一组**只装代码**的样例（4 段 × 6 套微信/知乎主题 = 5 张，基线 13 → 18 张），
+同一变异让 5 张转红（1.19%~2.87%）。**可复述的判据**：给"局部改动"配产物层判据时，
+先问**这个判据放大被观察的东西了吗**——全图阈值会把局部差异稀释掉。
 
 **已于 v0.35 落地**（原候选第 2、4 条）：
 
@@ -497,6 +510,15 @@ uv run python scripts/drift_check.py --db postgresql+asyncpg://hertz:hertz@local
 # 主题清单与端点
 grep -n "export const" packages/mdcore/src/theme/themes/*.ts
 grep -n "@router\." backend/routers/layout.py
+
+# 排版基线（v0.37 起 18 张：13 + 5 张「代码专属」）
+node scripts/typography-baseline.mjs              # 比对（门禁用）
+node scripts/typography-baseline.mjs --update     # 重录（确认改动是对的之后）
+python3 -c "import json;m=json.load(open('packages/mdcore/tests/baselines/typography/manifest.json'));print(len(m['shots']),'张')"
+
+# 代码高亮预设与 mermaid/PDF/CSS 的入口（判据各自的落点）
+grep -n "CODE_THEMES" packages/mdcore/src/theme/types.ts
+ls packages/mdcore/src/theme/shiki*.ts packages/mdcore/src/theme/mermaid*.ts packages/mdcore/src/theme/css*.ts packages/mdcore/src/export/pdf*.ts
 ```
 
 真浏览器验收方法（产物层取证，探针页验完即删）：在 `frontend/public/` 放一个临时 html 引 `src/tmp-*/entry.ts`，直接调 mdcore 的导出函数断言**字节**（PNG 魔数、`createImageBitmap` 尺寸、ZIP 头、耗时），用 browser-use 打开 `http://localhost:3000/<probe>.html` 读报告并截图。**不要**把导出验收只留在 jsdom 层——`docs/HANDOVER_MD_STUDIO.md` §4 记的 7 个坑里有 3 个只有真浏览器抓得到。
