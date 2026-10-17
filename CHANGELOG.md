@@ -7,232 +7,122 @@
 
 ## [Unreleased]
 
-### 修复：公众号里的分隔线右居中、标题被拆成多行（用户实测反馈）
+> 本节只写**变了什么**；「为什么」在 `docs/decisions/`，判据在代码与测试里。发版时收成版本号并打 tag。
 
-**现象**：把稿子复制进公众号编辑器后——`---` **右居中、左侧一大片空白**
-（实质上浏览就是空白），标题被**硬性分为多行**。
+### 修复：公众号/知乎粘贴——分隔线右居中、标题被拆成多行
 
-**根因**（都出在产物 HTML 上，画布与结构断言全绿）：
+- 新增 `platform/editorCompat.ts`，微信与知乎同规格复用：分隔线改
+  `section[text-align:center]` + 内层 `inline-block`（编辑器不吃 auto 外边距）；
+  标题内的 inline-block 拍成 `inline`，自身是 inline-block 的药丸标题不动。
+- 判据 9 条（wechat 7 + zhihu 2）打在**产物 HTML** 上；成对变异 5 red。
+  mdcore 426 → 435，排版基线 18 张不变。人工验收见 `docs/MD_STUDIO_TEST_SHEET.md`。
+- 沉淀：富文本编辑器不是浏览器——规则与判据见 `AGENTS.md` §3.4。
 
-| 症状 | 产物里的成因 | 编辑器为什么不吃 |
-| --- | --- | --- |
-| 分隔线右居中 | `width:48px` + `margin:2em auto` | 富文本编辑器**不按 auto 外边距居中**，短横贴到右边、左边空一大块；且 `<hr>` 是浏览器控件，编辑器会套自己的默认样式，粗细与颜色都不受控 |
-| 标题多行 | 标题是 `<h1><span prefix/><span content>文字</span></h1>`，两个 span 都是 `inline-block`（prefix 是渲染期物化的章节编号，content 恒 inline-block 以便药丸/下划线贴字） | 编辑器**把 inline-block 当块级排**，每个 span 各占一行 → 标题拆行 |
+### 修复：启动期愈合不再被一条坏数据连坐
 
-**修法**（新增 `platform/editorCompat.ts`，微信与知乎**同规格复用**）：
-- 分隔线 → `section[text-align:center]` + 内层 `inline-block` 短横。居中改由
-  `text-align` 完成（编辑器自己菜单里就有的排版项），与 auto 外边距、像素宽度
-  都无关。线型分三支保形：实心 / 虚线 / 药丸；三圆点那支也一并从 flex 改成
-  text-align 居中（`justify-content` 一旦不生效，三个点就贴左边，同一个病）。
-- 标题内联 inline-block 一律拍成 `inline`；**自身**是 inline-block 的药丸标题
-  保持不动（那种靠自身底色成立，拍平会把药丸摊成一整行的底）。
-- 知乎此前有同样两处隐患，同批一起修——同一个事实不许两个作者。
+- `_heal_legacy_plans` 的 `try/except` 从 for 循环外挪进循环内：单条
+  `phase_order == []` 旧计划不再让整批愈合作废、不再每次启动刷一条带栈记录
+  （此前日志里有 1320 条）。**不自动改写**——空 phase_order 是要人工判断的语义问题，
+  静默补全会掩盖数据损坏。判据 `tests/test_heal_plans.py`（含成对变异）。
 
-**验证**：新增 9 条判据（wechat 7 + zhihu 2），全部打在**产物 HTML** 上
-（"不得再出现 `<hr>` / `margin:…auto`"、"标题里不得再有 inline-block"）；
-成对变异实测（摘掉两条规则）**5 red**，恢复后全绿。mdcore 426 → **435**；
-排版基线 18 张**不变**（这两条只动粘贴产物、不动画布渲染）。
+### 修复：日志侧密钥脱敏 + 测试日志隔离 + 版本号对齐
 
+- 新增 `infrastructure/redact.py`：凡落盘的外部文本一律先过 `redact_secrets()`
+  （保留键名与 `Bearer ` 前缀，只换值）。API 侧早就只回异常**类名**并有测试守住，
+  日志侧写的是 `str(exc)` 原文——那条通道的宽度此前由**异常作者**决定。
+  顺带修同类的第二处：签名直链 query 里的凭证（此前截断 64 字符就写进了运行日志）。
+- 测试不再污染生产日志：`log_dir` 改 `data/logs`，conftest 显式设 `HERTZ_LOG_DIR` 兜底。
+- `APP_VERSION` 对齐 `0.36.0`（此前停在 0.35.0 而包版本已 0.36.0，排查时日志版本号先把人带偏），
+  由 `tests/test_version_drift.py` 守四方一致。
 
-### 修复：启动期"重启风暴"与日志侧的三处洞（本轮排查实测）
+### 工程：`scripts/dev.sh` 加端口自复活刹车
 
-> **⚠️ 本节的取证结论已被下一条推翻，读时请先看更正。** 下面那条"2806 次启停 =
-> 重启风暴"的判断是错的：那 2806 次是**测试自己**在造 app。保留原文是因为
-> 「错在哪一步」比「结论是什么」更值得留档。
+- pid 消失后给一个观察窗，端口又有人在听才判定"外部在重启它"，计数达阈值打印诊断并非 0
+  退出；没人拉时行为完全不变（仍是整体退出、exit 0）。
+- 该刹车当初被一份**误读**的日志触发过（"2806 次启停"其实是 pytest 造 app，见 D-231）。
+  刹车本身留着——它兜的是重复启动 / 遗留包装进程，只是不再拿那个数字当证据。
 
-**现象**：打开应用约一分钟后整台机器卡死。取证（`logs/hertz.log`）：
-**2806 次后端 lifespan 启停、峰值 8 次/秒**，每次都完整初始化 ServiceRegistry、
-依赖探针、7 个定时任务与 DB 会话 —— 不是"卡"，是持续的资源风暴。
-同一份日志里还有 **1320 条** `_heal_legacy_plans` 的完整 traceback。
+### 修复：`data/runtime.yaml` 的陈旧默认值钉子——"日志搬家"其实从未生效
 
-- **一条坏计划不再连坐整批愈合**（1320 条 traceback 的来源）：`_heal_legacy_plans`
-  的 `try/except` 写在 for 循环**外**，于是库里任何一条 `phase_order == []` 的旧计划
-  都会让整批愈合抛异常中止 —— 坏计划永远修不好，其余计划也永远修不好，
-  而且每次启动刷一条带栈的记录。改为**循环内**校验：单条非法 → 计数跳过、
-  一次 traceback 都不打、**不自动改写**（空 phase_order 是要人工判断的语义问题，
-  静默补全会掩盖数据损坏）。判据 `tests/test_heal_plans.py`（含成对变异）。
-- **日志侧密钥脱敏**（`backend/infrastructure/redact.py`）：API 响应早就只回异常**类名**
-  并有测试守住，但日志写的是 `str(exc)` 原文 —— 那条通道的宽度由**异常作者**决定，
-  `tests/test_reddit_auth_card.py` 里的 `client_secret=do-not-echo-me` 就是现成反例
-  （同一条异常，API 不漏、日志原样落盘）。现在凡是要落盘的外部文本一律先过
-  `redact_secrets()`：保留键名与 `Bearer ` 前缀（可诊断），只换值。
-  顺带修同类的第二处：签名直链的 query 里带凭证，此前截断 64 字符就写进了运行日志
-  （截断挡不住 `?token=...`）。
-- **测试不再污染生产日志**：`log_dir` 原是 cwd 相对的裸 `logs/`，与 `data_dir` 无关，
-  所以 conftest 的隔离**根本没管到日志** —— 一次全量测试就在仓库日志里留下 77 行
-  测试夹具文本。现改为 `data/logs`（跟着 data_dir 走），并在 conftest 显式设
-  `HERTZ_LOG_DIR` 兜底。判据：跑完测试后生产日志的 mtime 与大小不变。
-- **dev.sh 重启风暴刹车**：原逻辑"看见后端没了就整体退出"，而拉起后端的是别的东西
-  —— 脚本退了，风暴照旧。改为观察"服务是不是**没我们管也自己回来了**"：pid 消失后
-  给一个观察窗，端口又有人在听 → 判定外部重启、计数；达到阈值打印诊断并以非 0 退出。
-  没人拉时行为完全不变（仍是整体退出、exit 0）。
-- **`APP_VERSION` 漂移**：`backend/config.py` 长期停在 `0.35.0` 而包版本已是 `0.36.0`
-  —— 排查"哪个版本引入的"时日志里的版本号会先把人带偏（本次排查就先被它误导过一次）。
-  现对齐 `0.36.0`，并由 `tests/test_version_drift.py` 守住后端/pyproject/前端/壳四方一致。
+- `settings` 是 `_EffectiveSettings` 代理，**runtime.yaml 里的值压过类默认值且不报错**；
+  设置页存的是表单全量快照，10-12 就把旧默认 `log_dir: logs` 写了进去，于是改了的
+  默认值被自己的历史钉死，而 pytest 与 `verify.sh` 全绿。
+- 读时丢弃被取代的旧默认（`_LEGACY_RUNTIME_VALUES`，不回写用户文件）；写时不再把
+  等于默认值的路径字段存成覆盖（`_prune_redundant_path_defaults`）。
+- 判据 `tests/test_runtime_path_pinning.py` 11 条，三组成对变异（2 / 3 / 4 red）。
+  真机验证：`data/logs/hertz.log` 开始写入，旧 `logs/hertz.log` 停止增长。
+- 为什么与代价见 [`D-231`](docs/decisions/D-231-runtime-yaml-stale-pin.md)。
 
-> **未结**：重启风暴的**驱动者仍未定位**。已排除 uvicorn `--reload` 的文件监听
-> （过滤器只认 `*.py`，且运行期不写 `.py`）、`dev.sh`、Electron 主进程、冻结入口、
-> launchd/cron、multiprocessing 自重跑。判据见 `docs/HANDOVER_MD_STUDIO.md` §4。
-> 刹车保证"最坏不再卡死机器"，但根因要靠一次现场取证（`ps` 进程树 + `sample`）。
+### 修复：编辑 Mermaid 图后画布不响应
 
-
-### 修复：`data/runtime.yaml` 的陈旧默认值钉子 —— 上一条"日志搬家"其实从未生效
-
-**上一条结论作废（证据链）**：那 2806 次 lifespan 启停不是运行时重启风暴，而是
-**测试自己**在造 app。①每次"启停"只花 **0.13s**，且同一秒内完成 registry + 依赖探针
-+ heal + 调度器全套——真实 uvicorn 重启做不到这么快；②按分钟聚类后是**连续数小时的
-85–110 次/分钟**的平台段，不是"启动后第 60 秒开始循环"；③决定性证据：那段窗口
-（10-15 17–20 时、10-16 18–20 时、**10-17 08:19–08:52**）与 `verify` 日志的写入
-时间逐分钟吻合（`verify-full.log` mtime = 08:53:07，风暴最后一段 08:52 收尾），
-而**那段时间没有任何 `.py` 变动**——`uvicorn --reload` 只在 `*.py` 变化时才重启，
-所以它不可能是 reload 触发的。峰值 8 次/秒也正好是"一个 pytest 文件里连续 8 个
-用例各自建一次 app"的形状。1320 条 heal traceback 同理：那是测试跑过同一条坏计划。
-
-**顺着这条线查出的真缺陷（本次修的）**：`log_dir` 搬家其实**在这台机器上从未生效**。
-`settings` 不是 `Settings`，而是 `_EffectiveSettings` 代理 —— **`data/runtime.yaml`
-里的值压过类默认值**；而设置页保存的是**表单全量快照**，早在 10-12 就把当时的旧默认
-`log_dir: logs` 写进了那个文件。于是 v0.36 改的默认值被自己的历史钉死，
-`settings.log_dir` 至今仍是 `logs`，且**没有任何报错**（真机日志路径是唯一揭发者）。
-两处结构性修复：
-
-- **读时丢弃被取代的默认值**：`_LEGACY_RUNTIME_VALUES = {"log_dir": ("logs",)}`。
-  只在读侧丢弃，**不回写用户的文件**；这些值的全部语义就是"当年那个默认"。
-- **写时不再把默认值存成覆盖**：`_prune_redundant_path_defaults()` 在 PATCH 落盘前
-  摘掉与类默认逐字相同的路径字段（相对 / `./` / 绝对三种写法都算）。
-  runtime.yaml 的语义是**覆盖**而不是表单存档，让默认值进去就等于给它上永久封印——
-  每一次默认值变更都会在这台机器上自动失效。`assets_root` 默认是 `None`，
-  所以 `assets_root: data` 这种"显式指回 data_dir"不会被误摘，
-  `docs.py` / `library.py` 直接读 `runtime_config.load()["assets_root"]` 的语义不变。
-
-判据 `tests/test_runtime_path_pinning.py`（11 条），三条成对变异实测打红：
-清空 legacy 表 → 2 red；剪枝变空操作 → 3 red；剪枝变无差别清空 → 4 red。
-
-> **仍未结**：用户报的"打开应用一分钟整台机器卡死"本身**没有被复现**。当前这一套
-> dev 栈（uvicorn + vite + Electron）连续运行 15 分钟以上，CPU 全程 ≈0%、零重启。
-> 最可能的解释是当时**全量 pytest 与 dev 栈 + Postgres 同时在跑**（825 个用例、
-> 每次建 app 都拉起 7 个定时任务与 DB 会话），把机器打满——但这仍是推测，
-> 要定性得在"只开应用、不跑测试"的条件下观察一次。
-
-
-### 修复：编辑 Mermaid 图后画布不响应 —— 判"内容变没变"看的是数量不是内容
-
-**症状**：改一张 mermaid 图里的字，画布毫无反应（非图内容不动），得删掉另一张图
-或重开页面才生效。**只在真浏览器里出现**，jsdom 里 mermaid 必失败 → cache 恒为空，
-自动化观测不到。
-
-**病因**：宿主判断"这次渲染结果与上次是否相同"时比的是 `cache.size`，而 cache 的键
-是**源码内容的哈希**（`mermaidKeyOf`）——"块数没变"与"内容没变"是两件事。改一个字，
-块数不变而键变了，于是 state 被判成"没变"而交回旧引用，**旧 SVG 一直挂在画布上**。
-
-- 新增 `mermaidCacheSignature()`（`packages/mdcore/src/theme/mermaid.ts`）：排序后的
-  `键:SVG长度` 串。排序让"同一批图换了位置"不算变化；带长度兜住"源码没变、主题变了"
-  这类情况。不比 SVG 全文——栅格化后那是一张 dataURL，每敲一键把所有图的全文拼一遍
-  纯属浪费，而"同源码同长度的两张不同 SVG"视觉上无差别。
-- 宿主改用它（`frontend/src/pages/mdstudio/CanvasPanel.tsx`）。原先那行注释写的是
-  "内容没变就交回同一个引用"，而代码比的是数量——**注释和代码说的不是一回事**。
-
-判据：mdcore 6 条（块数同内容异 / 顺序变 / 重复取稳定 / 同键不同长 / 空值 / 同键去重）
-+ 前端 1 条源码级守卫（不许退回比 `size`）。三组成对变异实测打红：宿主改回比 `size`
-→ 1 red；签名丢掉长度 → 1 red；签名退化成 `String(size)` → 2 red。
-
+- 宿主判"内容变没变"原本比 `cache.size`，而 cache 的键是源码哈希——改一个字块数不变
+  而键变了，旧 SVG 就一直挂在画布上。新增 `mermaidCacheSignature()`（排序后的
+  `键:SVG长度`），宿主改用之。
+- 判据 mdcore 6 条 + 前端 1 条源码级守卫；三组成对变异（1 / 1 / 2 red）。
+  为什么与代价见 [`D-232`](docs/decisions/D-232-cache-signature.md)。
 
 ### 完善：代码高亮升级 Shiki + Mermaid + PDF/CSS 导出（P1-3/P1-5/P2-2/P2-4/P2-5）
 
-- **Shiki 二次 pass（P1-3）**：hljs 的同步产物仍**先在**（用户立刻看到东西），
-  随后异步升级为 Shiki 的 token 精度，产出仍是**内联色**（微信/知乎清洗器剥 class 与
-  `<style>`，颜色必须落 style）。细粒度打包（`shiki/core` + JS 正则引擎，31 种语言
-  对齐原 hljs common 子集、10 套主题），只在**稿子里真的有代码块**时按需装载；
-  用 JS 引擎而非默认 oniguruma 是为了不给离线桌面端引入 WASM 装载链路。
-  引擎失败/语言不在包内 → **保留 hljs 产物**，一次高亮都不白做，也不外抛拖挂导出。
-  发现通道是渲染期写在 `<code>` 上的 `data-mdcore-lang`（`data-mdcore-*` 会被剥掉，
-  不进产物；行内代码不带该标记，二次 pass 天然只动块级代码）。
-- **代码高亮预设（P1-5，核实项落地）**：此前 hljs 浅深两套字典写死在主题里、
-  用户无从选择；现为 7 套预设（跟随主题/GitHub/Vitesse/Catppuccin/Dracula/Nord/One Dark）
-  走 `codeTheme` token（随稿 overrides 落库），设计器「代码块」分区可切。
-  默认 `auto` = GitHub 口径，**与原配色同源**——接上 Shiki 后首屏观感不变。
-- **排版基线新增「代码专属」一组（5 张）**：整页图里代码块占比太小，把 hljs 换成 Shiki
-  的差异算下来仍在 0.5% 阈值内——**判据等于没接上二次 pass**（实测去掉二次 pass，
-  13 张全绿）。补一张只装代码的图之后，同样的变异让 5 张转红（1.19%~2.87%）。
-- **Mermaid 图表（P2-4）**：```mermaid 围栏渲染为 SVG（`htmlLabels:false`，标签落在
-  SVG `<text>` 里，进得了 canvas 栅格化）。**先异步渲染成 cache、再由渲染期同步消费**——
-  分页量的是真实高度，顺序反了就是"按源码高度排版、图一落地卡片就溢出"。
-  渲染失败记 `render:mermaid` 诊断（横幅可见，带源码行号）并保留源码代码块，
-  不留空白图框；微信/知乎粘贴路径先栅格化成 `<img>`（清洗器剥 SVG）。
-- **PDF 导出（P2-5）**：走分页页壳 → 每页一张图 → A4 纵向，**页数守恒**
-  （`addPage()` 从第 2 页起调：jsPDF 实例自带第 1 页，无脑先调会多一张空白页）。
-  字节头 `%PDF` 由真 jsPDF 判据守住。
-- **主题导出独立 CSS（P2-2）**：`themeToCss()` 输出可分享的样式表（分享形态，非本工具的
-  渲染通道）。核心判据是**纯净页面复现主题**：同一份稿渲染两棵树（内联样式树 vs
-  剥光 + 注入 CSS 的树），逐元素逐属性比 `getComputedStyle`。这条判据当场抓出
-  5 处映射缺失（列表 marker、提示块变体、单元格换行、目录链接、脚注角标）——
-  其中目录链接那条是 apply.ts 忘了给 `<a>` 挂类名，**修在渲染侧而不是导出侧**。
-- **宿主接线判据**：`AsyncRenderWiring.test.tsx` 守画布/导出/设计器三条线
-  （组件测试全绿 ≠ 宿主接线对）；`PerfBudget` 判据当场抓出一处真实回归——
-  mermaid 状态每次渲染都造新数组，等于每敲一键多触发一次画布重排（6 次 vs 预算 2 次）。
-- **测试环境**：前端 `setup.ts` 预置引擎替身（`setCodeHighlighter`）——
-  `vi.mock('@hertz/mdcore')` 拦不住页面内部的调用，替身必须走内核自带的注入通道。
+- **Shiki 二次 pass**：hljs 同步产物先在，异步升级为 token 精度，产出仍是内联色。
+  `shiki/core` + JS 正则引擎（不给离线桌面端引入 WASM 装载链路），只在稿子里真有
+  代码块时按需装载；失败/语言不在包内 → 保留 hljs 产物且不外抛。
+- **代码高亮预设（P1-5）**：7 套预设走 `codeTheme` token（随稿 overrides 落库），
+  设计器可切。默认 `auto` = GitHub 口径，**首屏观感与原配色同源**。
+- **排版基线加"代码专属"5 张**：整页图里代码占比太小，换引擎的差异仍在 0.5% 阈值内
+  ——判据等于没接上；补图后同样变异让 5 张转红（1.19%~2.87%）。
+- **Mermaid 图表**：```mermaid 围栏渲染为 SVG（`htmlLabels:false`）。先异步渲染成
+  cache、再由渲染期同步消费（分页量到真实高度，顺序反了就按源码高度排版、图一落地就溢出）。
+  失败记 `render:mermaid` 诊断并保留源码，不留空白图框。
+- **PDF 导出**：分页页壳 → 每页一张图 → A4 纵向，页数守恒（`addPage()` 从第 2 页起调）。
+- **主题导出独立 CSS（P2-2）**：`themeToCss()` 输出可分享样式表。核心判据是
+  **纯净页面复现主题**（渲染两棵树逐属性比 `getComputedStyle`），当场抓出 5 处映射缺失。
+- **宿主接线判据**：`AsyncRenderWiring.test.tsx` 守画布/导出/设计器三条线；
+  `PerfBudget` 抓出 mermaid 状态每渲染造新数组 = 每敲一键多触发一次重排。
+- 测试环境预置引擎替身（`setCodeHighlighter`）——`vi.mock('@hertz/mdcore')` 拦不住
+  workspace 源码包内部的调用。
+- 设计理由见 [`D-229`](docs/archive/DECISIONS.md)，规则归属见 `docs/MD_STUDIO.md`。
 
 ### 修复：工程卫生——包内数据从未入库（26 条 pytest 红的长期根因）
 
-- **现象**：新克隆的检出里 `tests/test_monoline_*.py` 17 条 + `test_packaging_hygiene` /
-  `test_studio_transcribe` 的静态体检 2 条 + `test_anti_ai` 1 条全红报
-  `FileNotFoundError`，而本机因为文件在，从来是绿的。
-- **根因**：`.gitignore` 写的是裸 `data/`，它匹配**任意层级**的 data 目录——
-  `backend/monoline/data/icons.json`（`icons.py` 导入期必读）就这样从未入库，
-  生成脚本 `scripts/build_icons.py` 也不在仓内；`data/reference/33-anti-ai-rules.md`
-  同理（默认工序引用它，`test_anti_ai` 断言它在且有 33 条）。
-- **修法**：`data/` 收紧为 `/data/*`（目录级忽略无法用 `!` 反选回来），并对
-  `data/reference/33-anti-ai-rules.md` 显式放行——它是**产品自带的可维护清单**，
-  不是本机运行数据。两个文件入库后上述 34 条测试全绿。
-- 长期解的另一半记在 handover §4 第 13 条：缺数据要先拷回文件，不要改代码。
+- `.gitignore` 的裸 `data/` 匹配任意层级，`backend/monoline/data/icons.json` 与
+  `data/reference/33-anti-ai-rules.md` 因此从未入库——新克隆里 26 条测试红而本机绿。
+- 收紧为 `/data/*`，并对 33-anti-ai-rules.md 显式放行（产品自带清单，不是本机数据）。
+  两个文件入库后 34 条测试全绿。
 
 ### 修复：图文工坊保存/删除 500（模型与迁移漂移）
 
-- **现象**：MD Studio 里保存提示「保存失败，请检查后端」，删除点了没反应。后端日志
-  `asyncpg UndefinedColumnError: column layout_revisions.updated_at does not exist`——
-  每次 PUT（快照改前内容）与 DELETE（删除前也要快照）都 500。
-- **根因**：`LayoutRevision` 继承 `BaseModel`（声明 created_at + updated_at），而
-  `wave10_layout_data_safety` 手写建表 SQL 只给了 created_at。ORM 的 INSERT 带
-  `RETURNING updated_at`，库里没这列。测试没拦住：hertz_test 的 schema 由
-  `create_all` 从**模型**重建，永远带着这列——只有走 alembic 的库才缺
-  （create_all 与迁移两条建 schema 路径分叉，AXIOM §22.1 口径的漂移）。
-- **修法**：新增迁移 `wave34_layout_revisions_updated`（接在 wave10 之后，heads 仍为 2），
-  加列并回填 created_at（快照落盘后不会再改，两列本就同值）。存量行不抹成迁移执行时间。
-- **附带**：`tests/test_migration_bootstrap.py` 新增 `test_revision_ids_fit_alembic_version_column`——
-  alembic 自建的 `alembic_version.version_num` 是 VARCHAR(32)，超长 revision id 会让
-  整条迁移在最后一步 UPDATE version_num 时回滚（本迁移第一版 33 字符实测踩中）。
-- **验证**：真机 API 全路径 200（create/PUT/revisions/DELETE/restore/revision-restore/purge）；
-  pytest 56 条过（test_layout 25 + migration_bootstrap + board_domain heads 守卫）；
-  `alembic check` 的 `layout_revisions.updated_at` add_column 漂移消失。
+- `LayoutRevision` 声明了 `updated_at`，而 `wave10_layout_data_safety` 手写建表 SQL
+  没这列 → 每次 PUT/DELETE 都 500。测试拦不住：`hertz_test` 的 schema 由 `create_all`
+  从**模型**重建，永远带着这列——只有走 alembic 的库才缺。
+- 新增迁移 `wave34_layout_revisions_updated` 加列并回填；附带判据
+  `test_revision_ids_fit_alembic_version_column`（超长 revision id 会让迁移最后一步回滚）。
 
-### 完善：漂移看守（E1/E2）与合规横幅（P0-1）
+### 完善：漂移看守（E1/E2）
 
 - **结构漂移守卫（E1）**：新库 `alembic upgrade heads` → autogenerate 比对模型元数据，
-  断言零 add/remove table/column——「模型加了列、迁移没加」这类漂移此前在测试里永远绿。
-  口径只报会在运行时炸 ORM 的类别（`backend/infrastructure/drift.py`，守卫测试与 CLI 共用
-  唯一实现）。成对变异：从迁移里删一列 → 测试红。
-- **漂移检查 CLI（E2）**：`scripts/drift_check.py` 只打印结构漂移，`modify_nullable` /
-  JSON→JSONB / 索引反映差异等存量噪音降级为计数——`alembic check` 全量输出里真信号
-  被噪音淹没，此前就是这么漏的。退出码：0 无结构漂移 / 1 有。
-- **违禁词合规横幅（P0-1）**：mdcore 违禁词检测层（通用 5 类 + 命理话术两层词表、
-  拼音首字母别名、`[\s·*-_~]*` 逃逸分隔符、代码块剥离且行号不变、白名单豁免、按词整体
-  正则匹配、结果按行排序；9 项单测）；`CanvasPanel` 接线（findings/labels/ignore 3 props）；
-  `ComplianceBanner.tsx` 折叠横幅（词分组、行号跳转、忽略）；判据：无命中的正常稿
-  横幅完全不出现。忽略词入白名单、随稿存 `cover.compliance_whitelist`（加键不需迁移），
-  刷新/换稿再回来仍豁免。
-  **忽略接线的成对变异判据**：宿主按 `term`（词表原形）过滤，此前误用 `matched`
-  （逃逸原文）——「改·运」「gy」这类命中点忽略有去无回；`ComplianceIgnore.test.tsx`
-  守在宿主层（改回 `matched` 即红；去掉落库/读回各打红一条）。合规 10 个 key 的
-  `en.json` 文案补齐（此前是中文）。
-- **测试环境治理**：`frontend/src/test/setup.ts` 顶部固定 `NODE_ENV=test` + 预热 React，
-  防 vitest worker 缓存生产构建导致 `act is not a function`。
-- **公式契约保真进微信产物（P1-2 结构层）**：`data-mdcore-formula-tex` 不再被
-  `stripUnsafe` 剥掉——它不是编辑器状态，是公式在平台产物里的数据契约（公众号清洗器
-  剥 @font-face，落地方案与真机验收都要靠它在产物里认出公式、取回原始 TeX）；
-  其余 `data-mdcore-*` 编辑器标记照旧剥。成对变异：去掉例外 → 保真断言红。
-- **稿件列表搜索（P1-4）**：按稿名过滤（大小写不敏感、空结果给明确提示、Esc 清空），
-  与选中态不互斥——过滤只是显示层，不换当前打开的稿。顺带修掉一个真 bug：
-  **点击已选中的稿行会把画布清空**（清 draft 后 effect 依赖未变、不会重载）。
+  断言零 add/remove table/column——"模型加了列、迁移没加"此前在测试里永远绿
+  （`hertz_test` 由 `create_all` 从模型重建，永远带着那列）。口径只报会在运行时炸 ORM
+  的类别；成对变异：从迁移里删一列 → 测试红。
+- **漂移检查 CLI（E2）**：`scripts/drift_check.py` 只打印结构漂移，把
+  `modify_nullable` / JSON→JSONB / 索引差异等存量噪音降级为计数——真信号此前就是
+  被这些噪音淹没的。退出码 0 无结构漂移 / 1 有。
+
+### 完善：合规横幅（P0-1）+ 公式契约保真（P1-2）+ 稿件搜索（P1-4）
+
+- **合规横幅**：mdcore 检测层（5 类 + 命理话术两层词表、拼音首字母别名、逃逸分隔符、
+  代码块剥离且行号不变、白名单豁免）+ `CanvasPanel` 接线 + `ComplianceBanner.tsx`
+  折叠横幅（词分组、行号跳转、忽略）。**无命中的正常稿横幅完全不出现**。忽略词入白名单
+  随稿落库，刷新后仍豁免；忽略接线的成对变异判据守在宿主层。
+- **公式契约保真进微信产物**：`data-mdcore-formula-tex` 不再被剥掉——它不是编辑器状态，
+  是公式在平台产物里的数据契约（公众号清洗器剥 @font-face，验收要靠它认出公式、取回 TeX）；
+  其余 `data-mdcore-*` 编辑器标记照旧剥。
+- **稿件列表搜索**：按稿名过滤（大小写不敏感、Esc 清空），与选中态不互斥——过滤只是
+  显示层，不换当前打开的稿。顺带修掉"点击已选中的稿行会把画布清空"这个真 bug。
+
+> **未结**：用户报的"打开应用约一分钟后机器卡死"**未复现**（当前 dev 栈连续运行 CPU≈0%、
+> 零自发重启；最可能是全量 pytest 与 dev 栈同时在跑，仍属推测）；Electron 37.10.3 有
+> **36 条真实 CVE**，需独立改动面。
+
 
 ## [v0.36.0] - 2026-10-15
 
