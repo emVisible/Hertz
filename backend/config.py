@@ -17,7 +17,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 应用版本单一真相源（v0.11.6 Axiom §1.2 修复）：后端 main.py 引用此处；
 # pyproject.toml / frontend·electron package.json 在发版时对齐本值。
-APP_VERSION = "0.35.0"
+# ⚠️ 这一行曾长期停在 0.35.0 而包版本已是 0.36.0 —— 排查线上问题时日志里的版本号
+# 会把人带偏（本次排查重启风暴时就先被它误导过一次）。`tests/test_version_drift.py`
+# 现在会守住三方一致。
+APP_VERSION = "0.36.0"
 
 
 class Settings(BaseSettings):
@@ -38,7 +41,13 @@ class Settings(BaseSettings):
     # Paths
     data_dir: Path = Path("data")
     output_dir: Path = Path("output")
-    log_dir: Path = Path("logs")
+    # 日志目录**挂到 data_dir 下**（data/logs），不再用裸 `logs/`。
+    # 理由是隔离：测试把 HERTZ_DATA_DIR 指到临时目录（tests/conftest.py），
+    # 而 `log_dir` 此前是 cwd 相对路径、与 data_dir 无关——于是**测试把自己的日志
+    # 写进了仓库的 logs/hertz.log**，实测一次全量测试就在生产日志里留下 77 行
+    # 测试夹具文本（含一行带密钥字样的 fixture）。目录默认值跟着 data_dir 走之后，
+    # 隔离才真正生效，用户也能在 data/ 下看到自己机器的日志。
+    log_dir: Path = Path("data") / "logs"
     # 素材根目录：素材页浏览根（面包屑根），留空 = 当前项目目录（data_dir）
     assets_root: Path | None = None
 

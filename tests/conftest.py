@@ -17,11 +17,17 @@ os.environ.setdefault(
 # 测试数据根隔离（v0.8.8，AXIOM 34）：必须与数据库同批注入——
 # FileStore/LogManager 在 import 期锚定 settings.data_dir，若指向真实 data/，
 # 测试会改写 deps.json/hertz.log 甚至覆盖真实成片（final.mp4 被测试条目覆盖过）
+#
+# ⚠️ log_dir 必须**跟着 data_dir 走**（config.py 里 log_dir 默认 `data/logs`）：
+# 它此前是 cwd 相对的裸 `logs/`，与 data_dir 无关，于是这条 setdefault 根本没管到
+# 日志——全量测试会把夹具文本写进仓库的 logs/hertz.log（实测 77 行，含一行带
+# 密钥字样的 fixture）。改这里时要确认 config.py 的 log_dir 默认值没被改回去。
 import tempfile  # noqa: E402
 
-os.environ.setdefault(
-    "HERTZ_DATA_DIR", os.path.join(tempfile.mkdtemp(prefix="hertz-test-data-"), "data")
-)
+_TEST_ROOT = tempfile.mkdtemp(prefix="hertz-test-data-")
+os.environ.setdefault("HERTZ_DATA_DIR", os.path.join(_TEST_ROOT, "data"))
+# 显式兜底：万一有人把 log_dir 改回 cwd 相对路径，测试也不该写进仓库
+os.environ.setdefault("HERTZ_LOG_DIR", os.path.join(_TEST_ROOT, "logs"))
 
 # 测试环境默认关闭启发式评分：LLM 打分路径测试需走完整链路；
 # 启发式有独立测试文件（test_heuristic_score.py）覆盖
