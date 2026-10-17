@@ -314,12 +314,29 @@ class Settings(BaseSettings):
         return self.data_dir / "runtime.yaml"
 
 
+#: 曾经是默认值、后来被改掉、且用户**没有主动选过**的旧值。
+#:
+#: 读时丢弃，不回写文件：runtime.yaml 是用户资产，没资格替它改内容；而这些值的
+#: 全部语义就是「当年那个默认」，留着只会永久遮住新默认值。
+#:
+#: 为什么需要这张表：v0.36 把 `log_dir` 默认值从 `logs` 改成 `data/logs`，但设置页
+#: 保存的是**全量表单快照**，早在 10-12 就把当时��默认值 `log_dir: logs` 写进了
+#: data/runtime.yaml。`_EffectiveSettings` 让 runtime.yaml 压过类默认值，于是那台
+#: 机器上 `settings.log_dir` 至今仍是 `logs`——改默认值这件事本身被自己的历史
+#: 钉死了，而且没有任何报错。
+_LEGACY_RUNTIME_VALUES: dict[str, tuple[str, ...]] = {
+    "log_dir": ("logs",),
+}
+
+
 class RuntimeConfig:
     """Runtime overrides stored in data/runtime.yaml.
 
     Layered on top of Settings at read time (AXIOM §22.3); written by the
     config UI. Never holds secrets (AXIOM §8.2). Cached by file mtime so
-    attribute reads stay cheap.
+    attribute reads stay cheap. Superseded defaults are dropped on read so a
+    stale pin cannot outlive the default it was echoing (see
+    ``_LEGACY_RUNTIME_VALUES``).
     """
 
     def __init__(self, path: Path | None = None) -> None:
@@ -343,6 +360,9 @@ class RuntimeConfig:
             self._cached = data if isinstance(data, dict) else {}
         except (OSError, yaml.YAMLError):
             self._cached = {}
+        for field, legacy_values in _LEGACY_RUNTIME_VALUES.items():
+            if str(self._cached.get(field, "")) in legacy_values:
+                self._cached.pop(field)
         self._cached_mtime = mtime
         return self._cached
 

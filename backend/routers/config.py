@@ -6,11 +6,12 @@ local data/runtime.yaml) but reading it back is impossible.
 """
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.config import runtime_config, settings
+from backend.config import Settings, runtime_config, settings
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,43 @@ class ConfigUpdate(BaseModel):
     overrides: dict
 
 
+#: 类默认值本身就是 Path 的字段——只有它们的「逐字相同」是可判定的。
+_PATH_DEFAULT_FIELDS: dict[str, Path] = {
+    name: field.default
+    for name, field in Settings.model_fields.items()
+    if isinstance(field.default, Path)
+}
+
+
+def _prune_redundant_path_defaults(data: dict) -> dict:
+    """摘掉与类默认值逐字相同的路径字段，让 runtime.yaml 只装真覆盖。
+
+    runtime.yaml 的语义是**覆盖**（AXIOM §22.3），不是设置页表单的存档。而设置页
+    `save()` 提交的是「草稿与配置的差集」——用户没碰过的字段本不该出现在 PATCH
+    里，可一旦某次保存（或旧版本）把默认值也存了进去，它就会永久遮住以后的
+    新默认值：v0.36 改 `log_dir` 默认值，本机却因为文件里一行 `log_dir: logs`
+    继续往 logs/ 写，且毫无报错。
+
+    摘掉它不改变任何生效值——默认值本来就等于它。`assets_root` 的默认值是
+    `None`，所以 `assets_root: data` 这种「显式指回 data_dir」不会被误摘，
+    docs.py / library.py 直接读 `runtime_config.load()["assets_root"]` 的
+    语义保持不变。
+    """
+    out = dict(data)
+    for name, default in _PATH_DEFAULT_FIELDS.items():
+        value = out.get(name)
+        if value is None or name not in out:
+            continue
+        try:
+            # 默认值是仓库相对路径（`data/logs`），设置页可能回传同一个目录的
+            # 绝对路径——两者指的是同一个地方，比较前先都解析成绝对路径。
+            if Path(str(value)).resolve() == default.resolve():
+                out.pop(name)
+        except (TypeError, ValueError, OSError):  # 存了不可解析的路径串：留着，让读侧报错
+            continue
+    return out
+
+
 @router.patch("")
 async def update_config(req: ConfigUpdate) -> dict:
     disallowed = set(req.overrides) - RUNTIME_ALLOWLIST
@@ -219,8 +257,8 @@ async def update_config(req: ConfigUpdate) -> dict:
         raise HTTPException(
             status_code=400, detail=f"Not runtime-configurable: {sorted(disallowed)}"
         )
-    merged = runtime_config.load()
-    merged.update(req.overrides)
+    merged = _prune_redundant_path_defaults(runtime_config.load())
+    merged.update(_prune_redundant_path_defaults(req.overrides))
     runtime_config.save(merged)
     if any(str(key).startswith("pipeline_reddit_client_") for key in req.overrides):
         # 保存凭证是这次操作的前一半，能力矩阵（reddit_auth 条目）是后一半，得互相看见。
