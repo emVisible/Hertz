@@ -7,6 +7,44 @@
 
 ## [Unreleased]
 
+### 修复：启动期"重启风暴"与日志侧的三处洞（本轮排查实测）
+
+**现象**：打开应用约一分钟后整台机器卡死。取证（`logs/hertz.log`）：
+**2806 次后端 lifespan 启停、峰值 8 次/秒**，每次都完整初始化 ServiceRegistry、
+依赖探针、7 个定时任务与 DB 会话 —— 不是"卡"，是持续的资源风暴。
+同一份日志里还有 **1320 条** `_heal_legacy_plans` 的完整 traceback。
+
+- **一条坏计划不再连坐整批愈合**（1320 条 traceback 的来源）：`_heal_legacy_plans`
+  的 `try/except` 写在 for 循环**外**，于是库里任何一条 `phase_order == []` 的旧计划
+  都会让整批愈合抛异常中止 —— 坏计划永远修不好，其余计划也永远修不好，
+  而且每次启动刷一条带栈的记录。改为**循环内**校验：单条非法 → 计数跳过、
+  一次 traceback 都不打、**不自动改写**（空 phase_order 是要人工判断的语义问题，
+  静默补全会掩盖数据损坏）。判据 `tests/test_heal_plans.py`（含成对变异）。
+- **日志侧密钥脱敏**（`backend/infrastructure/redact.py`）：API 响应早就只回异常**类名**
+  并有测试守住，但日志写的是 `str(exc)` 原文 —— 那条通道的宽度由**异常作者**决定，
+  `tests/test_reddit_auth_card.py` 里的 `client_secret=do-not-echo-me` 就是现成反例
+  （同一条异常，API 不漏、日志原样落盘）。现在凡是要落盘的外部文本一律先过
+  `redact_secrets()`：保留键名与 `Bearer ` 前缀（可诊断），只换值。
+  顺带修同类的第二处：签名直链的 query 里带凭证，此前截断 64 字符就写进了运行日志
+  （截断挡不住 `?token=...`）。
+- **测试不再污染生产日志**：`log_dir` 原是 cwd 相对的裸 `logs/`，与 `data_dir` 无关，
+  所以 conftest 的隔离**根本没管到日志** —— 一次全量测试就在仓库日志里留下 77 行
+  测试夹具文本。现改为 `data/logs`（跟着 data_dir 走），并在 conftest 显式设
+  `HERTZ_LOG_DIR` 兜底。判据：跑完测试后生产日志的 mtime 与大小不变。
+- **dev.sh 重启风暴刹车**：原逻辑"看见后端没了就整体退出"，而拉起后端的是别的东西
+  —— 脚本退了，风暴照旧。改为观察"服务是不是**没我们管也自己回来了**"：pid 消失后
+  给一个观察窗，端口又有人在听 → 判定外部重启、计数；达到阈值打印诊断并以非 0 退出。
+  没人拉时行为完全不变（仍是整体退出、exit 0）。
+- **`APP_VERSION` 漂移**：`backend/config.py` 长期停在 `0.35.0` 而包版本已是 `0.36.0`
+  —— 排查"哪个版本引入的"时日志里的版本号会先把人带偏（本次排查就先被它误导过一次）。
+  现对齐 `0.36.0`，并由 `tests/test_version_drift.py` 守住后端/pyproject/前端/壳四方一致。
+
+> **未结**：重启风暴的**驱动者仍未定位**。已排除 uvicorn `--reload` 的文件监听
+> （过滤器只认 `*.py`，且运行期不写 `.py`）、`dev.sh`、Electron 主进程、冻结入口、
+> launchd/cron、multiprocessing 自重跑。判据见 `docs/HANDOVER_MD_STUDIO.md` §4。
+> 刹车保证"最坏不再卡死机器"，但根因要靠一次现场取证（`ps` 进程树 + `sample`）。
+
+
 ### 完善：代码高亮升级 Shiki + Mermaid + PDF/CSS 导出（P1-3/P1-5/P2-2/P2-4/P2-5）
 
 - **Shiki 二次 pass（P1-3）**：hljs 的同步产物仍**先在**（用户立刻看到东西），

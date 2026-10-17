@@ -51,7 +51,15 @@ uv run pytest tests/test_layout.py -q
 
 # 开发态：后端 :8787 + 前端 :3000（前端只绑 [::1]，curl 127.0.0.1 回 000 不代表没起）
 bash scripts/dev.sh
+
+# 日志位置：data/logs/hertz.log（v0.37 起从 logs/ 迁到 data/logs/）
+#   跟着 data_dir 走，测试隔离才盖得住（此前测试一直往仓库 logs/ 里写，见 §4 第 16 条）
+ls -t data/logs/hertz*.log | head
 ```
+
+> `dev.sh` 现在带**重启风暴刹车**：看到某个服务"没我们管也自己回来了"
+> （端口在监听）就计数，达阈值打印诊断并非 0 退出。正常退出行为不变。
+> 阈值可用 `HERTZ_STORM_WINDOW` / `HERTZ_STORM_MAX` / `HERTZ_STORM_GRACE` 调。
 
 ## 4. 已踩过的坑（每条都有判据了，别再踩回去）
 
@@ -112,6 +120,32 @@ bash scripts/dev.sh
       所以前端测试要让 mdcore 的异步引擎不落真身，得走内核自带的注入通道
       （`setCodeHighlighter`），不是 mock 模块。
 
+16. **v0.37 第四轮（重启风暴排查）新增的三条**：
+    - **日志是第二条外泄通道，API 侧的限制管不到它**。`pipeline_ops` 刻意只回异常
+      **类名**给前端（还有测试守着），日志侧却写 `str(exc)` 原文——而"异常文本里
+      有没有密钥"由**异常作者**决定，不是本仓能定的宽度。判据里已经躺着现成的反例：
+      `tests/test_reddit_auth_card.py` 的 `client_secret=do-not-echo-me`。
+      **凡是要落盘的外部文本，一律先过 `backend/infrastructure/redact.py`**；
+      断言也要分两侧写（API 侧已有，日志侧本轮才补）。
+    - **`try/except` 写在循环外 = 一条坏数据连坐整批**。`_heal_legacy_plans` 因此让
+      1320 次启动各刷一条完整 traceback（日志涨到 4.4MB），且坏计划与其余计划**永远
+      修不好**。外层 except 拦得住崩溃、拦不住"整批作废"。**判据不能只测"没抛异常"**，
+      还要测"**一条 traceback 都没有**"（`caplog` 查 `exc_info`）——`logger.exception`
+      是重灾区。
+    - **"没人管也自己回来了"才是重启风暴的判据**。dev.sh 原来的逻辑是"看见后端没了
+      → 整体退出"，而拉起后端的是别的东西：脚本退了，风暴照旧（实测 2806 次启停、
+      峰值 8 次/秒）。计数逻辑要盯**端口复活**，不是盯 pid 死亡——pid 死了就退出，
+      永远数不到第二次。
+    - **`.gitignore` 里的 `data/` 与 `log_dir` 这类 cwd 相对路径，测试隔离都盖不住**：
+      conftest 改了 `HERTZ_DATA_DIR`，而 `log_dir: Path("logs")` 与它无关，于是测试
+      一直往仓库日志里写。**加隔离项时先问"这条路径真的跟着 data_dir 走吗"**。
+
+17. **依赖审计的一个坑（2026-10-16 实测）**：`pnpm audit` 报出的 55 条 electron
+    advisory 里，**18 条是误报**——它把 `electron/` 这个**工作区包**（name `hertz-electron`，
+    version `0.36.0`）当成了 npm 包 `electron`（实际运行库 `37.10.3`）来比对版本，
+    于是 `vulnerable <1.6.14` 这种远古条目也"命中"。
+    **审计工具的输出要自己复核一遍版本号**：先确认它比的是哪个包，再看结论。
+
 **通用教训**：结构层（jsdom + 注入 mock）能证"对不对"，证不了"看起来对不对"。观感与像素只能在产物层判——上面 1/2/3 条全是真浏览器抓的。
 
 **另一条通用教训（本轮最有价值的一条）**：**jsdom 量不出来的量，就不要拿它当判据**。
@@ -138,6 +172,8 @@ bash scripts/dev.sh
 | 字体分片 | 已判**不做** | 理由与重启条件见 `docs/MD_STUDIO.md` §9 |
 | 走一遍新增的测试单 §2.14 / §2.15（代码高亮预设、Mermaid、PDF、CSS 导出） | **你** | 这四条是本轮新增能力，jsdom 与基线图都证不到"在真浏览器里好不好看" |
 | 候选下一步（图床、掘金/头条、反向导入） | 我，等你点单 | Shiki/CSS/PDF/Mermaid 已落地；剩下三项的排序与理由见 `docs/MD_STUDIO_UPDATE_PLAN.md` §5 与 `docs/MD_STUDIO.md` §10 |
+| **重启风暴的现场取证**（定位驱动者） | **你**（需你启动应用） | 启动后当它开始卡，我跑只读 `ps -Ao pid,ppid,etime,command \| grep -E 'uvicorn\|python'` 看进程树 + `sample <pid> 5` 看退出前在干什么，约 60 秒可指名。刹车已上（dev.sh），最坏不再卡死机器 |
+| Electron 大版本升级（37.10.3 → 41.x+） | 我，等你点单 | 依赖审计实测：36 条 electron advisory 对 37.10.3 **真实命中**（11 high / 20 moderate），要清到 41.10.6。属独立改动面（壳 + 打包 + 回归），详见 `docs/DECISIONS.md` D-230 |
 
 ## 7. 一个收口建议
 
