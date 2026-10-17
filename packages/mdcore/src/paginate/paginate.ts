@@ -123,6 +123,13 @@ export interface PaginateOptions {
   breaks?: number[];
   /** 卡片页壳装饰件（页眉/水印/页码/底纹/贴边装饰）。不给就是纯白页壳 */
   chrome?: CardChrome;
+  /**
+   * 预渲染的 mermaid 图表（源码键 → SVG，P2-4）。
+   *
+   * 分页量的是**真实高度**，所以图必须在这之前落地：异步后置会让分页器
+   * 按源码文本的高度排版，图一落地卡片就溢出（`platform/xhs.ts` 同规格透传）。
+   */
+  mermaid?: Map<string, string>;
 }
 
 function normalizePadding(p: PageSpec['padding']): PagePadding {
@@ -580,7 +587,9 @@ export function paginate(ir: LayoutIR, opts: PaginateOptions): HTMLElement[] {
   doc.body.appendChild(stage);
 
   try {
-    const rendered = applyTheme(ir, theme, overrides, doc, opts.diagnostics);
+    const rendered = applyTheme(ir, theme, overrides, doc, opts.diagnostics, {
+      mermaid: opts.mermaid,
+    });
     const blocks = Array.from(rendered.children) as HTMLElement[];
 
     const pages: HTMLElement[] = [];

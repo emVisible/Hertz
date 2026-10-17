@@ -4,6 +4,8 @@ import { resolveThemeSlots } from './derive';
 import { getTheme } from './index';
 import type { ResolvedTokens, StyleProps, Theme, ThemeOverrides } from './types';
 import { FORMULA_TEX_ATTR, renderFormula } from './formula';
+import { CODE_LANG_ATTR } from './shiki';
+import { mermaidKeyOf } from './mermaidKey';
 
 /**
  * applyTheme(ir, theme, overrides) → 挂好样式的 DOM 容器（§2 theme/）。
@@ -39,6 +41,19 @@ interface RenderContext {
   sections: { n: number };
   /** 当前处在第几层引用（嵌套层级要真的累加，否则 quoteL3 永远是死槽） */
   quoteDepth?: number;
+  /**
+   * 预渲染的 mermaid 图表（源码键 → SVG，P2-4）。
+   *
+   * 为什么它进 context 而不是渲染后再异步替换：分页量的是**真实高度**，
+   * 异步替换会让量到的尺寸与落地后的尺寸不一致（卡片溢出、页脚被顶）。
+   */
+  mermaid?: Map<string, string>;
+}
+
+/** applyTheme 的额外选项（第 6 参；前 5 参保持原样，旧调用不受影响） */
+export interface ApplyOptions {
+  /** 预渲染 mermaid cache（`renderMermaidCache()` 的产物） */
+  mermaid?: Map<string, string>;
 }
 
 /** 纯装饰节点的标记：分页断点二分不能把它当正文切（否则会切进 “ 里） */
@@ -57,13 +72,21 @@ export function applyTheme(
   overrides: ThemeOverrides = {},
   doc: Document = globalThis.document,
   diagnostics?: IRDiagnostic[],
+  options: ApplyOptions = {},
 ): HTMLElement {
   if (!doc) throw new Error('@hertz/mdcore: applyTheme 需要 DOM 环境（浏览器或 jsdom）');
   const { tokens, styles } = resolveThemeSlots(
     typeof theme === 'string' ? getTheme(theme) : theme,
     overrides,
   );
-  const ctx: RenderContext = { doc, tokens, styles, sections: { n: 0 }, diagnostics };
+  const ctx: RenderContext = {
+    doc,
+    tokens,
+    styles,
+    sections: { n: 0 },
+    diagnostics,
+    mermaid: options.mermaid,
+  };
 
   const container = doc.createElement('section');
   container.className = 'mdcore-doc';
@@ -217,6 +240,13 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
     }
 
     case 'code': {
+      // mermaid 不是代码，是图（P2-4）：命中预渲染 cache 就落真 SVG；
+      // 没命中（宿主没预渲染，或这张图渲染失败）则照常当代码块显示——
+      // 源码永远可见，失败另有诊断横幅记账，不留空白图框。
+      if ((block.lang ?? '').trim().toLowerCase() === 'mermaid') {
+        const cached = ctx.mermaid?.get(mermaidKeyOf(block.code));
+        if (cached) return renderMermaidFigure(block, cached, ctx);
+      }
       // 代码卡片：头部（语言标签 / Mac 三色点）+ 代码体。
       // 为什么要包一层：语言标签与卡片圆角是"排版"，不是"代码"；不包就没地方挂。
       const wrap = doc.createElement('section');
@@ -250,6 +280,9 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
       const code = doc.createElement('code');
       applyProps(code, styles.code);
       code.textContent = block.code;
+      // 语言标记：Shiki 二次 pass 的发现通道（P1-3）。挂在 `<code>` 而不是
+      // `<pre>`——行内代码也生成 `<code>`，这样二次 pass 天然只动代码块。
+      if (block.lang) code.setAttribute(CODE_LANG_ATTR, block.lang);
       pre.appendChild(code);
       wrap.appendChild(pre);
       highlightCode(code, block.lang, ctx);
@@ -437,6 +470,9 @@ function renderBlock(block: IRBlock, ctx: RenderContext): HTMLElement | null {
         applyProps(row, styles.tocItem);
         if (item.level === 3) row.style.setProperty('padding-left', '1.2em');
         const link = doc.createElement('a');
+        // 类名是导出 CSS 的选择器通道：目录链接不挂类，`.mdcore-toc-link`
+        // 那条规则就匹配不到它，链接槽会把它画成正文链接的样子（带下划线的正文色）
+        link.className = 'mdcore-toc-link';
         link.setAttribute('href', `#${item.anchor}`);
         link.textContent = item.text;
         applyProps(link, styles.tocLink);
@@ -748,9 +784,45 @@ function renderInline(node: InlineNode, ctx: RenderContext): Node {
 }
 
 /**
+ * mermaid 图表的渲染期落地：SVG → figure。
+ *
+ * 三件事都要在这一处做完，否则某一环会静默失效：
+ * 1. SVG 自带 `max-width:100%` 与居中（mermaid 输出的是固定宽度画布，
+ *    不收窄会在窄栏里溢出卡片）；
+ * 2. 宽度按宿主栏宽夹一次（`max-width` 已在，但 `width` 也要给，否则
+ *    在 jsdom/部分引擎里 svg 会以固有宽度参与布局）；
+ * 3. 源码挂在 `data-mdcore-mermaid` 上——**微信/知乎清洗器剥 SVG 后**，
+ *    栅格化失败的降级路径要靠它把源码落回代码块（`rasterizeMermaid`
+ *    与 `platform/*` 共用这条通道）。
+ */
+function renderMermaidFigure(
+  block: Extract<IRBlock, { type: 'code' }>,
+  svg: string,
+  ctx: RenderContext,
+): HTMLElement {
+  const { doc, styles } = ctx;
+  const figure = doc.createElement('figure');
+  figure.className = 'mdcore-mermaid';
+  applyProps(figure, styles.figure);
+  figure.setAttribute('data-mdcore-mermaid', block.code);
+  const holder = doc.createElement('div');
+  holder.className = 'mdcore-mermaid-figure';
+  holder.innerHTML = svg;
+  const root = holder.firstElementChild;
+  if (root instanceof SVGElement || root?.tagName.toLowerCase() === 'svg') {
+    root.setAttribute('style', `${root.getAttribute('style') ?? ''};max-width:100%;height:auto`);
+  }
+  figure.appendChild(holder);
+  return figure;
+}
+
+/**
  * 代码高亮：IR 只存源码，高亮属于渲染关注，故在 applyTheme 阶段用
  * highlight.js 同步重跑，并把产物的 hljs-* class 映射为主题 styles['hljs-*']
  * 的内联颜色 —— 微信清洗器剥 class，颜色必须落 style。
+ *
+ * 这一版是**先到的**，不是唯一的：Shiki 二次 pass（`theme/shiki.ts`）随后
+ * 异步把产物升级成更高精度的 token 色；它挂了也不影响这里的结果。
  */
 function highlightCode(codeEl: HTMLElement, lang: string | null, ctx: RenderContext): void {
   if (!lang || !hljs.getLanguage(lang)) return;

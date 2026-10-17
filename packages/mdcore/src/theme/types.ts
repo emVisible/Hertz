@@ -42,6 +42,23 @@ export const STRONG_STYLES = ['color', 'highlight', 'highlight-bottom', 'underli
 /** 代码块头部样式 */
 export const CODE_BARS = ['none', 'lang', 'mac'] as const;
 
+/**
+ * 代码高亮预设（P1-5）。
+ *
+ * 常量表放在这里而不是 `theme/shiki.ts`：`ResolvedTokens.codeTheme` 的类型
+ * 引用它，而 shiki.ts 又要 import 本文件的 resolveTokens——放 shiki.ts 就成了
+ * 一圈环。既有枚举（CODE_BARS/HEADING_STYLES…）也都在这里，设计器清单直接复用。
+ */
+export const CODE_THEMES = [
+  'auto',
+  'github',
+  'vitesse',
+  'catppuccin',
+  'dracula',
+  'nord',
+  'one-dark',
+] as const;
+
 /** 表格样式 */
 export const TABLE_STYLES = ['plain', 'card'] as const;
 
@@ -55,6 +72,7 @@ export type HeadingStyle = (typeof HEADING_STYLES)[number];
 export type QuoteStyle = (typeof QUOTE_STYLES)[number];
 export type StrongStyle = (typeof STRONG_STYLES)[number];
 export type CodeBar = (typeof CODE_BARS)[number];
+export type CodeThemeId = (typeof CODE_THEMES)[number];
 export type TableStyle = (typeof TABLE_STYLES)[number];
 export type ListStyle = (typeof LIST_STYLES)[number];
 export type HrStyle = (typeof HR_STYLES)[number];
@@ -85,6 +103,18 @@ export interface ResolvedTokens {
   /** 代码块底色与字色 */
   codeBg: string;
   codeInk: string;
+  /**
+   * 代码高亮预设（P1-5）：Shiki 主题名的预设 id（`CODE_THEMES`）。
+   *
+   * 为什么是 token 而不是 theme 上的独立字段：这一版要能**随稿**选，
+   * 而"随稿"在本仓唯一的通道就是 overrides（JSONB + 平台各自缓存）——
+   * 另开一个字段就得给它单独存一套 CRUD 与迁移。token 的既有机制
+   * （resolveTokens / 设计器清单 / 落库）全都直接可用。
+   *
+   * 它不是 CSS 值而是**渲染期分支**（和 codeBar/headingStyle 同族）：
+   * 由 `theme/shiki.ts` 的二次 pass 消费，applyTheme 不读它。
+   */
+  codeTheme: CodeThemeId;
   /** 画布底色（卡片/画布本身，xhs 卡片走它） */
   canvasBg: string;
 
@@ -173,6 +203,9 @@ export const TOKEN_DEFAULTS: ResolvedTokens = {
   hl: 'rgba(15, 118, 110, 0.26)',
   codeBg: '#f6f6f4',
   codeInk: '#2b2b2b',
+  // 代码高亮预设：默认 auto = 与原 hljs 字典同源（GitHub 浅深两版），
+  // 于是接上 Shiki 之后**默认观感不变**，变的只是 token 精度
+  codeTheme: 'auto',
   canvasBg: '#ffffff',
 
   fontFamily:

@@ -118,6 +118,13 @@ export interface XhsOptions {
   cardTextureOpacity?: number;
   /** 装饰件预设 id（'none' 可显式关掉主题自带的那套） */
   cardDecoPreset?: string;
+  /**
+   * 预渲染的 mermaid 图表（源码键 → SVG，P2-4）。
+   *
+   * 与 `paginate` 同一个理由：卡片高度是量出来的，图必须先落地，
+   * 否则分页按源码高度排、图一出现卡片就溢出 18 页上限之外。
+   */
+  mermaid?: Map<string, string>;
 }
 
 export interface XhsResult {
@@ -155,6 +162,7 @@ export function xhsCards(ir: LayoutIR, opts: XhsOptions = {}): XhsResult {
     breaks: opts.breaks,
     doc,
     chrome: look,
+    mermaid: opts.mermaid,
   });
 
   /**
