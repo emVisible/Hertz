@@ -95,12 +95,79 @@ echo "Backend :8787 (pid $BACKEND_PID) · Frontend :3000 (pid $FRONTEND_PID) · 
 echo "Press Ctrl+C to stop all."
 
 # 任一服务退出（如 Dock 右键退出 Electron）→ 自动清理全部，防止后台残留
+#
+# ⚠️ 重启风暴刹车（2026-10-17）
+#
+# 背景（真实日志）：`logs/hertz.log` 里有 2806 次后端启停、峰值 8 次/秒，每次都
+# 完整初始化注册表/调度器/DB 会话——表现就是"打开应用一分钟左右整台机器卡住"。
+# 而本脚本对它的反应是"看见后端没了 → exit 0 → 脚本退场"，**风暴照旧**：
+# 拉起后端的是别的东西，脚本退了它继续拉。
+#
+# 所以判据换成一句更贴近现场的话：**服务是不是"没我们管也自己回来了"**。
+# 观察到某个 pid 消失后给它一个观察窗（STORM_GRACE 秒，足够覆盖几次重启），
+# 若它的端口又有人在听 → 有外部东西在重启它 → 计数；达到 STORM_MAX 就
+# 打印诊断并以非 0 退出。没人拉的话端口不会回来 → 保持原来的"整体退出"。
+#
+# 正常退出行为不变；变的只是"风暴"从"静默拖垮机器"变成"报错停下"。
+STORM_WINDOW="${HERTZ_STORM_WINDOW:-120}"   # 计数窗口（秒）
+STORM_MAX="${HERTZ_STORM_MAX:-3}"           # 窗口内判定的复活次数
+STORM_GRACE="${HERTZ_STORM_GRACE:-10}"      # 单次观察窗（秒）
+STORM_START=$(date +%s)
+STORM_COUNT=0
+
+port_alive() { lsof -ti "tcp:$1" -sTCP:LISTEN >/dev/null 2>&1; }
+
+storm_report() { # $1=名字 $2=端口
+  echo ""
+  echo "✗ ${1}（:${2}）在 ${STORM_WINDOW}s 内复活 ${STORM_COUNT} 次（阈值 ${STORM_MAX}）——判定为重启风暴，停止全部服务。"
+  echo "  含义：有别的东西在反复拉起它，本脚本退出也拦不住。"
+  echo "  排查（只读命令）："
+  echo "    lsof -nP -iTCP:${2} -sTCP:LISTEN          # 谁在占着端口"
+  echo "    ps -Ao pid,ppid,command | grep -E 'uvicorn|hertz-backend|dev.sh|webui.sh'"
+  echo "  最常见的一种：另一个 dev.sh / webui.sh 还在跑（重复启动），或遗留的启动包装进程。"
+  echo "  调阈值：HERTZ_STORM_WINDOW=300 HERTZ_STORM_MAX=6 bash scripts/dev.sh"
+}
+
+# 返回 0 = 服务自己回来了（有外部东西在重启它）；1 = 确实死了
+wait_for_respawn() { # $1=端口 $2=名字
+  local waited=0
+  while (( waited < STORM_GRACE )); do
+    sleep 1
+    waited=$(( waited + 1 ))
+    if port_alive "$1"; then return 0; fi
+  done
+  echo "Service (${2}, pid 已退出) — stopping all..."
+  return 1
+}
+
+# pid / 端口 的并行数组（bash 3.2 没有关联数组，用下标对齐）
+PIDS=("$BACKEND_PID" "$FRONTEND_PID" "$ELECTRON_PID")
+PORTS=(8787 3000 0)
+NAMES=("后端 :8787" "前端 :3000" "Electron")
+
 while true; do
-  for pid in "$BACKEND_PID" "$FRONTEND_PID" "$ELECTRON_PID"; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      echo "Service (pid $pid) exited — stopping all..."
+  for i in 0 1 2; do
+    pid="${PIDS[$i]}"
+    kill -0 "$pid" 2>/dev/null && continue
+
+    # Electron 没有端口可探：它退出就是退出，交给原来的整体清理
+    if [[ "${PORTS[$i]}" == "0" ]]; then
+      echo "Service (${NAMES[$i]}, pid $pid) exited — stopping all..."
       exit 0
     fi
+
+    if wait_for_respawn "${PORTS[$i]}" "${NAMES[$i]}"; then
+      NOW=$(date +%s)
+      if (( NOW - STORM_START > STORM_WINDOW )); then STORM_START=$NOW; STORM_COUNT=0; fi
+      STORM_COUNT=$(( STORM_COUNT + 1 ))
+      echo "⚠ ${NAMES[$i]} 自己回来了（${STORM_COUNT}/${STORM_MAX} in ${STORM_WINDOW}s）——有东西在重启它"
+      if (( STORM_COUNT >= STORM_MAX )); then
+        storm_report "${NAMES[$i]}" "${PORTS[$i]}"
+        exit 1
+      fi
+      continue
+    fi
+    exit 0
   done
   sleep 2
 done
