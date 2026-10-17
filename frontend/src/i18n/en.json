@@ -119,11 +119,13 @@
       "copyCaption": "Copy caption",
       "zip": "Export cards ZIP",
       "longimage": "Export long PNG",
+      "pdf": "Export PDF",
       "copiedWechat": "Copied — paste in the WeChat editor",
       "copiedZhihu": "Copied — paste in the Zhihu editor",
       "copiedCaption": "Caption copied",
       "done": "Export finished",
-      "failed": "Export failed"
+      "failed": "Export failed",
+      "mermaidFallback": "Some Mermaid diagrams failed to render; their source is kept in the output"
     },
     "empty": {
       "title": "Start from a Markdown doc",
@@ -179,6 +181,8 @@
       "saved": "Saved “{{name}}”",
       "delete": "Delete",
       "export": "Export JSON",
+      "exportCss": "Export CSS",
+      "exportCssDone": "CSS copied to clipboard",
       "exported": "Copied to clipboard",
       "exportFailed": "Copy failed, export manually",
       "import": "Import JSON",

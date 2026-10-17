@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getTheme, resolveTokens, type Theme, type ThemeOverrides } from '@hertz/mdcore'
+import { getTheme, resolveTokens, themeToCss, type Theme, type ThemeOverrides } from '@hertz/mdcore'
 
 import { Button, Icon, Input, useToast } from '../../../components/ui'
 import {
@@ -300,6 +300,23 @@ export function ThemeDesigner({ themeId, overrides, onOverridesChange, onThemeCh
               }}
             >
               {t('mdstudio.designer.export')}
+            </Button>
+            {/* 导出 CSS（P2-2）：分享形态——别人拿着这份 CSS + mdcore 结构
+                就能在自己的预览器里复现同一套排版，不必装工坊。走剪贴板是因为
+                CSS 是文本，用户通常直接存成文件贴进项目。 */}
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Icon name="copy" size={12} />}
+              data-testid="mdstudio-designer-export-css"
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(themeToCss(themeId, overrides))
+                  .then(() => toast(t('mdstudio.designer.exportCssDone'), 'success'))
+                  .catch(() => toast(t('mdstudio.designer.exportFailed'), 'error'))
+              }}
+            >
+              {t('mdstudio.designer.exportCss')}
             </Button>
             <Button size="sm" variant="secondary" icon={<Icon name="upload" size={12} />} onClick={() => fileRef.current?.click()}>
               {t('mdstudio.designer.import')}

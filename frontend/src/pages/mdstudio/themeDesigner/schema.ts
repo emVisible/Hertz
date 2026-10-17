@@ -12,6 +12,7 @@
  */
 import {
   CODE_BARS,
+  CODE_THEMES,
   HEADING_STYLES,
   HR_STYLES,
   LIST_STYLES,
@@ -178,7 +179,16 @@ export const TOKEN_SECTIONS: readonly TokenSection[] = [
     id: 'code',
     label: '代码块',
     hint: '技术稿的排版件。',
-    tokens: [{ key: 'codeBar', label: '代码头部', hint: 'mac 窗口条 / 语言标签 / 无', control: 'select', options: CODE_BARS }],
+    tokens: [
+      { key: 'codeBar', label: '代码头部', hint: 'mac 窗口条 / 语言标签 / 无', control: 'select', options: CODE_BARS },
+      {
+        key: 'codeTheme',
+        label: '高亮配色',
+        hint: '代码 token 的配色预设（Shiki）。深色主题自动换深色版',
+        control: 'select',
+        options: CODE_THEMES,
+      },
+    ],
   },
   {
     id: 'table',
@@ -242,4 +252,12 @@ export const ENUM_LABELS: Record<string, string> = {
   '30em': '30 字',
   '34em': '34 字',
   '38em': '38 字',
+  // 代码高亮预设（P1-5）：proper noun 直接用原名，中文层只说明它是什么
+  auto: '跟随主题（GitHub）',
+  github: 'GitHub',
+  vitesse: 'Vitesse',
+  catppuccin: 'Catppuccin',
+  dracula: 'Dracula',
+  nord: 'Nord',
+  'one-dark': 'One Dark',
 }

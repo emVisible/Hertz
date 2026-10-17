@@ -11,13 +11,18 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   applyTheme,
+  codeThemeNameFor,
   copyForWechat,
   copyForZhihu,
   defaultThemeFor,
+  exportPdf,
   exportZip,
+  highlightCodeBlocks,
+  paginate,
   parseToIR,
   parseToIRDetailed,
   renderLongImage,
+  renderMermaidCache,
   scanCompliance,
   xhsCaption,
   xhsCards,
@@ -727,27 +732,66 @@ export function MdStudioPage() {
       } else if (action === 'copy-caption') {
         await navigator.clipboard.writeText(xhsCaption(ir))
         toast(t('mdstudio.export.copiedCaption'), 'success')
-      } else if (action === 'zip') {
-        const res = xhsCards(ir, {
-          theme: draft.theme_id,
-          overrides: draft.overrides,
-          footer: draft.footer,
-          qr: draft.qr,
-          breaks: draft.breaks,
-          ratio: draft.ratio,
-          header: draft.header,
-          pageNum: draft.pageNum,
-          coverSubtitle: draft.coverSub,
-          coverBadge: draft.coverBadge,
-          cardTexture: draft.texture || undefined,
-          cardDecoPreset: draft.deco || undefined,
-        })
-        const blob = await exportZip(res.pages)
-        downloadBlob(blob, `${name}-xhs.zip`)
+      } else if (action === 'zip' || action === 'pdf') {
+        // Mermaid 先渲染成 SVG 再分页（P2-4）：顺序反了就是按源码高度排版、
+        // 图一落地卡片就溢出。失败要**告诉用户**（横幅在画布上，这里是导出侧）。
+        const { cache, diagnostics } = await renderMermaidCache(ir, { dark: false })
+        if (diagnostics.length) toast(t('mdstudio.export.mermaidFallback'), 'warning')
+        if (action === 'zip') {
+          const res = xhsCards(ir, {
+            theme: draft.theme_id,
+            overrides: draft.overrides,
+            footer: draft.footer,
+            qr: draft.qr,
+            breaks: draft.breaks,
+            ratio: draft.ratio,
+            header: draft.header,
+            pageNum: draft.pageNum,
+            coverSubtitle: draft.coverSub,
+            coverBadge: draft.coverBadge,
+            cardTexture: draft.texture || undefined,
+            cardDecoPreset: draft.deco || undefined,
+            mermaid: cache.size ? cache : undefined,
+          })
+          // Shiki 二次 pass：截图引擎逐页 capture，**必须先升级**——
+          // 否则出图里是 hljs 版，而用户在画布上看到的已经是 Shiki 版
+          for (const page of res.pages) {
+            await highlightCodeBlocks(page, {
+              themeName: codeThemeNameFor(draft.theme_id, draft.overrides),
+            })
+          }
+          const blob = await exportZip(res.pages)
+          downloadBlob(blob, `${name}-xhs.zip`)
+        } else {
+          // PDF（P2-5）：分页页壳 → 每页一张图 → A4。页宽按长图那条路取的
+          // 逻辑宽（375/690），高度取 A4 比例（1:√2），铺满不变形。
+          const width = draft.platform === 'zhihu' ? 690 : 375
+          const pages = paginate(ir, {
+            theme: draft.theme_id,
+            overrides: draft.overrides,
+            breaks: draft.breaks,
+            page: { width, height: Math.round(width * Math.SQRT2), padding: 0 },
+            mermaid: cache.size ? cache : undefined,
+          })
+          for (const page of pages) {
+            await highlightCodeBlocks(page, {
+              themeName: codeThemeNameFor(draft.theme_id, draft.overrides),
+            })
+          }
+          const { blob } = await exportPdf(pages)
+          downloadBlob(blob, `${name}.pdf`)
+        }
         toast(t('mdstudio.export.done'), 'success')
       } else {
         // 长图全平台通用：applyTheme 渲染态 → 切片长图
-        const el = applyTheme(ir, draft.theme_id, draft.overrides)
+        const { cache, diagnostics } = await renderMermaidCache(ir, { dark: false })
+        if (diagnostics.length) toast(t('mdstudio.export.mermaidFallback'), 'warning')
+        const el = applyTheme(ir, draft.theme_id, draft.overrides, document, undefined, {
+          mermaid: cache.size ? cache : undefined,
+        })
+        await highlightCodeBlocks(el, {
+          themeName: codeThemeNameFor(draft.theme_id, draft.overrides),
+        })
         el.style.width = draft.platform === 'zhihu' ? '690px' : '375px'
         el.style.boxSizing = 'border-box'
         document.body.appendChild(el)

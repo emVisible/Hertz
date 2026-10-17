@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   CODE_BARS,
+  CODE_THEMES,
   HEADING_STYLES,
   HR_STYLES,
   LIST_STYLES,
@@ -41,6 +42,7 @@ describe('token 清单覆盖全集', () => {
     expect(pick('quoteStyle')?.options).toEqual(QUOTE_STYLES)
     expect(pick('strongStyle')?.options).toEqual(STRONG_STYLES)
     expect(pick('codeBar')?.options).toEqual(CODE_BARS)
+    expect(pick('codeTheme')?.options).toEqual(CODE_THEMES)
     expect(pick('tableStyle')?.options).toEqual(TABLE_STYLES)
     expect(pick('listStyle')?.options).toEqual(LIST_STYLES)
     expect(pick('hrStyle')?.options).toEqual(HR_STYLES)
@@ -59,6 +61,7 @@ describe('token 清单覆盖全集', () => {
       'indent',
       'align',
       'measure',
+      'codeTheme',
     ])
     for (const d of TOKEN_DESCRIPTORS) {
       if (!ENUM_KEYS.has(d.key)) continue

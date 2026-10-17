@@ -119,11 +119,13 @@
       "copyCaption": "复制文案",
       "zip": "导出图组 ZIP",
       "longimage": "导出长图 PNG",
+      "pdf": "导出 PDF",
       "copiedWechat": "已复制，去公众号后台粘贴",
       "copiedZhihu": "已复制，去知乎编辑器粘贴",
       "copiedCaption": "文案已复制",
       "done": "导出完成",
-      "failed": "导出失败"
+      "failed": "导出失败",
+      "mermaidFallback": "有 Mermaid 图渲染失败，产物里保留了源码"
     },
     "empty": {
       "title": "从一篇 Markdown 开始",
@@ -179,6 +181,8 @@
       "saved": "已保存「{{name}}」",
       "delete": "删除",
       "export": "导出 JSON",
+      "exportCss": "导出 CSS",
+      "exportCssDone": "CSS 已复制到剪贴板",
       "exported": "已复制到剪贴板",
       "exportFailed": "复制失败，请手动导出",
       "import": "导入 JSON",

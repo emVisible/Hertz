@@ -17,7 +17,10 @@
 import { useEffect, useState, type RefObject } from 'react'
 import {
   applyTheme,
+  codeThemeNameFor,
   darkThemeFor,
+  highlightCodeBlocks,
+  renderMermaidCache,
   xhsCardSize,
   waitForImages,
   xhsCards,
@@ -335,6 +338,46 @@ export function CanvasPanel({
   const [diagnostics, setDiagnostics] = useState<IRDiagnostic[]>([])
   /** 图片就位后触发的那一次重排（只用来重排，不承载内容） */
   const [repass, setRepass] = useState(0)
+  /**
+   * 预渲染的 mermaid 图表（P2-4）。
+   *
+   * 为什么是独立的一层而不是渲染里异步替换：分页/渲染都是同步量高度的，
+   * 异步后置会让画布按**源码高度**排版，图一落地卡片就溢出——而溢出只在真浏览器里
+   * 看得见。所以图表先异步渲染成 SVG，再由渲染层同步消费（分页量到的是真实高度）。
+   *
+   * ⚠️ state 更新必须**引用稳定**：这两个值进了画布渲染 effect 的依赖，
+   * 每次渲染都 `setMermaidDiagnostics([])` 造一个新数组，等于每敲一键多触发一次
+   * 重排——PerfBudget 判据当场把它抓出来（6 次 vs 预算 2 次）。所以只在
+   * **内容真的变了**时才换引用（见下面的签名比较）。
+   */
+  const [mermaid, setMermaid] = useState<{
+    cache?: Map<string, string>
+    diagnostics: IRDiagnostic[]
+  }>({ diagnostics: [] })
+
+  useEffect(() => {
+    if (!parsed) {
+      setMermaid((prev) => (prev.cache || prev.diagnostics.length ? { diagnostics: [] } : prev))
+      return
+    }
+    let cancelled = false
+    void renderMermaidCache(parsed.blocks, { dark }).then(({ cache, diagnostics }) => {
+      if (cancelled) return
+      const signature = (list: IRDiagnostic[]) =>
+        list.map((d) => `${d.token}:${d.line}:${d.count}`).join('|')
+      setMermaid((prev) => {
+        const sameCache = (prev.cache?.size ?? 0) === cache.size
+        const sameDiag = signature(prev.diagnostics) === signature(diagnostics)
+        // 内容没变就交回同一个引用：下游 effect 不该因为"又跑了一次"而重排
+        if (sameCache && sameDiag) return prev
+        return { cache: cache.size ? cache : undefined, diagnostics }
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+    // 源码或深浅切换才需要重渲染图；渲染本身对同一份源码是幂等的
+  }, [parsed?.blocks, dark])
 
   useEffect(() => {
     const host = mountRef.current
@@ -393,6 +436,7 @@ export function CanvasPanel({
               cardTexture: texture,
               cardDecoPreset: deco,
               diagnostics: collected,
+              mermaid: mermaid.cache,
             })
             onXhsInfo({ pageCount: result.pageCount, overflow: result.overflow })
             // 单页展示（切片 4）：早先把所有卡片横向排成一条，每张只有 ~310px 宽，
@@ -476,7 +520,9 @@ export function CanvasPanel({
             if (onClick) band.addEventListener('click', onClick)
             host.appendChild(band)
           } else {
-            const el = applyTheme(ir, previewTheme, overrides, document, collected)
+            const el = applyTheme(ir, previewTheme, overrides, document, collected, {
+              mermaid: mermaid.cache,
+            })
             // 平台画布宽：微信=手机图文逻辑宽 375px；知乎=文章页 ~690px
             el.style.width = platform === 'wechat' ? '375px' : '690px'
             el.style.boxSizing = 'border-box'
@@ -486,7 +532,11 @@ export function CanvasPanel({
             if (onClick) el.addEventListener('click', onClick)
             host.appendChild(el)
         }
-        setDiagnostics(collected)
+        setDiagnostics([...collected, ...mermaid.diagnostics])
+        // Shiki 二次 pass（P1-3）：hljs 先给一版可看的结果，这里再升级 token 色。
+        // 原地替换 `<code>` 的内容，**不触发重排**：同一份文本、同一套字体与行高，
+        // 只是多了一层带内联色的 span——块尺寸不变，分页结果不用重算。
+        void highlightCodeBlocks(host, { themeName: codeThemeNameFor(previewTheme, overrides) })
         // 图没就位就重排一次（W0 剩余项）。分页量的是 getBoundingClientRect，
         // 而**未加载的图片高度是 0**——于是这一页被塞得过满，图一加载内容就被推下去，
         // 卡片在用户眼前重排。导出路径早有这道闸门，预览路径没有，
@@ -528,6 +578,7 @@ export function CanvasPanel({
     onXhsInfo,
     onBlockClick,
     onBreaksChange,
+    mermaid,
   ])
 
   /**

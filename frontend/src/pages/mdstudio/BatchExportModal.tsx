@@ -12,9 +12,12 @@ import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   applyTheme,
+  codeThemeNameFor,
   exportCards,
+  highlightCodeBlocks,
   parseToIR,
   renderLongImage,
+  renderMermaidCache,
   xhsCards,
   zipBlobs,
   type ThemeOverrides,
@@ -99,6 +102,11 @@ export function BatchExportModal({ open, targets, onClose, onFinished }: BatchEx
         const overrides = (doc.overrides ?? {}) as ThemeOverrides
         const cover = (doc.cover ?? {}) as { footer?: string; qr?: string | null; breaks?: number[] }
         const folder = `${String(i + 1).padStart(2, '0')}-${safeEntryName(doc.title || item.title)}`
+        // Mermaid 预渲染（P2-4）+ Shiki 二次 pass（P1-3）：与单篇导出同一套，
+        // 两条路各做各的正是这仓反复吃过的亏——单篇有、批量没有，用户分不出区别。
+        const { cache } = await renderMermaidCache(ir)
+        const mermaid = cache.size ? cache : undefined
+        const themeName = codeThemeNameFor(doc.theme_id, overrides)
         if (doc.platform === 'xhs') {
           const result = xhsCards(ir, {
             theme: doc.theme_id,
@@ -106,7 +114,9 @@ export function BatchExportModal({ open, targets, onClose, onFinished }: BatchEx
             footer: cover.footer ?? '',
             qr: cover.qr ?? null,
             breaks: Array.isArray(cover.breaks) ? cover.breaks : undefined,
+            mermaid,
           })
+          for (const page of result.pages) await highlightCodeBlocks(page, { themeName })
           const blobs = await exportCards(result.pages)
           blobs.forEach((blob, page) => {
             entries.push({
@@ -116,7 +126,8 @@ export function BatchExportModal({ open, targets, onClose, onFinished }: BatchEx
           })
           patch(item.id, 'done', t('mdstudio.batch.cards', { count: blobs.length }))
         } else {
-          const el = applyTheme(ir, doc.theme_id, overrides)
+          const el = applyTheme(ir, doc.theme_id, overrides, document, undefined, { mermaid })
+          await highlightCodeBlocks(el, { themeName })
           el.style.width = doc.platform === 'zhihu' ? '690px' : '375px'
           el.style.boxSizing = 'border-box'
           document.body.appendChild(el)

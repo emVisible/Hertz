@@ -25,7 +25,7 @@ import type { XhsRenderInfo } from './CanvasPanel'
 import { ThemeDesigner } from './themeDesigner/ThemeDesigner'
 import { hydrateCustomThemes } from './themeDesigner/customThemes'
 
-export type ExportAction = 'copy-wechat' | 'copy-zhihu' | 'copy-caption' | 'zip' | 'longimage'
+export type ExportAction = 'copy-wechat' | 'copy-zhihu' | 'copy-caption' | 'zip' | 'longimage' | 'pdf'
 
 /**
  * 字号档位**按坐标系给**。
@@ -485,6 +485,18 @@ export function InspectorPanel({
             onClick={() => onExport('longimage')}
           >
             {t('mdstudio.export.longimage')}
+          </Button>
+          {/* PDF（P2-5）：长文的分页阅读形态，全平台通用。
+              与长图并存而不是替换——长图适合贴进聊天窗口，PDF 适合发文件。 */}
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Icon name="downloads" size={12} />}
+            loading={exporting === 'pdf'}
+            disabled={exporting !== null}
+            onClick={() => onExport('pdf')}
+          >
+            {t('mdstudio.export.pdf')}
           </Button>
         </div>
       </div>
