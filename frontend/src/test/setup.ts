@@ -4,6 +4,20 @@
 process.env.NODE_ENV = 'test'
 
 import '@testing-library/jest-dom/vitest'
+import { configure } from '@testing-library/react'
+
+// 等待预算：`waitFor` / `findBy*` 的默认是 1000ms，而宿主接线那几条要渲染整个
+// MD Studio 页（markdown 解析 + 主题 + 异步 mermaid + snapdom 栅格化），机器一忙
+// 就超过 1s，于是以「Unable to find [data-testid=mdstudio-canvas-mount]」失败——
+// **它测的不是逻辑，是等的时间不够**（实测失败时那几条跑了 1178/1061/1622ms；
+// 8 个 CPU burner 压着跑必现）。
+//
+// 只放宽等待预算，**不改任何断言**：挂载最终成不成功仍由原来那批断言判。
+// 2026-10-18 打 0.37.0 时被它挡过一次 tag——拦得对，但拦的是超时不是缺陷。
+//
+// ⚠️ 这个键属于 **@testing-library/dom 的 `configure`**，不是 vitest 配置项：
+// 第一次误写进 vite.config.ts 的 `test` 里被静默忽略，于是超时照旧。
+configure({ asyncUtilTimeout: 8000 })
 
 import { setCodeHighlighter } from '@hertz/mdcore'
 

@@ -76,7 +76,13 @@ cleanup() { kill 0 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
 # --reload（wave10.2）：后端代码改动自动热加载，避免旧进程无新路由导致 404
-uv run uvicorn backend.main:app --port 8787 --reload &
+# --reload-dir backend：没有它时 uvicorn 监听的是**当前工作目录整棵树**下的
+# *.py，于是改 tests/、改 scripts/、改 alembic/ 里的任何 .py 都会把正在跑的应用
+# 重启一遍——而应用只 import backend/，那些改动与它无关。白白重启会打断正在
+# 观察的现象（端口自复活刹车、scheduler 行为、画布取数），也让"我明明只动了测试"
+# 变成一次说不清来源的重启。
+# 注意反过来说：backend/ 之外的 .py 改动**不会**再触发 reload，这是有意的。
+uv run uvicorn backend.main:app --port 8787 --reload --reload-dir backend &
 BACKEND_PID=$!
 
 (cd frontend && pnpm dev) &

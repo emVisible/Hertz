@@ -29,5 +29,10 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
     include: ['src/**/*.test.{ts,tsx}'],
+    // 单个用例的整体预算（默认 5000ms）。宿主接线那几条渲染整页、链路长，
+    // 放宽是为了不把「机器忙」判成「功能坏」。
+    // 等待预算在 src/test/setup.ts 的 configure({ asyncUtilTimeout }) ——
+    // **那个键属于 @testing-library，不是 vitest 配置项**，写在这里会被忽略。
+    testTimeout: 30000,
   },
 })

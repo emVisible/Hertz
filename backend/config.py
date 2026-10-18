@@ -20,7 +20,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # ⚠️ 这一行曾长期停在 0.35.0 而包版本已是 0.36.0 —— 排查线上问题时日志里的版本号
 # 会把人带偏（本次排查重启风暴时就先被它误导过一次）。`tests/test_version_drift.py`
 # 现在会守住三方一致。
-APP_VERSION = "0.36.0"
+APP_VERSION = "0.37.0"
 
 
 class Settings(BaseSettings):

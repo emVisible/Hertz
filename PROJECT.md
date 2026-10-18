@@ -5,13 +5,17 @@
 
 ## 版本
 
-- 当前版本：**0.36.0**（四方一致，由 `tests/test_version_drift.py` 守住）
-- 下一版本：**0.37**，仍在 `[Unreleased]`，尚未打 tag
-- 恢复点 tag：`pre-docs-shuffle-2026-10-17`（文档治理前）
+- 当前版本：**0.37.0**（2026-10-18 发布，六处一致：`tests/test_version_drift.py` 守住五处，
+  `uv.lock` 那条靠 `uv sync` 同步）
+- `[Unreleased]` 已重开为空
+- 恢复点 tag：`pre-docs-shuffle-2026-10-17`（文档治理前的 `5201377`）
 
 ## 当前阶段
 
-**v0.37 收口**。MD Studio 第三批（Shiki 高亮 / Mermaid / CSS / PDF 导出）、微信·知乎粘贴修复、两处真实缺陷修复（D-231 配置钉子 / D-232 缓存判同）均已落地并通过全量门禁。**文档体系治理已完成并合入 `main`**（见下方"最近变更"）。
+**0.37.0 已发布**。本阶段交付：MD Studio 第三批（Shiki 高亮 / Mermaid / CSS / PDF 导出）、
+微信·知乎粘贴修复、两处真实缺陷定性（D-231 配置钉子 / D-232 缓存判同）、文档体系治理、
+`dev.sh` 观察面收窄。**下一阶段待点单**：Electron 大版本升级（唯一的高危待办）、MD Studio
+下一批候选（图床 / 掘金头条 / 反向导入）。
 
 活跃分支：`main`。
 
@@ -19,6 +23,7 @@
 
 | 提交 | 变了什么 |
 |---|---|
+| `0.37.0` | **发版**：六处版本对齐、CHANGELOG 收口、产物级门禁 `release-check.sh` 全绿 |
 | `fdee85a`…`1feff84` | **文档体系治理**（6 提交）：活跃文档 6,819 → 1,887 行；历史 5,186 行进 `docs/archive/`（含状态头）；决策改一决策一文件；新增 `AGENTS.md` / `PROJECT.md` / `docs/README.md`；`webui.sh` 归位 `scripts/`；门禁新增**文档链接检查**（第 1 步，9 步制） |
 | `5201377` | `data/runtime.yaml` 的陈旧默认值钉子——"日志搬家"从未生效，附 D-231 取证更正 |
 | `b1ca205` | 判"内容变没变"改用内容签名（`.size` ≠ 内容），附 D-232 |
@@ -44,12 +49,15 @@
 
 **你（需要人工）**
 - 走一遍 `docs/MD_STUDIO_TEST_SHEET.md`，重点是微信/知乎粘贴观感与四个导出按钮
+- 注册 Reddit OAuth 凭证并填进设置页——情感文字产线可能是它的先决条件
+  （`docs/ROADMAP.md`「已知缺口」有量化依据：全库 selftext 0/5281 非空）
 - 定 Electron 大版本升级的排期
 - 合规词表调校（`packages/mdcore/src/compliance/wordlists.ts`，红线是主编口径）
 - 确认后把 `[Unreleased]` 收成 0.37.0 并打 tag
 
 **我（等点单）**
-- Electron 37 → 41+ 升级（壳 + 打包 + 全回归）
+- Electron 37 → 41+ 升级（壳 + 打包 + 全回归）——**唯一的高危待办**
+- 正文回填 `backfill-selftext.py`：就绪但要一台能出网的机器（reddit 全域 000）
 - `uvicorn --reload` 加 `--reload-dir backend`：现在它盯整个仓库，改测试文件就会重启正在跑的应用
 - MD Studio 候选下一步：图床、掘金/头条、反向导入（排序见 `docs/MD_STUDIO_UPDATE_PLAN.md` §5）
 
