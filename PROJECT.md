@@ -5,8 +5,11 @@
 
 ## 版本
 
-- 当前版本：**0.37.0**（2026-10-18 发布，六处一致：`tests/test_version_drift.py` 守住五处，
-  `uv.lock` 那条靠 `uv sync` 同步）
+- 当前版本：**0.37.0** · tag `v0.37.0`（2026-10-18）。六处一致：
+  `backend/config.py:APP_VERSION`、`pyproject.toml`、`package.json`、
+  `frontend/package.json`、`electron/package.json`（`test_version_drift.py` 守这五处）
+  + `uv.lock` 项目自身那条（靠 `uv sync`）
+- 发版门禁：`scripts/release-check.sh` **PASS**（源码 9 步 → 重建固化包 → 产物级门禁）
 - `[Unreleased]` 已重开为空
 - 恢复点 tag：`pre-docs-shuffle-2026-10-17`（文档治理前的 `5201377`）
 
