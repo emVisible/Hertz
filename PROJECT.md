@@ -56,14 +56,12 @@
   （`docs/ROADMAP.md`「已知缺口」有量化依据：全库 selftext 0/5281 非空）
 - 定 Electron 大版本升级的排期
 - 合规词表调校（`packages/mdcore/src/compliance/wordlists.ts`，红线是主编口径）
-- 确认后把 `[Unreleased]` 收成 0.37.0 并打 tag
 
 **我（等点单）**
 - Electron 37 → 41+ 升级（壳 + 打包 + 全回归）——**唯一的高危待办**
 - 正文回填 `backfill-selftext.py`：就绪但要一台能出网的机器（reddit 全域 000）
-- `uvicorn --reload` 加 `--reload-dir backend`：现在它盯整个仓库，改测试文件就会重启正在跑的应用
 - MD Studio 候选下一步：图床、掘金/头条、反向导入（排序见 `docs/MD_STUDIO_UPDATE_PLAN.md` §5）
 
 ## 规模数字（改动后应重新核对）
 
-跟踪文件 **846**（docs 36：活跃 12 · 归档 24）· 顶层目录 10 · 根级 md 5 · pytest 836 · mdcore 441 · 前端 379 · 排版基线 18 张
+跟踪文件 **846**（docs 36：活跃 12 · 归档 24）· 顶层目录 10 · 根级 md 5 · pytest 836 · mdcore 441 · 前端 379 · 排版基线 18 张 · 门禁 9 步
