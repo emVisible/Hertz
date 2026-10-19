@@ -37,7 +37,7 @@
 
 ## 门禁现状
 
-`bash scripts/verify.sh` 全量 **EXIT=0**，共 **9 步**：文档链接 → ruff → pytest **836** → mdcore tsc → mdcore **441** → 前端 tsc → 前端 **379** → vite build → **18 张排版基线**（0.5% 阈值）。
+`bash scripts/verify.sh` 全量 **EXIT=0**，共 **9 步**：文档链接 → ruff → pytest **840** → mdcore tsc → mdcore **441** → 前端 tsc → 前端 **379** → vite build → **18 张排版基线**（0.5% 阈值）。
 
 ## 已知风险
 
@@ -46,6 +46,7 @@
 | **Electron 37.10.3 有 36 条真实 CVE**（11 high / 20 moderate） | **未修**，需独立改动面 | `docs/decisions/README.md` 的审计结论；清零需升到 ≥41.10.6 |
 | 「打开应用约一分钟后机器卡死」 | **未复现**。当前 dev 栈连续运行 CPU ≈0%、零自发重启。最可能是当时全量 pytest 与 dev 栈 + Postgres 同时在跑——**仍是推测** | D-231 |
 | 微信/知乎粘贴观感 | 结构判据全绿，**实际编辑器排版只有用户能确认** | `docs/MD_STUDIO_TEST_SHEET.md` |
+| 素材「音频比画面长」 | 已修（合成链改按视频流累加 + 校验盯视频流）。但**素材侧仍会产生这种文件**，只是不再能变成黑屏成片 | `backend/pipeline/producers/assemble.py` 与 `CHANGELOG` |
 | 旧日志 `logs/`（15MB） | **已清理**（09:51 后停写、0 跟踪文件） | 日志改道 `data/logs/`；`mdsea/` 48MB 参考材料已移出仓库到 `~/Code/_refs/` |
 
 ## 待办（谁手里）
@@ -64,4 +65,4 @@
 
 ## 规模数字（改动后应重新核对）
 
-跟踪文件 **846**（docs 36：活跃 12 · 归档 24）· 顶层目录 10 · 根级 md 5 · pytest 836 · mdcore 441 · 前端 379 · 排版基线 18 张 · 门禁 9 步
+跟踪文件 **846**（docs 36：活跃 12 · 归档 24）· 顶层目录 10 · 根级 md 5 · pytest 840 · mdcore 441 · 前端 379 · 排版基线 18 张 · 门禁 9 步

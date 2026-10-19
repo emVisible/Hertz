@@ -45,8 +45,10 @@ from backend.pipeline.producers.common import (
     _run_cmd,
 )
 from backend.pipeline.producers.probe import (
+    probe_audio_duration,
     probe_duration,
     probe_has_audio,
+    probe_video_duration,
     video_stream_params,
 )
 from backend.pipeline.producers.resolution import target_resolution
@@ -72,6 +74,10 @@ MAX_TRANSITION_S = 3.0
 
 #: 归一后每段的音频口径（与 `compose.py` 同源，见 `_audio_chain`）。
 _AUDIO_RATE = 44100
+
+#: 视频流时长与期望值的容差（秒）。每段转场要吃掉 d 秒，帧率取整与滤镜舍入会带来
+#: 几十毫秒的偏差；给 1 秒足够宽松，又能抓住「少了整整一段」那种截断。
+_VIDEO_TOLERANCE_S = 1.0
 
 
 def _clamp_transition(seconds: object, *, seg_dur: float) -> float:
@@ -145,35 +151,63 @@ def _normal_chain(width: int, height: int, fps: int) -> str:
     )
 
 
-def _audio_chain() -> str:
-    """音频归一：统一采样率/声道/采样格式。
+def _audio_chain(seg_dur: float | None = None) -> str:
+    """音频归一：统一采样率/声道/采样格式，并把**每段钉到与画面等长**。
+
+    `seg_dur` 给定时补一段「先 atrim 截到画面长度、再 apad 静音补齐」——
+    素材里音频比画面长时截掉尾巴，短时补静音，两条链的时间轴因此严格对齐。
 
     与 `compose.py` 的 aformat 同口径——两处各拼一套会让拼接片在后续合成时
     再被重采样一次（`amix` 要求各轨参数一致，否则塌缩）。
     """
+    fmt = "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo"
+    base = f"aresample={_AUDIO_RATE}:async=1,{fmt}"
+    if seg_dur is None:
+        return base
+    # apad 先补满（无限补），再用 atrim 截到画面长度——顺序不能反：
+    # apad 默认只补一个 packet 的量，放在后面等于什么都没补足。
     return (
-        f"aresample={_AUDIO_RATE}:async=1,"
-        "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo"
+        f"aresample={_AUDIO_RATE}:async=1,apad,"
+        f"atrim=0:{seg_dur:.3f},asetpts=N/SR/TB,{fmt}"
     )
 
 
 async def _probe_segments(clips: list[dict]) -> list[tuple]:
-    """逐段探测：路径存在性 + 时长 + 有无音轨 + 流参数。
+    """逐段探测：路径存在性 + **视频流时长** + 音频流时长 + 有无音轨 + 流参数。
 
     缺失源**立刻抛**而不是跳过——跳过会让「配了 5 段」悄悄变成「拼了 3 段」，
     而条目标题/时长/审核页都以为它是完整的。
+
+    返回 `(path, video_dur, audio_dur, has_audio, params)`。
+
+    ⚠️ 时长必须分开探测、不能只留一个数：容器时长取**最长那条流**（通常是音频）。
+    素材出现「音频比画面长」时，容器时长大于视频流真实时长，而 xfade 的 offset 是按
+    视频累加的——用容器时长算就会让 offset 越过已拼好的画面，xfade 直接停止延长视频，
+    音频链却照常走完，于是成片后半段无帧、播放器显示黑屏（2026-10-19 事故）。
     """
     probed: list[tuple] = []
     for index, clip in enumerate(clips):
         path = Path(str(clip["path"]))
         if not await asyncio.to_thread(path.exists):
             raise ProducerError(f"合集第 {index + 1} 段素材缺失：{path.name}")
-        duration = await probe_duration(path)
-        if duration <= 0:
+        video_dur = await probe_video_duration(path)
+        if video_dur <= 0:
             raise ProducerError(f"合集第 {index + 1} 段素材时长不可解析：{path.name}")
         has_audio = await probe_has_audio(path)
-        probed.append((path, duration, has_audio, await video_stream_params(path)))
+        audio_dur = await probe_audio_duration(path) if has_audio else 0.0
+        probed.append((path, video_dur, audio_dur, has_audio, await video_stream_params(path)))
     return probed
+
+
+def _segment_durations(probed: list[tuple]) -> list[float]:
+    """每段的**统一时长** D_i = 视频流时长。
+
+    合成必须让每段的画面与声音一样长，否则两条链的时间轴会分家（视频算一套、
+    音频算另一套），分家之后的后果不是「不同步」而是「后半段黑屏」——
+    见 `_build_xfade_chain` 顶部关于 offset 越界的说明。
+    画面是用户选中的内容，所以以画面为准；音频比它长的截掉，短��用静音补齐。
+    """
+    return [dur for _path, dur, _ad, _ha, _params in probed]
 
 
 def _build_concat(
@@ -191,19 +225,20 @@ def _build_concat(
     # 额外的第 N 个输入，必须用独立计数器记录它的下标。**不能靠 len(inputs)
     # 反推**——`-f lavfi` 会让每次追加多占一个元素，算出来的下标会指向别的流。
     next_input_index = 0
-    for i, (path, _dur, has_audio, _params) in enumerate(probed):
+    for i, (path, dur, _ad, has_audio, _params) in enumerate(probed):
         inputs += ["-i", str(path)]
         video_index = next_input_index
         next_input_index += 1
         chains.append(f"[{video_index}:v]{_normal_chain(width, height, fps)}[v{i}]")
         if want_audio:
             if has_audio:
-                chains.append(f"[{video_index}:a]{_audio_chain()}[a{i}]")
+                chains.append(f"[{video_index}:a]{_audio_chain(dur)}[a{i}]")
             else:
                 inputs += ["-f", "lavfi", "-i", f"anullsrc=r={_AUDIO_RATE}:cl=stereo"]
                 # atrim 必须有——anullsrc 无限流，concat 同样会等不到结束而挂死。
+                # 终点取**视频流**时长（不是容器时长）：补出来的静音长度必须与画面严格对齐。
                 chains.append(
-                    f"[{next_input_index}:a]atrim=0:{probed[i][1]:.3f},"
+                    f"[{next_input_index}:a]atrim=0:{dur:.3f},"
                     f"asetpts=N/SR/TB,{_audio_chain()}[a{i}]"
                 )
                 next_input_index += 1
@@ -242,6 +277,16 @@ def _build_xfade_chain(
     注意 `acc` 累加的是**净增时长**（扣掉已消耗的转场）——xfade 让转场区段
     两段画面重叠，总时长因此减少。忘了扣这一项，整条片子会越拼越长。
 
+    ⚠️ **`acc` 必须按视频流时长累加，不能用容器时长**（2026-10-19 黑屏事故）：
+    容器时长取最长那条流（通常是音频）。素材里出现「音频比画面长 8 秒」时，
+    第一个 xfade 的 offset 还算对，**第二个就超出了已拼好的画面长度**——
+    ffmpeg 的 xfade 在 offset ≥ 首输入实际时长时**不报错，只是停止延长视频**，
+    而 acrossfade 那条音频链没有这个约束、照常走完。结果是：
+
+        容器 89.6s（取自音频）· 视频流 45.7s · 后 44 秒一帧都没有 → 播放器黑屏
+
+    这条链同时把每段音频钉到与画面等长（`_audio_chain(dur)`），两条链因此不会分家。
+
     音频用 acrossfade 对齐同一批 offset/时长，音画才同步。
     """
     n = len(probed)
@@ -249,21 +294,21 @@ def _build_xfade_chain(
     chains: list[str] = []
     # 下标分配同 `_build_concat`：片段 i 占第 i 个输入，anullsrc 用独立计数器。
     next_input_index = 0
-    for i, (path, _dur, has_audio, _params) in enumerate(probed):
+    for i, (path, dur, _ad, has_audio, _params) in enumerate(probed):
         inputs += ["-i", str(path)]
         video_index = next_input_index
         next_input_index += 1
         chains.append(f"[{video_index}:v]{_normal_chain(width, height, fps)}[v{i}]")
         if want_audio and has_audio:
-            chains.append(f"[{video_index}:a]{_audio_chain()}[a{i}]")
+            chains.append(f"[{video_index}:a]{_audio_chain(dur)}[a{i}]")
         elif want_audio:
             # 无音轨段补静音轨。**必须 atrim 截断**：anullsrc 是无限流，
             # 不截断时 acrossfade/concat 永远等不到输入结束——ffmpeg 不报错、
             # 不退出，产线就此挂死（本仓 P1 调试时实测踩到，30 分钟无输出）。
-            # atrim 的终点取该段容器时长，所以补出来的静音长度与画面严格对齐。
+            # 终点取该段**视频流**时长，补出来的静音长度与画面严格对齐。
             inputs += ["-f", "lavfi", "-i", f"anullsrc=r={_AUDIO_RATE}:cl=stereo"]
             chains.append(
-                f"[{next_input_index}:a]atrim=0:{probed[i][1]:.3f},"
+                f"[{next_input_index}:a]atrim=0:{dur:.3f},"
                 f"asetpts=N/SR/TB,{_audio_chain()}[a{i}]"
             )
             next_input_index += 1
@@ -329,17 +374,20 @@ async def assemble_clips(
         raise ProducerError("ffmpeg not found")
 
     probed = await _probe_segments(clips)
-    width, height, fps = _resolve_target(probed[0][3])
-    want_audio = any(has_audio for _p, _d, has_audio, _q in probed)
+    width, height, fps = _resolve_target(probed[0][4])
+    want_audio = any(has_audio for _p, _v, _a, has_audio, _q in probed)
 
+    seg_durs = _segment_durations(probed)
     transitions: list[str] = []
     durations: list[float] = []
     for i in range(1, len(clips)):
         raw_t = str(clips[i].get("transition") or "cut")
         transitions.append(raw_t if raw_t in TRANSITIONS else "cut")
-        # 钳制要看**相邻两段**的时长，取较小者的半数才安全
-        prev_dur = probed[i - 1][1]
-        cur_dur = probed[i][1]
+        # 钳制要看**相邻两段**的时长，取较小者的半数才安全。
+        # 用视频流时长而不是容器时长——转场是发生在画面上的，按更长的音频去钳
+        # 会放出一个画面根本放不下的转场（详见 _build_xfade_chain 的黑屏说明）。
+        prev_dur = seg_durs[i - 1]
+        cur_dur = seg_durs[i]
         durations.append(
             _clamp_transition(clips[i].get("transition_s"), seg_dur=min(prev_dur, cur_dur))
         )
@@ -375,6 +423,22 @@ async def assemble_clips(
     total = await probe_duration(out_path)
     if total <= 0:
         raise ProducerError("合集成片时长不可解析")
+
+    # ⚠️ 必须校验**视频流**时长，不能只信容器时长（2026-10-19 黑屏事故）：
+    # 容器时长取最长那条流（通常是音频），于是「视频只有一半、后半段无帧」的成片
+    # 会以 89.6s 的"成功"姿态交付，用户看到的是后半段整段黑屏——文件在、体积正常、
+    # 时长正常，只有画面是空的。期望值按视频流时长与实际转场时长算，两者不该差太多。
+    expected_v = sum(seg_durs) - sum(
+        d for t, d in zip(transitions, durations, strict=True) if t != "cut"
+    )
+    actual_v = await probe_video_duration(out_path)
+    if actual_v <= 0:
+        raise ProducerError("合集成片的视频流时长不可解析")
+    if actual_v < expected_v - _VIDEO_TOLERANCE_S:
+        raise ProducerError(
+            f"合集成片视频轨被截断：期望 ≥{expected_v:.1f}s，实得 {actual_v:.1f}s"
+            f"（容器 {total:.1f}s 是音频的长度，播放器会把差额显示成黑屏）"
+        )
 
     return {
         "clips": len(probed),

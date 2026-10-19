@@ -41,12 +41,18 @@ needs_ffmpeg = pytest.mark.skipif(ffmpeg is None, reason="ffmpeg not available")
 async def _make_clip(
     path: Path, *, size: str = "320x240", seconds: float = 2.0,
     rate: int = 30, audio: bool = True, color: str = "red",
+    audio_seconds: float | None = None,
 ) -> Path:
-    """合成一段测试素材：指定画幅/时长/帧率/有无音轨。"""
+    """合成一段测试素材：指定画幅/时长/帧率/有无音轨。
+
+    `audio_seconds` 单独给音轨长度——用来造「**音频比画面长**」的素材，
+    那正是 2026-10-19 合集黑屏事故的输入形状（真实素材里有一段音频长出 8 秒）。
+    """
     args = [str(ffmpeg), "-y", "-f", "lavfi",
             "-i", f"color=c={color}:size={size}:rate={rate}:duration={seconds}"]
     if audio:
-        args += ["-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}"]
+        args += ["-f", "lavfi", "-i",
+                 f"sine=frequency=440:duration={audio_seconds or seconds}"]
     args += ["-c:v", "libx264", "-pix_fmt", "yuv420p"]
     args += ["-c:a", "aac", "-b:a", "128k"] if audio else ["-an"]
     args += [str(path)]
@@ -865,3 +871,111 @@ def test_ass_playres_matches_actual_output_size(tmp_path):
     # 不传时回落到设置里的横屏（横屏场景仍然正确）
     default_ass = srt_to_ass(srt, tmp_path / "d.ass").read_text(encoding="utf-8")
     assert "PlayResX: 1280" in default_ass
+
+
+# ---------- 2026-10-19：合集成片后半段黑屏 ----------
+#
+# 症状：合集（多素材编排）制作完成后，成片**后半段整段黑屏**。用户看到的文件
+# 在、体积正常、时长正常，只有后半段没有画面。
+#
+# 机制：第 2 段素材的**音频比画面长 8 秒**（容器时长取最长那条流 = 音频），
+# 而 xfade 的 offset 是按累加时长递推的。offset 一旦越过「已拼好的画面长度」，
+# ffmpeg 的 xfade **不报错，只是停止延长视频**；同批 offset 的 acrossfade 音频链
+# 没有这个约束、照常走完。于是：
+#
+#     容器 89.6s（音频）· 视频流 45.7s · 后 44 秒一帧都没有
+#
+# 两层洞：① offset 按容器时长算；② 产物校验也只读容器时长，于是它报「89.6s 成功」。
+#
+# 变异对照（改坏任一条，对应用例必须变红）：
+#   a) offset 改回按容器时长累加（probe 改回 probe_duration）→ 端到端那条红
+#   b) 产物校验去掉视频流检查、只留容器时长 → 校验那条红
+#   c) 每段音频不再钉到画面长度 → 音画等长那条红
+
+
+@needs_ffmpeg
+async def test_clip_with_audio_longer_than_video_does_not_black_tail(tmp_path: Path) -> None:
+    """事故形状的端到端判据：**查视频流**，不是查容器。
+
+    容器时长在旧代码里恰好是「正确的」那个数——它取自音频，所以这条断言若只
+    看 `info["duration_s"]` 就等于没判。
+    """
+    from backend.pipeline.producers.probe import probe_video_duration
+
+    a = await _make_clip(tmp_path / "a.mp4", seconds=4.0, color="red")
+    # 画面 2 秒、音频 10 秒：容器 10s 而视频流只有 2s
+    b = await _make_clip(tmp_path / "b.mp4", seconds=2.0, audio_seconds=10.0, color="blue")
+    c = await _make_clip(tmp_path / "c.mp4", seconds=4.0, color="green")
+
+    out = tmp_path / "out.mp4"
+    info = await assemble_clips(
+        [
+            _clip_spec(a, "fade", 0.32),
+            _clip_spec(b, "fade", 0.32),
+            _clip_spec(c, "fade", 0.32),
+        ],
+        out,
+    )
+
+    video_s = await probe_video_duration(out)
+    expected = 4.0 + 2.0 + 4.0 - 3 * 0.32  # 转场各吃掉一段的 d 秒
+    assert video_s == pytest.approx(expected, abs=1.0), (
+        f"成片视频流只有 {video_s:.1f}s（期望 ≈{expected:.1f}s）——"
+        f"后半段没有画面；容器时长 {info['duration_s']}s 取自音频，"
+        f"正是它把这个缺陷伪装成了成功"
+    )
+
+
+@needs_ffmpeg
+async def test_audio_is_pinned_to_video_length_per_segment(tmp_path: Path) -> None:
+    """每段音频必须与该段画面等长：长出来的截掉，短了的补静音。"""
+    from backend.pipeline.producers.probe import (
+        probe_audio_duration,
+        probe_video_duration,
+    )
+
+    a = await _make_clip(tmp_path / "a.mp4", seconds=3.0)
+    b = await _make_clip(tmp_path / "b.mp4", seconds=2.0, audio_seconds=9.0)
+    out = tmp_path / "out.mp4"
+    await assemble_clips([_clip_spec(a, "cut"), _clip_spec(b, "cut")], out)
+
+    v, aud = await probe_video_duration(out), await probe_audio_duration(out)
+    assert abs(v - aud) <= 1.0, f"音画长度分家了：视频 {v:.1f}s vs 音频 {aud:.1f}s"
+
+
+@needs_ffmpeg
+async def test_truncated_video_track_raises_instead_of_shipping(tmp_path: Path) -> None:
+    """产物校验必须盯视频流——这条守的是「缺陷被伪装成成功」。
+
+    用探针假装产物的视频轨短了一截：旧代码只读容器时长，会把它当成功放行。
+    """
+    from backend.pipeline.producers import assemble as assemble_mod
+
+    a = await _make_clip(tmp_path / "a.mp4", seconds=3.0)
+    b = await _make_clip(tmp_path / "b.mp4", seconds=3.0)
+    out = tmp_path / "out.mp4"
+
+    real = assemble_mod.probe_video_duration
+
+    async def short_video(path):  # noqa: ANN001 - 探针替身
+        # 只对**产物**短报，源素材照常探——否则期望值会被一起改小，
+        # 断言就成了自己给自己发通行证（第一版就是这么写错的）。
+        return 1.0 if str(path) == str(out) else await real(path)
+
+    assemble_mod.probe_video_duration = short_video
+    try:
+        with pytest.raises(ProducerError, match="视频轨被截断"):
+            await assemble_clips([_clip_spec(a, "cut"), _clip_spec(b, "cut")], out)
+    finally:
+        assemble_mod.probe_video_duration = real
+
+
+def test_segment_durations_follow_the_video_track() -> None:
+    """纯逻辑：每段时长取**视频流**，不是容器时长（容器时长 = 更长的音频）。"""
+    from backend.pipeline.producers.assemble import _segment_durations
+
+    probed = [
+        (Path("a.mp4"), 4.0, 4.5, True, None),
+        (Path("b.mp4"), 2.0, 10.0, True, None),  # 事故那一段
+    ]
+    assert _segment_durations(probed) == [4.0, 2.0]

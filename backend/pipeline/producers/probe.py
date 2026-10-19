@@ -62,6 +62,28 @@ async def probe_audio_duration(path: Path | str) -> float:
     return await probe_duration(path)
 
 
+async def probe_video_duration(path: Path | str) -> float:
+    """主视频流时长（秒）；不可得回退容器时长。
+
+    **为什么必须有它（而不是直接用容器时长）**：容器时长取**最长那条流**，通常是音轨。
+    素材里出现「音频比画面长」时（实测有 reddit 片段音频长出 8s），容器时长会大于视频流
+    真实时长——而合成链的 xfade offset 必须按**视频**累加，否则 offset 会越过已拼好的
+    画面长度，xfade 停止延长视频而音频照常走完，成片后半段就成了一整段无帧的黑屏
+    （2026-10-19 的合集黑屏事故，见 assemble._build_xfade_chain 的注释）。
+    """
+    data = await _ffprobe_json([
+        "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=duration", "-of", "json", str(path),
+    ])
+    streams = data.get("streams") or []
+    if streams and streams[0].get("duration"):
+        try:
+            return float(streams[0]["duration"])
+        except (TypeError, ValueError):
+            pass
+    return await probe_duration(path)
+
+
 async def probe_has_audio(path: Path | str) -> bool:
     """是否含音轨——ASR 前提；探测不可用时默认 True（宁做不做哑字幕）。
 
