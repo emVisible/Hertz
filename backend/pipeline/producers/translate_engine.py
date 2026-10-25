@@ -126,15 +126,38 @@ def _translate_kwargs(token_lists: list[list[str]]) -> dict:
     }
 
 
-def _dup_ratio(text: str) -> float:
-    """重复密度：被「出现 ≥2 次的 4-gram」覆盖的字符占比（去空白后计）。
+# 密度必须量在**用户实际看到的形态**上：字幕出库前会被
+# `subtitles.clean_zh_subtitle_text` 摘掉全部标点，而标点会把回声隔断——
+# 2026-10-13-18 生产字幕里 4 条可见密度 ≥0.35（0.738/0.424/1.000/0.727），
+# 给它们每 5 字插一个逗号（clean 后逐字回到生产原文），不归一化实测
+# 0.312/0.395/0.000/0.000——三条跌到阈值下整堵墙漏网。
+# 判据：`test_dup_ratio_measures_through_punctuation`。
+# 字符类与 `subtitles._ZH_PUNCT_RE` 对齐，判据在
+# `test_norm_matches_clean_zh_subtitle_text`——那边改了这边不跟，必红。
+# （字符类写错过两次：`（）\(）` 漏掉半角 `)`、`〈><>` 漏掉 `〉`——
+# 判据上线当天两个全抓出来，此后这边的字符类只许跟着清洗链改。）
+_NOISE_RE = re.compile(
+    r"[\s。！？!?；;…‥，,、：:·•"
+    r"“”\"'‘’「」『』（）\(\)【】\[\]《》〈〉<>"
+    r"～~﹣－—–‐\-_/\\|@#$%^&*+=`]+"
+)
 
-    实测分布（定阈值的依据）：手写正常句 0.000，真实机翻中等输出最高 0.314，
-    事故样本折叠后最低 1.600——0.35 夹在两族之间，双向改都有判据咬。
+
+def _norm(text: str) -> str:
+    """归一化到清洗后的可见形态（去标点 + 去空白）。"""
+    return _NOISE_RE.sub("", text or "")
+
+
+def _dup_ratio(text: str) -> float:
+    """重复密度：被「出现 ≥2 次的 4-gram」覆盖的字符占比（归一化后计）。
+
+    实测分布（定阈值的依据）：手写正常句 0.000，正常样本最高 0.340
+    （2026-10-13-18 生产原句），事故样本折叠后最低 1.600；同片的生产墙
+    0.424 必须被拦下——0.35 站在 (0.340, 0.424] 这个窗口里，双向改都有判据咬。
     **同字 4-gram 不计**（「哈哈哈哈」整段都是均匀 gram，会把密度顶到 0.4
     误伤正常句）：单字连排归 `_collapse_repetition` 管，密度只管多字回声。
     """
-    s = re.sub(r"\s", "", text or "")
+    s = _norm(text)
     if len(s) < _DUP_NGRAM:
         return 0.0
     grams = [
@@ -170,8 +193,17 @@ def _collapse_repetition(text: str) -> str:
         out = out[: m.start()] + m.group(1) + out[m.end() :]
 
 
-def _longest_clean_prefix(s: str, threshold: float, floor: int = 8) -> int:
-    """s（已去空白）里重复密度始终 < threshold 的最长前缀长度。"""
+def _longest_clean_prefix(s: str, threshold: float, floor: int = 4) -> int:
+    """s（已归一化——去标点去空白，即清洗后的可见形态）里，
+    重复密度始终 < threshold 的最长前缀长度。
+
+    floor 是「一个位置都不满足」时的兜底长度，必须落在**必然干净**的位置：
+    4 = 一个 4-gram 的长度，此时串里只有一个 gram、谈不上重复，密度必为 0。
+    曾是 8——8 字回声（「我告訴她我告訴她」）恰好整串落进兜底，原样放回，
+    护栏在它身上等于没开（2026-10-13-18 生产 cue 实测：兜底片段密度 1.0）。
+    正常文本超阈值才进这里，收得再短也不影响正常句（判据
+    `test_trim_degenerate_catches_production_walls` 咬这里）。
+    """
     counts: dict[str, int] = {}
     dup = 0
     cut = 0
@@ -192,19 +224,18 @@ def _trim_degenerate(text: str) -> str:
     """折叠第二道兜底：**近似**重复（逐字差一点、折叠抓不住的那类）超阈值时，
     截到最长的干净前缀——宁可短，也不把回声送到用户眼前。
 
-    原文的空白位置保留：截断在去空白后的坐标系里算，再映射回原串。
+    度量在归一化形态上做（与 `_dup_ratio` 同一口径），截断位置再映射回
+    原文——标点只隔断回声、不承载信息，量它等于让清洗层替重复打掩护。
     """
     if _dup_ratio(text) < _DUP_RATIO_THRESHOLD:
         return text
-    stripped = re.sub(r"\s", "", text)
-    cut = _longest_clean_prefix(stripped, _DUP_RATIO_THRESHOLD)
-    pos = 0
-    kept = 0
-    while pos < len(text) and kept < cut:
-        if not text[pos].isspace():
-            kept += 1
-        pos += 1
-    piece = text[:pos]
+    norm = _norm(text)
+    cut = _longest_clean_prefix(norm, _DUP_RATIO_THRESHOLD)
+    # 归一化坐标 → 原文坐标：keep[i] 是被计入密度的第 i 个字符的原文位置
+    keep = [i for i, ch in enumerate(text) if not _NOISE_RE.match(ch)]
+    if not keep or cut <= 0:
+        return text
+    piece = text[: keep[min(cut, len(keep)) - 1] + 1]
     # 在词/句边界收口——直接砍在第 cut 个字上会切出「你完全被完全」这种半截词
     last = max((i for i, ch in enumerate(piece) if ch in _BOUNDARY_CHARS), default=-1)
     if last >= 3:  # 边界前至少留 4 个字，否则宁可不收口

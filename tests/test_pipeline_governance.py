@@ -2498,11 +2498,14 @@ async def test_subtitles_filter_detection(monkeypatch) -> None:
     from backend.infrastructure import deps as deps_mod
     from backend.pipeline.producers import media as media_mod
 
-    # 隔离 deps 缓存（避免真实 data/state/deps.json 干扰）
+    # 隔离 deps 缓存（避免真实 data/state/deps.json 干扰）。
+    # 这两处全局必须由 monkeypatch 托管：直接赋值会把 libass:False/None
+    # 泄漏给会话里之后的所有测试——下游按缓存跳过真烧录判据
+    # （2026-10-25 像素级字幕判据在全量里被静默跳过，单独跑却通过）。
     monkeypatch.setattr(deps_mod.settings, "data_dir", Path(tempfile.mkdtemp()))
-    deps_mod._cache = None
+    monkeypatch.setattr(deps_mod, "_cache", None)
     import backend.pipeline.producers.compose as _comp
-    _comp._subtitles_available = None
+    monkeypatch.setattr(_comp, "_subtitles_available", None)
 
     # 无 ass 行 → False
     async def fake_exec(*a, **kw):
@@ -2529,7 +2532,9 @@ async def test_subtitles_filter_detection(monkeypatch) -> None:
     assert ok2 is True
 
     # deps 缓存存在时直接读缓存（不再 subprocess）
-    deps_mod._cache = {"ffmpeg": {"status": "ok", "libass": False}}
+    monkeypatch.setattr(
+        deps_mod, "_cache", {"ffmpeg": {"status": "ok", "libass": False}}
+    )
     import backend.pipeline.producers.compose as _comp
     _comp._subtitles_available = None
     assert await media_mod.subtitles_filter_available("/fake/ffmpeg") is False
@@ -2864,7 +2869,10 @@ async def test_retranslate_endpoint(client, monkeypatch) -> None:
 
     monkeypatch.setattr(media_mod, "_asr_subtitles", fake_asr)
 
+    handed = {}
+
     async def fake_compose(*a, **kw):
+        handed["srt"] = a[2]
         out = a[3]
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"video")
@@ -2894,10 +2902,15 @@ async def test_retranslate_endpoint(client, monkeypatch) -> None:
 
     resp = await client.post(f"/api/pipeline/items/{item_id}/retranslate")
     assert resp.status_code == 200, resp.text
+    # 判据：交 SRT，不预转 ASS——compose 会按真实出片尺寸重跑 srt_to_ass，
+    # 喂进预转好的 .ass 会被当 SRT 解析出 0 条 Dialogue → 成片零字幕
+    # （2026-10-25 实测 subs.ass 往返一次只剩 14 行空壳）
+    assert Path(handed["srt"]).suffix == ".srt"
     async with session_factory() as session:
         row = await session.get(Item, item_id)
         assert row.status == "queued"
         assert row.video_path.endswith("final.mp4")
+        assert str(row.subtitle_path).endswith(".srt")  # publisher 按 subs.srt 拷走
         assert row.script_json["mode"] == "retranslate"
         assert row.script_json["subtitle_zh"] == "海浪拍打着岸边"
         assert row.audio_path is None  # 无 TTS

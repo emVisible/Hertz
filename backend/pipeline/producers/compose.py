@@ -205,7 +205,12 @@ async def compose_video(
                         await asyncio.to_thread(srt_to_ass, Path(srt), ass, (w, h))
                         sub_file = ass
                     except Exception:  # noqa: BLE001 — subtitles are best-effort
-                        pass
+                        logger.warning(
+                            "srt_to_ass failed for %s — fall back to %s",
+                            srt,
+                            sub_file.name,
+                            exc_info=True,
+                        )
                     # v0.11.2：force_style 跟随设置（字号/描边），描边色弱化
                     style = (
                         f"FontSize={int(getattr(settings, 'pipeline_subtitle_font_size', 24))},"

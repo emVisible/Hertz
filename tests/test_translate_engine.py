@@ -15,6 +15,7 @@ from backend.pipeline.producers.media import (
     _localize_text,
     _subtitle_cache_hit,
 )
+from backend.pipeline.producers.subtitles import clean_zh_subtitle_text
 
 # ---------- 引擎分支 ----------
 
@@ -128,10 +129,27 @@ _NORMAL_ZH = [
     "这是一个很长的正常句子，里面没有任何重复的内容，可以放心通过。",
     # 4 连笑声是人话：折叠的 5 连下限不动它，密度的同字 gram 排除也不算它
     "他笑得哈哈哈哈，然后我们才回家吃饭。",
-    # 真实机翻的中等输出（密度 0.314）：有轻微「窗窗窗」但全是内容，
-    # 截断会丢意思——阈值必须站在它**上面**，这是 0.35 的下界
+    # 真实机翻的中等输出（归一化密度 0.178）：有轻微「窗窗窗」但全是内容，
+    # 截断会丢意思——阈值必须站在它**上面**
     "他走进厨房,打开窗户窗的窗口。 .他走到厨房后,走到厨房,然后开着玻璃窗"
     "就一进厨房,向窗窗门开了窗窗窗。",
+    # 2026-10-13-18 生产字幕原句（密度 0.340）：内容生硬但不是回声，
+    # 是阈值上界这侧的**生产钉子**——调到 0.30 它会被误伤，判据必红
+    "我想象她說不因為我做了此刻的那一刻 做出這時刻 所以我做成如此一刻 "
+    "她不說不 因為我造了那片时刻...",
+]
+
+# 同片（2026-10-13-18）可见密度 ≥0.35 的四条生产墙原样——它们是阈值下界
+# 这侧的钉子：0.424 那条必须被拦下，调到 0.50 就会漏过去。护栏当时漏掉
+# 它们的形态是「带标点」（给每 5 字插一个逗号，不归一化实测
+# 0.312/0.395/0.000/0.000，三条跌到阈值下），见掩护判据。
+_PRODUCTION_WALLS = [
+    "17歲我17歲我17歲十七歲時17歲17歲時17歲那年17歲的時候我開始在熱热火辣的"
+    "热热热上去玩一个烫着热热闹的大热热快大热热去了",
+    "午餐时间和午午饭时有吃午饭的时间午餐中午餐期间还有午餐时间 我们当时在高中"
+    "中学里上高中 在中午的午餐时间午餐时间以及午餐时间及午餐的时候",
+    "我告訴她我告訴她",
+    "但感感感但感感 感感感謝",
 ]
 
 
@@ -158,8 +176,10 @@ def test_collapse_repetition_keeps_legit_repeats() -> None:
 def test_dup_ratio_separates_normal_from_degenerate() -> None:
     """阈值定标判据：正常族密度 < 阈值 ≤ 需要截断的样本密度（折叠后）。
 
-    双向改必红——调高到 10.0：事故样本这条过不了；调低到 0.30：真实机翻
-    那条 0.314 会被误伤。阈值不是拍的，是夹在两族之间量出来的。
+    0.35 站在 (0.340, 0.424] 的窗口里——两侧都是 2026-10-13-18 的生产原句
+    （0.340 留、0.424 拦）。双向改必红：调到 0.30 → 生产正常句被误伤；
+    调到 0.50 → 生产墙漏过去（`test_trim_degenerate_catches_production_walls`
+    的收短断言咬住）；调到 10.0 → 事故族这三条全放行。
     """
     for text in _NORMAL_ZH:
         assert _te._dup_ratio(text) < _te._DUP_RATIO_THRESHOLD, (
@@ -196,6 +216,65 @@ def test_trim_degenerate_cuts_near_repetition_at_word_boundary() -> None:
 def test_trim_degenerate_leaves_normal_text_alone() -> None:
     for text in _NORMAL_ZH:
         assert _te._trim_degenerate(text) == text
+
+
+def test_norm_matches_clean_zh_subtitle_text() -> None:
+    """归一化剥的必须是清洗链剥的那一层——两边字符类对齐是护栏的前提。
+
+    密度量在清洗后的可见形态上（`_norm`），若 `_NOISE_RE` 与清洗链的
+    `_ZH_PUNCT_RE` 有一个字符不一致（曾漏掉半角右括号 `)`），两边量出来的
+    就是不同形态。清洗链会把句间空白压成单空格、归一化直接去掉，
+    所以对齐口径是「两边都去掉空格」。
+    """
+    cases = [
+        "你好，世界！Hello world",
+        "100%  discount",
+        "（括号）(半角)【方】[括]《书》〈名〉<>",
+        "「引」「」『引』“双”'单''",
+        "a\tb\nc　全角空格",
+        "第17章 第17章 第17章",
+        "～~﹣－—–‐\\-/\\|@#$%^&*+=`",
+        "…；：、——·•",
+        "",
+        "，。！？；…",
+    ]
+    for text in cases:
+        assert _te._norm(text) == clean_zh_subtitle_text(text).replace(" ", ""), (
+            f"归一化与清洗链剥的层不一致：{text!r}"
+        )
+
+
+def test_dup_ratio_measures_through_punctuation() -> None:
+    """标点掩护回归（2026-10-25 第二版事故）：密度必须量在清洗后的可见形态上。
+
+    给生产墙每 5 字插一个逗号——`clean_zh_subtitle_text` 后逐字回到生产原文
+    （同一判据里断言这一步），但不归一化时实测 0.312/0.395/0.000/0.000，
+    三条跌到阈值下整堵墙漏网。护栏跑在带标点的引擎原始输出上，
+    所以判据也必须用带标点的形态喂它。
+    """
+    for raw in _PRODUCTION_WALLS:
+        punct = "，".join(raw[i : i + 5] for i in range(0, len(raw), 5))
+        assert clean_zh_subtitle_text(punct) == raw, f"构造体经清洗链回不到原文：{raw[:30]!r}"
+        assert _te._dup_ratio(punct) >= _te._DUP_RATIO_THRESHOLD, (
+            f"标点把回声隔断、密度掉到阈值下（去掉归一化必红）：{punct[:40]!r}"
+        )
+        out = _te._trim_degenerate(punct)
+        assert len(out) < len(punct), f"门开了却没截断：{punct[:40]!r}"
+
+
+def test_trim_degenerate_catches_production_walls() -> None:
+    """四条生产墙过完整链后必须又短又干净——floor=8 时代 8 字回声整条放回。
+
+    这里量的是**生产数据上的端到端护栏行为**：折叠 → 密度截断 → 出口
+    密度必须过门。改回 floor=8：「我告訴她我告訴她」原样返回（长度断言红）；
+    65 字那条也会从 7 字变回整墙。
+    """
+    for raw in _PRODUCTION_WALLS:
+        out = _te._trim_degenerate(_te._collapse_repetition(raw))
+        assert len(out) < len(raw), f"没真收短：{raw[:40]!r}"
+        assert _te._dup_ratio(out) < _te._DUP_RATIO_THRESHOLD, (
+            f"出口密度过门失败（{_te._dup_ratio(out):.3f}）：{out!r}"
+        )
 
 
 def test_translate_kwargs_wire_anti_loop_params() -> None:

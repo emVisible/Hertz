@@ -3,7 +3,7 @@
 用户诉求链路：提取视频原声 → 中文字幕（原声保留、无 TTS、无旁白）。
 
 职责边界（SRP）：
-- 本模块 = 制作域（ASR 双通道 → 本地批量翻译 → ASS → 原声合成 →
+- 本模块 = 制作域（ASR 双通道 → 本地批量翻译 → SRT 字幕 → 原声合成 →
   封面/phash/包装 → 条目落 queued/failed）
 - engine.retranslate = 编排壳（条目校验、事件 emit、结果返回）
 
@@ -44,10 +44,7 @@ async def run_retranslate(
         _artifacts_dir,
         _asr_subtitles,
         compose_video,
-        find_ffmpeg,
         generate_cover,
-        srt_to_ass,
-        subtitles_filter_available,
     )
 
     lang = str(subtitle_lang or getattr(app_settings, "pipeline_subtitle_lang", "zh-CN") or "zh-CN")
@@ -84,18 +81,14 @@ async def run_retranslate(
             )
         srt_path, zh_text = result
 
-        burn = srt_path
-        ffmpeg = find_ffmpeg()
-        if await subtitles_filter_available(ffmpeg):
-            try:
-                ass = srt_path.with_suffix(".ass")
-                await asyncio.to_thread(srt_to_ass, srt_path, ass)
-                burn = ass
-            except Exception:  # noqa: BLE001 — subtitles are best-effort
-                pass
-
+        # 交 SRT，不预转 ASS（2026-10-25 实证的三层坏）：
+        # 1) compose 会对传入文件按**本次真实出片尺寸**再跑一遍 srt_to_ass——
+        #    喂预转好的 .ass 会被当 SRT 解析出 0 条 Dialogue，空壳覆写好
+        #    字幕 → 成片零字幕（subs.ass 往返一次只剩 14 行空壳）；
+        # 2) 预转不带 size，PlayRes 用设置画幅，竖屏成片坐标系就错；
+        # 3) subtitle_path 会被 publisher 当 subs.srt 拷走，指 ASS 同样是错的。
         out_path = directory / "final.mp4"
-        edit = await compose_video(raw, None, burn, out_path, muted=False)
+        edit = await compose_video(raw, None, srt_path, out_path, muted=False)
         try:
             cover = await generate_cover(raw, directory / "cover.jpg")
         except ProducerError:
@@ -107,7 +100,7 @@ async def run_retranslate(
             row = await session.get(Item, item_id)
             if row is not None:
                 row.video_path = edit["path"]
-                row.subtitle_path = str(burn)
+                row.subtitle_path = str(srt_path)
                 row.cover_path = cover["path"] if cover else None
                 row.audio_path = None
                 row.phash = phash

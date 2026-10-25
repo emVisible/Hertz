@@ -254,6 +254,92 @@ def _write_srt(out_path: Path, cues) -> Path:
     return out_path
 
 
+# —— ASS 预折行（2026-10-25「字幕堆叠」）——
+# libass 对**无空格的中文不折行**：实测 ffmpeg 的 subtitles 滤镜在
+# WrapStyle 0/1/2 三种下都只在空格处找断点；而 clean_zh_subtitle_text 摘掉
+# 全部标点、只在句间留单空格——于是每个句子块强占一行、块内再无断点，块宽
+# 超过画幅就整行冲出两端，多个句子块在底部叠成一摞（一条 cue 实拍 3 行、
+# 两端被裁，f22.5 取证）。断行只能在生成 ASS 时自己做：按像素预算插硬断行。
+_ASS_MAX_LINES = 4  # 超长截断口径，与 compose 的 PNG 通道 _wrap_lines[:4] 对齐
+
+
+def _char_width(ch: str, font_size: int) -> int:
+    """单字符像素宽估算：全角（>U+00FF）按 1em，ASCII 按 0.6em。
+
+    估宽而不是量字体：ASS 路径不该引入 PIL 依赖（那是 PNG 降级通道的事）。
+    CJK 字形 advance 在正文字体里精确等于 1em；拉丁数字真实约 0.55em，取
+    0.6em 偏保守——估宽只会偏大，行提前断，不会溢出到边距外。
+    """
+    if ord(ch) > 0xFF:
+        return font_size
+    return max(1, font_size * 3 // 5)
+
+
+def _wrap_ass_text(text: str, font_size: int, usable: int) -> str:
+    """按像素预算把一段 ASS 文本折成若干行、用 ``\\N`` 连接。
+
+    - 断点在任意两个「原子」之间：单个全角字符/标点各成原子，ASCII 字母
+      数字**连写成整块**（「17歲」的 17、英文单词不从中间劈开）。中文随处
+      可断（UAX#14 同此）——这正是 libass 缺的那一步。
+    - 空格是天然断点：落在行尾即剥掉（中文不需要、英文视觉无损），在行中
+      原样保留（「Hertz 项目」不拆开）。
+    - 超过 ``_ASS_MAX_LINES`` 截断并标 `…`：与 PNG 降级通道同口径——超过
+      4 行的多是机翻退化墙，尾巴本来就是垃圾，宁可少一截不要满屏字。
+    - 输入里已有的硬断行（``\\N`` 或换行）逐段独立折行，空段保留。
+    """
+    if font_size <= 0 or usable <= 0 or not text:
+        return text
+    out: list[str] = []
+
+    def emit(line: str) -> None:
+        if line.strip():
+            out.append(line.strip())
+
+    for part in re.split(r"\\N|\n", text):
+        if not part:
+            out.append("")
+            continue
+        atoms: list[str] = []
+        run = ""
+        for ch in part:
+            if ch.isascii() and ch.isalnum():
+                run += ch
+            else:
+                if run:
+                    atoms.append(run)
+                    run = ""
+                atoms.append(ch)
+        if run:
+            atoms.append(run)
+
+        cur: list[str] = []
+        cur_w = 0
+        for atom in atoms:
+            aw = sum(_char_width(c, font_size) for c in atom)
+            if aw > usable:
+                if cur:
+                    emit("".join(cur))
+                    cur, cur_w = [], 0
+                # 单个连写块就超预算（罕见：上百位数字）：按预算硬切
+                cap = max(1, usable // _char_width(atom[0], font_size))
+                chunks = [atom[i : i + cap] for i in range(0, len(atom), cap)]
+                out.extend(chunks[:-1])
+                atom = chunks[-1]
+                aw = sum(_char_width(c, font_size) for c in atom)
+            if cur and cur_w + aw > usable:
+                emit("".join(cur))
+                cur, cur_w = [], 0
+            cur.append(atom)
+            cur_w += aw
+        emit("".join(cur))
+
+    if len(out) > _ASS_MAX_LINES:
+        out = out[:_ASS_MAX_LINES]
+        if out[-1]:
+            out[-1] = out[-1][:-1] + "…"
+    return "\\N".join(out)
+
+
 def srt_to_ass(
     srt_path: Path,
     out_path: Path,
@@ -273,9 +359,19 @@ def srt_to_ass(
     它必须等于视频像素——否则字号与边距按错误坐标系缩放（静默的视觉错误）。
     竖屏合集的视频是 720x1280，若 PlayRes 还写 1280x720，字幕会被整体放大/缩小。
     不传时回落到设置里的成片画幅（横屏场景仍然正确）。
+
+    2026-10-25：长句按像素预算预折行（``\\N``）——libass 不给无空格中文折行，
+    不预折就整行冲出两边、多句叠成一摞（见 ``_wrap_ass_text``）；ASS 输入
+    直接抛错（回喂 = 0 条 Dialogue 静默擦字幕）。
     """
     entries: list[tuple[int, int, str]] = []
     lines = srt_path.read_text(encoding="utf-8").splitlines()
+    head = next((ln.strip().lstrip("\ufeff") for ln in lines if ln.strip()), "")
+    if head == "[Script Info]":
+        raise ValueError(
+            "srt_to_ass 只吃 SRT：输入是 ASS，逐行匹配不到 '-->' 会写出 0 条 "
+            "Dialogue（静默擦掉已有字幕）。ASS 直接用，别回喂本函数。"
+        )
     i = 0
     while i < len(lines):
         m = re.match(r"(\d+):(\d+):(\d+)[,.](\d+) --> (\d+):(\d+):(\d+)[,.](\d+)", lines[i])
@@ -313,8 +409,11 @@ def srt_to_ass(
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     events = []
+    # Style 的 MarginL/MarginR 各 40 → 可用宽度；预折行必须落在这个预算里
+    usable = w - 80
     for start_cs, end_cs, text in entries:
         if text:
+            text = _wrap_ass_text(text, font_size, usable)
             events.append(
                 f"Dialogue: 0,{_fmt_ass_cs(start_cs)},{_fmt_ass_cs(end_cs)},"
                 f"Default,,0,0,0,,{text}"

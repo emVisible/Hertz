@@ -12,7 +12,7 @@ backend/     FastAPI（Python 3.12，uv 管理，端口 8787）
 frontend/    React + Vite（端口 3000）
 packages/mdcore/  排版内核：markdown-it 管线、主题、微信/知乎/小红书产物层
 electron/    壳（开发态连 :8787；打包态拉起冻结后端 electron/backend-dist）
-tests/       pytest（853）；packages 与 frontend 各有自己的 vitest
+tests/       pytest（864）；packages 与 frontend 各有自己的 vitest
 data/        用户数据（2.4GB，**别删、别提交**）
 ```
 
@@ -68,6 +68,7 @@ pnpm --filter hertz-frontend test                      # 前端
 10. **媒体时长要问「哪一条流」**（判据：`tests/test_media_stream_duration.py`）。容器时长取**最长那条流**（通常是音频），素材里出现「音频比画面长」时它会大于视频流真实时长。凡是按时长算 offset / 校验产物的地方都要分开探两条流——`probe_video_duration` / `probe_audio_duration`。教训见 `CHANGELOG` 的「合集成片后半段黑屏」：xfade 在 offset 越过已拼画面时**不报错**，只是停止延长视频，而容器时长校验把这个缺陷判成了成功。已修的四处：`assemble`（offset 与校验）、`cover`（黑封面）、`phash`（哈希静默失效）、`compose`（原声轨没裁，字幕排进无画面的时段）。
 11. **配置项写错地方会被静默忽略**：`asyncUtilTimeout` 是 **@testing-library** 的键，第一版误写进 `vite.config.ts` 的 `test` 里——不报错、不生效，超时照旧，于是"看起来改了但没用"。改超时配置时**必须用压测证明它生效了**（8 个 CPU burner 压着跑，之前必红之后必绿才算数）。
 12. **报「字幕有重复短语」先剥离定位，别先改清洗链**（判据：`tests/test_translate_engine.py`）：一层层剥——ASR 源文 → 引擎原始返回 → 清洗链，哪层第一次出现重复就修哪层。这次是 `translate_batch_local` 的**原始返回值**已经在复读，而 ct2 的默认参数本身就会退化（11 条源文 10 条超标，连正常句子也中），`max_decoding_length=256` 还会把长输出顶断在半句上。护栏修在引擎出口（两处调用路径一并覆盖），三层各有各的判据——见 D-234。
+13. **烧录字幕的缺陷画布上看不见，只有产物层看得见**（判据：`tests/test_producer_assemble.py` 含烧黑场像素级留白 + 非空自检；`tests/test_pipeline_governance.py` retranslate 交 `.srt` 断言）：libass 对**无空格中文不折行**（WrapStyle 0/1/2 实测同一张图），句块叠行、两端被裁；把 ASS 回喂 `srt_to_ass` 会被当 SRT 解析出 0 条 Dialogue、空壳覆写好字幕。折行做在生成侧、SRT 契约不许破——见 D-235。
 
 ## 4. 别动
 

@@ -875,6 +875,197 @@ def test_ass_playres_matches_actual_output_size(tmp_path):
     assert "PlayResX: 1280" in default_ass
 
 
+# ---------- 2026-10-25：字幕堆叠 / 两端被裁 ----------
+#
+# 症状：中文长句在成片上叠成多行、左右两端被裁出画面（f22.5 实拍一条
+# cue 叠 3 行）。根因：libass 只在空格处断行（WrapStyle 0/1/2 实测同一张
+# 图），而 clean_zh_subtitle_text 摘光标点、句间只留单空格 → 每个句子块
+# 强占一行、块内无断点 → 超宽整行冲出两边。修法：生成 ASS 时按像素预算
+# 预折行（\N），见 subtitles._wrap_ass_text。
+
+# 真实 22.5s 生产 cue（0:00:21.08–0:00:23.78，单条 3 个句子块 ~100 字）
+_CUE_22_5 = (
+    "我被打碎了我在一个收容所的避难所里住着一个庇护所 住在一家住所的一个住房中"
+    "我被打破了一破我当时在一间收容所里生活时被摔坏了 她支付费用所以她就付钱付钱"
+    "给她买房子因此她为此花钱雇了她的钱她才给她交了钱"
+)
+_FONT, _W720 = 32, 720 - 80  # 生产字号 + MarginL/R 各 40 的可用宽度
+
+
+def _est_px(line: str, font: int = _FONT) -> int:
+    from backend.pipeline.producers.subtitles import _char_width
+
+    return sum(_char_width(c, font) for c in line)
+
+
+def test_wrap_ass_text_cuts_long_chinese_within_budget() -> None:
+    """无空格中文长句必须被预折行，且每行都在可用宽度内。
+
+    不预折时 libass 对块内中文无能为力：整行冲出两端、多块叠成一摞。
+    """
+    from backend.pipeline.producers.subtitles import _wrap_ass_text
+
+    out = _wrap_ass_text(_CUE_22_5, _FONT, _W720)
+    lines = out.split("\\N")
+    assert len(lines) >= 3, "长句没折行 → libass 只会等到空格"
+    assert all(_est_px(ln) <= _W720 for ln in lines), "折行后仍有行超预算"
+    # 截断只允许砍尾巴，中段内容不许丢
+    shown = out.replace("\\N", "").rstrip("…").replace(" ", "")
+    assert _CUE_22_5.replace(" ", "").startswith(shown)
+
+
+def test_wrap_ass_text_keeps_ascii_runs_whole() -> None:
+    """数字/英文连写整块搬运：「17歲」的 17、英文单词不从中间劈开。
+
+    混排 token 里中文可断（逐字成原子），只断 ASCII 连写之外的地方。
+    """
+    import re
+
+    from backend.pipeline.producers.subtitles import _wrap_ass_text
+
+    text = "到2017年他只有17歲 she was seventeen years old back then"
+    out = _wrap_ass_text(text, _FONT, 400)
+    lines = out.split("\\N")
+    assert len(lines) >= 2, "没触发折行，本判据失效"
+    for word in re.findall(r"[A-Za-z0-9]+", text):
+        assert word in out, f"ASCII 连写被劈开: {word}"
+    for ln in lines:
+        residue = ln.replace("2017", "").replace("17", "")
+        assert not any(c.isdigit() for c in residue), f"数字连写被劈开: {ln}"
+
+    # 预算边界必须落在词外：这段里 400px 恰好切在 "seventeen" 中间，
+    # 逐字成原子的回归会把它劈成两行（上面的样本断点都落在空格上，咬不住）
+    boundary = "测" * 11 + " seventeen years old back then"
+    out2 = _wrap_ass_text(boundary, _FONT, 400)
+    for word in ("seventeen", "years", "old", "back", "then"):
+        assert word in out2, f"预算边界切进了单词: {word}"
+
+
+def test_wrap_ass_text_short_untouched_and_walls_capped() -> None:
+    """短句原样通过；超长墙截断到 4 行标 `…`（与 PNG 降级通道同口径）。"""
+    from backend.pipeline.producers.subtitles import _wrap_ass_text
+
+    short = "海浪拍打着岸边"
+    assert _wrap_ass_text(short, _FONT, _W720) == short
+
+    out = _wrap_ass_text("墙" * 300, _FONT, _W720)
+    lines = out.split("\\N")
+    assert len(lines) == 4, "超长墙必须截断（不然满屏字）"
+    assert lines[-1].endswith("…")
+
+
+def test_wrap_ass_text_keeps_hard_breaks() -> None:
+    """已有的硬断行（\\N）逐段独立折行：空段保留、两侧各按自己的预算算。"""
+    from backend.pipeline.producers.subtitles import _wrap_ass_text
+
+    parts = _wrap_ass_text(
+        "\\N".join(["短句", "", "长" * 60]), _FONT, _W720
+    ).split("\\N")
+    assert parts[0] == "短句"
+    assert parts[1] == "", "空段被吞 → 输入的硬断行结构变了"
+
+    # 分段独立的关键样本：左段 10 字放得下，右段 25 字必须自己折成 20+5。
+    # 若跨显式断行连续计数，右段第一行只剩 10 字（咬住「不认 \\N」的回归）。
+    parts = _wrap_ass_text("短" * 10 + "\\N" + "长" * 25, _FONT, _W720).split("\\N")
+    assert parts == ["短" * 10, "长" * 20, "长" * 5]
+
+
+def test_wrap_ass_text_slices_oversize_ascii_run() -> None:
+    """上百位连写数字单块就超预算：按预算硬切，不许漏字也不许超宽。"""
+    from backend.pipeline.producers.subtitles import _wrap_ass_text
+
+    out = _wrap_ass_text("9" * 130, _FONT, _W720)
+    lines = out.split("\\N")
+    assert sum(len(ln) for ln in lines) == 130, "硬切丢了数字"
+    assert len(lines) >= 2, "超宽块没被切开"
+    assert all(_est_px(ln) <= _W720 for ln in lines)
+
+
+def test_srt_to_ass_wraps_production_cue(tmp_path) -> None:
+    """真实 22.5s cue 走完整 srt_to_ass 出口：Dialogue 文本已带 \\N 硬断行。
+
+    字号跟 settings 走（测试环境无 runtime.yaml → 24，生产是 32），判据
+    用同一个口径收费，否则按生产字号量测试产物必然误红。
+    """
+    from backend.config import settings
+    from backend.pipeline.producers.subtitles import srt_to_ass
+
+    font = int(getattr(settings, "pipeline_subtitle_font_size", 24))
+    srt = tmp_path / "c.srt"
+    srt.write_text(
+        f"1\n00:00:21,080 --> 00:00:23,780\n{_CUE_22_5}\n", encoding="utf-8"
+    )
+    ass = srt_to_ass(srt, tmp_path / "c.ass", (720, 1280)).read_text(encoding="utf-8")
+    dialogue = [ln for ln in ass.splitlines() if ln.startswith("Dialogue:")]
+    assert len(dialogue) == 1
+    text = dialogue[0].split(",", 9)[9]
+    assert "\\N" in text, "出口没带硬断行"
+    assert all(_est_px(ln, font) <= _W720 for ln in text.split("\\N"))
+
+
+def test_srt_to_ass_rejects_ass_input(tmp_path) -> None:
+    """把 ASS 回喂 srt_to_ass 必须响亮报错。
+
+    ASS 里没有 `-->`，逐行匹配出 0 条 → 写出空壳**静默擦掉已有字幕**
+    （retranslate 曾因此产出零字幕成片：subs.ass 往返一次只剩 14 行空壳）。
+    """
+    from backend.pipeline.producers.subtitles import srt_to_ass
+
+    ass_in = tmp_path / "in.ass"
+    ass_in.write_text(
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: 720\nPlayResY: 1280\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="SRT"):
+        srt_to_ass(ass_in, tmp_path / "out.ass", (720, 1280))
+
+
+@needs_ffmpeg
+async def test_long_cue_renders_inside_margins(tmp_path) -> None:
+    """像素级判据：烧出来的字幕不越出左右留白——「两端被裁」的直接判据。
+
+    没预折行时该 cue 会整行冲进留白区；折行后 720 宽下 [0,30) 与
+    (690,720] 两列保持纯黑。中心区必须有亮点（非空自检，防判据空转）。
+    """
+    from PIL import Image
+
+    from backend.pipeline.producers.media import subtitles_filter_available
+    from backend.pipeline.producers.subtitles import srt_to_ass
+
+    if not await subtitles_filter_available(ffmpeg):
+        pytest.skip("ffmpeg 无 subtitles/libass 滤镜")
+
+    srt = tmp_path / "r.srt"
+    srt.write_text(
+        f"1\n00:00:00,000 --> 00:00:10,000\n{_CUE_22_5}\n", encoding="utf-8"
+    )
+    ass_path = srt_to_ass(srt, tmp_path / "r.ass", (720, 1280))
+    png = tmp_path / "frame.png"
+    args = [
+        str(ffmpeg), "-y", "-f", "lavfi",
+        "-i", "color=black:s=720x1280:r=10:d=2",
+        "-vf", f"ass={ass_path}",
+        "-frames:v", "1", str(png),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    assert await proc.wait() == 0, "字幕渲染失败"
+    img = await asyncio.to_thread(Image.open, png)
+    img = img.convert("RGB")
+    assert img.size == (720, 1280)
+
+    height = img.size[1]
+    for box in ((0, 0, 30, height), (691, 0, 720, height)):
+        crop = img.crop(box)
+        peak = max(mx for _, mx in crop.getextrema())
+        assert peak < 12, f"字形越出留白: box={box} peak={peak}"
+
+    center = img.crop((100, 1040, 620, height))
+    center_peak = max(mx for _, mx in center.getextrema())
+    assert center_peak > 64, "字幕没渲染出来 —— 判据空转"
+
+
 # ---------- 2026-10-19：合集成片后半段黑屏 ----------
 #
 # 症状：合集（多素材编排）制作完成后，成片**后半段整段黑屏**。用户看到的文件
