@@ -51,6 +51,7 @@ pnpm --filter hertz-frontend test                      # 前端
 | 6 | **凡落盘的外部文本先过脱敏** | `tests/test_redact.py`、`tests/test_signed_url*.py` |
 | 7 | **判"内容变没变"要判内容**：缓存键是内容哈希时，任何"比数量/长度"的判同都是错的 | `mermaidCacheSignature` + `AsyncRenderWiring.test.tsx` 源码级守卫 |
 | 8 | **异步富集（Shiki / Mermaid）接同步渲染管线**：先出 hljs 产物再升级、失败保留旧产物且失败可见 | mdcore `theme/shiki.test.ts`、`theme/mermaid.test.ts` |
+| 9 | **机翻不许带解码退化循环**：字幕里出现「正在 正在 正在」是 ct2 解码退化，不是脏素材也不是清洗链拼接 | `tests/test_translate_engine.py`（13 条，五组变异） |
 
 ## 3. 已经踩过的坑（每条都有判据了，别踩回去）
 
@@ -60,11 +61,12 @@ pnpm --filter hertz-frontend test                      # 前端
 4. **富文本编辑器不是浏览器**：粘进公众号后 `---` 右居中、标题被拆行。画布完全正常、结构断言全绿，**只有产物层看得见**。规则统一在 `packages/mdcore/src/platform/editorCompat.ts`，测试单 `docs/MD_STUDIO_TEST_SHEET.md`。
 5. **`vi.mock('@hertz/mdcore')` 拦不住页面内部的调用**（workspace 源码包的身份问题）。引擎替身走注入通道：`setCodeHighlighter()`，预置在 `frontend/src/test/setup.ts`。
 6. **jsdom 里 mermaid 必失败 → cache 恒为空**，所以"改图之后画布换没换引用"这类状态在组件测试里根本观测不到。这时判据要**守接线本身**（源码级守卫），别去演一个演不出来的状态。
-7. **每次写判据都要跑成对变异**：故意改坏实现，确认对应测试变红，再改回来。仓库里每组新判据都留了变异对照（`docs/decisions/README.md` 有清单）。
+7. **每次写判据都要跑成对变异**：故意改坏实现，确认对应测试变红，再改回来。仓库里每组新判据都留了变异对照（`docs/decisions/README.md` 有清单）。**变异打不红时先怀疑判据测错了对象**——D-233 的 compose 第一版量成片视频流长度，而缺陷撑长的是音频；D-234 的阈值变异一开始只调到 1.0，而样本密度 2.4、门照样开，得调到 10 才咬得住。
 8. **别把测试造成的负载当成产品缺陷**：全量 pytest（825+ 用例、每次建 app 都拉起 7 个定时任务与 DB 会话）与 dev 栈 + Postgres 同时跑，足以把 16GB 机器打满。
 9. **门禁红了先问"是超时还是逻辑"**：`Unable to find [data-testid=…]` 这类失败多半是**等的时间不够**，不是元素没渲染出来。宿主接线那几条要渲染整页（markdown + 主题 + 异步 mermaid + snapdom），默认 `waitFor` 预算 1000ms 在机器一忙时就必红。放宽预算是正当修法，**放宽断言不是**（2026-10-18 打 0.37.0 时它挡过一次 tag，拦得对但拦错了东西）。等待预算在 `frontend/src/test/setup.ts` 的 `configure({ asyncUtilTimeout })`。
-10. **媒体时长要问「哪一条流」**（判据：`tests/test_media_stream_duration.py`；：容器时长取**最长那条流**（通常是音频），素材里出现「音频比画面长」时它会大于视频流真实时长。凡是按时长算 offset / 校验产物的地方都要分开探两条流——`probe_video_duration` / `probe_audio_duration`。教训见 `CHANGELOG` 的「合集成片后半段黑屏」：xfade 在 offset 越过已拼画面时**不报错**，只是停止延长视频，而容器时长校验把这个缺陷判成了成功。已修的四处：`assemble`（offset 与校验）、`cover`（黑封面）、`phash`（哈希静默失效）、`compose`（原声轨没裁，字幕排进无画面的时段）。
+10. **媒体时长要问「哪一条流」**（判据：`tests/test_media_stream_duration.py`）。容器时长取**最长那条流**（通常是音频），素材里出现「音频比画面长」时它会大于视频流真实时长。凡是按时长算 offset / 校验产物的地方都要分开探两条流——`probe_video_duration` / `probe_audio_duration`。教训见 `CHANGELOG` 的「合集成片后半段黑屏」：xfade 在 offset 越过已拼画面时**不报错**，只是停止延长视频，而容器时长校验把这个缺陷判成了成功。已修的四处：`assemble`（offset 与校验）、`cover`（黑封面）、`phash`（哈希静默失效）、`compose`（原声轨没裁，字幕排进无画面的时段）。
 11. **配置项写错地方会被静默忽略**：`asyncUtilTimeout` 是 **@testing-library** 的键，第一版误写进 `vite.config.ts` 的 `test` 里——不报错、不生效，超时照旧，于是"看起来改了但没用"。改超时配置时**必须用压测证明它生效了**（8 个 CPU burner 压着跑，之前必红之后必绿才算数）。
+12. **报「字幕有重复短语」先剥离定位，别先改清洗链**（判据：`tests/test_translate_engine.py`）：一层层剥——ASR 源文 → 引擎原始返回 → 清洗链，哪层第一次出现重复就修哪层。这次是 `translate_batch_local` 的**原始返回值**已经在复读，而 ct2 的默认参数本身就会退化（11 条源文 10 条超标，连正常句子也中），`max_decoding_length=256` 还会把长输出顶断在半句上。护栏修在引擎出口（两处调用路径一并覆盖），三层各有各的判据——见 D-234。
 
 ## 4. 别动
 

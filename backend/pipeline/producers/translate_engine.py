@@ -6,9 +6,12 @@
   重依赖（sentencepiece 与 ctranslate2 均为主依赖；任一不可导入时引擎不可用，
   调用方保留原文不阻塞）
 - 推理跑 CPU（int8），与 faster-whisper 共享 ctranslate2 运行时
+- 解码带 D-234 的防循环护栏（参数 + 折叠 + 密度截断），字幕不会出现
+  「正在 正在 正在」这类退化重复
 """
 
 import asyncio
+import collections
 import logging
 import re
 from pathlib import Path
@@ -22,6 +25,20 @@ _ALERT_KEY = "local_mt_model_download"
 # (文件名, 是否必需)——权威在 infrastructure/paths（就绪探测与下载清单必须同一份，
 # 否则「下哪些」与「缺哪些算没就绪」会长成两处各自漂移）
 _FILES: list[tuple[str, bool]] = list(paths.LOCAL_MT_FILES)
+
+# ---------- 解码退化护栏（D-234） ----------
+#
+# Opus-MT 在 ct2 默认解码下会进**重复循环**（字幕上的「正在 正在 正在…」），
+# 实测 11 条源文里 10 条超标（循环或密度 ≥0.35），连正常句子也复读——不是边角料。参数是第一道，
+# 下面两道后处理是兜底：换一批输入仍可能退化，不能把用户可见的正确性押在
+# 一次扫参上。扫参过程与取值依据见 D-234（rp=1.5 是 11 条上唯一 0/11 的档：
+# 1.25 → 2/11、1.3 → 1/11）。
+_REPETITION_PENALTY = 1.5
+_NO_REPEAT_NGRAM_SIZE = 3
+# 密度阈值定标（改它必先重跑 tests/test_translate_engine.py 的双向判据）：
+# 手写正常句 0.000 / 真实机翻中等输出 0.314 vs 事故样本折叠后最低 1.600
+_DUP_RATIO_THRESHOLD = 0.35
+_DUP_NGRAM = 4
 
 _translator_cache: dict = {}
 
@@ -93,10 +110,114 @@ def _load():
     )
 
 
+def _translate_kwargs(token_lists: list[list[str]]) -> dict:
+    """ct2 解码参数（D-234）。
+
+    `max_decoding_length` 按源长度放开（64~2048）：ct2 默认 256 是**硬顶**，
+    实测 1012 字源文止步 428 字、结尾卡在循环中途没有收尾标点——截断发生在
+    解码中途，调用方无从分辨「译完了」和「被顶断了」。
+    """
+    longest = max((len(toks) for toks in token_lists), default=1)
+    return {
+        "repetition_penalty": _REPETITION_PENALTY,
+        "no_repeat_ngram_size": _NO_REPEAT_NGRAM_SIZE,
+        "disable_unk": True,
+        "max_decoding_length": max(64, min(2048, longest * 4 + 64)),
+    }
+
+
+def _dup_ratio(text: str) -> float:
+    """重复密度：被「出现 ≥2 次的 4-gram」覆盖的字符占比（去空白后计）。
+
+    实测分布（定阈值的依据）：手写正常句 0.000，真实机翻中等输出最高 0.314，
+    事故样本折叠后最低 1.600——0.35 夹在两族之间，双向改都有判据咬。
+    **同字 4-gram 不计**（「哈哈哈哈」整段都是均匀 gram，会把密度顶到 0.4
+    误伤正常句）：单字连排归 `_collapse_repetition` 管，密度只管多字回声。
+    """
+    s = re.sub(r"\s", "", text or "")
+    if len(s) < _DUP_NGRAM:
+        return 0.0
+    grams = [
+        g
+        for g in (s[i : i + _DUP_NGRAM] for i in range(len(s) - _DUP_NGRAM + 1))
+        if len(set(g)) > 1
+    ]
+    if not grams:
+        return 0.0
+    counts = collections.Counter(grams)
+    return sum(len(g) for g in grams if counts[g] > 1) / len(s)
+
+
+# 同段连出 ≥3 次 / 同字连出 ≥5 次——解码循环的两种形态（「正在 正在 正在」
+# 与「看不见看不见看不见」）。下限是刻意的：单字 3–4 连（「哈哈哈」「哈哈哈哈」）
+# 是人话，不许动；6 连以上（事故现场的「空空空空空空」）才认作垃圾。
+_LOOP_RE = re.compile(r"(.{2,}?)\1{2,}", re.DOTALL)
+_CHAR_RUN_RE = re.compile(r"(.)\1{4,}")
+# 收口用的边界：空白与中英文标点——截断落在最后一个边界之后，不留半截词
+_BOUNDARY_CHARS = " \t，,。.！!？?；;：:…—~、《》「」()（）"
+
+
+def _collapse_repetition(text: str) -> str:
+    """折叠第一道兜底：循环段只留一份。
+
+    每次替换都严格缩短（≥6 字换 ≤4 字 / 4 字换 1 字），必然终止。
+    """
+    out = text or ""
+    while True:
+        m = _CHAR_RUN_RE.search(out) or _LOOP_RE.search(out)
+        if not m:
+            return out
+        out = out[: m.start()] + m.group(1) + out[m.end() :]
+
+
+def _longest_clean_prefix(s: str, threshold: float, floor: int = 8) -> int:
+    """s（已去空白）里重复密度始终 < threshold 的最长前缀长度。"""
+    counts: dict[str, int] = {}
+    dup = 0
+    cut = 0
+    for i in range(len(s) - _DUP_NGRAM + 1):
+        g = s[i : i + _DUP_NGRAM]
+        if len(set(g)) > 1:  # 与 _dup_ratio 同一口径：同字 gram 不计入密度
+            seen = counts.get(g, 0)
+            # 一份→两份时两份都变重复（+2n），此后每多一份再 +n
+            dup += 2 * _DUP_NGRAM if seen == 1 else (_DUP_NGRAM if seen >= 2 else 0)
+            counts[g] = seen + 1
+        pos = i + _DUP_NGRAM
+        if pos >= floor and dup / pos < threshold:
+            cut = pos
+    return cut or min(floor, len(s))
+
+
+def _trim_degenerate(text: str) -> str:
+    """折叠第二道兜底：**近似**重复（逐字差一点、折叠抓不住的那类）超阈值时，
+    截到最长的干净前缀——宁可短，也不把回声送到用户眼前。
+
+    原文的空白位置保留：截断在去空白后的坐标系里算，再映射回原串。
+    """
+    if _dup_ratio(text) < _DUP_RATIO_THRESHOLD:
+        return text
+    stripped = re.sub(r"\s", "", text)
+    cut = _longest_clean_prefix(stripped, _DUP_RATIO_THRESHOLD)
+    pos = 0
+    kept = 0
+    while pos < len(text) and kept < cut:
+        if not text[pos].isspace():
+            kept += 1
+        pos += 1
+    piece = text[:pos]
+    # 在词/句边界收口——直接砍在第 cut 个字上会切出「你完全被完全」这种半截词
+    last = max((i for i, ch in enumerate(piece) if ch in _BOUNDARY_CHARS), default=-1)
+    if last >= 3:  # 边界前至少留 4 个字，否则宁可不收口
+        piece = piece[: last + 1]
+    out = piece.strip(" ，,。.！!？?；;：:…—-~")
+    return out if len(out) >= 2 else piece.strip()
+
+
 async def translate_batch_local(texts: list[str]) -> list[str]:
     """批量本地翻译（en→zh，单次 ct2 调用）。依赖缺失/模型未就绪 → RuntimeError。
 
-    输出为原始机翻文本；字幕场景由调用方的既有清洗链处理。
+    输出先过 D-234 的两道护栏（折叠循环 → 密度截断）再交调用方；
+    标点清洗仍归调用方的既有清洗链。
     """
     texts = [t or "" for t in texts]
     if not any(t.strip() for t in texts):
@@ -111,8 +232,15 @@ async def translate_batch_local(texts: list[str]) -> list[str]:
 
     def _run() -> list[str]:
         token_lists = [src_spm.encode(t[:2000], out_type=str) for t in texts]
-        results = translator.translate_batch(token_lists, max_batch_size=32)
-        return [tgt_spm.decode(r.hypotheses[0]).strip() for r in results]
+        results = translator.translate_batch(
+            token_lists, max_batch_size=32, **_translate_kwargs(token_lists)
+        )
+        return [
+            _trim_degenerate(
+                _collapse_repetition(tgt_spm.decode(r.hypotheses[0]).strip())
+            )
+            for r in results
+        ]
 
     return await asyncio.to_thread(_run)
 

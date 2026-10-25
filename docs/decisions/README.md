@@ -10,6 +10,7 @@
 | [D-231](D-231-runtime-yaml-stale-pin.md) | `runtime.yaml` 的陈旧默认值会**静默压过**类默认值——「改了默认值」≠「默认值生效」 | `tests/test_runtime_path_pinning.py` | 2026-10-17 |
 | [D-232](D-232-cache-signature.md) | 缓存键是内容哈希时，判同要判**内容**，`.size` 不算内容；注释说「内容变了会更新」不算证据 | `mermaidCacheSignature` + `AsyncRenderWiring.test.tsx` | 2026-10-17 |
 | [D-233](D-233-media-stream-duration.md) | 容器时长取最长流（通常音频）——按时长算画面的事必须问**视频流** | `tests/test_producer_assemble.py` + `tests/test_media_stream_duration.py` | 2026-10-19 |
+| [D-234](D-234-translation-decode-loop.md) | 机翻的重复短语是**解码退化**不是脏数据；护栏放引擎出口，三层：参数 + 折叠 + 密度截断 | `tests/test_translate_engine.py` | 2026-10-25 |
 | ~~D-001…D-230~~ | [`../archive/DECISIONS.md`](../archive/DECISIONS.md) | — | 2026-10-17 前 |
 
 ## 编号规则
@@ -63,6 +64,11 @@
 | D-233 | phash：25% seek 退回容器时长 | 1 red |
 | D-233 | compose：`target` 退回容器时长 | 1 red |
 | D-233 | compose：原声轨去掉 `atrim`（事故当日原样） | 1 red |
+| D-234 | 解码参数退回 ct2 默认（`rep=1, nrn=0`） | 1 red |
+| D-234 | 精确循环折叠变空操作 | 1 red |
+| D-234 | 密度阈值 0.35 → 10.0（门永不开） | 3 red |
+| D-234 | 密度阈值 0.35 → 0.30（误伤 0.314 的真实机翻） | 2 red |
+| D-234 | 密度统计不再排除同字 gram | 1 red |
 
 > compose 的判据曾写错过一版：量的是成片**视频流**长度，而缺陷撑长的是**音频**，
 > 于是变异打不红。改成量两条流**之差**才咬住——判据测错了东西等于没有判据。

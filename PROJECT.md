@@ -37,7 +37,7 @@
 
 ## 门禁现状
 
-`bash scripts/verify.sh` 全量 **EXIT=0**，共 **9 步**：文档链接 → ruff → pytest **849** → mdcore tsc → mdcore **441** → 前端 tsc → 前端 **379** → vite build → **18 张排版基线**（0.5% 阈值）。
+`bash scripts/verify.sh` 全量 **EXIT=0**，共 **9 步**：文档链接 → ruff → pytest **857** → mdcore tsc → mdcore **441** → 前端 tsc → 前端 **379** → vite build → **18 张排版基线**（0.5% 阈值）。D-234（翻译护栏）后 `--quick` 全绿。
 
 ## 已知风险
 
@@ -47,6 +47,7 @@
 | 「打开应用约一分钟后机器卡死」 | **未复现**。当前 dev 栈连续运行 CPU ≈0%、零自发重启。最可能是当时全量 pytest 与 dev 栈 + Postgres 同时在跑——**仍是推测** | D-231 |
 | 微信/知乎粘贴观感 | 结构判据全绿，**实际编辑器排版只有用户能确认** | `docs/MD_STUDIO_TEST_SHEET.md` |
 | 素材「音频比画面长」 | **全族已修**（assemble/cover/phash/compose 四处）。素材侧仍会产生这种文件，现在它只会让成片变短，不会再变成黑屏、黑封面或丢哈希 | `backend/pipeline/producers/assemble.py` 与 `CHANGELOG` |
+| 机翻字幕重复短语 | **已修**（解码参数 + 折叠 + 密度截断三层，D-234）。**已产出的坏字幕不会自愈**——重跑该条 `retranslate` 才换新；阈值 0.35 依赖当前模型分布，换模型须重测两族密度 | `tests/test_translate_engine.py`（13 条，五组变异） |
 | 旧日志 `logs/`（15MB） | **已清理**（09:51 后停写、0 跟踪文件） | 日志改道 `data/logs/`；`mdsea/` 48MB 参考材料已移出仓库到 `~/Code/_refs/` |
 
 ## 待办（谁手里）
@@ -65,4 +66,4 @@
 
 ## 规模数字（改动后应重新核对）
 
-跟踪文件 **846**（docs 36：活跃 12 · 归档 24）· 顶层目录 10 · 根级 md 5 · pytest 849 · mdcore 441 · 前端 379 · 排版基线 18 张 · 门禁 9 步
+跟踪文件 **846**（docs 36：活跃 12 · 归档 24）· 顶层目录 10 · 根级 md 5 · pytest 857 · mdcore 441 · 前端 379 · 排版基线 18 张 · 门禁 9 步
