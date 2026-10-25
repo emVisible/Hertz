@@ -9,6 +9,7 @@
 |---|---|---|---|
 | [D-231](D-231-runtime-yaml-stale-pin.md) | `runtime.yaml` 的陈旧默认值会**静默压过**类默认值——「改了默认值」≠「默认值生效」 | `tests/test_runtime_path_pinning.py` | 2026-10-17 |
 | [D-232](D-232-cache-signature.md) | 缓存键是内容哈希时，判同要判**内容**，`.size` 不算内容；注释说「内容变了会更新」不算证据 | `mermaidCacheSignature` + `AsyncRenderWiring.test.tsx` | 2026-10-17 |
+| [D-233](D-233-media-stream-duration.md) | 容器时长取最长流（通常音频）——按时长算画面的事必须问**视频流** | `tests/test_producer_assemble.py` + `tests/test_media_stream_duration.py` | 2026-10-19 |
 | ~~D-001…D-230~~ | [`../archive/DECISIONS.md`](../archive/DECISIONS.md) | — | 2026-10-17 前 |
 
 ## 编号规则
@@ -55,3 +56,13 @@
 | D-232 | 宿主把签名调用改回比 `cache.size` | 1 red |
 | D-232 | 签名只留键、丢掉长度 | 1 red |
 | D-232 | 签名退化成 `String(cache.size)` | 2 red |
+| D-233 | assemble：xfade offset 退回容器时长递推 | 2 red |
+| D-233 | assemble：产物校验去掉视频流比对 | 1 red |
+| D-233 | assemble：每段音频不再钉到画面长度 | 1 red |
+| D-233 | cover：取帧点退回容器时长 | 6 red（参数化抽样全灭） |
+| D-233 | phash：25% seek 退回容器时长 | 1 red |
+| D-233 | compose：`target` 退回容器时长 | 1 red |
+| D-233 | compose：原声轨去掉 `atrim`（事故当日原样） | 1 red |
+
+> compose 的判据曾写错过一版：量的是成片**视频流**长度，而缺陷撑长的是**音频**，
+> 于是变异打不红。改成量两条流**之差**才咬住——判据测错了东西等于没有判据。

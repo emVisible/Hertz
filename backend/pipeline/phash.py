@@ -11,7 +11,7 @@ import asyncio
 import logging
 
 from backend.library.thumbnails import find_ffmpeg
-from backend.pipeline.producers.probe import probe_duration as _probe_duration
+from backend.pipeline.producers.probe import probe_duration, probe_video_duration
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,10 @@ async def compute_phash(video_path: str | None) -> str | None:
     ffmpeg = find_ffmpeg()
     if ffmpeg is None:
         return None
-    # ffmpeg 7+ 不再支持 -ss 25% 百分比 seek：先探测时长再换算秒
-    duration = await _probe_duration(video_path)
+    # ffmpeg 7+ 不再支持 -ss 25% 百分比 seek：先探测时长再换算秒。
+    # 取**视频流**时长：容器时长取最长那条流（通常是音频），素材里「音频比画面长」时
+    # 按容器换算出的 25% 会越过画面末尾，seek 落空 → 哈希直接算不出来（静默降级）。
+    duration = await probe_video_duration(video_path) or await probe_duration(video_path)
     ss_args = ["-ss", str(max(duration * 0.25, 0.0))] if duration > 0 else []
     cmd = [
         str(ffmpeg), "-v", "error",

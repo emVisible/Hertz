@@ -18,6 +18,7 @@ from backend.pipeline.producers.common import ProducerError, _run_cmd
 from backend.pipeline.producers.probe import (
     probe_audio_duration,
     probe_duration,
+    probe_video_duration,
     video_stream_params,
 )
 from backend.pipeline.producers.resolution import target_resolution
@@ -142,7 +143,12 @@ async def compose_video(
     if ffmpeg is None:
         raise ProducerError("ffmpeg not found")
     out.parent.mkdir(parents=True, exist_ok=True)
-    target = await probe_duration(raw) or 0.0
+    # 目标时长取**视频流**：它同时决定字幕时轴的右界、图片段的长度、以及最终
+    # apad/atrim 的补齐长度。用容器时长（= 更长的音频）时，画面已结束而这些
+    # 仍按更长的长度排布 —— 字幕排在黑屏区间里（同族缺陷，见 assemble 的事故记录）。
+    target = (
+        await probe_video_duration(raw) or await probe_duration(raw) or 0.0
+    )
     if target <= 0:
         raise ProducerError(f"cannot determine duration of {raw.name}")
 
@@ -295,9 +301,19 @@ async def compose_video(
                             f"'if(between(t\\,{narr_start:.3f}\\,{narr_end:.3f})\\,"
                             f"0.22\\,1.0)'"
                         )
-                        parts.append(f"[0:a]{aformat},volume={vol}:eval=frame[orig]")
+                        # 原声也必须 atrim 到 target：旁白/BGM/静音三条都裁了，
+                        # 唯独原声放行——于是成片音频恒等于素材音频的长度，
+                        # 素材「音频比画面长」时（见 assemble 的黑屏事故），
+                        # 多出来的那一截音频没有任何画面，字幕正好排在那一段里。
+                        parts.append(
+                            f"[0:a]{aformat},volume={vol}:eval=frame,"
+                            f"atrim=duration={target},asetpts=PTS-STARTPTS[orig]"
+                        )
                     else:
-                        parts.append(f"[0:a]{aformat},volume=1.0[orig]")
+                        parts.append(
+                            f"[0:a]{aformat},volume=1.0,"
+                            f"atrim=duration={target},asetpts=PTS-STARTPTS[orig]"
+                        )
                     mix_labels.append("[orig]")
                 elif not has_narr:
                     parts.append(

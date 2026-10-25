@@ -11,7 +11,7 @@ from pathlib import Path
 
 from backend.library.thumbnails import find_ffmpeg
 from backend.pipeline.producers.common import ProducerError, _run_cmd
-from backend.pipeline.producers.probe import probe_duration
+from backend.pipeline.producers.probe import probe_duration, probe_video_duration
 
 
 async def _frame_interest(ffmpeg: str, probe_path: Path) -> float:
@@ -89,12 +89,17 @@ async def extract_random_cover(
 ) -> Path:
     """随机抽帧封面（v0.11.5）：避开首尾（黑场/片尾），5%-95% 均匀随机
     取一帧 → 1280x720 裁切。抽帧失败抛 ProducerError（调用方转 HTTP 语义）。
+
+    ⚠️ 时长取**视频流**而不是容器（2026-10-19 黑屏事故同族）：容器时长取最长那条
+    流（通常是音频），素材里「音频比画面长 8 秒」时，按容器算出来的取帧点会有约
+    35% 的概率落在画面结束之后 —— seek 越过末帧，抽出来的封面就是一张黑图，
+    而文件确实存在、体积正常，没有任何报错。
     """
 
     ffmpeg = find_ffmpeg()
     if ffmpeg is None:
         raise ProducerError("ffmpeg not found")
-    duration = await probe_duration(video_path)
+    duration = await probe_video_duration(video_path)
     pos = max(0.0, min(duration * (0.05 + 0.9 * random.random()), max(duration - 0.1, 0.0)))
     await _run_cmd([
         str(ffmpeg), "-y", "-ss", f"{pos:.3f}",
