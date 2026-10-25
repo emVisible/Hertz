@@ -11,6 +11,12 @@
 
 ## [Unreleased]
 
+### 内务：MD_STUDIO.md 修复叙事压缩为当前事实
+
+- §4 内 11 段「切片 N」修复叙事（"早先是 bug → 现在修好"的旅程）压缩为当前行为 +
+  约束 + 判据指针；排障过程归 CHANGELOG 与 git 历史。524 → 477 行，约束与判据全部保留，
+  文档链接门禁通过。
+
 ### 内务：registry tick 节流样板合并 + 影子默认值收掉
 
 - `_integrity_tick/_collect_tick/_auto_publish_tick` 三份「取间隔→判断→落时间戳」
