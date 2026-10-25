@@ -8,8 +8,9 @@ otherwise at the raw narration. Fully deterministic (ffmpeg), no browser mixing.
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
+
+from .ffmpeg import run_ffmpeg
 
 
 async def build_voice_mix(
@@ -38,16 +39,12 @@ async def build_voice_mix(
         )
     else:
         fc = f"{voice};{bed};[vo][bed]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]"
-    proc = await asyncio.create_subprocess_exec(
+    await run_ffmpeg(
         "ffmpeg", "-hide_banner", "-v", "error", "-y",
         "-i", str(narration), "-i", str(bgm),
         "-filter_complex", fc, "-map", "[mix]",
         "-ar", "48000", "-ac", "2", str(out),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
-    _, err = await proc.communicate()
-    if proc.returncode != 0:
-        raise RuntimeError(f"bgm mix failed: {err.decode()[-400:]}")
 
 
 async def ensure_voice_track(ws, config: dict, total: float) -> str:

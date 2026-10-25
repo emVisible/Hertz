@@ -16,6 +16,7 @@ import asyncio
 from pathlib import Path
 from uuid import UUID
 
+from .ffmpeg import run_ffmpeg
 from .hf import HF
 from .runner import VENDOR_DIR, _ffprobe_duration, position_factor
 from .store import MonolineStore
@@ -78,14 +79,10 @@ async def _reconcat(store: MonolineStore, ws: Workspace, job_id: UUID) -> float:
     segs = await store.get_segments(job_id)
     concat = ws.tts / "concat.txt"
     concat.write_text("".join(f"file '{s['wav_path']}'\n" for s in segs), encoding="utf-8")
-    proc = await asyncio.create_subprocess_exec(
+    await run_ffmpeg(
         "ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
         "-c", "copy", str(ws.narration_wav),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
-    _, err = await proc.communicate()
-    if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg concat failed: {err.decode()[-300:]}")
     timings = Timings.from_durations([s["text"] for s in segs],
                                      [float(s["tts_duration"]) for s in segs])
     (ws.ir / "timings.json").write_text(timings.model_dump_json(indent=2), encoding="utf-8")

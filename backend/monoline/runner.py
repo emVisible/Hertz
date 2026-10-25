@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+from .ffmpeg import run_ffmpeg
 from .hf import HF, _lint_summary
 
 # 模块级导入是测试的打桩位（tests/test_monoline_llm 用 monkeypatch 换 suggest）
@@ -211,14 +212,10 @@ async def run_assemble(store: MonolineStore, ws_root: Path, job_id: UUID, *,
     try:
         concat = ws.tts / "concat.txt"
         concat.write_text("".join(f"file '{s['wav_path']}'\n" for s in segs), encoding="utf-8")
-        proc = await asyncio.create_subprocess_exec(
+        await run_ffmpeg(
             "ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
             "-c", "copy", str(ws.narration_wav),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        _, err = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(f"ffmpeg concat failed: {err.decode()[-400:]}")
         total = await _ffprobe_duration(ws.narration_wav)
         timings = Timings.from_durations([s["text"] for s in segs],
                                          [float(s["tts_duration"]) for s in segs])

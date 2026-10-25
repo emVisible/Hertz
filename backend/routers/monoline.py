@@ -14,6 +14,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from backend.factory.registry import ServiceRegistry
+from backend.monoline.ffmpeg import run_ffmpeg
 
 logger = logging.getLogger(__name__)
 
@@ -328,7 +329,6 @@ async def download_subtitles(job_id: str, fmt: str = Query("srt")):
 @router.get("/jobs/{job_id}/poster")
 async def job_poster(job_id: str):
     """封面帧按需抽取（缓存 renders/poster.jpg，老作业自动回填）。"""
-    import asyncio
 
     from fastapi.responses import FileResponse
 
@@ -350,15 +350,13 @@ async def job_poster(job_id: str):
     if not out.exists():
         total = float(job.get("total_duration") or 0.0)
         ts = min(1.2, total * 0.5) if total else 0.0  # 跳过开场黑淡入
-        proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-v", "error", "-y", "-ss", f"{ts:.3f}", "-i", str(vid),
-            "-frames:v", "1", "-q:v", "2", str(out),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
-        _, err = await proc.communicate()
-        if proc.returncode != 0 or not out.exists():
-            raise HTTPException(
-                status_code=500, detail=f"封面抽取失败：{err.decode()[-200:]}") from None
+        try:
+            await run_ffmpeg("ffmpeg", "-v", "error", "-y", "-ss", f"{ts:.3f}", "-i", str(vid),
+                             "-frames:v", "1", "-q:v", "2", str(out))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=f"封面抽取失败：{exc}") from None
+        if not out.exists():  # rc=0 也不许静默空手而归
+            raise HTTPException(status_code=500, detail="封面抽取失败：ffmpeg 未产出封面")
     slug = job.get("slug") or jid.hex[:8]
     return FileResponse(out, media_type="image/jpeg",
                         headers={"Content-Disposition": _disposition(slug, "poster.jpg",
