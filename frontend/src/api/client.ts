@@ -39,21 +39,10 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PATCH', body: body === undefined ? undefined : JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
-  /** multipart 上传（文件/音色包等）：FormData，不设 JSON 头 */
-  postForm: async <T>(path: string, form: FormData, params?: Record<string, string>): Promise<T> => {
+  /** multipart 上传（文件/音色包等）：FormData 不设 Content-Type（边界由浏览器生成） */
+  postForm: <T>(path: string, form: FormData, params?: Record<string, string>): Promise<T> => {
     const q = params ? `?${new URLSearchParams(params).toString()}` : ''
-    const resp = await fetch(`${API_BASE}${path}${q}`, { method: 'POST', body: form })
-    if (!resp.ok) {
-      let detail = resp.statusText
-      try {
-        const body = await resp.json()
-        detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
-      } catch {
-        /* keep statusText */
-      }
-      throw new ApiError(resp.status, detail)
-    }
-    return resp.json() as Promise<T>
+    return request<T>(`${path}${q}`, { method: 'POST', body: form, headers: {} })
   },
 }
 

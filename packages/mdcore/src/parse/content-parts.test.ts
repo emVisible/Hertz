@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyTheme,
-  headingAnchor,
   parseImageSizeSpec,
   parseToIR,
   xhsCaption,
   type IRBlock,
   type InlineNode,
 } from '../index';
+import { headingAnchor } from '../ir/parseToIR';
 
 /**
  * Phase 2b：内容件（目录 / 话题 / 彩色文字 / 图宽对齐）判据。

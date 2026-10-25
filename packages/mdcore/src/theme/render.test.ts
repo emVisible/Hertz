@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { applyTheme, cjkNumeral, getTheme, parseToIR } from '../index';
+import { applyTheme, getTheme, parseToIR } from '../index';
+import { cjkNumeral } from './apply';
 import type { Theme, ThemeTokens } from './types';
 
 /**

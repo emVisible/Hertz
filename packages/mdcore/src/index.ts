@@ -19,7 +19,6 @@ export type { FenceInfo } from './parse/lang';
 export {
   cardTexture,
   DECO_IDS,
-  decoPreset,
   DECO_PRESETS,
   TEXTURE_IDS,
   TEXTURE_LABELS,
@@ -28,12 +27,9 @@ export type { CardTexture, DecoPreset, TextureId } from './platform/decks';
 export {
   CALLOUT_TITLES,
   convertInline,
-  headingAnchor,
-  inlinePlain,
   parseImageSizeSpec,
   parseToIR,
   parseToIRDetailed,
-  tokensToIR,
 } from './ir/parseToIR';
 export type {
   IRBlock,
@@ -43,7 +39,7 @@ export type {
   LayoutIR,
   LineRange,
 } from './ir/types';
-export { applyTheme, cjkNumeral, resolveThemedProps } from './theme/apply';
+export { applyTheme, resolveThemedProps } from './theme/apply';
 export type { ApplyOptions } from './theme/apply';
 export { deriveTheme, derivedSlots, mergeSlots, resolveThemeSlots, themeWithOverrides } from './theme/derive';
 export {

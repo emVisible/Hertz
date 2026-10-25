@@ -174,7 +174,7 @@ class ServiceRegistry:
         self.log.get().info("ServiceRegistry initialized (AI via ProviderRegistry)")
 
     async def _timed(self, name: str, coro_fn) -> None:
-        """tick 包装（v0.22 可见性）：计时 + telemetry 环形记录，失败吞掉。"""
+        """tick 包装（v0.22 可见性）：计时 + telemetry 环形记录后原样上抛。"""
         from backend.infrastructure.telemetry import timed_tick
 
         await timed_tick(name, coro_fn)
@@ -204,7 +204,7 @@ class ServiceRegistry:
                 self.log.get().warning(
                     "integrity: %s", ", ".join(report["failed"])
                 )
-        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+        except Exception:  # noqa: BLE001 — 记录后原样上抛（APScheduler 会接住 job 异常）
             self.log.get().exception("integrity tick failed")
             raise
 
@@ -240,7 +240,7 @@ class ServiceRegistry:
                     "auto collect: %d item(s) from %s",
                     summary["collected"], summary.get("sources", []),
                 )
-        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+        except Exception:  # noqa: BLE001 — 记录后原样上抛（APScheduler 会接住 job 异常）
             self.log.get().exception("auto collect tick failed")
             raise
 
@@ -249,7 +249,7 @@ class ServiceRegistry:
             result = await self.pipeline.auto_approve()
             if result.get("approved", 0) > 0:
                 self.log.get().info("auto_approve approved %d item(s)", result["approved"])
-        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+        except Exception:  # noqa: BLE001 — 记录后原样上抛（APScheduler 会接住 job 异常）
             self.log.get().exception("auto_approve tick failed")
             raise
 
@@ -275,7 +275,7 @@ class ServiceRegistry:
                     result["promoted"], result["published"],
                     result.get("used_today"), result.get("daily_limit"),
                 )
-        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+        except Exception:  # noqa: BLE001 — 记录后原样上抛（APScheduler 会接住 job 异常）
             self.log.get().exception("auto publish tick failed")
             raise
 
@@ -300,7 +300,7 @@ class ServiceRegistry:
                 await tg.review_push_tick(self.pipeline)
             # 周报（v0.19）：7 天节流在函数内部
             await tg.weekly_report_tick(self.pipeline)
-        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+        except Exception:  # noqa: BLE001 — 记录后原样上抛（APScheduler 会接住 job 异常）
             self.log.get().exception("telegram tick failed")
             raise
 
@@ -311,7 +311,7 @@ class ServiceRegistry:
                 self.log.get().info(
                     "publish stats refreshed %d item(s)", result["updated"]
                 )
-        except Exception:  # noqa: BLE001 — tick 失败不拖垮调度器
+        except Exception:  # noqa: BLE001 — 记录后原样上抛（APScheduler 会接住 job 异常）
             self.log.get().exception("publish stats tick failed")
             raise
 

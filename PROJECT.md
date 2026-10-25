@@ -37,7 +37,7 @@
 
 ## 门禁现状
 
-`bash scripts/verify.sh` 全量 **EXIT=0**，共 **9 步**：文档链接 → ruff → pytest **857** → mdcore tsc → mdcore **441** → 前端 tsc → 前端 **379** → vite build → **18 张排版基线**（0.5% 阈值）。D-234（翻译护栏）后 `--quick` 全绿。
+`bash scripts/verify.sh` 全量 **EXIT=0**，共 **9 步**：文档链接 → ruff → pytest **853** → mdcore tsc → mdcore **441** → 前端 tsc → 前端 **379** → vite build → **18 张排版基线**（0.5% 阈值）。D-234（翻译护栏）后 `--quick` 全绿。
 
 ## 已知风险
 
@@ -66,4 +66,4 @@
 
 ## 规模数字（改动后应重新核对）
 
-跟踪文件 **846**（docs 36：活跃 12 · 归档 24）· 顶层目录 10 · 根级 md 5 · pytest 857 · mdcore 441 · 前端 379 · 排版基线 18 张 · 门禁 9 步
+跟踪文件 **846**（docs 36：活跃 12 · 归档 24）· 顶层目录 10 · 根级 md 5 · pytest 853 · mdcore 441 · 前端 379 · 排版基线 18 张 · 门禁 9 步

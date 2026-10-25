@@ -11,10 +11,10 @@ import {
   XHS_MAX_PAGES,
   XHS_RATIO_KEYS,
   cardTexture,
-  decoPreset,
   TEXTURE_IDS,
   DECO_IDS,
 } from '../index';
+import { decoPreset } from './decks';
 import type { Measurer } from '../index';
 
 /** xhs 卡片内容高 = 卡高 - 上 padding - (下 padding + 页脚区) */

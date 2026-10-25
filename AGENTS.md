@@ -12,7 +12,7 @@ backend/     FastAPI（Python 3.12，uv 管理，端口 8787）
 frontend/    React + Vite（端口 3000）
 packages/mdcore/  排版内核：markdown-it 管线、主题、微信/知乎/小红书产物层
 electron/    壳（开发态连 :8787；打包态拉起冻结后端 electron/backend-dist）
-tests/       pytest（836）；packages 与 frontend 各有自己的 vitest
+tests/       pytest（853）；packages 与 frontend 各有自己的 vitest
 data/        用户数据（2.4GB，**别删、别提交**）
 ```
 
@@ -48,7 +48,7 @@ pnpm --filter hertz-frontend test                      # 前端
 | 3 | **四方版本一致**：`backend/config.py:APP_VERSION`、`pyproject.toml`、`package.json`、`electron/package.json` | `tests/test_version_drift.py` |
 | 4 | **API 清单是双向门禁**：路由变了必须重新生成 `docs/API_INVENTORY.md`，且 `scripts/api_inventory.py` 与 `tests/test_api_surface.py:11` 硬编码同一路径 | `test_api_surface.py`（少一条/多一条都红） |
 | 5 | **一条坏数据不许连坐整批**：批量循环里的 `try/except` 要在**循环内** | `tests/test_heal_plans.py`（断言"一条 traceback 都没有"） |
-| 6 | **凡落盘的外部文本先过脱敏** | `tests/test_redact.py`、`tests/test_signed_url*.py` |
+| 6 | **凡落盘的外部文本先过脱敏** | `tests/test_redact.py`、`tests/test_download_resilience.py`（signed_url 判据所在） |
 | 7 | **判"内容变没变"要判内容**：缓存键是内容哈希时，任何"比数量/长度"的判同都是错的 | `mermaidCacheSignature` + `AsyncRenderWiring.test.tsx` 源码级守卫 |
 | 8 | **异步富集（Shiki / Mermaid）接同步渲染管线**：先出 hljs 产物再升级、失败保留旧产物且失败可见 | mdcore `theme/shiki.test.ts`、`theme/mermaid.test.ts` |
 | 9 | **机翻不许带解码退化循环**：字幕里出现「正在 正在 正在」是 ct2 解码退化，不是脏素材也不是清洗链拼接 | `tests/test_translate_engine.py`（13 条，五组变异） |

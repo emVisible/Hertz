@@ -11,6 +11,20 @@
 
 ## [Unreleased]
 
+### 内务：仓库卫生清偿——注释改真、死代码删除、小样板收敛、测试去冗
+
+- 注释与代码对齐：`telemetry.timed_tick`、registry `_timed` 与 4 处 tick 注释的「失败吞掉」改为
+  「记录后原样上抛」——调度器存活本就靠 APScheduler executor 接住 job 异常（executors/base.py）。
+- 删死代码：`monoline/tts_zh.py` 的 `_TTS_CACHE/MODEL/VOICES`（注释自认不再使用、全仓零引用）。
+- mdcore 公共面收窄：`cjkNumeral/tokensToIR/inlinePlain/headingAnchor/decoPreset` 退出包出口
+  （frontend 零消费；内部测试改从定义模块 import）。
+- 小重复收敛：`api/client.ts` postForm 复用 `request`；`pipeline/helpers.py` 两份嵌套 `unlink`
+  合并为 `_unlink_variants`；`PipelineSection.tsx` 行首空格（全仓唯一格式逃逸）。
+- 测试 857→853：删 4 条已被权威判据文件逐分支覆盖的冗余（localize×2 / download_one / rss_vreddit）；
+  2 处脆断言放松为性质断言（ASS Style 只守 Alignment+MarginV；直发模板只守 passthrough）。
+- 文档漂移修正：AGENTS.md 不变量 6 的 signed_url 判据指向 `tests/test_download_resilience.py`；
+  pytest 计数对齐 853。
+
 ### 修复：机翻字幕出现「正在 正在 正在」式重复短语（解码退化）
 
 - **症状**：流水线翻译的字幕里有大量冗余重复中文短语（现场「正在」×120、「看不见」×200），

@@ -25,12 +25,16 @@ def record_tick(job: str, ok: bool, duration_ms: int, error: str = "") -> None:
 
 
 async def timed_tick(job: str, coro_fn) -> None:
-    """包装 scheduler 回调：计时 + 记录 + 失败吞掉（不拖垮调度器）。"""
+    """包装 scheduler 回调：计时 + 环形记录后原样上抛。
+
+    调度器存活靠 APScheduler 的 executor 接住 job 异常并记日志（executors/base.py
+    的 except BaseException → logger.exception），不是这里吞。
+    """
     t0 = time.perf_counter()
     try:
         await coro_fn()
         record_tick(job, True, int((time.perf_counter() - t0) * 1000))
-    except Exception as exc:  # noqa: BLE001 — tick 失败不拖垮调度器
+    except Exception as exc:  # noqa: BLE001 — 记录后原样上抛（APScheduler 会接住 job 异常）
         record_tick(job, False, int((time.perf_counter() - t0) * 1000), str(exc))
         raise
 

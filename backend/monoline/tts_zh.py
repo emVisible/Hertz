@@ -34,11 +34,6 @@ def _model_path() -> Path:
 def _voices_path() -> Path:
     return _cache_dir() / "voices" / "voices-v1.0.bin"
 
-
-_TTS_CACHE = Path.home() / ".cache" / "hyperframes" / "tts"  # 仅文档参照，不再使用
-MODEL = _TTS_CACHE / "models" / "kokoro-v1.0.onnx"
-VOICES = _TTS_CACHE / "voices" / "voices-v1.0.bin"
-
 # CJK punctuation, ideographs (incl. ext. A + compatibility) — everything misaki can
 # read as Chinese. Built from code points so the ranges stay legible.
 _CJK_RANGES = ((0x3005, 0x3007), (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF))

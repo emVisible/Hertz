@@ -702,31 +702,6 @@ class _TranslateLLM:
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
-async def test_localize_text_engine_paths(monkeypatch) -> None:
-    """D-189 单引擎语义：本地 MT 成功返回译文；失败回退原文。"""
-    from backend.pipeline.producers import translate_engine
-    from backend.pipeline.producers.media import _localize_text
-
-    async def ok_mt(text: str) -> str:
-        return "翻译后的旁白内容"
-
-    monkeypatch.setattr(translate_engine, "translate_local", ok_mt)
-    out = await _localize_text(
-        "English narration text.", "zh-CN", source_lang="en-US",
-    )
-    assert "翻译后的旁白" in out
-
-    async def boom_mt(text: str) -> str:
-        raise RuntimeError("model missing")
-
-    monkeypatch.setattr(translate_engine, "translate_local", boom_mt)
-    original = "He kneels down and the kid stops crying."
-    out = await _localize_text(original, "zh-CN", source_lang="en-US")
-    assert "He kneels down" in out
-
-
-@pytest.mark.asyncio
 async def test_reschedule_assigns_unscheduled(client) -> None:
     """未排期条目自动分配推荐槽位（每次进入系统都有排期）。
 
@@ -1393,7 +1368,7 @@ async def test_produce_templates_seed_and_crud(client) -> None:
     names = [x["name"] for x in tpls]
     assert {"直发", "配音+字幕", "翻译+字幕", "静音直发"} <= set(names)
     direct = next(x for x in tpls if x["name"] == "直发")
-    assert direct["options"] == {"passthrough": True}
+    assert direct["options"].get("passthrough") is True
 
     # 新建自定义
     resp = await client.post(
@@ -1434,7 +1409,11 @@ def test_subtitle_style_injected() -> None:
     margin = int(getattr(settings, "pipeline_subtitle_margin_bottom", 64))
     assert ("LXGW WenKai,24" in header) or ("Noto Sans CJK SC,24" in header)
     assert ",1,0," in header
-    assert f",2,40,40,{margin},1" in header
+    # 性质断言：底部对齐（Alignment=2）+ MarginV 跟随配置；
+    # MarginL/MarginR/Encoding 不在守卫范围，随字体方案演进可变
+    style = next(ln for ln in header.splitlines() if ln.startswith("Style:"))
+    tail = [f.strip() for f in style.split(",")][-5:]
+    assert int(tail[0]) == 2 and int(tail[3]) == margin
     # v0.11.4：Events Format 必须含 Name 字段（Dialogue 行 10 值，缺 Name
     # 时 ffmpeg 9.0.1 把多余字段拼进文本 → 每句前导「，」）；并移除 {\fad(
     assert (
@@ -1807,29 +1786,6 @@ async def test_cookie_export_browser_param(client, tmp_path, monkeypatch) -> Non
 
 
 # ---------- RSS 错位与 yt-dlp cookie 优先（v0.8.1，参考原项目） ----------
-
-
-def test_rss_vreddit_link_normalized() -> None:
-    """RSS 视频帖 link 直接指向 v.redd.it → v0.8.8 修复：content 无真评论链接时
-    回退 /video/{id}/ 视频页（旧实现构造 comments/{媒体ID} 为无效链接）。"""
-    import xml.etree.ElementTree as ET
-
-    from backend.pipeline.collectors.reddit import RedditCollector
-
-    xml = """<?xml version="1.0"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <title>视频帖</title>
-    <link href="https://v.redd.it/abc123"/>
-    <content type="html">&lt;a href="https://v.redd.it/abc123/DASH_720.mp4"&gt;v&lt;/a&gt;</content>
-  </entry>
-</feed>"""
-    root = ET.fromstring(xml)
-    post = RedditCollector._rss_to_post(root.find("{http://www.w3.org/2005/Atom}entry"))
-    assert post is not None
-    assert post.source_id == "abc123"
-    assert post.source_url == "https://www.reddit.com/video/abc123/"  # 有效视频页
-    assert post.media_url == "https://v.redd.it/abc123/DASH_720.mp4"
 
 
 def test_dead_media_detects_misaligned_permalink() -> None:
@@ -2275,40 +2231,6 @@ def test_back_status_swap() -> None:
     assert back_status_for(i) == "scored"
     i.raw_path = None
     assert back_status_for(i) == "discovered"
-
-
-@pytest.mark.asyncio
-async def test_download_one_endpoint(client) -> None:
-    """单条下载端点：scored 可下载；discovered/已下载拒绝。"""
-    from datetime import UTC, datetime
-
-    from backend.models.item import Item, ItemStatus
-    from backend.models.session import session_factory
-
-    async def mk(status: ItemStatus, *, raw: bool = False) -> str:
-        async with session_factory() as session:
-            it = Item(
-                status=status,
-                source="reddit",
-                source_id=f"t_{status}_{datetime.now(UTC).timestamp()}",
-                title=f"下载端点测试 {status}",
-                subreddit="BeAmazed",
-                source_url="https://www.reddit.com/r/BeAmazed/comments/abc/",
-                media_url="https://v.redd.it/xyz/DASH_720.mp4",
-                raw_path=f"/tmp/r_{status.value}.mp4" if raw else None,
-            )
-            session.add(it)
-            await session.commit()
-            await session.refresh(it)
-            return str(it.id)
-
-    mid = await mk(ItemStatus.SCORED)
-    resp = await client.post(f"/api/pipeline/items/{mid}/download")
-    assert resp.status_code in (200, 502)  # 无网络环境可能下载失败，但状态校验通过
-
-    other = await mk(ItemStatus.DISCOVERED)
-    resp = await client.post(f"/api/pipeline/items/{other}/download")
-    assert resp.status_code == 409  # 未评分不可下载
 
 
 # ---------- 活动面板历史化（v0.8.7：jobs 分页/详情 + 日志历史 + 事件落盘） ----------
@@ -3125,24 +3047,6 @@ async def test_tts_overflow_drops_to_subs_only(client, tmp_path, monkeypatch) ->
 
     cues = parse_srt_cues(Path(sub["path"]))
     assert cues[-1][1] <= 61.0 and cues[-1][1] > 55.0
-
-
-@pytest.mark.asyncio
-async def test_localize_language_guard_unsupported_pair(monkeypatch) -> None:
-    """v0.22.x：local 引擎仅 en→zh；其他语言对不介入，直接返回原文。"""
-    import backend.pipeline.producers.media as media_mod
-    from backend.pipeline.producers import translate_engine
-
-    calls = {"n": 0}
-
-    async def fake_mt(text: str) -> str:
-        calls["n"] += 1
-        return "不应被调用"
-
-    monkeypatch.setattr(translate_engine, "translate_local", fake_mt)
-    out = await media_mod._localize_text("hello", "ja", source_lang="en-US")
-    assert out == "hello"
-    assert calls["n"] == 0
 
 
 @pytest.mark.asyncio

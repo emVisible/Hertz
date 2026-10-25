@@ -54,6 +54,22 @@ async def bump_item_seq(session, item: Item) -> None:
 _PURGE_KEEP_SCRIPT_KEYS = tuple(script_keys.ARCHIVE_SAFE_KEYS)
 
 
+async def _unlink_variants(p: str | None, *extra_suffixes: str) -> None:
+    """删本体与同源变体（.srt/.ass/.asr.srt[+extra]）；路径为空或文件缺失静默跳过。"""
+    import asyncio
+    from pathlib import Path
+
+    if not p:
+        return
+    path = Path(p)
+    for suffix in ("", ".srt", ".ass", ".asr.srt", *extra_suffixes):
+        target = path.with_suffix(path.suffix + suffix) if suffix else path
+        try:
+            await asyncio.to_thread(target.unlink, missing_ok=True)
+        except OSError:
+            pass
+
+
 async def purge_derived_media(item: Item, *, keep_raw: bool = True) -> None:
     """清除派生媒体（v0.8.9，对齐原项目 reproduce/_purge_derived_media）。
 
@@ -62,22 +78,8 @@ async def purge_derived_media(item: Item, *, keep_raw: bool = True) -> None:
     script_json 保留用户手动改过的发布元数据（bili_title/bili_tid），
     清旁白/字幕/降级缓存（重制会重新生成）。
     """
-    import asyncio
-    from pathlib import Path
-
-    async def unlink(p: str | None) -> None:
-        if not p:
-            return
-        path = Path(p)
-        for suffix in ("", ".srt", ".ass", ".asr.srt"):
-            target = path.with_suffix(path.suffix + suffix) if suffix else path
-            try:
-                await asyncio.to_thread(target.unlink, missing_ok=True)
-            except OSError:
-                pass
-
     for field in ("video_path", "audio_path", "subtitle_path", "cover_path"):
-        await unlink(getattr(item, field))
+        await _unlink_variants(getattr(item, field))
         setattr(item, field, None)
 
     if item.script_json:
@@ -98,36 +100,23 @@ async def clear_item_disk(item: Item) -> None:
     覆盖 raw/video/audio/subtitle/cover 文件（含 srt/ass/asr.srt/thumb 变体）
     与整个 output_dir 目录（pipeline/{slug}/）；路径为空或文件缺失静默跳过。
     调用方负责 commit。"""
-    import asyncio
-    from pathlib import Path
-
     from backend.infrastructure.storage import FileStore
 
-    async def unlink(p: str | None) -> None:
-        if not p:
-            return
-        path = Path(p)
-        for suffix in ("", ".srt", ".ass", ".asr.srt", ".thumb.jpg"):
-            target = path.with_suffix(path.suffix + suffix) if suffix else path
-            try:
-                await asyncio.to_thread(target.unlink, missing_ok=True)
-            except OSError:
-                pass
-
     for field in ("video_path", "audio_path", "subtitle_path", "cover_path"):
-        await unlink(getattr(item, field))
+        await _unlink_variants(getattr(item, field), ".thumb.jpg")
         setattr(item, field, None)
 
-    await unlink(item.raw_path)
+    await _unlink_variants(item.raw_path, ".thumb.jpg")
     item.raw_path = None
 
     if item.output_dir:
         try:
+            import asyncio
+            import shutil
+
             store = FileStore()
             out = store.data_dir / item.output_dir
             if out.is_dir():
-                import shutil
-
                 await asyncio.to_thread(shutil.rmtree, out, ignore_errors=True)
         except OSError:
             pass

@@ -14,10 +14,10 @@ import {
   applyTheme,
   getMarkdownParser,
   parseToIRDetailed,
-  tokensToIR,
   type IRBlock,
   type InlineNode,
 } from '../index';
+import { tokensToIR } from './parseToIR';
 
 /** 覆盖样例：把本仓注册的全部语法插件都点一遍 */
 const KITCHEN_SINK = [
