@@ -26,6 +26,8 @@
 
 | 提交 | 变了什么 |
 |---|---|
+| `72a551f`…`7313b00` | **仓库清偿批次**（6 提交，三路审计驱动）：P0 卫生清偿（说谎注释/死代码/mdcore 出口收窄/测试 4 删 2 放松）→ monoline ffmpeg 样板收敛 + concat 下沉 → registry tick 合并 → MD_STUDIO.md 叙事压缩（524→477 行）→ **pytest 全量 256s→120s**（字体子集替身 + ffmpeg marker 快速档 96s） |
+| `7d33b3d` | 字幕重复短语是 ct2 解码退化——参数+折叠+密度三层护栏（D-234） |
 | `0.37.0` | **发版**：六处版本对齐、CHANGELOG 收口、产物级门禁 `release-check.sh` 全绿 |
 | `fdee85a`…`1feff84` | **文档体系治理**（6 提交）：活跃文档 6,819 → 1,887 行；历史 5,186 行进 `docs/archive/`（含状态头）；决策改一决策一文件；新增 `AGENTS.md` / `PROJECT.md` / `docs/README.md`；`webui.sh` 归位 `scripts/`；门禁新增**文档链接检查**（第 1 步，9 步制） |
 | `5201377` | `data/runtime.yaml` 的陈旧默认值钉子——"日志搬家"从未生效，附 D-231 取证更正 |
@@ -37,7 +39,7 @@
 
 ## 门禁现状
 
-`bash scripts/verify.sh` 全量 **EXIT=0**，共 **9 步**：文档链接 → ruff → pytest **853** → mdcore tsc → mdcore **441** → 前端 tsc → 前端 **379** → vite build → **18 张排版基线**（0.5% 阈值）。D-234（翻译护栏）后 `--quick` 全绿。
+`bash scripts/verify.sh` 全量 **EXIT=0**，共 **9 步**：文档链接 → ruff → pytest **853（约 2 分钟）** → mdcore tsc → mdcore **441** → 前端 tsc → 前端 **379** → vite build → **18 张排版基线**（0.5% 阈值）。日常快速迭代：`uv run pytest -m "not ffmpeg" -q`（777 条 / 96s，真 ffmpeg 家族分层）。
 
 ## 已知风险
 
@@ -60,7 +62,9 @@
 - 合规词表调校（`packages/mdcore/src/compliance/wordlists.ts`，红线是主编口径）
 
 **我（等点单）**
-- Electron 37 → 41+ 升级（壳 + 打包 + 全回归）——**唯一的高危待办**
+- **monoline 编辑卡顿（产品侧）**：每编辑一拍触发 17.8MB VF 字体真子集化，实测 4.8s 纯 CPU/次——测试侧已替身，产品侧待修（字形集缓存/静态实例化，见 CHANGELOG 2026-10-25 条目）
+- **PlansPage 状态重组（37 个平行 useState → 按 8 实体对象化）**：页面零测试护栏，动前先补最小行为测试
+- Electron 37 → 41+ 升级（壳 + 打包 + 全回归）——高危待办
 - 正文回填 `backfill-selftext.py`：就绪但要一台能出网的机器（reddit 全域 000）
 - MD Studio 候选下一步：图床、掘金/头条、反向导入（排序见 `docs/MD_STUDIO_UPDATE_PLAN.md` §5）
 
