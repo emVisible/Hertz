@@ -210,7 +210,7 @@ async def _wait_items(client, status: str, expected: int, timeout_s: float = 20.
         items = resp.json()
         if len(items) >= expected:
             return items
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.05)
     raise AssertionError(f"timed out waiting for {expected} item(s) in state {status}")
 
 
@@ -228,7 +228,7 @@ async def _wait_jobs_done(client, timeout_s: float = 60.0):
             resp = await client.get("/api/pipeline/jobs")
             return resp.json().get("jobs", [])
         last_status = status
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.05)
     raise AssertionError(
         f"timed out waiting for pipeline idle (busy: {last_status.get('job')})"
     )
@@ -558,7 +558,7 @@ async def test_chain_text_story_to_queued(client, pipeline_env) -> None:
             if found:
                 item = found[0]
                 break
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.05)
         assert item is not None, "story-1 未在超时内进入审核队列"
         assert item["status"] == "queued"
         assert item["raw_path"] is None, "text_only 无 raw（下载跳过）"
@@ -680,7 +680,7 @@ async def test_channel_e2e_ai_story_to_queued(client, pipeline_env) -> None:
             if found:
                 item = found[0]
                 break
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.05)
         assert item is not None, "ai-story 条目未在超时内进入审核队列"
         assert item["channel_key"] == "test-e2e"
         assert item["raw_path"] is None, "text_only 无 raw（下载跳过）"

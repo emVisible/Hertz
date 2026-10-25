@@ -1167,7 +1167,7 @@ async def test_run_batch_delta_snapshot(client, monkeypatch) -> None:
                 if (detail.get("summary") or {}).get("delta"):
                     summary = detail["summary"]
                     break
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.05)
         assert summary.get("delta", {}).get("discovered", 0) == 1
     finally:
         registry.pipeline.engine.collector = FakeRedditCollector([])  # 复原占位

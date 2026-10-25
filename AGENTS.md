@@ -33,6 +33,7 @@ bash scripts/dev.sh               # 起全栈：后端 8787 / 前端 3000 / Elec
 ```bash
 uv run pytest tests/test_xxx.py -q                     # 单个后端测试文件
 uv run pytest -k "关键词"
+uv run pytest -m "not ffmpeg" -q                       # 快速档：跳过真 ffmpeg 家族（assemble/媒体流/channels，~76 条）
 pnpm --filter @hertz/mdcore test                       # mdcore
 pnpm --filter hertz-frontend test                      # 前端
 ```

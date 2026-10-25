@@ -21,6 +21,12 @@ def stub_tts():
     svc._tts_provider, svc._hf = prev_tts, prev_hf  # noqa: SLF001
 
 
+@pytest.fixture(autouse=True)
+def _fast_fonts(stub_font_subset):
+    """本文件端到端不消费 woff2 内容，跳过 4.8s/次的真字体子集（见 conftest）。"""
+    yield
+
+
 async def test_status_and_health(client) -> None:
     r = await client.get("/api/monoline/status")
     assert r.status_code == 200 and r.json()["running"] is False

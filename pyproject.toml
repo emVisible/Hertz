@@ -97,3 +97,7 @@ select = ["E", "F", "I", "N", "UP", "B", "ASYNC"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+  "ffmpeg: 起真 ffmpeg 子进程（编码/拼接/探测，慢）；日常快速迭代用 -m 'not ffmpeg'",
+  "slow: 真模型/真渲染端到端（慢），与 ffmpeg 正交",
+]

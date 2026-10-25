@@ -11,6 +11,17 @@
 
 ## [Unreleased]
 
+### 内务：pytest 结构提速——全量 256s → 120s，快速档 96s（853 条一条不删）
+
+- **真凶**：monoline 端到端每次改文本都真跑 17.8MB NotoSansSC VF 字体子集化，
+  实测单次 **4.8s 纯 Python CPU**。api/recompose/service 三文件改用 `stub_font_subset`
+  替身（写占位 woff2；真子集正确性仍由 test_monoline_assets 独立守护）——同族测试
+  ~146s → 4.5s。**产品侧同款缺陷仍在**：用户每编辑一拍就同步卡 4.8s，见 PROJECT.md 待办。
+- FakeHF 渲染档位压到最低（160x120/6fps/ultrafast；消费方只探流与时长，无画质断言）。
+- 注册 `ffmpeg`/`slow` marker；真 ffmpeg 家族（producer_assemble/media_stream_duration/
+  channels_v022）可被 `-m "not ffmpeg"` 跳过（快速档 777 条 / 96s），门禁语义不变仍全量。
+- 7 处轮询等待 0.2/0.3s → 0.05s（deadline 不动）。
+
 ### 内务：MD_STUDIO.md 修复叙事压缩为当前事实
 
 - §4 内 11 段「切片 N」修复叙事（"早先是 bug → 现在修好"的旅程）压缩为当前行为 +

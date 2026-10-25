@@ -235,3 +235,24 @@ def _block_real_network(request, monkeypatch):
 def allow_network():
     """显式放行真实网络（默认阻断）。"""
     yield
+
+
+@pytest.fixture()
+def stub_font_subset(monkeypatch):
+    """替身字体子集化：写占位 woff2，不跑 17.8MB NotoSansSC VF 的真子集。
+
+    实测单次真子集 **4.8s 纯 Python CPU**（TTFont 加载 + VF 实例化 + CJK 子集化），
+    而 monoline 端到端里**每次改文本的请求**都触发一次——api/recompose/service
+    的端到端不消费 woff2 内容（FakeHF 不读字体），真子集的正确性由
+    test_monoline_assets 独立守护。需要真子集的测试不要引这个 fixture。
+    """
+    from backend.monoline import subset as subset_mod
+    from backend.monoline.subset import SubsetResult
+
+    def _fake(glyphs, out_path, **kwargs):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"stub-woff2")
+        return SubsetResult(out_path, len(glyphs), out_path.stat().st_size, [], cached=False)
+
+    monkeypatch.setattr(subset_mod, "subset_font", _fake)
+    yield

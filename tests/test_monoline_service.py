@@ -21,6 +21,12 @@ def svc(tmp_path):
                            tts_provider=StubTTS(), hf=FakeHF())
 
 
+@pytest.fixture(autouse=True)
+def _fast_fonts(stub_font_subset):
+    """本文件端到端不消费 woff2 内容，跳过 4.8s/次的真字体子集（见 conftest）。"""
+    yield
+
+
 async def test_outline_build_current_apply(svc: MonolineService) -> None:
     created = await svc.create_job(SCRIPT, config={"brand": "Test"})
     jid = UUID(created["id"])

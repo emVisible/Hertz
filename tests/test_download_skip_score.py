@@ -82,7 +82,7 @@ async def test_download_batch_unscored_picks_discovered_only(client) -> None:
         if hit and hit.get("status") in ("completed", "failed"):
             done = True
             break
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.05)
     assert done, "download(unscored) job 未在时限内完成"
 
     async with session_factory() as session:
@@ -108,7 +108,7 @@ async def test_unscored_flag_ignored_for_other_steps(client) -> None:
         hit = next((j for j in jobs if j.get("job") == "score"), None)
         if hit and hit.get("status") in ("completed", "failed"):
             break
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.05)
 
 
 @pytest.mark.asyncio

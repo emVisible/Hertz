@@ -29,11 +29,15 @@ class FakeHF:
     async def render(self, project_dir: str, out_path: str, **kw) -> dict:
         timings = json.loads((Path(project_dir).parent / "ir" / "timings.json").read_text())
         total = float(timings["total"])
+        # 编码档位刻意压到最低：消费方只 ffprobe 流存在性与时长（无分辨率/帧率断言），
+        # libx264 默认档曾让单条 API 测试慢到 30+ 秒
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-v", "error", "-y",
-            "-f", "lavfi", "-i", f"testsrc2=duration={total}:size=320x240:rate=30",
+            "-f", "lavfi", "-i", f"testsrc2=duration={total}:size=160x120:rate=6",
             "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={total}",
-            "-t", str(total), "-c:v", "libx264", "-c:a", "aac", "-shortest", out_path,
+            "-t", str(total),
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "35",
+            "-c:a", "aac", "-shortest", out_path,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
         _, err = await proc.communicate()

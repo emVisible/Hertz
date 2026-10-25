@@ -35,6 +35,8 @@ from backend.pipeline.producers.common import ProducerError
 from backend.pipeline.producers.probe import video_stream_params
 
 ffmpeg = find_ffmpeg()
+pytestmark = pytest.mark.ffmpeg
+
 needs_ffmpeg = pytest.mark.skipif(ffmpeg is None, reason="ffmpeg not available")
 
 

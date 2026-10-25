@@ -33,6 +33,8 @@ import pytest
 from backend.library.thumbnails import find_ffmpeg
 
 ffmpeg = find_ffmpeg()
+pytestmark = pytest.mark.ffmpeg
+
 needs_ffmpeg = pytest.mark.skipif(ffmpeg is None, reason="ffmpeg not available")
 
 

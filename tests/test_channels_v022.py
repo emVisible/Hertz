@@ -126,6 +126,8 @@ async def test_ai_story_persona_injection(_channel_cleanup) -> None:
 
 # ---------- 动态标题卡片头 ----------
 
+pytestmark = pytest.mark.ffmpeg
+
 ffmpeg_missing = shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None
 
 
