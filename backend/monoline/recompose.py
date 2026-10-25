@@ -16,9 +16,8 @@ import asyncio
 from pathlib import Path
 from uuid import UUID
 
-from .ffmpeg import run_ffmpeg
 from .hf import HF
-from .runner import VENDOR_DIR, _ffprobe_duration, position_factor
+from .runner import VENDOR_DIR, _ffprobe_duration, concat_narration, position_factor
 from .store import MonolineStore
 from .workspace import Workspace
 
@@ -74,22 +73,8 @@ async def recompose(store: MonolineStore, ws_root: Path, job_id: UUID, *,
 
 async def _reconcat(store: MonolineStore, ws: Workspace, job_id: UUID) -> float:
     """重 concat 全片旁白 + 重计时回写，返回总时长（reorder/revoice/resynth 共用）。"""
-    from .timings import Timings
-
     segs = await store.get_segments(job_id)
-    concat = ws.tts / "concat.txt"
-    concat.write_text("".join(f"file '{s['wav_path']}'\n" for s in segs), encoding="utf-8")
-    await run_ffmpeg(
-        "ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
-        "-c", "copy", str(ws.narration_wav),
-    )
-    timings = Timings.from_durations([s["text"] for s in segs],
-                                     [float(s["tts_duration"]) for s in segs])
-    (ws.ir / "timings.json").write_text(timings.model_dump_json(indent=2), encoding="utf-8")
-    for sgm in timings.segments:
-        await store.update_segment(job_id, sgm.i, start=sgm.start, end=sgm.end)
-    await store.update_job(job_id, total_duration=timings.total)
-    return timings.total
+    return (await concat_narration(store, ws, job_id, segs)).total
 
 
 async def _synth_beat(store: MonolineStore, ws: Workspace, job_id: UUID, i: int, text: str,

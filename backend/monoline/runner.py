@@ -183,6 +183,28 @@ async def run_tts(store: MonolineStore, ws_root: Path, job_id: UUID, *,
         raise
 
 
+async def concat_narration(store: MonolineStore, ws: Workspace, job_id: UUID,
+                           segs: list[dict]) -> Timings:
+    """写 concat.txt → ffmpeg 无损拼接全片旁白 → 重算 timings 落库并回写段落。
+
+    run_assemble（全链）与 recompose._reconcat（秒级重组）共用——同一份
+    逻辑两处手写必然各自漂移（曾一样的块两边错误尾长度都不同步改）。
+    """
+    concat = ws.tts / "concat.txt"
+    concat.write_text("".join(f"file '{s['wav_path']}'\n" for s in segs), encoding="utf-8")
+    await run_ffmpeg(
+        "ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
+        "-c", "copy", str(ws.narration_wav),
+    )
+    timings = Timings.from_durations([s["text"] for s in segs],
+                                     [float(s["tts_duration"]) for s in segs])
+    (ws.ir / "timings.json").write_text(timings.model_dump_json(indent=2), encoding="utf-8")
+    for sgm in timings.segments:
+        await store.update_segment(job_id, sgm.i, start=sgm.start, end=sgm.end)
+    await store.update_job(job_id, total_duration=timings.total)
+    return timings
+
+
 async def run_assemble(store: MonolineStore, ws_root: Path, job_id: UUID, *,
                        cancel: asyncio.Event | None = None, emit=None) -> dict:
     """ffmpeg concat → narration.wav + timings.json + 起止回写（与上游 s_assemble 同语义）。"""
@@ -210,19 +232,8 @@ async def run_assemble(store: MonolineStore, ws_root: Path, job_id: UUID, *,
     await store.upsert_stage(job_id, "assemble", 2, status="running",
                              started_at=_now(), input_hash=ihash)
     try:
-        concat = ws.tts / "concat.txt"
-        concat.write_text("".join(f"file '{s['wav_path']}'\n" for s in segs), encoding="utf-8")
-        await run_ffmpeg(
-            "ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
-            "-c", "copy", str(ws.narration_wav),
-        )
+        timings = await concat_narration(store, ws, job_id, segs)
         total = await _ffprobe_duration(ws.narration_wav)
-        timings = Timings.from_durations([s["text"] for s in segs],
-                                         [float(s["tts_duration"]) for s in segs])
-        (ws.ir / "timings.json").write_text(timings.model_dump_json(indent=2), encoding="utf-8")
-        for sgm in timings.segments:
-            await store.update_segment(job_id, sgm.i, start=sgm.start, end=sgm.end)
-        await store.update_job(job_id, total_duration=timings.total)
         out = {"total": timings.total, "narration_bytes": ws.narration_wav.stat().st_size,
                "within_audio": abs(total - timings.total) < 0.12}
         await store.upsert_stage(job_id, "assemble", 2, status="succeeded",

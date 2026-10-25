@@ -11,6 +11,15 @@
 
 ## [Unreleased]
 
+### 内务：monoline 域 ffmpeg 样板收敛（四处→一处）+ concat 块下沉
+
+- 四份手写 exec→communicate→rc→raise（runner 与 recompose 的 concat、audio_mix 的
+  bgm mix、路由封面抽取）收敛为本域 `monoline/ffmpeg.py::run_ffmpeg`；错误尾
+  400/300/200 三种漂移归一。pipeline 的 `_run_cmd`（取消/超时语义）刻意不跨域引入。
+- `concat_narration`（concat.txt → 无损拼接 → timings 落库回写）下沉到 runner，
+  `run_assemble` 与 `recompose._reconcat` 共用，12 行重复块消除。
+- 封面抽取补上「rc=0 但无产物」的显式 500（原先与 rc!=0 合并在一个静默判断里）。
+
 ### 内务：仓库卫生清偿——注释改真、死代码删除、小样板收敛、测试去冗
 
 - 注释与代码对齐：`telemetry.timed_tick`、registry `_timed` 与 4 处 tick 注释的「失败吞掉」改为
