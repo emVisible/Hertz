@@ -164,7 +164,7 @@ class ServiceRegistry:
         )
         # DB 定时备份（v0.22 可见性补全）：每 24h pg_dump 滚动保留；
         # backup_enabled=false 或非 PG 后端时内部自查跳过
-        if getattr(settings, "backup_enabled", True):
+        if settings.backup_enabled:
             self.scheduler.add_job(
                 "db_backup",
                 lambda: self._timed("db_backup", self._backup_tick),
@@ -179,23 +179,29 @@ class ServiceRegistry:
 
         await timed_tick(name, coro_fn)
 
+    def _interval_due(self, marker: str, interval_min: int) -> bool:
+        """节流闸（先占后跑）：到点立刻落时间戳并返回 True——失败也占住这一轮，
+        否则持续失败的 tick 会按调度间隔反复重试刷屏。interval<=0 视为关闭。"""
+        import time as _time
+
+        if interval_min <= 0:
+            return False
+        now = _time.time()
+        if now - getattr(self, marker, 0.0) < interval_min * 60:
+            return False
+        setattr(self, marker, now)
+        return True
+
     async def _integrity_tick(self) -> None:
         """数据体检（v0.33）：按配置间隔节流；不一致由 integrity 内部单次告警。
 
         只报不改是刻意的：自动改写数据必须显式跑脚本，否则巡检一旦判错就没有
         回头路（体检发现的问题多半需要人看一眼原因分布再决定怎么处理）。
         """
-        import time as _time
-
         from backend.config import settings
 
-        interval_min = int(getattr(settings, "pipeline_integrity_minutes", 720) or 0)
-        if interval_min <= 0:
-            return  # 关闭常驻巡检（手动端点仍可用）
-        now = _time.time()
-        if now - getattr(self, "_last_integrity", 0.0) < interval_min * 60:
-            return
-        self._last_integrity = now
+        if not self._interval_due("_last_integrity", int(settings.pipeline_integrity_minutes or 0)):
+            return  # 间隔未到或关闭常驻巡检（手动端点仍可用）
         try:
             from backend.pipeline.integrity import run_integrity_check
 
@@ -217,22 +223,13 @@ class ServiceRegistry:
 
     async def _collect_tick(self) -> None:
         """自动采集：按配置间隔节流（运行中/间隔未到/关闭都跳过）。"""
-        import time as _time
-
         from backend.config import settings  # 不依赖实例 initialize（单例直取）
 
-        interval_min = int(
-            getattr(settings, "pipeline_auto_collect_minutes", 30) or 0
-        )
-        if interval_min <= 0:
-            return  # 关闭
-        now = _time.time()
-        last = getattr(self, "_last_auto_collect", 0.0)
-        if now - last < interval_min * 60:
-            return  # 间隔未到
+        if not self._interval_due("_last_auto_collect",
+                                  int(settings.pipeline_auto_collect_minutes or 0)):
+            return
         try:
-            self._last_auto_collect = now
-            limit = int(getattr(settings, "pipeline_collect_limit", 25) or 25)
+            limit = int(settings.pipeline_collect_limit or 25)
             result = await self.pipeline.run_batch("collect", limit=limit)
             summary = result.get("summary") or {}
             if summary.get("collected", 0) > 0:
@@ -255,19 +252,14 @@ class ServiceRegistry:
 
     async def _auto_publish_tick(self) -> None:
         """自动发布：按配置间隔节流；失败不拖垮调度器。"""
-        import time as _time
-
         from backend.config import settings  # 不依赖实例 initialize（单例直取）
 
-        interval_min = int(
-            getattr(settings, "pipeline_auto_publish_tick_minutes", 5) or 5
-        )
-        now = _time.time()
-        last = getattr(self, "_last_auto_publish", 0.0)
-        if now - last < interval_min * 60:
+        # `or 5`：本项历史上 0 不当关闭、按 5 分钟跑（与 collect/integrity 的 0=关闭不同）
+        if not self._interval_due(
+            "_last_auto_publish", int(settings.pipeline_auto_publish_tick_minutes or 5)
+        ):
             return
         try:
-            self._last_auto_publish = now
             result = await self.pipeline.auto_publish_tick()
             if result.get("published", 0) > 0 or result.get("promoted", 0) > 0:
                 self.log.get().info(
@@ -293,9 +285,7 @@ class ServiceRegistry:
         last_push = getattr(self, "_last_tg_push", 0.0)
         try:
             await tg.poll_tick(self.pipeline)
-            if now - last_push >= int(
-                getattr(settings, "telegram_minutes", 1) or 1
-            ) * 60:
+            if now - last_push >= int(settings.telegram_minutes or 1) * 60:
                 self._last_tg_push = now
                 await tg.review_push_tick(self.pipeline)
             # 周报（v0.19）：7 天节流在函数内部

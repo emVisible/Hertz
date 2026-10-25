@@ -11,6 +11,13 @@
 
 ## [Unreleased]
 
+### 内务：registry tick 节流样板合并 + 影子默认值收掉
+
+- `_integrity_tick/_collect_tick/_auto_publish_tick` 三份「取间隔→判断→落时间戳」
+  八行样板合并为 `_interval_due`（先占后跑语义原样保留，含 publish 的 `or 5` 特例注释）。
+- `getattr(settings, …, 默认值)` 影子默认值 6 处收掉（backup_enabled、五项 pipeline_*/telegram
+  配置在 config.py 均有同值声明）——改 config 默认时不会再被 getattr 兜底静默漂移。
+
 ### 内务：monoline 域 ffmpeg 样板收敛（四处→一处）+ concat 块下沉
 
 - 四份手写 exec→communicate→rc→raise（runner 与 recompose 的 concat、audio_mix 的
